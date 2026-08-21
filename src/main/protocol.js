@@ -8,6 +8,7 @@ const SCHEME = 'ember'
 const RENDERER = path.join(__dirname, '..', 'renderer')
 const PAGES = path.join(RENDERER, 'pages')
 const SHARED_ASSETS = new Map([
+  ['/theme.css', path.join(RENDERER, 'theme.css')],
   ['/brand.js', path.join(RENDERER, 'brand.js')],
   ['/brand.css', path.join(RENDERER, 'brand.css')],
   ['/assets/Necosmic-PersonalUse.otf', path.join(RENDERER, 'assets', 'Necosmic-PersonalUse.otf')],

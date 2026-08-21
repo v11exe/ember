@@ -7,8 +7,10 @@ const read = (...parts) => fs.readFileSync(path.join(__dirname, '..', ...parts),
 
 test('new tab mounts the reusable Ember brand instead of generic uppercase text', () => {
   const html = read('src', 'renderer', 'pages', 'newtab.html')
+  const protocol = read('src', 'main', 'protocol.js')
   assert.match(html, /id="ember-brand"/)
   assert.match(html, /href="\/theme\.css"/)
+  assert.match(protocol, /\['\/theme\.css', path\.join\(RENDERER, 'theme\.css'\)\]/)
   assert.match(html, /\/brand\.js/)
   assert.match(html, /\/brand\.css/)
   assert.doesNotMatch(html, /<h1 class="wordmark">EMBER<\/h1>/)
