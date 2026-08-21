@@ -51,17 +51,12 @@ unpacked-only · fingerprint randomization ships off by default.
 
 ---
 
-## 1. Shared codebase — nobody owns a directory
+## 1. Shared codebase — no assigned areas
 
-Either agent may touch any file. There are no fenced-off areas, because fences
-don't stop clobbering — they just make it a surprise when it happens. The rule
-that actually protects the work is §2: **every push must contain the other
-agent's changes as well as your own.**
-
-Soft convention, not a fence: Claude Code tends to work the main process
-(windows, tabs, sessions, adblock, storage), Codex tends to work the renderer
-(chrome UI, settings, internal pages). Following it reduces collisions. Crossing
-it is fine — just say so in your Work Log entry.
+Either agent may touch any file. There are no fenced-off areas and no
+per-directory owners. The humans decide who works on what; your job is to not
+destroy the other agent's work while doing it. The rule that does that is §2:
+**every push must contain the other agent's changes as well as your own.**
 
 Default posture is **additive**. Add, extend, wrap. If finishing your change
 requires deleting or rewriting something the other agent wrote, that is not a
@@ -171,20 +166,10 @@ Newest at top. One entry per branch, updated in place. Status:
 ```
 
 ### 2026-08-21 — Claude Code — Add AGENTS.md
-- **Status / Branch:** merged · `chore/agents-md`
-- **Touches:** `AGENTS.md`, `CLAUDE.md`
-- **Summary:** Shared agent instruction set — orientation cache, ownership map,
-  coordination protocol, rules, Work Log. `CLAUDE.md` points here so both agents
-  read one source of truth.
-- **For the other agent:** read §0 instead of exploring the repo; add a Work Log
-  entry before you start and rebase onto `origin/main` before every push.
-
-### 2026-08-21 — Claude Code — Replace ownership model with push-time sync
 - **Status / Branch:** merged · `main`
-- **Touches:** `AGENTS.md`
-- **Summary:** Dropped per-directory ownership; either agent may touch any file.
-  Protection now comes from §2: check what landed since your last sync, keep
-  both sides on conflict, verify nothing was dropped before pushing.
-- **For the other agent:** you're no longer restricted to the renderer. In
-  exchange, run the §2 sequence on every push and list every file you touch in
-  your Work Log entry.
+- **Touches:** `AGENTS.md`, `CLAUDE.md`
+- **Summary:** Shared instruction set for both agents — orientation cache (§0),
+  sync protocol (§2), rules, this log. No per-directory ownership: either agent
+  may touch any file, and the humans decide who works on what.
+- **For the other agent:** read §0 instead of exploring the repo, add an entry
+  here before you start, and run the §2 sequence on every push.
