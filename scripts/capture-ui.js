@@ -176,6 +176,19 @@ function svgBackdrop(body, width, height) {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`
 }
 
+function contrastBackdrop(tone, width, height) {
+  const light = tone === 'light'
+  const background = light ? '#f3e9df' : '#060608'
+  const foreground = light ? '#181114' : '#fff4e8'
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    <rect width="100%" height="100%" fill="${background}"/>
+    <path d="M-70 40L450 560M-130 0L390 520M10 -30L430 390" stroke="#ff5a1f" stroke-width="32"/>
+    <circle cx="82" cy="142" r="62" fill="${foreground}"/><circle cx="330" cy="330" r="96" fill="${foreground}"/>
+    <path d="M0 238H${width}M0 276H${width}" stroke="#ffc93c" stroke-width="12"/>
+  </svg>`
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`
+}
+
 function colourBackdrop(width, height) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
     <rect width="50%" height="50%" fill="#20d96b"/><rect x="50%" width="50%" height="50%" fill="#f2e929"/>
