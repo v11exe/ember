@@ -30,6 +30,7 @@ class UploadPanel {
     this.recentPaths = new Set()
     this.clipboardPayload = null
     this.openGeneration = 0
+    this.openSequence = 0
   }
 
   async openRequest({ tab, frame, request }) {
@@ -39,6 +40,7 @@ class UploadPanel {
     try {
       const state = await this.#stateFor(request, tab)
       if (generation !== this.openGeneration || this.active?.request !== request) return
+      state.openSequence = ++this.openSequence
       const bounds = centerPanel(tab.view.getBounds(), DESIRED_SIZE, 12)
       await this.overlay.show({ bounds, state, targetView: tab.view })
     } catch (error) {

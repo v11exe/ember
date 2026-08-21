@@ -64,6 +64,7 @@ test('opens with only matching real recents and a live clipboard image', async (
   assert.equal(h.shown[0].state.recents.length, 1)
   assert.equal(h.shown[0].state.recents[0].name, 'ember.png')
   assert.equal(h.shown[0].state.clipboard.name.startsWith('clipboard-'), true)
+  assert.equal(h.shown[0].state.openSequence, 1)
   assert.deepEqual(h.shown[0].bounds, { x: 125, y: 147, width: 650, height: 430 })
 })
 

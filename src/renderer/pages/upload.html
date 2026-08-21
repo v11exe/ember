@@ -10,7 +10,25 @@
   <link rel="stylesheet" href="/upload.css" />
 </head>
 <body>
-  <main class="glass-shell upload-shell" role="dialog" aria-modal="true" aria-labelledby="upload-title">
+  <svg class="upload-filter-definitions" aria-hidden="true">
+    <defs>
+      <filter id="switcher" primitiveUnits="objectBoundingBox">
+        <feImage href="/assets/glass-switcher-map.webp" x="0" y="0" width="1" height="1"
+          preserveAspectRatio="none" result="map"></feImage>
+        <feGaussianBlur in="SourceGraphic" stdDeviation="0.04" result="blur"></feGaussianBlur>
+        <feDisplacementMap in="blur" in2="map" scale="0.5" xChannelSelector="R"
+          yChannelSelector="G"></feDisplacementMap>
+      </filter>
+      <filter id="toggler" primitiveUnits="objectBoundingBox">
+        <feImage href="/assets/glass-toggler-map.webp" x="0" y="0" width="1" height="1"
+          preserveAspectRatio="none" result="map"></feImage>
+        <feGaussianBlur in="SourceGraphic" stdDeviation="0.01" result="blur"></feGaussianBlur>
+        <feDisplacementMap in="blur" in2="map" scale="0.5" xChannelSelector="R"
+          yChannelSelector="G"></feDisplacementMap>
+      </filter>
+    </defs>
+  </svg>
+  <main class="glass-shell upload-shell" id="upload-shell" role="dialog" aria-modal="true" aria-labelledby="upload-title">
     <img class="glass-backdrop" id="glass-backdrop" alt="" />
     <div class="glass-wash"></div><div class="glass-light"></div><div class="glass-grain"></div>
     <header class="upload-head">

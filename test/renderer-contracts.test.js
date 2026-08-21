@@ -53,6 +53,7 @@ test('tabs fall back to the Ember meteor when a page has no favicon', () => {
 
 test('upload picker is a real glass overlay with browse, clipboard, and recent actions', () => {
   const html = read('src', 'renderer', 'pages', 'upload.html')
+  const css = read('src', 'renderer', 'pages', 'upload.css')
   const js = read('src', 'renderer', 'pages', 'upload.js')
   assert.match(html, /href="\/glass\.css"/)
   assert.match(html, /id="show-all-files"/)
@@ -61,6 +62,14 @@ test('upload picker is a real glass overlay with browse, clipboard, and recent a
   assert.match(js, /window\.emberOverlay\.action\('browse'/)
   assert.match(js, /window\.emberOverlay\.action\('clipboard'/)
   assert.match(js, /window\.emberOverlay\.action\('recent'/)
+  assert.match(html, /id="switcher"/)
+  assert.match(html, /id="toggler"/)
+  assert.match(html, /id="upload-shell"/)
+  assert.match(css, /\.upload-shell\[data-opening="true"\]/)
+  assert.match(css, /backdrop-filter:\s*url\(#switcher\)/)
+  assert.match(css, /backdrop-filter:\s*url\(#toggler\)/)
+  assert.match(js, /shell\.animate\(/)
+  assert.match(js, /pointerenter/)
 })
 
 test('shared glass surface includes refractive edges, backdrop sampling, and specular light', () => {

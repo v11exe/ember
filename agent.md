@@ -66,6 +66,11 @@
 
 - Real file-input clicks open a centered glass picker with matching existing
   recents, a live clipboard image tile, and a native Show all files fallback.
+- The picker now uses the same fixed-map switcher/toggler Liquid Glass profile
+  as the context menu: a captured page texture colours its neutral 26% shell,
+  while controls and recent-file cards refract and lift on hover. Each new
+  picker presentation has an explicit 320 ms opening animation; state updates
+  (including errors) retain the same opening token and do not replay it.
 - Selections become genuine renderer `File` objects with source bytes, MIME,
   name, and modification time; directory inputs retain Chromium behavior.
 - Repeated requests, Escape, tab changes, page focus, and resize are bounded.
