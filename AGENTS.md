@@ -211,7 +211,7 @@ Newest at top. One entry per branch, updated in place. Status:
 - **Status / Branch:** in-progress · `feat/ember-upgrade`
 - **Touches:** `AGENTS.md`, `agent.md`, `src/main/{floating-panel,context-menu-panel}.js`,
   `src/renderer/pages/{context-menu,context-menu-lens}.*`, `src/renderer/assets/*`,
-  `src/main/protocol.js`, `scripts/capture-ui.js`,
+  `src/main/protocol.js`, `scripts/{capture-ui,sync-liquid-glass-maps}.js`,
   `test/{floating-panel,renderer-contracts,context-menu-panel,context-menu-lens}.test.js`
 - **Summary:** Replace the context menu's generic blur with the exact Master.dev
   fixed-map `switcher`/`toggler` optical technique, bleed-aligned capture, and one
