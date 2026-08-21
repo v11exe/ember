@@ -105,3 +105,11 @@ test('visual QA captures selector travel over dark and light contrast backdrops'
   assert.match(capture, /context-light-middle/)
   assert.match(capture, /activePosition/)
 })
+
+test('context glass stays neutral so captured page color drives the surface', () => {
+  const css = read('src', 'renderer', 'pages', 'context-menu.css')
+  assert.match(css, /\.menu-shell[\s\S]+background:\s*transparent/)
+  assert.match(css, /background-color:\s*rgba\(12,\s*12,\s*14,\s*\.26\)/)
+  assert.doesNotMatch(css, /rgba\(25,\s*18,\s*26,\s*\.52\)/)
+  assert.doesNotMatch(css, /rgba\(15,\s*10,\s*17,\s*\.72\)/)
+})

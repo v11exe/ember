@@ -82,6 +82,9 @@
 - A raw `capturePage()` texture sits beneath same-view `backdrop-filter` layers,
   allowing the switcher shell and toggler lens to refract real page pixels while
   menu text/icons stay unfiltered above them.
+- The shell itself is transparent and the optical layer uses only a 26% neutral
+  wash; there is no fixed purple/Ember tint, so the captured page supplies the
+  visible material colour on both light and dark backgrounds.
 - Context captures include 40 CSS px of edge-clipped bleed. `backdropRect` stores
   exact overlay offsets, DIP size, and available native pixel size; resize layout
   recaptures without reopening or stealing focus. No cover fit or visual scaling.
@@ -147,7 +150,7 @@
 
 ## Tests Performed
 
-- `npm test`: 62 tests pass, including map hashes, bleed/DPI metadata, edge
+- `npm test`: 63 tests pass, including map hashes, bleed/DPI metadata, edge
   clipping, resize recapture/open races, stale-capture clearing, controller
   geometry, disabled-row skipping, and renderer optical contracts.
 - `npm run smoke`: covers real page file inputs, clipboard/recents/native
