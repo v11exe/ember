@@ -200,6 +200,14 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
+### 2026-08-21 — Codex — Ember branding, bookmarks, and popup hardening
+- **Status / Branch:** in-progress · `feat/ember-upgrade`
+- **Touches:** `AGENTS.md`, `agent.md`, `package.json`, `src/{main,renderer,shared}/*`, `scripts/smoke.js`, `test/*`
+- **Summary:** Preserve current chrome while adding supplied branding, bookmarks,
+  import, and viewport-safe extension popups.
+- **For the other agent:** additive IPC and chrome-height changes are in flight;
+  coordinate before editing the listed files.
+
 ### 2026-08-21 — Claude Code — README stays minimal
 - **Status / Branch:** merged · `main`
 - **Touches:** `AGENTS.md`
