@@ -9,7 +9,7 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: transparen
 .filter-definitions { position: absolute; width: 0; height: 0; pointer-events: none; }
 .menu-shell {
   --motion: 170ms cubic-bezier(.5, 0, .1, 1);
-  --open-motion: 320ms cubic-bezier(.16, 1, .3, 1);
+  --open-motion: 220ms cubic-bezier(.16, 1, .3, 1);
   --backdrop-x: 0px;
   --backdrop-y: 0px;
   --backdrop-width: 100%;
@@ -22,7 +22,7 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: transparen
     inset 0 -1px 3px rgba(0, 0, 0, .2),
     0 9px 24px rgba(0, 0, 0, .24);
   isolation: isolate; opacity: 0;
-  transform: translate3d(0, -10px, 0) scale(.92); transform-origin: 50% 0;
+  transform: translate3d(0, -5px, 0) scale(.96); transform-origin: 50% 0;
   transition: opacity var(--open-motion), transform var(--open-motion);
   will-change: opacity, transform;
 }

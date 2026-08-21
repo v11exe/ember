@@ -47,10 +47,21 @@ function setBackdrop(state) {
 function render(state) {
   if (state.openSequence !== openSequence) {
     openSequence = state.openSequence
-    shell.dataset.opening = 'false'
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (state.openSequence === openSequence) shell.dataset.opening = 'true'
-    }))
+    shell.dataset.opening = 'true'
+    shell.getAnimations?.().forEach((animation) => animation.cancel())
+    if (typeof shell.animate === 'function') {
+      const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+      shell.animate([
+        { opacity: 0, transform: 'translate3d(0, -10px, 0) scale(.92)' },
+        { opacity: 1, transform: 'translate3d(0, 0, 0) scale(1)' },
+      ], {
+        duration: reduced ? 1 : 320,
+        easing: 'cubic-bezier(.16, 1, .3, 1)',
+        fill: 'both',
+      })
+    } else {
+      requestAnimationFrame(() => { shell.dataset.opening = 'true' })
+    }
   }
   setBackdrop(state)
   const nodes = state.items.map((item) => {

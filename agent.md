@@ -100,12 +100,11 @@
   exact overlay offsets, DIP size, and available native pixel size; resize layout
   recaptures without reopening or stealing focus. No cover fit or visual scaling.
 - The menu is 254 px wide with 35 px rows, 9 px separators, 6 px shell padding,
-  and a 16 px outer radius. It uses a 364 px reference height (matching the
-  supplied desktop-menu proportions) and scrolls richer command sets without
-  changing their command set or viewport clamp.
-- Each presentation carries an incrementing opening token. The shell begins at
-  92% scale and -10 px, then settles over 320 ms with a macOS-style ease; a
-  relayout reuses its token and therefore never restarts the motion. Reduced
+  and a 16 px outer radius. Height is derived from the actual rows and capped at
+  364 px, so short menus stay short while richer command sets scroll internally.
+- Each presentation carries an incrementing opening token. The shell uses an
+  explicit Web Animations API keyframe from 92% scale/-10 px to settled size over
+  320 ms; a relayout reuses its token and never restarts the motion. Reduced
   motion resolves both this and selector travel in 1 ms.
 - One persistent selector caches row rectangles and retargets CSS transform
   properties in 170 ms with `cubic-bezier(.5,0,.1,1)`. Pointer-opened menus begin
