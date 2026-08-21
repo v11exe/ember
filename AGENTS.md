@@ -208,7 +208,7 @@ Newest at top. One entry per branch, updated in place. Status:
 ```
 
 ### 2026-08-21 — Codex — Upload picker Liquid Glass motion
-- **Status / Branch:** in-progress · `feat/upload-liquid-glass`
+- **Status / Branch:** pushed · `feat/upload-liquid-glass`
 - **Touches:** `AGENTS.md`, `agent.md`, `src/main/upload-panel.js`,
   `src/renderer/pages/{upload.html,upload.css,upload.js}`, `test/{upload-panel,renderer-contracts}.test.js`
 - **Summary:** Preserve the file picker commands and layout while applying the
