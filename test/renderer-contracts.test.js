@@ -23,5 +23,14 @@ test('browser chrome provides a compact live bookmarks bar', () => {
 test('extension icon and metadata share one keyboard-accessible launcher', () => {
   const js = read('src', 'renderer', 'pages', 'extensions.js')
   assert.match(js, /launch\.append\(icon, meta\)/)
+  assert.match(js, /launch\.dataset\.extensionId = ext\.id/)
+  assert.match(js, /img\.alt = ''/)
+  assert.match(js, /remove\.setAttribute\('aria-label', `Remove \$\{ext\.name\}`\)/)
   assert.doesNotMatch(js, /meta\.onclick/)
+})
+
+test('browser chrome mirrors authoritative extension-panel visibility', () => {
+  const js = read('src', 'renderer', 'chrome.js')
+  assert.match(js, /window\.ember\.onPanelChanged/)
+  assert.match(js, /setAttribute\('aria-expanded', String\(open\)\)/)
 })

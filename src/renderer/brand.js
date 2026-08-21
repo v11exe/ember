@@ -2,12 +2,12 @@
   const iconMarkup = `<svg class="ember-icon" viewBox="0 0 460 130" role="img" aria-label="Ember">
     <defs>
       <linearGradient id="ember-tail" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="#E8410F"/><stop offset=".45" stop-color="#FF7A18"/>
-        <stop offset=".8" stop-color="#FFC93C"/><stop offset="1" stop-color="#FBE6A2"/>
+        <stop offset="0" stop-color="var(--ember-deep)"/><stop offset=".45" stop-color="var(--ember-orange)"/>
+        <stop offset=".8" stop-color="var(--ember-hot)"/><stop offset="1" stop-color="var(--ember-glow)"/>
       </linearGradient>
       <radialGradient id="ember-head" cx=".68" cy=".42" r=".75">
-        <stop offset="0" stop-color="#FFF6D2"/><stop offset=".45" stop-color="#FFC93C"/>
-        <stop offset="1" stop-color="#FF7A18"/>
+        <stop offset="0" stop-color="var(--ember-light)"/><stop offset=".45" stop-color="var(--ember-hot)"/>
+        <stop offset="1" stop-color="var(--ember-orange)"/>
       </radialGradient>
     </defs>
     <circle cx="392" cy="65" r="46" fill="url(#ember-head)"/>

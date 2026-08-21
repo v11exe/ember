@@ -27,6 +27,7 @@ const IPC = {
 
   // main -> renderer
   STATE: 'browser:state',
+  PANEL_CHANGED: 'panel:changed',
   PANEL_ORIGIN: 'panel:origin', // panel view offset, for popup anchoring
   BOOKMARKS_CHANGED: 'bookmarks:changed',
 }

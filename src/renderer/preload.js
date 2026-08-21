@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('ember', {
   listExtensions: () => ipcRenderer.invoke(IPC.EXT_LIST),
   removeExtension: (id) => ipcRenderer.invoke(IPC.EXT_REMOVE, id),
   togglePanel: () => ipcRenderer.send(IPC.PANEL_TOGGLE),
+  onPanelChanged: (fn) => ipcRenderer.on(IPC.PANEL_CHANGED, (_e, open) => fn(open)),
   getBookmarks: () => ipcRenderer.invoke(IPC.BOOKMARKS_GET),
   importBookmarks: () => ipcRenderer.invoke(IPC.BOOKMARKS_IMPORT),
   setBookmarksVisible: (visible) => ipcRenderer.send(IPC.BOOKMARKS_VISIBILITY, !!visible),

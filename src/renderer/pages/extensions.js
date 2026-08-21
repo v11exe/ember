@@ -56,12 +56,14 @@ function render(extensions) {
 
     const launch = document.createElement('button')
     launch.className = 'ext-launch'
+    launch.dataset.extensionId = ext.id
     launch.title = `Open ${ext.name}`
     const icon = document.createElement('span')
     icon.className = 'ext-icon'
     if (ext.icon) {
       const img = document.createElement('img')
       img.src = ext.icon
+      img.alt = ''
       icon.append(img)
     } else {
       icon.classList.add('fallback')
@@ -83,6 +85,7 @@ function render(extensions) {
 
     const remove = document.createElement('button')
     remove.className = 'ext-remove'
+    remove.setAttribute('aria-label', `Remove ${ext.name}`)
     remove.textContent = 'Remove'
     remove.onclick = async () => {
       remove.disabled = true

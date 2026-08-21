@@ -22,6 +22,7 @@ class ExtensionPanel {
     this.top = TOP
     this.bounds = null
     this.popupAnchor = null
+    this.onVisibilityChange = null
   }
 
   #ensureView() {
@@ -49,12 +50,14 @@ class ExtensionPanel {
     this.layout()
     view.setVisible(true)
     view.webContents.focus()
+    this.onVisibilityChange?.(true)
   }
 
   hide() {
-    if (!this.view) return
+    if (!this.open) return
     this.open = false
     this.view.setVisible(false)
+    this.onVisibilityChange?.(false)
   }
 
   setHeight(height) {

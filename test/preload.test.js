@@ -8,12 +8,13 @@ const { IPC } = require('../src/shared/ipc')
 
 test('chrome preload exposes a working extensions-panel toggle', () => {
   const sent = []
+  const listeners = new Map()
   let exposed
   const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'preload.js'), 'utf8')
   const electron = {
     contextBridge: { exposeInMainWorld: (_name, api) => { exposed = api } },
     ipcRenderer: {
-      on: () => {},
+      on: (channel, fn) => listeners.set(channel, fn),
       send: (...args) => sent.push(args),
       invoke: async () => undefined,
     },
@@ -29,6 +30,11 @@ test('chrome preload exposes a working extensions-panel toggle', () => {
   assert.equal(typeof exposed.togglePanel, 'function')
   exposed.togglePanel()
   assert.deepEqual(sent, [[IPC.PANEL_TOGGLE]])
+
+  let panelOpen
+  exposed.onPanelChanged((open) => { panelOpen = open })
+  listeners.get(IPC.PANEL_CHANGED)(null, true)
+  assert.equal(panelOpen, true)
 })
 
 test('chrome preload exposes bookmark import, visibility, and live updates', async () => {

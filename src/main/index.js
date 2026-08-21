@@ -53,6 +53,9 @@ function createBrowser() {
   const bookmarks = new BookmarkStore(path.join(app.getPath('userData'), 'bookmarks.json'))
   browser = { win, chrome, tabs, panel, bookmarks, popupPositioner: null }
   tabs.onPageFocus = () => panel.hide()
+  panel.onVisibilityChange = (open) => {
+    if (!chrome.webContents.isDestroyed()) chrome.webContents.send(IPC.PANEL_CHANGED, open)
+  }
 
   const { extensions } = setupExtensions(session.defaultSession, {
     createTab: (url, opts) => tabs.create(url, opts),
@@ -179,7 +182,8 @@ app.whenReady().then(() => {
       const checks = []
       try {
         const active = browser?.tabs.active
-        await browser?.testExtensionsReady
+        const testExtensions = await browser?.testExtensionsReady
+        const fixtureIds = testExtensions.map((extension) => extension.id)
         await active?.webContents.loadURL('data:text/html,<title>Ember smoke page</title><main style="color:white">Rendered page</main>')
         await browser?.chrome.webContents.executeJavaScript("document.getElementById('ext-btn').click()")
         await new Promise((resolve) => setTimeout(resolve, 250))
@@ -187,13 +191,23 @@ app.whenReady().then(() => {
         checks.push(['chrome loaded', !!browser?.chrome.webContents.getTitle()])
         checks.push(['extensions panel opened', !!browser?.panel.open && !!browser.panel.view?.getVisible()])
         checks.push(['web page remains visible', !!active?.view.getVisible()])
-
-        const launcherCount = await browser.panel.view.webContents.executeJavaScript(
-          "document.querySelectorAll('.ext-launch').length"
+        const panelExpanded = await browser.chrome.webContents.executeJavaScript(
+          "document.getElementById('ext-btn').getAttribute('aria-expanded') === 'true'"
         )
-        checks.push(['multiple real extension rows loaded', launcherCount >= 2])
-        if (launcherCount >= 2) {
-          await browser.panel.view.webContents.executeJavaScript("document.querySelectorAll('.ext-launch')[0].click()")
+        checks.push(['extensions button reports panel open', panelExpanded])
+
+        const fixtureRowsLoaded = await browser.panel.view.webContents.executeJavaScript(`(() => {
+          const ids = ${JSON.stringify(fixtureIds)}
+          return ids.length === 2 && ids.every((id) => document.querySelector(
+            '.ext-launch[data-extension-id="' + id + '"]'
+          ))
+        })()`)
+        checks.push(['multiple real extension rows loaded', fixtureRowsLoaded])
+        if (fixtureRowsLoaded) {
+          const clickFixture = (id) => browser.panel.view.webContents.executeJavaScript(
+            `document.querySelector(${JSON.stringify(`.ext-launch[data-extension-id="${id}"]`)}).click()`
+          )
+          await clickFixture(fixtureIds[0])
           await new Promise((resolve) => setTimeout(resolve, 350))
           const firstPopup = browser.popupPositioner.popup
           await firstPopup?.whenReady()
@@ -206,7 +220,7 @@ app.whenReady().then(() => {
           checks.push(['extension popup content is interactive', firstInteraction?.value === 'typed in Ember' && firstInteraction.clicked === 'true'])
           const firstId = firstPopup?.extensionId
 
-          await browser.panel.view.webContents.executeJavaScript("document.querySelectorAll('.ext-launch')[1].click()")
+          await clickFixture(fixtureIds[1])
           await new Promise((resolve) => setTimeout(resolve, 350))
           const secondPopup = browser.popupPositioner.popup
           await secondPopup?.whenReady()
@@ -260,6 +274,12 @@ app.whenReady().then(() => {
           'document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight'
         )
         checks.push(['chrome has no overflow', chromeFits])
+        browser.panel.hide()
+        await new Promise((resolve) => setTimeout(resolve, 50))
+        const panelCollapsed = await browser.chrome.webContents.executeJavaScript(
+          "document.getElementById('ext-btn').getAttribute('aria-expanded') === 'false'"
+        )
+        checks.push(['extensions button reports panel closed', panelCollapsed])
       } catch (error) {
         console.error('[ember] smoke probe error:', error)
         checks.push(['smoke probe completed', false])

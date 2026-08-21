@@ -177,5 +177,5 @@ body { overflow: hidden; background: transparent; user-select: none; }
 .bookmark-folder::before { content: ""; width: 13px; height: 9px; border-radius: 2px; background: rgba(255,166,43,.24); border: 1px solid rgba(255,166,43,.55); }
 .bookmark-back { width: 24px; justify-content: center; padding: 0; font-size: 18px; }
 .bookmark-path { max-width: 120px; color: var(--text-faint); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bookmark-status { color: #ff9b78; font-size: 10px; white-space: nowrap; }
+.bookmark-status { color: var(--error); font-size: 10px; white-space: nowrap; }
 .import-bookmarks { padding: 0 8px; color: var(--ember-warm); }

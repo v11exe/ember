@@ -82,6 +82,8 @@
 - Reproduced contract bug: `chrome.js` called an unexposed `togglePanel` bridge.
 - Duplicate icon strip remains removed; icon/name metadata is one accessible
   launcher and Remove remains independent.
+- Main broadcasts panel visibility, so the toolbar button's expanded state
+  stays correct after toggles, Escape, and page-focus dismissal.
 - Popup position prefers left/inward, clamps on creation and resize, and
   constrains oversized popups without CSS scaling.
 
@@ -104,10 +106,10 @@
 
 ## Tests Performed
 
-- `npm test`: 17 tests pass.
+- `npm test`: 18 tests pass.
 - `npm run smoke`: boots Electron, keeps a rendered page visible under the
-  panel, loads two real extensions, interacts with one popup, switches to an
-  oversized popup, verifies scrolling, and checks 4 window sizes.
+  panel, targets two real fixtures by extension ID, interacts with one popup,
+  switches to an oversized popup, verifies scrolling, and checks 4 window sizes.
 - `node --check`: all project JavaScript files parse.
 - Visual captures: 1280×736, 900×556, and 620×336 new tab; chrome at 1280,
   900, and 620 px widths.

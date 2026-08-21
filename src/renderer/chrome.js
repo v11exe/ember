@@ -106,7 +106,12 @@ window.addEventListener('keydown', (e) => {
 // ---------- extensions ----------
 // The panel is a separate view owned by the main process (src/main/panel.js),
 // so it covers only its own pixels instead of blacking out the page.
-$('ext-btn').onclick = () => window.ember.togglePanel()
+const extensionButton = $('ext-btn')
+extensionButton.onclick = () => window.ember.togglePanel()
+window.ember.onPanelChanged((open) => {
+  extensionButton.setAttribute('aria-expanded', String(open))
+  extensionButton.classList.toggle('open', open)
+})
 
 // ---------- bookmarks ----------
 function bookmarkLocation() {

@@ -3,10 +3,12 @@
   /* logo gradient, cool tail -> hot head */
   --ember-deep:  #E8410F;
   --ember-core:  #FF5A1F;
+  --ember-orange:#FF7A18;
   --ember-mid:   #FF8A1F;
   --ember-warm:  #FFA62B;
   --ember-hot:   #FFC93C;
   --ember-glow:  #FBE6A2;
+  --ember-light: #FFF6D2;
   --ember-grad:  linear-gradient(90deg, var(--ember-deep), var(--ember-core) 30%, var(--ember-warm) 65%, var(--ember-glow));
 
   /* dark surfaces */
@@ -20,6 +22,7 @@
   --text:      #EDEDED;
   --text-dim:  #9A9AA5;
   --text-faint:#63636E;
+  --error:     #FF9B78;
 
   --accent:      var(--ember-mid);
   --accent-text: #12100C;
