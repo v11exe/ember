@@ -3,6 +3,7 @@ const { WebContentsView } = require('electron')
 const { IPC, NEW_TAB_URL } = require('../shared/ipc')
 
 const CHROME_HEIGHT = 84 // tab strip (38) + toolbar (46)
+const BOOKMARKS_HEIGHT = 30
 
 let nextId = 1
 
@@ -19,6 +20,7 @@ class TabManager {
     this.tabs = []
     this.activeId = null
     this.overlay = false // true while a chrome dropdown needs the full window
+    this.chromeHeight = CHROME_HEIGHT
     win.on('resize', () => this.layout())
   }
 
@@ -33,6 +35,7 @@ class TabManager {
         nodeIntegration: false,
         sandbox: true,
         backgroundThrottling: true,
+        nodeIntegrationInSubFrames: true,
         preload: path.join(__dirname, 'page-preload.js'),
       },
     })
@@ -78,6 +81,7 @@ class TabManager {
     wc.on('destroyed', () => this.#forget(tab.id))
     // clicking back into the page dismisses any open chrome dropdown
     wc.on('focus', () => this.onPageFocus?.())
+    wc.on('context-menu', (event, params) => this.onContextMenu?.(tab, event, params))
 
     // target=_blank and window.open land in a new tab, never a popup window
     wc.setWindowOpenHandler(({ url }) => {
@@ -90,6 +94,7 @@ class TabManager {
     const tab = this.tabs.find((t) => t.id === id)
     if (!tab) return
     this.activeId = id
+    this.onSelectionChange?.(tab)
     for (const t of this.tabs) t.view.setVisible(t.id === id)
     // keep the chrome UI painted above the page view
     this.win.contentView.addChildView(tab.view)
@@ -132,12 +137,17 @@ class TabManager {
     this.layout()
   }
 
+  setBookmarksVisible(visible) {
+    this.chromeHeight = CHROME_HEIGHT + (visible ? BOOKMARKS_HEIGHT : 0)
+    this.layout()
+  }
+
   layout() {
     const { width, height } = this.win.getContentBounds()
-    this.chromeView.setBounds({ x: 0, y: 0, width, height: CHROME_HEIGHT })
+    this.chromeView.setBounds({ x: 0, y: 0, width, height: this.chromeHeight })
     const active = this.active
     if (active) {
-      active.view.setBounds({ x: 0, y: CHROME_HEIGHT, width, height: Math.max(0, height - CHROME_HEIGHT) })
+      active.view.setBounds({ x: 0, y: this.chromeHeight, width, height: Math.max(0, height - this.chromeHeight) })
     }
   }
 
@@ -171,4 +181,4 @@ class TabManager {
   }
 }
 
-module.exports = { TabManager, CHROME_HEIGHT }
+module.exports = { TabManager, CHROME_HEIGHT, BOOKMARKS_HEIGHT }

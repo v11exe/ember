@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' data:; script-src 'self'" />
+  <title>Choose files</title>
+  <link rel="stylesheet" href="/theme.css" />
+  <link rel="stylesheet" href="/brand.css" />
+  <link rel="stylesheet" href="/glass.css" />
+  <link rel="stylesheet" href="/upload.css" />
+</head>
+<body>
+  <main class="glass-shell upload-shell" role="dialog" aria-modal="true" aria-labelledby="upload-title">
+    <img class="glass-backdrop" id="glass-backdrop" alt="" />
+    <div class="glass-wash"></div><div class="glass-light"></div><div class="glass-grain"></div>
+    <header class="upload-head">
+      <div class="upload-brand" id="upload-brand"></div>
+      <div class="upload-heading">
+        <h1 id="upload-title">Choose a file</h1>
+        <p>For <span id="upload-origin">this page</span></p>
+      </div>
+      <button class="glass-button browse" id="show-all-files" type="button">Show all files</button>
+      <button class="glass-button close" id="upload-close" type="button" aria-label="Close">×</button>
+    </header>
+    <div class="glass-divider"></div>
+    <section class="clipboard-section" id="clipboard-section" hidden>
+      <div class="section-label">Clipboard</div>
+      <button class="glass-button clipboard-slot" id="clipboard-slot" type="button">
+        <span class="clipboard-preview" id="clipboard-preview"></span>
+        <span class="clipboard-copy"><strong>Use clipboard image</strong><small id="clipboard-name"></small></span>
+        <span class="choose-arrow">Choose</span>
+      </button>
+    </section>
+    <section class="recent-section">
+      <div class="section-row">
+        <div class="section-label">Recent files</div>
+        <span class="accept-label" id="accept-label"></span>
+      </div>
+      <div class="recent-files" id="recent-files"></div>
+      <div class="empty-state" id="upload-empty" hidden>No recent files match this upload.</div>
+    </section>
+    <div class="upload-error" id="upload-error" role="status"></div>
+    <footer>Choose a recent item, paste an image, or open the full system browser.</footer>
+  </main>
+  <script src="/brand.js"></script>
+  <script src="/upload.js"></script>
+</body>
+</html>

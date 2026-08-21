@@ -10,6 +10,10 @@ const els = {
 }
 
 let omniboxDirty = false
+let bookmarkSnapshot = { version: 1, visible: false, items: [] }
+let bookmarkPath = []
+
+window.EmberBrand.mountIcon($('chrome-brand'))
 
 // ---------- render ----------
 function renderTabs(tabs) {
@@ -102,4 +106,83 @@ window.addEventListener('keydown', (e) => {
 // ---------- extensions ----------
 // The panel is a separate view owned by the main process (src/main/panel.js),
 // so it covers only its own pixels instead of blacking out the page.
-$('ext-btn').onclick = () => window.ember.togglePanel()
+const extensionButton = $('ext-btn')
+extensionButton.onclick = () => window.ember.togglePanel()
+window.ember.onPanelChanged((open) => {
+  extensionButton.setAttribute('aria-expanded', String(open))
+  extensionButton.classList.toggle('open', open)
+})
+
+// ---------- bookmarks ----------
+function bookmarkLocation() {
+  let items = bookmarkSnapshot.items || []
+  const titles = []
+  for (const index of bookmarkPath) {
+    const folder = items[index]
+    if (!folder || folder.type !== 'folder') {
+      bookmarkPath = []
+      return { items: bookmarkSnapshot.items || [], titles: [] }
+    }
+    titles.push(folder.title)
+    items = folder.children || []
+  }
+  return { items, titles }
+}
+
+function faviconFor(item) {
+  if (item.icon) return item.icon
+  try { return new URL('/favicon.ico', item.url).href } catch { return '' }
+}
+
+function renderBookmarks(snapshot = bookmarkSnapshot) {
+  bookmarkSnapshot = snapshot
+  const bar = $('bookmarks-bar')
+  bar.hidden = !snapshot.visible
+  $('bookmarks-toggle').setAttribute('aria-pressed', String(!!snapshot.visible))
+  if (!snapshot.visible) return
+
+  const { items, titles } = bookmarkLocation()
+  $('bookmark-back').hidden = bookmarkPath.length === 0
+  $('bookmark-path').hidden = bookmarkPath.length === 0
+  $('bookmark-path').textContent = titles.join(' / ')
+  $('bookmarks-items').replaceChildren(...items.map((item, index) => {
+    const button = document.createElement('button')
+    button.className = 'bookmark-item ' + (item.type === 'folder' ? 'bookmark-folder' : 'bookmark-link')
+    button.title = item.type === 'folder' ? `Open ${item.title}` : item.url
+    const label = document.createElement('span')
+    label.textContent = item.title
+    if (item.type === 'folder') {
+      button.onclick = () => { bookmarkPath.push(index); renderBookmarks() }
+    } else {
+      const icon = faviconFor(item)
+      if (icon) {
+        const img = document.createElement('img')
+        img.src = icon
+        img.alt = ''
+        img.onerror = () => img.remove()
+        button.append(img)
+      }
+      button.onclick = () => window.ember.go(item.url)
+    }
+    button.append(label)
+    return button
+  }))
+}
+
+$('bookmark-back').onclick = () => { bookmarkPath.pop(); renderBookmarks() }
+$('bookmarks-toggle').onclick = () => window.ember.setBookmarksVisible(!bookmarkSnapshot.visible)
+$('import-bookmarks').onclick = async () => {
+  $('bookmark-status').textContent = ''
+  const result = await window.ember.importBookmarks()
+  if (result.ok) { bookmarkPath = []; renderBookmarks(result.snapshot) }
+  else if (!result.canceled) $('bookmark-status').textContent = result.error || 'Import failed'
+}
+window.ember.onBookmarks((snapshot) => renderBookmarks(snapshot))
+window.ember.getBookmarks().then((snapshot) => renderBookmarks(snapshot))
+
+window.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'b') {
+    e.preventDefault()
+    window.ember.setBookmarksVisible(!bookmarkSnapshot.visible)
+  }
+})

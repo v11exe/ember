@@ -3,10 +3,12 @@
   /* logo gradient, cool tail -> hot head */
   --ember-deep:  #E8410F;
   --ember-core:  #FF5A1F;
+  --ember-orange:#FF7A18;
   --ember-mid:   #FF8A1F;
   --ember-warm:  #FFA62B;
   --ember-hot:   #FFC93C;
   --ember-glow:  #FBE6A2;
+  --ember-light: #FFF6D2;
   --ember-grad:  linear-gradient(90deg, var(--ember-deep), var(--ember-core) 30%, var(--ember-warm) 65%, var(--ember-glow));
 
   /* dark surfaces */
@@ -20,6 +22,19 @@
   --text:      #EDEDED;
   --text-dim:  #9A9AA5;
   --text-faint:#63636E;
+  --error:     #FF9B78;
+
+  /* reusable captured-backdrop liquid glass */
+  --glass-bg:          rgba(38, 25, 45, .78);
+  --glass-bg-strong:   rgba(21, 16, 28, .90);
+  --glass-border:      rgba(255, 236, 226, .34);
+  --glass-inner:       rgba(255, 255, 255, .12);
+  --glass-specular:    rgba(255, 245, 235, .28);
+  --glass-divider:     rgba(255, 238, 226, .15);
+  --glass-hover:       rgba(255, 226, 211, .17);
+  --glass-pressed:     rgba(255, 204, 179, .22);
+  --glass-shadow:      rgba(11, 4, 16, .72);
+  --glass-warm-shadow: rgba(112, 36, 17, .24);
 
   --accent:      var(--ember-mid);
   --accent-text: #12100C;

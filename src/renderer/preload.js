@@ -25,7 +25,12 @@ contextBridge.exposeInMainWorld('ember', {
   openStore: () => ipcRenderer.send(IPC.EXT_OPEN_STORE),
   listExtensions: () => ipcRenderer.invoke(IPC.EXT_LIST),
   removeExtension: (id) => ipcRenderer.invoke(IPC.EXT_REMOVE, id),
-  setOverlay: (open) => ipcRenderer.send(IPC.CHROME_OVERLAY, !!open),
+  togglePanel: () => ipcRenderer.send(IPC.PANEL_TOGGLE),
+  onPanelChanged: (fn) => ipcRenderer.on(IPC.PANEL_CHANGED, (_e, open) => fn(open)),
+  getBookmarks: () => ipcRenderer.invoke(IPC.BOOKMARKS_GET),
+  importBookmarks: () => ipcRenderer.invoke(IPC.BOOKMARKS_IMPORT),
+  setBookmarksVisible: (visible) => ipcRenderer.send(IPC.BOOKMARKS_VISIBILITY, !!visible),
+  onBookmarks: (fn) => ipcRenderer.on(IPC.BOOKMARKS_CHANGED, (_e, snapshot) => fn(snapshot)),
 
   minimize: () => ipcRenderer.send(IPC.WIN_MINIMIZE),
   maximize: () => ipcRenderer.send(IPC.WIN_MAXIMIZE),

@@ -2,45 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https:; style-src 'self'; font-src 'self'; script-src 'self'" />
   <title>Ember</title>
+  <link rel="stylesheet" href="/theme.css" />
+  <link rel="stylesheet" href="/brand.css" />
   <link rel="stylesheet" href="/newtab.css" />
 </head>
 <body>
   <main class="hero">
-    <div class="logo">
-      <svg class="comet" viewBox="0 0 460 130" aria-label="Ember">
-        <defs>
-          <linearGradient id="tail" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0"   stop-color="#E8410F" />
-            <stop offset=".45" stop-color="#FF7A18" />
-            <stop offset=".8"  stop-color="#FFC93C" />
-            <stop offset="1"   stop-color="#FBE6A2" />
-          </linearGradient>
-          <radialGradient id="head" cx=".68" cy=".42" r=".75">
-            <stop offset="0"   stop-color="#FFF6D2" />
-            <stop offset=".45" stop-color="#FFC93C" />
-            <stop offset="1"   stop-color="#FF7A18" />
-          </radialGradient>
-        </defs>
-        <!-- head -->
-        <circle cx="392" cy="65" r="46" fill="url(#head)" />
-        <!-- body -->
-        <rect x="250" y="19" width="150" height="92" rx="46" fill="url(#tail)" />
-        <!-- streaks -->
-        <g fill="url(#tail)">
-          <rect x="176" y="26" width="96" height="17" rx="8.5" />
-          <rect x="150" y="52" width="120" height="16" rx="8" />
-          <rect x="196" y="76" width="86" height="16" rx="8" />
-          <rect x="168" y="98" width="58" height="15" rx="7.5" />
-          <rect x="96"  y="30" width="34" height="14" rx="7" opacity=".92" />
-          <rect x="118" y="57" width="26" height="13" rx="6.5" opacity=".8" />
-          <rect x="128" y="88" width="30" height="14" rx="7" opacity=".85" />
-          <rect x="46"  y="56" width="22" height="12" rx="6" opacity=".7" />
-          <rect x="88"  y="56" width="16" height="12" rx="6" opacity=".55" />
-        </g>
-      </svg>
-      <h1 class="wordmark">EMBER</h1>
-    </div>
+    <div class="logo" id="ember-brand"></div>
 
     <form class="search" id="search-form" role="search">
       <svg class="search-icon" viewBox="0 0 16 16" aria-hidden="true">
@@ -60,6 +30,7 @@
     </footer>
   </main>
 
+  <script src="/brand.js"></script>
   <script src="/newtab.js"></script>
 </body>
 </html>

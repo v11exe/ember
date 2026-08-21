@@ -4,7 +4,7 @@ html, body { height: 100%; }
 body { overflow: hidden; background: transparent; user-select: none; }
 
 .chrome-shell {
-  height: 84px;
+  height: 100%;
   background: linear-gradient(180deg, #0A0A0C, var(--bg-1));
   border-bottom: 1px solid var(--border);
 }
@@ -25,12 +25,7 @@ body { overflow: hidden; background: transparent; user-select: none; }
   display: grid; place-items: center;
   width: 30px; height: 30px; margin-bottom: 4px;
 }
-.brand-spark {
-  width: 15px; height: 9px;
-  border-radius: 999px;
-  background: var(--ember-grad);
-  box-shadow: 0 0 12px rgba(255, 138, 31, .75), 0 0 3px var(--ember-glow);
-}
+.brand .ember-icon { width: 24px; filter: drop-shadow(0 0 7px rgba(255,138,31,.7)); }
 
 .tabs { display: flex; align-items: flex-end; gap: 3px; max-width: calc(100vw - 260px); overflow: hidden; }
 
@@ -152,3 +147,35 @@ body { overflow: hidden; background: transparent; user-select: none; }
 /* ---------- extensions button ---------- */
 .jigsaw { stroke-width: 1.5; }
 .icon.open .jigsaw { stroke: var(--ember-warm); }
+
+/* ---------- bookmarks bar ---------- */
+.bookmark-glyph { fill: none; }
+.icon[aria-pressed="true"] .bookmark-glyph { fill: rgba(255,138,31,.18); stroke: var(--ember-warm); }
+.bookmarks-bar {
+  height: 30px; min-width: 0;
+  display: flex; align-items: center; gap: 4px;
+  padding: 2px 8px 3px 10px;
+  background: rgba(12,12,14,.96);
+  border-top: 1px solid rgba(255,255,255,.035);
+  border-bottom: 1px solid var(--border);
+}
+.bookmarks-bar[hidden] { display: none; }
+.bookmarks-items {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 3px;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+}
+.bookmarks-items::-webkit-scrollbar { display: none; }
+.bookmark-item, .bookmark-back, .import-bookmarks {
+  height: 24px; flex: none; display: inline-flex; align-items: center; gap: 6px;
+  border: 0; border-radius: 6px; background: transparent;
+  color: var(--text-dim); font: 500 11px/1 var(--font); cursor: pointer;
+}
+.bookmark-item { max-width: 170px; padding: 0 8px 0 5px; }
+.bookmark-item:hover, .bookmark-back:hover, .import-bookmarks:hover { background: var(--surface-2); color: var(--text); }
+.bookmark-item img { width: 14px; height: 14px; border-radius: 3px; object-fit: contain; }
+.bookmark-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bookmark-folder::before { content: ""; width: 13px; height: 9px; border-radius: 2px; background: rgba(255,166,43,.24); border: 1px solid rgba(255,166,43,.55); }
+.bookmark-back { width: 24px; justify-content: center; padding: 0; font-size: 18px; }
+.bookmark-path { max-width: 120px; color: var(--text-faint); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bookmark-status { color: var(--error); font-size: 10px; white-space: nowrap; }
+.import-bookmarks { padding: 0 8px; color: var(--ember-warm); }

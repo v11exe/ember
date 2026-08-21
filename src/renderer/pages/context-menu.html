@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'">
+  <title>Ember menu</title>
+  <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="context-menu.css">
+</head>
+<body>
+  <!-- Exact fixed-map filters from https://codepen.io/ljgonzalez/pen/ogjmxGe -->
+  <svg class="filter-definitions" aria-hidden="true">
+    <defs>
+      <filter id="switcher" primitiveUnits="objectBoundingBox">
+        <feImage href="/assets/glass-switcher-map.webp" x="0" y="0" width="1" height="1"
+          preserveAspectRatio="none" result="map"></feImage>
+        <feGaussianBlur in="SourceGraphic" stdDeviation="0.04" result="blur"></feGaussianBlur>
+        <feDisplacementMap in="blur" in2="map" scale="0.5" xChannelSelector="R"
+          yChannelSelector="G"></feDisplacementMap>
+      </filter>
+      <filter id="toggler" primitiveUnits="objectBoundingBox">
+        <feImage href="/assets/glass-toggler-map.webp" x="0" y="0" width="1" height="1"
+          preserveAspectRatio="none" result="map"></feImage>
+        <feGaussianBlur in="SourceGraphic" stdDeviation="0.01" result="blur"></feGaussianBlur>
+        <feDisplacementMap in="blur" in2="map" scale="0.5" xChannelSelector="R"
+          yChannelSelector="G"></feDisplacementMap>
+      </filter>
+    </defs>
+  </svg>
+  <main class="menu-shell" id="menu-shell" role="presentation">
+    <img class="outer-texture" id="outer-texture" alt="" draggable="false">
+    <div class="material-tint" aria-hidden="true"></div>
+    <div id="selector-lens" aria-hidden="true"><div id="selector-sample"></div></div>
+    <div id="context-menu" role="menu" aria-label="Page context menu"></div>
+  </main>
+  <script src="context-menu-lens.js"></script>
+  <script src="context-menu.js"></script>
+</body>
+</html>

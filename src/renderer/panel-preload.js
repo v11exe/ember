@@ -16,5 +16,6 @@ contextBridge.exposeInMainWorld('emberPanel', {
   openStore: () => ipcRenderer.send(IPC.EXT_OPEN_STORE),
   close: () => ipcRenderer.send(IPC.PANEL_CLOSE),
   resize: (height) => ipcRenderer.send(IPC.PANEL_RESIZE, height),
+  setAnchor: (rect) => ipcRenderer.send(IPC.PANEL_ANCHOR, rect),
   onOrigin: (fn) => ipcRenderer.on(IPC.PANEL_ORIGIN, (_e, origin) => fn(origin)),
 })
