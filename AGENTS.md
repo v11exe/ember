@@ -48,12 +48,21 @@ scripts/smoke.js         boot check
 (theming partly done via `theme.css`; network limiter, tab discarding, tab
 islands, sidebar outstanding).
 
-**Extension gotchas** (cost real debugging time, don't rediscover): the panel's
-`<browser-action-list>` needs `injectBrowserAction()` *called* in the preload —
-requiring the module does nothing; icons need
-`ElectronChromeExtensions.handleCRXProtocol(session)`; the chrome view is 84px
-tall so dropdowns need `TabManager.setOverlay(true)` to grow it, and the
-renderer must ignore the resize that causes or the panel closes itself.
+**Gotchas** (cost real debugging time, don't rediscover):
+- `injectBrowserAction()` must be *called* in a preload; requiring the module
+  does nothing. It also exposes `window.browserAction.activate()`, which is how
+  the panel opens a popup from its own row icons.
+- Action icons need `ElectronChromeExtensions.handleCRXProtocol(session)`.
+- Popup position: the package computes `x = anchor.x + anchor.width - popupWidth`,
+  so popups open **leftward** by default. Putting `right` in `alignment` flips
+  that and shoves them off-screen. Anchor rects are **window**-relative, so a
+  panel in its own view must add its own offset (see `PANEL_ORIGIN`).
+- Dropdowns get their own `WebContentsView` (`src/main/panel.js`). Growing the
+  chrome view to full height instead paints black over the whole page —
+  transparency does not work there.
+- Files are LF via `.gitattributes`, but Git may hand you CRLF working copies.
+  Multi-line string replacement in scripts silently no-ops against those.
+  Verify edits landed instead of trusting the write.
 
 **Not yet set up** (don't go looking): TS config, linter, unit tests, CI,
 CODEOWNERS, branch protection, `electron-updater`, tab reordering/drag,
@@ -81,9 +90,9 @@ Default posture is **additive**. Add, extend, wrap. If finishing your change
 requires deleting or rewriting something the other agent wrote, that is not a
 merge decision you make alone — stop and ask your human first.
 
-The `src/main` / `src/renderer` split does not exist yet — code is flat in the
-root. Whoever does it must announce it in the Work Log first; it moves every
-file and will conflict with everything in flight.
+Any change that moves files wholesale (a TypeScript migration, a folder
+reshuffle) must be announced in the Work Log before it starts — it conflicts
+with everything in flight.
 
 ---
 
@@ -199,27 +208,16 @@ Newest at top. One entry per branch, updated in place. Status:
 - **For the other agent:** if you want something documented, it goes in §0 of
   this file or a Work Log entry — not into prose files.
 
-### 2026-08-21 — Claude Code — Panel fixes: own view, click-to-open, popup side
-- **Status / Branch:** merged · `main`
-- **Touches:** `src/main/{index,tabs,panel}.js`, `src/renderer/{chrome.*,preload,panel-preload}`, `src/renderer/pages/extensions.*`, `src/shared/ipc.js`, `.gitattributes`
-- **Summary:** Panel moved into its own WebContentsView (was blacking out the
-  page), row icons became the launch buttons (the separate action row is gone),
-  and popups now open leftward so they stay on screen.
-- **For the other agent:** `.gitattributes` now normalises to LF. New channels
-  `panel:toggle|close|resize|origin`; `chrome:overlay` and
-  `TabManager.setOverlay` are gone. Any dropdown you add should follow
-  `src/main/panel.js`, not grow the chrome view.
-
 ### 2026-08-21 — Claude Code — Extensions panel (jigsaw button)
 - **Status / Branch:** merged · `main`
-- **Touches:** `src/main/{index,tabs,extensions}.js`, `src/renderer/{preload,chrome.html,chrome.css,chrome.js}`, `src/shared/ipc.js`
-- **Summary:** Puzzle-piece button top-right opens a panel listing installed
-  extensions with icons, versions, working action buttons and Remove. Fixes the
-  reason extensions were uninstallable-but-unusable: `injectBrowserAction()` was
-  never called and `crx://` was unhandled.
+- **Touches:** `src/main/{index,tabs,extensions,panel}.js`, `src/renderer/{chrome.*,preload,panel-preload}`, `src/renderer/pages/extensions.*`, `src/shared/ipc.js`, `.gitattributes`
+- **Summary:** Puzzle-piece button top right opens a panel listing installed
+  extensions — icon doubles as the launch button, plus version and Remove. The
+  panel is its own `WebContentsView`, popups open leftward, and extensions work
+  at all now that `injectBrowserAction()` is called and `crx://` is handled.
 - **For the other agent:** new channels `ext:list`, `ext:remove`,
-  `chrome:overlay`. Any future dropdown in the chrome UI must call
-  `setOverlay(true)` or it will be clipped to 84px.
+  `panel:toggle|close|resize|origin`. `.gitattributes` normalises to LF. Model
+  any new dropdown on `src/main/panel.js` — never grow the chrome view.
 
 ### 2026-08-21 — Claude Code — Browser shell: chrome UI, theme, CWS extensions
 - **Status / Branch:** merged · `main`
