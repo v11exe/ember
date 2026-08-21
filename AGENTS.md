@@ -207,6 +207,16 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
+### 2026-08-21 — Codex — Geometry-correct upload Liquid Glass
+- **Status / Branch:** in-progress · `fix/upload-liquid-glass-optics`
+- **Touches:** `AGENTS.md`, `agent.md`, `src/main/upload-panel.js`,
+  `src/renderer/pages/{upload.html,upload.css,upload.js,upload-optics.js}`,
+  `test/{upload-panel,upload-optics,renderer-contracts}.test.js`
+- **Summary:** Replace the stretched upload-panel displacement map with a
+  generated edge-only map and make the hover lens sample the raw captured page.
+- **For the other agent:** upload action payloads and panel geometry are
+  unchanged; captured upload backdrops now request 40px edge-clipped bleed.
+
 ### 2026-08-21 — Codex — Repair meteor icon presentation
 - **Status / Branch:** merged · `fix/meteor-icon-presentation`
 - **Touches:** `AGENTS.md`, `src/main/index.js`, `src/renderer/{brand}.js`, `src/renderer/assets/ember-app-icon.png`, `test/{brand,renderer-contracts}.test.js`
