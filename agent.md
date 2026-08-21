@@ -76,6 +76,12 @@
 - Link/image/selection/editing/spelling/navigation/save/print/source/inspect
   commands route to real WebContents, clipboard, dialog, and tab operations.
 - Disabled states come from Chromium; arrows, Home/End, Enter, and Escape work.
+- In progress: replace the generic blur with the canonical Master.dev dual SVG
+  displacement filters. The outer shell and selector keep distinct fixed WebP
+  maps; a 40 px capture bleed will preserve texture around menu boundaries.
+- In progress: one persistent selector lens will share cached row geometry and
+  active-item state across pointer and keyboard input, with rapid retargeting and
+  no queued animations. Separators and disabled rows are never destinations.
 
 ## Bookmarks
 

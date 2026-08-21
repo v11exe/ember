@@ -207,13 +207,17 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
-### 2026-08-21 — Codex — Ember branding, glass menus, uploads, and popup hardening
+### 2026-08-21 — Codex — Ember exact-map liquid-glass context menu
 - **Status / Branch:** in-progress · `feat/ember-upgrade`
-- **Touches:** `AGENTS.md`, `agent.md`, `src/{main,renderer,shared}/*`, `scripts/*`, `test/*`
-- **Summary:** Preserve current chrome while adding supplied branding, bookmarks,
-  real upload recents/clipboard selection, glass context menus, and safe popups.
-- **For the other agent:** upload/menu IPC and two bounded panel views are now
-  implemented; rebase and coordinate before editing the listed files.
+- **Touches:** `AGENTS.md`, `agent.md`, `src/main/{floating-panel,context-menu-panel}.js`,
+  `src/renderer/pages/context-menu.*`, `src/renderer/assets/*`, `scripts/capture-ui.js`,
+  `test/{floating-panel,renderer-contracts,context-menu-panel}.test.js`
+- **Summary:** Replace the context menu's generic blur with the exact Master.dev
+  fixed-map `switcher`/`toggler` optical technique, bleed-aligned capture, and one
+  shared pointer/keyboard selector lens while retaining every existing command.
+- **For the other agent:** context-menu backdrop state and renderer structure are
+  changing; upload overlay contracts remain unchanged. Coordinate before editing
+  the listed files.
 
 ### 2026-08-21 — Claude Code — README stays minimal
 - **Status / Branch:** merged · `main`
