@@ -6,7 +6,7 @@ const { app, BrowserWindow, ipcMain, nativeImage } = require('electron')
 const { registerSchemePrivileges, handleInternalPages } = require('../src/main/protocol')
 const { IPC } = require('../src/shared/ipc')
 const { buildContextMenu } = require('../src/main/context-menu-model')
-const { MENU_WIDTH, menuHeight } = require('../src/main/context-menu-panel')
+const { menuSize } = require('../src/main/context-menu-panel')
 
 registerSchemePrivileges()
 
@@ -254,7 +254,7 @@ app.whenReady().then(async () => {
     isEditable: true, selectionText: 'Ember', misspelledWord: 'Embr', dictionarySuggestions: ['Ember'],
     editFlags: { canUndo: true, canRedo: false, canCut: true, canCopy: true, canPaste: true, canDelete: true, canSelectAll: true },
   }, { canGoBack: true, canGoForward: false })
-  const contextSize = { width: MENU_WIDTH, height: Math.min(menuHeight(contextItems), 540) }
+  const contextSize = menuSize(contextItems)
   const backdropRect = { x: -40, y: -40, width: contextSize.width + 80, height: contextSize.height + 80 }
   const contextState = (contextBackdrop) => ({
     kind: 'context-menu', items: contextItems, backdropRect,

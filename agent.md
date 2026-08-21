@@ -99,9 +99,14 @@
 - Context captures include 40 CSS px of edge-clipped bleed. `backdropRect` stores
   exact overlay offsets, DIP size, and available native pixel size; resize layout
   recaptures without reopening or stealing focus. No cover fit or visual scaling.
-- The menu is 276 px wide with 34 px rows, 9 px separators, 6 px shell padding,
-  and a 16 px outer radius—compact desktop-menu proportions without changing
-  the command set or viewport clamp.
+- The menu is 254 px wide with 35 px rows, 9 px separators, 6 px shell padding,
+  and a 16 px outer radius. It caps at 364 px high (matching the supplied
+  desktop-menu reference) and scrolls richer command sets without changing
+  their command set or viewport clamp.
+- Each presentation carries an incrementing opening token. The shell begins at
+  96% scale and -5 px, then settles over 220 ms with a macOS-style ease; a
+  relayout reuses its token and therefore never restarts the motion. Reduced
+  motion resolves both this and selector travel in 1 ms.
 - One persistent selector caches row rectangles and retargets CSS transform
   properties in 170 ms with `cubic-bezier(.5,0,.1,1)`. Pointer-opened menus begin
   with it hidden; first hover or keyboard navigation reveals the same controller.
@@ -178,7 +183,7 @@
   extensions/popups, bookmarks, and four window sizes in isolated userData.
 - `node --check`: all project JavaScript files parse.
 - Visual captures: new tab/chrome at wide, medium, compact; upload at 650×430
-  and 596×312; 276×540 context menu at rest and first/middle/bottom selector
+  and 596×312; 254×364 capped context menu at rest and first/middle/bottom selector
   positions over fine grids, saturated green/yellow/orange/red, black/white
   type contrast, and photography. All captures report primary optics active,
   exact viewport dimensions, and no document overflow.

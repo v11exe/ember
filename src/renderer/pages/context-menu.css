@@ -9,6 +9,7 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: transparen
 .filter-definitions { position: absolute; width: 0; height: 0; pointer-events: none; }
 .menu-shell {
   --motion: 170ms cubic-bezier(.5, 0, .1, 1);
+  --open-motion: 220ms cubic-bezier(.16, 1, .3, 1);
   --backdrop-x: 0px;
   --backdrop-y: 0px;
   --backdrop-width: 100%;
@@ -20,7 +21,13 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: transparen
     inset -2px -2px 0 -2px rgba(255, 255, 255, .52),
     inset 0 -1px 3px rgba(0, 0, 0, .2),
     0 9px 24px rgba(0, 0, 0, .24);
-  isolation: isolate;
+  isolation: isolate; opacity: 0;
+  transform: translate3d(0, -5px, 0) scale(.96); transform-origin: 50% 0;
+  transition: opacity var(--open-motion), transform var(--open-motion);
+  will-change: opacity, transform;
+}
+.menu-shell[data-opening="true"] {
+  opacity: 1; transform: translate3d(0, 0, 0) scale(1);
 }
 .menu-shell::after {
   content: ''; position: absolute; inset: 0; z-index: 3; pointer-events: none;
@@ -89,7 +96,7 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: transparen
 #context-menu::-webkit-scrollbar { width: 4px; }
 #context-menu::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .14); border-radius: 4px; }
 .menu-item {
-  width: 100%; height: 34px; padding: 0 9px; border: 0; border-radius: 17px;
+  width: 100%; height: 35px; padding: 0 9px; border: 0; border-radius: 17.5px;
   display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 8px;
   color: var(--text); background: transparent; font: 400 13px/1 var(--font); text-align: left;
   outline: none; cursor: default;
@@ -109,7 +116,7 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: transparen
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .menu-shell { --motion: 1ms linear; }
+  .menu-shell { --motion: 1ms linear; --open-motion: 1ms linear; }
 }
 @supports not (backdrop-filter: url(#switcher)) {
   .menu-shell[data-optics-ready="true"] .material-tint { backdrop-filter: blur(1.4px) saturate(1.04); }

@@ -15,6 +15,7 @@ const glyphs = {
 }
 
 let buttons = []
+let openSequence = Symbol('unopened')
 
 function glyphFor(id) {
   if (id.startsWith('spell:')) return '✓'
@@ -44,6 +45,13 @@ function setBackdrop(state) {
 }
 
 function render(state) {
+  if (state.openSequence !== openSequence) {
+    openSequence = state.openSequence
+    shell.dataset.opening = 'false'
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (state.openSequence === openSequence) shell.dataset.opening = 'true'
+    }))
+  }
   setBackdrop(state)
   const nodes = state.items.map((item) => {
     if (item.type === 'separator') {
