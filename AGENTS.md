@@ -29,12 +29,14 @@ and exits non-zero on failure — that is the pre-push gate.
 src/main/index.js        app bootstrap, BaseWindow, IPC handlers, lifecycle
 src/main/tabs.js         TabManager — create/close/select/layout, CHROME_HEIGHT=84
 src/main/extensions.js   Chrome Web Store install + chrome.* APIs + "Add to Ember"
+src/main/panel.js        extensions dropdown, its own WebContentsView
 src/main/protocol.js     ember:// scheme, serves src/renderer/pages flat
 src/main/page-preload.js sandboxed preload; ember:// pages only, nav verbs only
 src/renderer/preload.js  chrome UI bridge (contextBridge "ember"), browser-action
 src/renderer/chrome.*    tab strip, toolbar, extensions panel (html/css/js)
 src/renderer/theme.css   the palette — every colour is defined here, once
-src/renderer/pages/      internal pages, flat dir: newtab.html/.css/.js
+src/renderer/panel-preload.js  panel bridge + injectBrowserAction()
+src/renderer/pages/      internal pages, flat: newtab.*, extensions.*
 src/shared/ipc.js        channel names, SEARCH_URL, NEW_TAB_URL
 src/shared/urls.js       toNavigationUrl() — URL vs Google search
 scripts/smoke.js         boot check
@@ -181,6 +183,17 @@ Newest at top. One entry per branch, updated in place. Status:
 - **For the other agent:** new IPC channels, renamed files, contracts they must
   implement against. `none` if none.
 ```
+
+### 2026-08-21 — Claude Code — Panel fixes: own view, click-to-open, popup side
+- **Status / Branch:** merged · `main`
+- **Touches:** `src/main/{index,tabs,panel}.js`, `src/renderer/{chrome.*,preload,panel-preload}`, `src/renderer/pages/extensions.*`, `src/shared/ipc.js`, `.gitattributes`
+- **Summary:** Panel moved into its own WebContentsView (was blacking out the
+  page), row icons became the launch buttons (the separate action row is gone),
+  and popups now open leftward so they stay on screen.
+- **For the other agent:** `.gitattributes` now normalises to LF. New channels
+  `panel:toggle|close|resize|origin`; `chrome:overlay` and
+  `TabManager.setOverlay` are gone. Any dropdown you add should follow
+  `src/main/panel.js`, not grow the chrome view.
 
 ### 2026-08-21 — Claude Code — Extensions panel (jigsaw button)
 - **Status / Branch:** merged · `main`

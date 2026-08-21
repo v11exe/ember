@@ -76,6 +76,8 @@ class TabManager {
     wc.on('did-navigate-in-page', sync)
     wc.on('page-favicon-updated', (_e, icons) => { tab.favicon = icons[0] || null; this.emit() })
     wc.on('destroyed', () => this.#forget(tab.id))
+    // clicking back into the page dismisses any open chrome dropdown
+    wc.on('focus', () => this.onPageFocus?.())
 
     // target=_blank and window.open land in a new tab, never a popup window
     wc.setWindowOpenHandler(({ url }) => {
@@ -132,7 +134,7 @@ class TabManager {
 
   layout() {
     const { width, height } = this.win.getContentBounds()
-    this.chromeView.setBounds({ x: 0, y: 0, width, height: this.overlay ? height : CHROME_HEIGHT })
+    this.chromeView.setBounds({ x: 0, y: 0, width, height: CHROME_HEIGHT })
     const active = this.active
     if (active) {
       active.view.setBounds({ x: 0, y: CHROME_HEIGHT, width, height: Math.max(0, height - CHROME_HEIGHT) })

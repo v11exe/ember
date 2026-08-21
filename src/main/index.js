@@ -6,6 +6,7 @@ const { toNavigationUrl } = require('../shared/urls')
 const { TabManager, CHROME_HEIGHT } = require('./tabs')
 const { setupExtensions, applyStoreRebranding, listExtensions, removeExtension } = require('./extensions')
 const { registerSchemePrivileges, handleInternalPages } = require('./protocol')
+const { ExtensionPanel } = require('./panel')
 
 registerSchemePrivileges()
 
@@ -36,7 +37,9 @@ function createBrowser() {
   chrome.webContents.loadFile(path.join(__dirname, '..', 'renderer', 'chrome.html'))
 
   const tabs = new TabManager(win, chrome)
-  browser = { win, chrome, tabs }
+  const panel = new ExtensionPanel(win)
+  browser = { win, chrome, tabs, panel }
+  tabs.onPageFocus = () => panel.hide()
 
   const { extensions } = setupExtensions(session.defaultSession, {
     createTab: (url, opts) => tabs.create(url, opts),
@@ -58,7 +61,7 @@ function createBrowser() {
     tabs.layout()
   })
 
-  win.on('resize', () => tabs.layout())
+  win.on('resize', () => { tabs.layout(); panel.layout() })
   win.on('closed', () => { browser = null })
   return browser
 }
@@ -73,7 +76,7 @@ ipcMain.on(IPC.NAV_BACK, () => activeTabs()?.back())
 ipcMain.on(IPC.NAV_FORWARD, () => activeTabs()?.forward())
 ipcMain.on(IPC.NAV_RELOAD, () => activeTabs()?.reload())
 ipcMain.on(IPC.NAV_STOP, () => activeTabs()?.stop())
-ipcMain.on(IPC.EXT_OPEN_STORE, () => activeTabs()?.create(WEB_STORE_URL))
+ipcMain.on(IPC.EXT_OPEN_STORE, () => { browser?.panel.hide(); activeTabs()?.create(WEB_STORE_URL) })
 ipcMain.handle(IPC.EXT_LIST, () => listExtensions(session.defaultSession))
 ipcMain.handle(IPC.EXT_REMOVE, async (_e, id) => {
   const ok = await removeExtension(session.defaultSession, id)
@@ -83,7 +86,9 @@ ipcMain.handle(IPC.EXT_REMOVE, async (_e, id) => {
 // The chrome view is 84px tall, so a dropdown would be clipped. While a panel
 // is open the view covers the window and paints its own backdrop; collapsing
 // hands clicks back to the page.
-ipcMain.on(IPC.CHROME_OVERLAY, (_e, open) => browser?.tabs.setOverlay(open))
+ipcMain.on(IPC.PANEL_TOGGLE, () => browser?.panel.toggle())
+ipcMain.on(IPC.PANEL_CLOSE, () => browser?.panel.hide())
+ipcMain.on(IPC.PANEL_RESIZE, (_e, height) => browser?.panel.setHeight(height))
 
 ipcMain.on(IPC.NAV_GO, (_e, input) => {
   const url = toNavigationUrl(input)

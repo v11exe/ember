@@ -1,0 +1,6 @@
+# Keep line endings LF in the repo so string edits and diffs behave the same
+# for both agents on Windows. Git converts on checkout as needed.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary

@@ -1,0 +1,73 @@
+:root {
+  --ember-deep:#E8410F; --ember-core:#FF5A1F; --ember-mid:#FF8A1F;
+  --ember-warm:#FFA62B; --ember-hot:#FFC93C; --ember-glow:#FBE6A2;
+  --surface:#141417; --surface-2:#1C1C21; --surface-3:#26262D; --border:#2A2A31;
+  --text:#EDEDED; --text-dim:#9A9AA5; --text-faint:#63636E;
+  --font: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: transparent; }
+body { font-family: var(--font); color: var(--text); user-select: none; overflow: hidden; }
+
+.panel {
+  height: 100%;
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 44px rgba(0,0,0,.62), 0 0 0 1px rgba(255,138,31,.10);
+  overflow: hidden;
+}
+
+.panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 13px;
+  font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+.panel-store {
+  border: 0; border-radius: 999px; padding: 5px 11px;
+  background: linear-gradient(95deg, var(--ember-deep), var(--ember-mid) 60%, var(--ember-hot));
+  color: #17110A; font: 600 11px/1 var(--font);
+  cursor: default;
+}
+.panel-store:hover { filter: brightness(1.12); }
+
+.panel-list { overflow-y: auto; padding: 6px; }
+.panel-list::-webkit-scrollbar { width: 8px; }
+.panel-list::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 6px; }
+
+.ext-row { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 9px; }
+.ext-row:hover { background: var(--surface-2); }
+
+/* the icon is the button — clicking it opens the extension */
+.ext-launch {
+  width: 32px; height: 32px; flex: none;
+  border: 0; border-radius: 8px; padding: 0;
+  background: var(--surface-3);
+  display: grid; place-items: center;
+  cursor: default;
+  transition: background .12s ease, box-shadow .12s ease, transform .1s ease;
+}
+.ext-launch:hover { background: var(--surface-3); box-shadow: 0 0 0 2px rgba(255,138,31,.55); }
+.ext-launch:active { transform: scale(.94); }
+.ext-launch img { width: 20px; height: 20px; object-fit: contain; }
+.ext-launch.fallback {
+  background: linear-gradient(140deg, rgba(232,65,15,.30), rgba(255,201,60,.18));
+  color: var(--ember-warm); font: 700 13px/1 var(--font);
+}
+
+.ext-meta { flex: 1; min-width: 0; }
+.ext-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ext-version { font-size: 11px; color: var(--text-faint); }
+
+.ext-remove {
+  flex: none; border: 1px solid var(--border); border-radius: 7px;
+  padding: 4px 9px; background: transparent;
+  color: var(--text-dim); font: 500 11px/1 var(--font); cursor: default;
+}
+.ext-remove:hover { border-color: var(--ember-deep); background: var(--ember-deep); color: #fff; }
+
+.ext-empty { padding: 20px 16px; text-align: center; color: var(--text-faint); font-size: 12px; line-height: 1.55; }
+.ext-empty strong { display: block; color: var(--text-dim); font-size: 13px; margin-bottom: 5px; }

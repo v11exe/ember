@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Extensions</title>
+  <link rel="stylesheet" href="/extensions.css" />
+</head>
+<body>
+  <div class="panel" id="panel">
+    <div class="panel-head">
+      <span>Extensions</span>
+      <button class="panel-store" id="panel-store">Get more</button>
+    </div>
+    <div class="panel-list" id="ext-list"></div>
+  </div>
+  <!-- Hidden: never displayed, but defining the element keeps the browserAction
+       API warm and gives us a fallback anchor if activate() is unavailable. -->
+  <browser-action-list id="actions" hidden></browser-action-list>
+  <script src="/extensions.js"></script>
+</body>
+</html>

@@ -17,10 +17,13 @@ const IPC = {
   EXT_OPEN_STORE: 'ext:open-store',
   EXT_LIST: 'ext:list',
   EXT_REMOVE: 'ext:remove',
-  CHROME_OVERLAY: 'chrome:overlay',
+  PANEL_TOGGLE: 'panel:toggle',
+  PANEL_CLOSE: 'panel:close',
+  PANEL_RESIZE: 'panel:resize',
 
   // main -> renderer
   STATE: 'browser:state',
+  PANEL_ORIGIN: 'panel:origin', // panel view offset, for popup anchoring
 }
 
 // Where the omnibox sends anything that isn't a URL.
