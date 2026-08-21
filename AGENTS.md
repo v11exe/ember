@@ -208,14 +208,15 @@ Newest at top. One entry per branch, updated in place. Status:
 ```
 
 ### 2026-08-21 — Codex — Ember exact-map liquid-glass context menu
-- **Status / Branch:** in-progress · `feat/ember-upgrade`
+- **Status / Branch:** pushed · `feat/ember-upgrade`
 - **Touches:** `AGENTS.md`, `agent.md`, `src/main/{index,floating-panel,context-menu-panel}.js`,
   `src/renderer/pages/{context-menu,context-menu-lens}.*`, `src/renderer/assets/*`,
   `src/main/protocol.js`, `scripts/{capture-ui,sync-liquid-glass-maps}.js`,
   `test/{floating-panel,renderer-contracts,context-menu-panel,context-menu-lens}.test.js`
 - **Summary:** Replace the context menu's generic blur with the exact Master.dev
   fixed-map `switcher`/`toggler` optical technique, bleed-aligned capture, and one
-  shared pointer/keyboard selector lens while retaining every existing command.
+  shared pointer/keyboard selector lens. A neutral wash lets captured page colour
+  drive the translucent surface while retaining every existing command.
 - **For the other agent:** context-menu backdrop state and renderer structure are
   changing; upload overlay contracts remain unchanged. Coordinate before editing
   the listed files.
