@@ -209,7 +209,7 @@ Newest at top. One entry per branch, updated in place. Status:
 
 ### 2026-08-21 — Codex — Ember exact-map liquid-glass context menu
 - **Status / Branch:** in-progress · `feat/ember-upgrade`
-- **Touches:** `AGENTS.md`, `agent.md`, `src/main/{floating-panel,context-menu-panel}.js`,
+- **Touches:** `AGENTS.md`, `agent.md`, `src/main/{index,floating-panel,context-menu-panel}.js`,
   `src/renderer/pages/{context-menu,context-menu-lens}.*`, `src/renderer/assets/*`,
   `src/main/protocol.js`, `scripts/{capture-ui,sync-liquid-glass-maps}.js`,
   `test/{floating-panel,renderer-contracts,context-menu-panel,context-menu-lens}.test.js`
