@@ -22,3 +22,8 @@ test('ships the supplied logo files byte-for-byte instead of a generated approxi
   assert.equal(digest('ember-logo.png'), 'F8E86C0B1601750A22FDD5A9520A4A6D75DBB942C5C397C8C2488036D68B4F66')
   assert.equal(digest('ember-icon.png'), '514FD2830E7F8BA53F6105188AC635FDD6B91819CFBFE9619B315C34078BAF2D')
 })
+
+test('uses the supplied icon for the native Ember window too', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'index.js'), 'utf8')
+  assert.match(source, /icon: path\.join\(__dirname, '\.\.', 'renderer', 'assets', 'ember-icon\.png'\)/)
+})

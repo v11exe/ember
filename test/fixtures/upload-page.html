@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Ember upload and menu fixture</title></head>
+<body style="margin:0;min-height:100vh;background:#261712;color:#fff;font:16px sans-serif">
+  <main style="padding:36px">
+    <h1>Upload fixture</h1>
+    <label>One image <input id="single" type="file" accept="image/png"></label>
+    <label>Many images <input id="multiple" type="file" accept="image/*" multiple></label>
+    <label>Directory <input id="directory" type="file" webkitdirectory></label>
+    <p><a id="fixture-link" href="ember://newtab">Ember target link</a></p>
+    <textarea id="editor">Embr editable text</textarea>
+    <output id="result"></output>
+  </main>
+  <script>
+    const report = async (event) => {
+      const files = [...event.target.files]
+      const bytes = files[0] ? [...new Uint8Array(await files[0].arrayBuffer()).slice(0, 8)] : []
+      document.body.dataset.upload = JSON.stringify({
+        names: files.map((file) => file.name),
+        sizes: files.map((file) => file.size),
+        types: files.map((file) => file.type),
+        bytes,
+      })
+    }
+    document.getElementById('single').addEventListener('change', report)
+    document.getElementById('multiple').addEventListener('change', report)
+    document.getElementById('single').addEventListener('cancel', () => {
+      document.body.dataset.canceled = String(Number(document.body.dataset.canceled || 0) + 1)
+    })
+  </script>
+</body>
+</html>

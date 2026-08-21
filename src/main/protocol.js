@@ -9,6 +9,7 @@ const RENDERER = path.join(__dirname, '..', 'renderer')
 const PAGES = path.join(RENDERER, 'pages')
 const SHARED_ASSETS = new Map([
   ['/theme.css', path.join(RENDERER, 'theme.css')],
+  ['/glass.css', path.join(RENDERER, 'glass.css')],
   ['/brand.js', path.join(RENDERER, 'brand.js')],
   ['/brand.css', path.join(RENDERER, 'brand.css')],
   ['/assets/ember-icon.png', path.join(RENDERER, 'assets', 'ember-icon.png')],

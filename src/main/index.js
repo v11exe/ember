@@ -1,6 +1,7 @@
 const path = require('node:path')
 const fs = require('node:fs/promises')
-const { app, BaseWindow, WebContentsView, dialog, ipcMain, session, shell } = require('electron')
+const { pathToFileURL } = require('node:url')
+const { app, BaseWindow, WebContentsView, clipboard, dialog, ipcMain, nativeImage, session, shell } = require('electron')
 
 const { IPC, NEW_TAB_URL, WEB_STORE_URL } = require('../shared/ipc')
 const { toNavigationUrl } = require('../shared/urls')
@@ -10,10 +11,14 @@ const { registerSchemePrivileges, handleInternalPages } = require('./protocol')
 const { ExtensionPanel } = require('./panel')
 const { BookmarkStore } = require('./bookmarks')
 const { PopupPositioner } = require('./popup-positioner')
+const { RecentUploadStore } = require('./recent-uploads')
+const { UploadPanel } = require('./upload-panel')
+const { ContextMenuPanel } = require('./context-menu-panel')
 
+if (process.env.EMBER_SMOKE_USER_DATA) app.setPath('userData', process.env.EMBER_SMOKE_USER_DATA)
 registerSchemePrivileges()
 
-/** @type {{ win: BaseWindow, chrome: WebContentsView, tabs: TabManager }|null} */
+/** @type {{ win: BaseWindow, chrome: WebContentsView, tabs: TabManager, uploadPanel: UploadPanel, contextMenu: ContextMenuPanel }|null} */
 let browser = null
 
 function broadcastBookmarks(snapshot) {
@@ -32,6 +37,7 @@ function createBrowser() {
     minWidth: 620,
     minHeight: 420,
     frame: false,
+    icon: path.join(__dirname, '..', 'renderer', 'assets', 'ember-icon.png'),
     backgroundColor: '#000000',
     title: 'Ember',
   })
@@ -51,8 +57,44 @@ function createBrowser() {
   const tabs = new TabManager(win, chrome)
   const panel = new ExtensionPanel(win)
   const bookmarks = new BookmarkStore(path.join(app.getPath('userData'), 'bookmarks.json'))
-  browser = { win, chrome, tabs, panel, bookmarks, popupPositioner: null }
-  tabs.onPageFocus = () => panel.hide()
+  const recentUploads = new RecentUploadStore(path.join(app.getPath('userData'), 'recent-uploads.json'))
+  const recentUploadsReady = recentUploads.load().catch((error) => {
+    console.warn('[ember] recent uploads could not be loaded:', error.message)
+    return []
+  })
+  const smokeUploadPaths = [
+    path.join(__dirname, '..', 'renderer', 'assets', 'ember-logo.png'),
+    path.join(__dirname, '..', 'renderer', 'assets', 'ember-icon.png'),
+  ]
+  const smokeClipboard = process.env.EMBER_SMOKE ? {
+    image: nativeImage.createFromPath(smokeUploadPaths[1]),
+    readImage() { return this.image },
+  } : null
+  const uploadPanel = new UploadPanel(win, {
+    recents: recentUploads,
+    dialog: process.env.EMBER_SMOKE ? {
+      showOpenDialog: async () => ({ canceled: false, filePaths: smokeUploadPaths }),
+    } : dialog,
+    clipboard: smokeClipboard || clipboard,
+    nativeImage,
+  })
+  const contextMenu = new ContextMenuPanel(win, {
+    createTab: (url) => tabs.create(url), clipboard, dialog,
+  })
+  browser = {
+    win, chrome, tabs, panel, bookmarks, recentUploads, recentUploadsReady,
+    uploadPanel, contextMenu, smokeClipboard, smokeUploadPaths, popupPositioner: null,
+  }
+  tabs.onPageFocus = () => { panel.hide(); uploadPanel.cancel(); contextMenu.hide() }
+  tabs.onSelectionChange = () => { panel.hide(); uploadPanel.cancel(); contextMenu.hide() }
+  tabs.onContextMenu = (tab, event, params) => {
+    event.preventDefault()
+    panel.hide()
+    uploadPanel.cancel()
+    contextMenu.open({ tab, params }).catch((error) => {
+      console.error('[ember] context menu could not open:', error.message)
+    })
+  }
   panel.onVisibilityChange = (open) => {
     if (!chrome.webContents.isDestroyed()) chrome.webContents.send(IPC.PANEL_CHANGED, open)
   }
@@ -86,7 +128,9 @@ function createBrowser() {
     tabs.layout()
   })
 
-  win.on('resize', () => { tabs.layout(); panel.layout(); browser?.popupPositioner?.layout() })
+  win.on('resize', () => {
+    tabs.layout(); panel.layout(); uploadPanel.layout(); contextMenu.layout(); browser?.popupPositioner?.layout()
+  })
   win.on('closed', () => { browser = null })
   return browser
 }
@@ -116,6 +160,44 @@ ipcMain.on(IPC.PANEL_CLOSE, () => browser?.panel.hide())
 ipcMain.on(IPC.PANEL_RESIZE, (_e, height) => browser?.panel.setHeight(height))
 ipcMain.on(IPC.PANEL_ANCHOR, (_e, rect) => {
   if (browser?.panel) browser.panel.popupAnchor = rect
+})
+
+ipcMain.on(IPC.UPLOAD_REQUEST, async (event, request) => {
+  const current = browser
+  const tab = current?.tabs.tabs.find((candidate) => candidate.webContents === event.sender)
+  if (!current || !tab || !request?.requestId) return
+  current.panel.hide()
+  await current.recentUploadsReady
+  try {
+    await current.uploadPanel.openRequest({ tab, frame: event.senderFrame, request: {
+      requestId: String(request.requestId),
+      accept: String(request.accept || ''),
+      multiple: !!request.multiple,
+    } })
+  } catch (error) {
+    console.error('[ember] upload picker could not open:', error.message)
+    if (!event.senderFrame.isDestroyed()) {
+      event.senderFrame.send(IPC.UPLOAD_RESULT, { requestId: String(request.requestId), canceled: true })
+    }
+  }
+})
+ipcMain.on(IPC.OVERLAY_ACTION, (event, action, payload) => {
+  const current = browser
+  if (!current) return
+  const command = String(action || '')
+  if (current.uploadPanel.isSender(event.sender)) {
+    current.uploadPanel.handleAction(event.sender, command, payload)
+    return
+  }
+  if (current.contextMenu.isSender(event.sender)) {
+    current.contextMenu.handleAction(event.sender, command).catch((error) => {
+      console.error('[ember] context menu action failed:', error.message)
+    })
+  }
+})
+ipcMain.on(IPC.OVERLAY_CLOSE, (event) => {
+  if (browser?.uploadPanel.isSender(event.sender)) browser.uploadPanel.cancel()
+  else if (browser?.contextMenu.isSender(event.sender)) browser.contextMenu.hide()
 })
 
 ipcMain.handle(IPC.BOOKMARKS_GET, () => browser?.bookmarks.snapshot() || { version: 1, visible: false, items: [] })
@@ -181,6 +263,15 @@ app.whenReady().then(() => {
     setTimeout(async () => {
       const checks = []
       try {
+        const waitFor = async (probe, timeout = 3000) => {
+          const started = Date.now()
+          while (Date.now() - started < timeout) {
+            const value = await probe()
+            if (value) return value
+            await new Promise((resolve) => setTimeout(resolve, 25))
+          }
+          return null
+        }
         const active = browser?.tabs.active
         const testExtensions = await browser?.testExtensionsReady
         const fixtureIds = testExtensions.map((extension) => extension.id)
@@ -234,6 +325,71 @@ app.whenReady().then(() => {
             && popupBounds.y + popupBounds.height <= windowBounds.y + windowBounds.height])
         }
 
+        await browser.recentUploadsReady
+        await browser.recentUploads.add(browser.smokeUploadPaths)
+        const uploadFixture = path.join(__dirname, '..', '..', 'test', 'fixtures', 'upload-page.html')
+        await active.webContents.loadURL(pathToFileURL(uploadFixture).href)
+        const clickInput = (id) => active.webContents.executeJavaScript(`document.getElementById(${JSON.stringify(id)}).click()`)
+
+        await clickInput('single')
+        const uploadOpened = await waitFor(() => browser.uploadPanel.overlay.open && browser.uploadPanel.overlay.loaded)
+        checks.push(['real file input opens Ember picker', !!uploadOpened && browser.uploadPanel.overlay.view.getVisible()])
+        checks.push(['picker shows real recent paths', browser.uploadPanel.overlay.state?.recents.some((item) => item.name === 'ember-logo.png')])
+        checks.push(['picker shows live clipboard image', !!browser.uploadPanel.overlay.state?.clipboard])
+        await browser.uploadPanel.overlay.view.webContents.executeJavaScript("document.getElementById('clipboard-slot').click()")
+        const clipboardUpload = await waitFor(async () => {
+          const value = await active.webContents.executeJavaScript('document.body.dataset.upload || null')
+          return value && JSON.parse(value)
+        })
+        checks.push(['clipboard tile installs a real PNG File', clipboardUpload?.names[0]?.startsWith('clipboard-')
+          && JSON.stringify(clipboardUpload.bytes) === JSON.stringify([137, 80, 78, 71, 13, 10, 26, 10])])
+
+        await active.webContents.executeJavaScript('delete document.body.dataset.upload')
+        await clickInput('single')
+        await waitFor(() => browser.uploadPanel.overlay.open)
+        await browser.uploadPanel.overlay.view.webContents.executeJavaScript(
+          "[...document.querySelectorAll('.recent-file')].find((item) => item.textContent.includes('ember-logo.png')).click()"
+        )
+        const recentUpload = await waitFor(async () => {
+          const value = await active.webContents.executeJavaScript('document.body.dataset.upload || null')
+          return value && JSON.parse(value)
+        })
+        checks.push(['recent tile returns source bytes and metadata', recentUpload?.names[0] === 'ember-logo.png'
+          && recentUpload.sizes[0] === (await fs.stat(browser.smokeUploadPaths[0])).size])
+
+        await active.webContents.executeJavaScript('delete document.body.dataset.upload')
+        await clickInput('multiple')
+        await waitFor(() => browser.uploadPanel.overlay.open)
+        await browser.uploadPanel.overlay.view.webContents.executeJavaScript("document.getElementById('show-all-files').click()")
+        const multipleUpload = await waitFor(async () => {
+          const value = await active.webContents.executeJavaScript('document.body.dataset.upload || null')
+          return value && JSON.parse(value)
+        })
+        checks.push(['Show all files supports a real multiple selection', multipleUpload?.names.length === 2
+          && multipleUpload.names.includes('ember-logo.png') && multipleUpload.names.includes('ember-icon.png')])
+
+        browser.smokeClipboard.image = nativeImage.createEmpty()
+        await clickInput('single')
+        await waitFor(() => browser.uploadPanel.overlay.open)
+        const clipboardAbsent = await browser.uploadPanel.overlay.view.webContents.executeJavaScript(
+          "document.getElementById('clipboard-section').hidden"
+        )
+        checks.push(['clipboard tile disappears when no image exists', clipboardAbsent && !browser.uploadPanel.overlay.state.clipboard])
+        await browser.uploadPanel.overlay.view.webContents.executeJavaScript(
+          "window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))"
+        )
+        const uploadCanceled = await waitFor(() => !browser.uploadPanel.overlay.open)
+        const cancelCount = await active.webContents.executeJavaScript("document.body.dataset.canceled")
+        checks.push(['picker Escape cancels without selecting', !!uploadCanceled && cancelCount === '1'])
+        browser.smokeClipboard.image = nativeImage.createFromPath(browser.smokeUploadPaths[1])
+
+        await browser.chrome.webContents.executeJavaScript("document.getElementById('ext-btn').click()")
+        await waitFor(() => browser.panel.open)
+        await browser.panel.view.webContents.executeJavaScript(
+          `document.querySelector(${JSON.stringify(`.ext-launch[data-extension-id="${fixtureIds[1]}"]`)}).click()`
+        )
+        await waitFor(() => browser.popupPositioner.popup?.extensionId === fixtureIds[1])
+
         const originalBookmarks = browser.bookmarks.snapshot()
         broadcastBookmarks({ ...originalBookmarks, visible: true })
         const bookmarksShown = await browser.chrome.webContents.executeJavaScript(
@@ -280,6 +436,50 @@ app.whenReady().then(() => {
           "document.getElementById('ext-btn').getAttribute('aria-expanded') === 'false'"
         )
         checks.push(['extensions button reports panel closed', panelCollapsed])
+
+        browser.tabs.select(active.id)
+        active.webContents.focus()
+        const rightClick = async (x, y) => {
+          active.webContents.sendInputEvent({ type: 'mouseDown', button: 'right', x, y, clickCount: 1 })
+          active.webContents.sendInputEvent({ type: 'mouseUp', button: 'right', x, y, clickCount: 1 })
+          return waitFor(() => browser.contextMenu.overlay.open)
+        }
+        let cornersClamped = true
+        const pageBounds = active.view.getBounds()
+        for (const [x, y] of [[1, 1], [pageBounds.width - 2, 1], [1, pageBounds.height - 2], [pageBounds.width - 2, pageBounds.height - 2]]) {
+          await rightClick(x, y)
+          const bounds = browser.contextMenu.overlay.bounds
+          cornersClamped = cornersClamped && bounds.x >= pageBounds.x && bounds.y >= pageBounds.y
+            && bounds.x + bounds.width <= pageBounds.x + pageBounds.width
+            && bounds.y + bounds.height <= pageBounds.y + pageBounds.height
+          browser.contextMenu.hide()
+          active.webContents.focus()
+        }
+        checks.push(['context menu clamps at all four page corners', cornersClamped])
+
+        await rightClick(20, 20)
+        const contextState = browser.contextMenu.overlay.state
+        checks.push(['right-click opens custom glass commands', contextState?.kind === 'context-menu'
+          && contextState.items.some((item) => item.id === 'reload') && !!contextState.backdrop])
+        await browser.contextMenu.overlay.view.webContents.executeJavaScript(
+          "window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))"
+        )
+        checks.push(['context menu Escape closes', !!await waitFor(() => !browser.contextMenu.overlay.open)])
+
+        const linkPoint = await active.webContents.executeJavaScript(`(() => {
+          const rect = document.getElementById('fixture-link').getBoundingClientRect()
+          return { x: Math.round(rect.left + 4), y: Math.round(rect.top + 4) }
+        })()`)
+        await rightClick(linkPoint.x, linkPoint.y)
+        const linkActionVisible = browser.contextMenu.overlay.state?.items.some((item) => item.id === 'open-link')
+        const previousTabCount = browser.tabs.tabs.length
+        if (linkActionVisible) {
+          await browser.contextMenu.overlay.view.webContents.executeJavaScript(
+            "[...document.querySelectorAll('.menu-item')].find((item) => item.textContent.includes('Open link in new tab')).click()"
+          )
+        }
+        await waitFor(() => browser.tabs.tabs.length > previousTabCount)
+        checks.push(['context link command opens a real tab', linkActionVisible && browser.tabs.tabs.length === previousTabCount + 1])
       } catch (error) {
         console.error('[ember] smoke probe error:', error)
         checks.push(['smoke probe completed', false])

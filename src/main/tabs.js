@@ -35,6 +35,7 @@ class TabManager {
         nodeIntegration: false,
         sandbox: true,
         backgroundThrottling: true,
+        nodeIntegrationInSubFrames: true,
         preload: path.join(__dirname, 'page-preload.js'),
       },
     })
@@ -80,6 +81,7 @@ class TabManager {
     wc.on('destroyed', () => this.#forget(tab.id))
     // clicking back into the page dismisses any open chrome dropdown
     wc.on('focus', () => this.onPageFocus?.())
+    wc.on('context-menu', (event, params) => this.onContextMenu?.(tab, event, params))
 
     // target=_blank and window.open land in a new tab, never a popup window
     wc.setWindowOpenHandler(({ url }) => {
@@ -92,6 +94,7 @@ class TabManager {
     const tab = this.tabs.find((t) => t.id === id)
     if (!tab) return
     this.activeId = id
+    this.onSelectionChange?.(tab)
     for (const t of this.tabs) t.view.setVisible(t.id === id)
     // keep the chrome UI painted above the page view
     this.win.contentView.addChildView(tab.view)

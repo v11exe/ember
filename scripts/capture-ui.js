@@ -1,10 +1,11 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, nativeImage } = require('electron')
 
 const { registerSchemePrivileges, handleInternalPages } = require('../src/main/protocol')
 const { IPC } = require('../src/shared/ipc')
+const { buildContextMenu } = require('../src/main/context-menu-model')
 
 registerSchemePrivileges()
 
@@ -113,6 +114,34 @@ async function captureChrome(size) {
   return metrics
 }
 
+async function captureOverlay(name, page, size, state) {
+  console.log(`[capture] overlay ${name}`)
+  const win = new BrowserWindow({
+    show: false,
+    width: size.width,
+    height: size.height,
+    frame: false,
+    transparent: true,
+    webPreferences: {
+      offscreen: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      preload: path.join(__dirname, '..', 'src', 'renderer', 'overlay-preload.js'),
+    },
+  })
+  await win.loadURL(`ember://${page}`)
+  win.webContents.send(IPC.OVERLAY_STATE, state)
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  const metrics = await win.webContents.executeJavaScript(`({
+    viewport: [innerWidth, innerHeight],
+    scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
+  })`)
+  await screenshot(win, `${name}.png`)
+  win.destroy()
+  return metrics
+}
+
 app.whenReady().then(async () => {
   await fs.mkdir(output, { recursive: true })
   handleInternalPages()
@@ -123,6 +152,32 @@ app.whenReady().then(async () => {
     results[`newtab-${size.name}`] = await captureNewTab(size)
     results[`chrome-${size.name}`] = await captureChrome(size)
   }
+  const brandIcon = nativeImage.createFromPath(path.join(__dirname, '..', 'src', 'renderer', 'assets', 'ember-icon.png'))
+    .resize({ width: 180 }).toDataURL()
+  const brandLogo = nativeImage.createFromPath(path.join(__dirname, '..', 'src', 'renderer', 'assets', 'ember-logo.png'))
+    .resize({ width: 180 }).toDataURL()
+  const backdrop = nativeImage.createFromPath(path.join(output, 'newtab-wide.png')).resize({ width: 650 }).toDataURL()
+  const uploadState = {
+    kind: 'upload', origin: 'uploads.example', accept: 'image/*', multiple: false,
+    backdrop,
+    clipboard: { name: 'clipboard-20260821.png', type: 'image/png', thumbnail: brandIcon },
+    recents: [
+      { name: 'ember-logo.png', path: 'logo', thumbnail: brandLogo },
+      { name: 'ember-icon.png', path: 'icon', thumbnail: brandIcon },
+      { name: 'campaign-cover.png', path: 'cover', thumbnail: null },
+      { name: 'product-shot.png', path: 'product', thumbnail: brandIcon },
+      { name: 'visual-reference.png', path: 'reference', thumbnail: brandLogo },
+    ],
+  }
+  results['upload-wide'] = await captureOverlay('upload-wide', 'upload', { width: 650, height: 430 }, uploadState)
+  results['upload-compact'] = await captureOverlay('upload-compact', 'upload', { width: 596, height: 312 }, uploadState)
+  const contextItems = buildContextMenu({
+    isEditable: true, selectionText: 'Ember', misspelledWord: 'Embr', dictionarySuggestions: ['Ember'],
+    editFlags: { canUndo: true, canRedo: false, canCut: true, canCopy: true, canPaste: true, canDelete: true, canSelectAll: true },
+  }, { canGoBack: true, canGoForward: false })
+  results['context-menu'] = await captureOverlay('context-menu', 'context-menu', { width: 318, height: 430 }, {
+    kind: 'context-menu', backdrop, items: contextItems,
+  })
   console.log(JSON.stringify(results, null, 2))
   app.quit()
 }).catch((error) => {

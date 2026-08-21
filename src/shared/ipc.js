@@ -24,12 +24,17 @@ const IPC = {
   BOOKMARKS_GET: 'bookmarks:get',
   BOOKMARKS_IMPORT: 'bookmarks:import',
   BOOKMARKS_VISIBILITY: 'bookmarks:visibility',
+  UPLOAD_REQUEST: 'upload:request',
+  OVERLAY_ACTION: 'overlay:action',
+  OVERLAY_CLOSE: 'overlay:close',
 
   // main -> renderer
   STATE: 'browser:state',
   PANEL_CHANGED: 'panel:changed',
   PANEL_ORIGIN: 'panel:origin', // panel view offset, for popup anchoring
   BOOKMARKS_CHANGED: 'bookmarks:changed',
+  UPLOAD_RESULT: 'upload:result',
+  OVERLAY_STATE: 'overlay:state',
 }
 
 // Where the omnibox sends anything that isn't a URL.

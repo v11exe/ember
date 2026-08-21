@@ -28,28 +28,28 @@ step. `npm start` runs it; gates are `npm test` and `npm run smoke`.
 src/main/index.js        app bootstrap, BaseWindow, IPC handlers, lifecycle
 src/main/tabs.js         TabManager — create/close/select/layout, CHROME_HEIGHT=84
 src/main/extensions.js   Chrome Web Store install + chrome.* APIs + "Add to Ember"
-src/main/panel.js        extensions dropdown, its own WebContentsView
+src/main/{panel,floating-panel}.js bounded dropdown/overlay WebContentsViews
 src/main/bookmarks.js    bookmark HTML parser + atomic JSON userData store
 src/main/popup-positioner.js  viewport guard for real extension popup windows
-src/main/protocol.js     ember:// scheme, serves src/renderer/pages flat
-src/main/page-preload.js sandboxed preload; ember:// pages only, nav verbs only
+src/main/{upload-panel,context-menu-panel}.js real file/menu controllers
+src/main/{recent-uploads,upload-files,context-menu-model}.js overlay data/actions
+src/main/protocol.js     ember:// scheme, serves internal pages + shared assets
+src/main/page-preload.js sandboxed nav bridge + real file-input interception
 src/renderer/preload.js  chrome UI bridge (contextBridge "ember"), browser-action
 src/renderer/chrome.*    tab strip, toolbar, extensions panel (html/css/js)
 src/renderer/theme.css   the palette — every colour is defined here, once
-src/renderer/brand.*     reusable Ember icon/wordmark + supplied Necosmic font
+src/renderer/brand.*     exact supplied PNG icon/full-logo mounts
 src/renderer/panel-preload.js  panel bridge + injectBrowserAction()
-src/renderer/pages/      internal pages, flat: newtab.*, extensions.*
-src/shared/ipc.js        channel names, SEARCH_URL, NEW_TAB_URL
-src/shared/urls.js       toNavigationUrl() — URL vs Google search
+src/renderer/pages/      newtab, extensions, upload, context-menu pages
+src/shared/              IPC/URL/file-filter/floating-geometry contracts
 scripts/smoke.js         boot check
 scripts/capture-ui.js    offscreen wide/medium/compact visual QA captures
 test/                    node:test unit/contracts + two real popup fixtures
 ```
-
 **Milestones** — 1 shell ✅ · 2 tab manager ✅ · 3 chrome UI + IPC ✅ ·
 8 extensions ✅ (built early, out of order) · 4 sessions and partitions ·
 5 adblock + per-site Shields · 6 history/bookmarks/downloads (bookmarks ✅) · 7 GX layer
-(theming partly done via `theme.css`; network limiter, tab discarding, tab
+(theming + glass menus/uploads ✅; network limiter, tab discarding, tab
 islands, sidebar outstanding).
 
 **Gotchas** (cost real debugging time, don't rediscover):
@@ -66,6 +66,7 @@ islands, sidebar outstanding).
 - Dropdowns get their own `WebContentsView` (`src/main/panel.js`). Growing the
   chrome view to full height instead paints black over the whole page —
   transparency does not work there.
+- Upload/context overlays share `FloatingPanel`; never replace page bounds.
 - Files are LF via `.gitattributes`, but Git may hand you CRLF working copies.
   Multi-line string replacement in scripts silently no-ops against those.
   Verify edits landed instead of trusting the write.
@@ -211,8 +212,8 @@ Newest at top. One entry per branch, updated in place. Status:
 - **Touches:** `AGENTS.md`, `agent.md`, `src/{main,renderer,shared}/*`, `scripts/*`, `test/*`
 - **Summary:** Preserve current chrome while adding supplied branding, bookmarks,
   real upload recents/clipboard selection, glass context menus, and safe popups.
-- **For the other agent:** additive upload/menu IPC and two bounded panel views
-  are in flight; coordinate before editing the listed files.
+- **For the other agent:** upload/menu IPC and two bounded panel views are now
+  implemented; rebase and coordinate before editing the listed files.
 
 ### 2026-08-21 — Claude Code — README stays minimal
 - **Status / Branch:** merged · `main`

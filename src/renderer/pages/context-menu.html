@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' data:; script-src 'self'">
+  <title>Ember menu</title>
+  <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/glass.css">
+  <link rel="stylesheet" href="context-menu.css">
+</head>
+<body>
+  <main class="glass-shell menu-shell" role="presentation">
+    <img class="glass-backdrop" id="glass-backdrop" alt="">
+    <div class="glass-wash" aria-hidden="true"></div>
+    <div class="glass-light" aria-hidden="true"></div>
+    <div class="glass-grain" aria-hidden="true"></div>
+    <div id="context-menu" role="menu" aria-label="Page context menu"></div>
+  </main>
+  <script src="context-menu.js"></script>
+</body>
+</html>
