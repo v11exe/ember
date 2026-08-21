@@ -178,19 +178,17 @@ app.whenReady().then(async () => {
   }
   const brandIcon = nativeImage.createFromPath(path.join(__dirname, '..', 'src', 'renderer', 'assets', 'ember-icon.png'))
     .resize({ width: 180 }).toDataURL()
-  const brandLogo = nativeImage.createFromPath(path.join(__dirname, '..', 'src', 'renderer', 'assets', 'ember-logo.png'))
-    .resize({ width: 180 }).toDataURL()
   const backdrop = nativeImage.createFromPath(path.join(output, 'newtab-wide.png')).resize({ width: 650 }).toDataURL()
   const uploadState = {
     kind: 'upload', origin: 'uploads.example', accept: 'image/*', multiple: false,
     backdrop,
     clipboard: { name: 'clipboard-20260821.png', type: 'image/png', thumbnail: brandIcon },
     recents: [
-      { name: 'ember-logo.png', path: 'logo', thumbnail: brandLogo },
       { name: 'ember-icon.png', path: 'icon', thumbnail: brandIcon },
+      { name: 'meteor-reference.png', path: 'meteor', thumbnail: brandIcon },
       { name: 'campaign-cover.png', path: 'cover', thumbnail: null },
       { name: 'product-shot.png', path: 'product', thumbnail: brandIcon },
-      { name: 'visual-reference.png', path: 'reference', thumbnail: brandLogo },
+      { name: 'visual-reference.png', path: 'reference', thumbnail: brandIcon },
     ],
   }
   results['upload-wide'] = await captureOverlay('upload-wide', 'upload', { width: 650, height: 430 }, uploadState)

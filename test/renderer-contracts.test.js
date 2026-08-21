@@ -6,15 +6,22 @@ const path = require('node:path')
 const read = (...parts) => fs.readFileSync(path.join(__dirname, '..', ...parts), 'utf8')
 const bytes = (...parts) => fs.readFileSync(path.join(__dirname, '..', ...parts))
 
-test('new tab mounts the reusable Ember brand instead of generic uppercase text', () => {
+test('new tab composes its masthead from the meteor and a Necosmic wordmark', () => {
   const html = read('src', 'renderer', 'pages', 'newtab.html')
   const protocol = read('src', 'main', 'protocol.js')
+  const css = read('src', 'renderer', 'pages', 'newtab.css')
   assert.match(html, /id="ember-brand"/)
   assert.match(html, /href="\/theme\.css"/)
   assert.match(protocol, /\['\/theme\.css', path\.join\(RENDERER, 'theme\.css'\)\]/)
   assert.match(html, /\/brand\.js/)
   assert.match(html, /\/brand\.css/)
-  assert.doesNotMatch(html, /<h1 class="wordmark">EMBER<\/h1>/)
+  assert.match(protocol, /Necosmic-PersonalUse\.otf/)
+  assert.match(css, /@font-face/)
+  assert.match(css, /font-family:\s*'Necosmic'/)
+  assert.match(css, /\.ember-wordmark[\s\S]+color:\s*#fff/)
+  assert.match(css, /\.ember-meteor[\s\S]+filter:\s*drop-shadow/)
+  const wordmarkRule = css.match(/\.ember-wordmark\s*\{([^}]*)\}/)?.[1] || ''
+  assert.doesNotMatch(wordmarkRule, /filter\s*:/)
 })
 
 test('browser chrome provides a compact live bookmarks bar', () => {
@@ -37,6 +44,11 @@ test('browser chrome mirrors authoritative extension-panel visibility', () => {
   const js = read('src', 'renderer', 'chrome.js')
   assert.match(js, /window\.ember\.onPanelChanged/)
   assert.match(js, /setAttribute\('aria-expanded', String\(open\)\)/)
+})
+
+test('tabs fall back to the Ember meteor when a page has no favicon', () => {
+  const js = read('src', 'renderer', 'chrome.js')
+  assert.match(js, /img\.src = tab\.favicon \|\| window\.EmberBrand\.ICON_ASSET/)
 })
 
 test('upload picker is a real glass overlay with browse, clipboard, and recent actions', () => {

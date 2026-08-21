@@ -6,24 +6,43 @@ const crypto = require('node:crypto')
 
 const brand = require('../src/renderer/brand')
 
-test('exports independently reusable canonical Ember icon and full-logo mounts', () => {
+test('exports reusable transparent-meteor icon and wordmark mounts', () => {
   assert.equal(typeof brand.mountIcon, 'function')
   assert.equal(typeof brand.mountBrand, 'function')
   assert.equal(brand.ICON_ASSET, '/assets/ember-icon.png')
-  assert.equal(brand.LOGO_ASSET, '/assets/ember-logo.png')
+  assert.equal(brand.WORDMARK_FONT_ASSET, '/assets/Necosmic-PersonalUse.otf')
+  assert.equal(Object.hasOwn(brand, 'LOGO_ASSET'), false)
 })
 
-test('ships the supplied logo files byte-for-byte instead of a generated approximation', () => {
+test('ships the supplied transparent meteor and Necosmic font byte-for-byte', () => {
   const digest = (name) => crypto.createHash('sha256')
     .update(fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'assets', name)))
     .digest('hex')
     .toUpperCase()
 
-  assert.equal(digest('ember-logo.png'), 'F8E86C0B1601750A22FDD5A9520A4A6D75DBB942C5C397C8C2488036D68B4F66')
-  assert.equal(digest('ember-icon.png'), '514FD2830E7F8BA53F6105188AC635FDD6B91819CFBFE9619B315C34078BAF2D')
+  assert.equal(digest('ember-icon.png'), 'E7922A46BE91DE7B8C6118FD3078DFA7DBB665AF98A966079A41E9009A8A00B6')
+  assert.equal(digest('Necosmic-PersonalUse.otf'), '66FE3298A1A892AB71ED5B8DBBAD739D4D4E92251560DB7F4348499FE9FFB072')
 })
 
 test('uses the supplied icon for the native Ember window too', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'index.js'), 'utf8')
   assert.match(source, /icon: path\.join\(__dirname, '\.\.', 'renderer', 'assets', 'ember-icon\.png'\)/)
+})
+
+test('does not actively reference the deprecated combined raster logo', () => {
+  const sources = [
+    'src/renderer/brand.js',
+    'src/renderer/brand.css',
+    'src/renderer/pages/newtab.css',
+    'src/main/protocol.js',
+    'src/main/index.js',
+    'scripts/capture-ui.js',
+  ].map((file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8'))
+
+  for (const source of sources) assert.doesNotMatch(source, /ember-logo\.png/)
+})
+
+test('uses the meteor PNG for the smoke-test clipboard fixture', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'index.js'), 'utf8')
+  assert.match(source, /image: nativeImage\.createFromPath\(smokeUploadPaths\[0\]\)/)
 })

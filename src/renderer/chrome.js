@@ -30,11 +30,14 @@ function renderTabs(tabs) {
       const s = document.createElement('div')
       s.className = 'spinner'
       el.append(s)
-    } else if (tab.favicon) {
+    } else {
       const img = document.createElement('img')
       img.className = 'tab-favicon'
-      img.src = tab.favicon
-      img.onerror = () => img.remove()
+      img.src = tab.favicon || window.EmberBrand.ICON_ASSET
+      img.onerror = () => {
+        if (tab.favicon && img.src !== window.EmberBrand.ICON_ASSET) img.src = window.EmberBrand.ICON_ASSET
+        else img.remove()
+      }
       el.append(img)
     }
 
