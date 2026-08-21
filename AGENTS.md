@@ -211,7 +211,7 @@ Newest at top. One entry per branch, updated in place. Status:
 ```
 
 ### 2026-08-21 — Codex — Geometry-correct upload Liquid Glass
-- **Status / Branch:** in-progress · `fix/upload-liquid-glass-optics`
+- **Status / Branch:** pushed · `fix/upload-liquid-glass-optics`
 - **Touches:** `AGENTS.md`, `agent.md`, `src/main/upload-panel.js`,
   `src/renderer/pages/{upload.html,upload.css,upload.js,upload-optics.js}`,
   `scripts/capture-ui.js`, `test/{upload-panel,upload-optics,renderer-contracts}.test.js`
