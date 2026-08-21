@@ -14,11 +14,13 @@ const SHARED_ASSETS = new Map([
   ['/brand.css', path.join(RENDERER, 'brand.css')],
   ['/assets/ember-icon.png', path.join(RENDERER, 'assets', 'ember-icon.png')],
   ['/assets/ember-logo.png', path.join(RENDERER, 'assets', 'ember-logo.png')],
+  ['/assets/glass-switcher-map.webp', path.join(RENDERER, 'assets', 'glass-switcher-map.webp')],
+  ['/assets/glass-toggler-map.webp', path.join(RENDERER, 'assets', 'glass-toggler-map.webp')],
 ])
 
 const MIME = {
   '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript',
-  '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json',
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.json': 'application/json',
   '.otf': 'font/otf',
 }
 

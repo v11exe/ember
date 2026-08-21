@@ -37,11 +37,15 @@ class FloatingPanel {
     return view
   }
 
-  async show({ bounds, state, targetView = null }) {
+  async show({ bounds, state, targetView = null, captureBleed = 0 }) {
     const generation = ++this.generation
-    const backdrop = await this.#captureBackdrop(targetView, bounds)
+    const capture = await this.#captureBackdrop(targetView, bounds, captureBleed)
     if (generation !== this.generation) return false
-    this.state = { ...state, backdrop }
+    this.state = {
+      ...state,
+      backdrop: capture?.dataUrl || null,
+      ...(capture?.rect ? { backdropRect: capture.rect } : {}),
+    }
     this.bounds = { ...bounds }
     const view = this.#ensureView()
     this.win.contentView.addChildView(view)
@@ -56,6 +60,23 @@ class FloatingPanel {
   setBounds(bounds) {
     this.bounds = { ...bounds }
     if (this.view && this.open) this.view.setBounds(this.bounds)
+  }
+
+  async relayout({ bounds, targetView = null, captureBleed = 0 }) {
+    if (!this.open) return false
+    const generation = ++this.generation
+    const capture = await this.#captureBackdrop(targetView, bounds, captureBleed)
+    if (generation !== this.generation || !this.open) return false
+    const { backdropRect: _oldRect, ...state } = this.state || {}
+    this.state = {
+      ...state,
+      backdrop: capture?.dataUrl || null,
+      ...(capture?.rect ? { backdropRect: capture.rect } : {}),
+    }
+    this.bounds = { ...bounds }
+    this.view.setBounds(this.bounds)
+    this.#sendState()
+    return true
   }
 
   updateState(state) {
@@ -79,18 +100,31 @@ class FloatingPanel {
     this.view.webContents.send(IPC.OVERLAY_STATE, this.state)
   }
 
-  async #captureBackdrop(targetView, bounds) {
+  async #captureBackdrop(targetView, bounds, bleed) {
     if (!targetView?.webContents?.capturePage) return null
     const target = targetView.getBounds()
+    const localX = Math.round(bounds.x - target.x)
+    const localY = Math.round(bounds.y - target.y)
+    const x = Math.max(0, localX - bleed)
+    const y = Math.max(0, localY - bleed)
+    const right = Math.min(target.width, localX + bounds.width + bleed)
+    const bottom = Math.min(target.height, localY + bounds.height + bleed)
     const rect = {
-      x: Math.max(0, Math.round(bounds.x - target.x)),
-      y: Math.max(0, Math.round(bounds.y - target.y)),
-      width: Math.min(bounds.width, target.width),
-      height: Math.min(bounds.height, target.height),
+      x, y,
+      width: Math.max(0, right - x),
+      height: Math.max(0, bottom - y),
     }
     try {
       const image = await targetView.webContents.capturePage(rect)
-      return image.isEmpty() ? null : image.toDataURL()
+      if (image.isEmpty()) return null
+      const size = image.getSize?.()
+      return {
+        dataUrl: image.toDataURL(),
+        rect: {
+          x: x - localX, y: y - localY, width: rect.width, height: rect.height,
+          ...(size ? { pixelWidth: size.width, pixelHeight: size.height } : {}),
+        },
+      }
     } catch {
       return null
     }

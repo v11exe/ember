@@ -461,6 +461,32 @@ app.whenReady().then(() => {
         const contextState = browser.contextMenu.overlay.state
         checks.push(['right-click opens custom glass commands', contextState?.kind === 'context-menu'
           && contextState.items.some((item) => item.id === 'reload') && !!contextState.backdrop])
+        const lensProbe = await browser.contextMenu.overlay.view.webContents.executeJavaScript(`(async () => {
+          const enabled = [...document.querySelectorAll('.menu-item:not(:disabled)')]
+          const lens = document.getElementById('selector-lens')
+          const waitForY = async (predicate) => {
+            const deadline = performance.now() + 1000
+            let y = lens.getBoundingClientRect().y
+            while (!predicate(y) && performance.now() < deadline) {
+              await new Promise((resolve) => requestAnimationFrame(resolve))
+              y = lens.getBoundingClientRect().y
+            }
+            return y
+          }
+          enabled[0].dispatchEvent(new PointerEvent('pointerenter'))
+          enabled.at(-1).dispatchEvent(new PointerEvent('pointerenter'))
+          const bottom = await waitForY((y) => y > 50)
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home' }))
+          const top = await waitForY((y) => y < bottom - 20)
+          return {
+            oneLens: document.querySelectorAll('#selector-lens').length === 1,
+            moved: bottom > top,
+            oneActive: document.querySelectorAll('.menu-item[data-active="true"]').length === 1,
+            disabledActive: !!document.querySelector('.menu-item:disabled[data-active="true"]'),
+          }
+        })()`)
+        checks.push(['one liquid selector retargets across pointer and keyboard', lensProbe.oneLens
+          && lensProbe.moved && lensProbe.oneActive && !lensProbe.disabledActive])
         await browser.contextMenu.overlay.view.webContents.executeJavaScript(
           "window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))"
         )

@@ -6,6 +6,7 @@ const { app, BrowserWindow, ipcMain, nativeImage } = require('electron')
 const { registerSchemePrivileges, handleInternalPages } = require('../src/main/protocol')
 const { IPC } = require('../src/shared/ipc')
 const { buildContextMenu } = require('../src/main/context-menu-model')
+const { menuHeight } = require('../src/main/context-menu-panel')
 
 registerSchemePrivileges()
 
@@ -114,7 +115,7 @@ async function captureChrome(size) {
   return metrics
 }
 
-async function captureOverlay(name, page, size, state) {
+async function captureOverlay(name, page, size, state, activePosition = null) {
   console.log(`[capture] overlay ${name}`)
   const win = new BrowserWindow({
     show: false,
@@ -133,13 +134,36 @@ async function captureOverlay(name, page, size, state) {
   await win.loadURL(`ember://${page}`)
   win.webContents.send(IPC.OVERLAY_STATE, state)
   await new Promise((resolve) => setTimeout(resolve, 150))
+  if (activePosition) {
+    await win.webContents.executeJavaScript(`(() => {
+      const items = [...document.querySelectorAll('.menu-item:not(:disabled)')]
+      const index = ${JSON.stringify(activePosition)} === 'first' ? 0
+        : ${JSON.stringify(activePosition)} === 'bottom' ? items.length - 1 : Math.floor(items.length / 2)
+      items[index].dispatchEvent(new PointerEvent('pointerenter'))
+    })()`)
+    await new Promise((resolve) => setTimeout(resolve, 220))
+  }
   const metrics = await win.webContents.executeJavaScript(`({
     viewport: [innerWidth, innerHeight],
     scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
+    lens: (() => { const r = document.getElementById('selector-lens')?.getBoundingClientRect(); return r && [r.x, r.y, r.width, r.height] })(),
   })`)
   await screenshot(win, `${name}.png`)
   win.destroy()
   return metrics
+}
+
+function contrastBackdrop(tone, width, height) {
+  const light = tone === 'light'
+  const background = light ? '#f3e9df' : '#060608'
+  const foreground = light ? '#181114' : '#fff4e8'
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    <rect width="100%" height="100%" fill="${background}"/>
+    <path d="M-70 40L450 560M-130 0L390 520M10 -30L430 390" stroke="#ff5a1f" stroke-width="32"/>
+    <circle cx="82" cy="142" r="62" fill="${foreground}"/><circle cx="330" cy="330" r="96" fill="${foreground}"/>
+    <path d="M0 238H${width}M0 276H${width}" stroke="#ffc93c" stroke-width="12"/>
+  </svg>`
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`
 }
 
 app.whenReady().then(async () => {
@@ -175,9 +199,20 @@ app.whenReady().then(async () => {
     isEditable: true, selectionText: 'Ember', misspelledWord: 'Embr', dictionarySuggestions: ['Ember'],
     editFlags: { canUndo: true, canRedo: false, canCut: true, canCopy: true, canPaste: true, canDelete: true, canSelectAll: true },
   }, { canGoBack: true, canGoForward: false })
-  results['context-menu'] = await captureOverlay('context-menu', 'context-menu', { width: 318, height: 430 }, {
-    kind: 'context-menu', backdrop, items: contextItems,
+  const contextSize = { width: 318, height: Math.min(menuHeight(contextItems), 540) }
+  const backdropRect = { x: -40, y: -40, width: contextSize.width + 80, height: contextSize.height + 80 }
+  const contextState = (tone) => ({
+    kind: 'context-menu', items: contextItems, backdropRect,
+    backdrop: contrastBackdrop(tone, backdropRect.width, backdropRect.height),
   })
+  results['context-dark-first'] = await captureOverlay(
+    'context-dark-first', 'context-menu', contextSize, contextState('dark'), 'first')
+  results['context-dark-middle'] = await captureOverlay(
+    'context-dark-middle', 'context-menu', contextSize, contextState('dark'), 'middle')
+  results['context-dark-bottom'] = await captureOverlay(
+    'context-dark-bottom', 'context-menu', contextSize, contextState('dark'), 'bottom')
+  results['context-light-middle'] = await captureOverlay(
+    'context-light-middle', 'context-menu', contextSize, contextState('light'), 'middle')
   console.log(JSON.stringify(results, null, 2))
   app.quit()
 }).catch((error) => {

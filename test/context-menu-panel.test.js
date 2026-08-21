@@ -1,17 +1,19 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
-const { ContextMenuPanel } = require('../src/main/context-menu-panel')
+const { ContextMenuPanel, menuHeight } = require('../src/main/context-menu-panel')
 
 function harness() {
   const sender = {}
   const shown = []
+  const relayouts = []
   let hides = 0
   const overlay = {
     show: async (state) => shown.push(state),
     hide: () => { hides += 1 },
     isSender: (value) => value === sender,
     setBounds: () => {},
+    relayout: async (state) => relayouts.push(state),
   }
   const calls = []
   const navigationHistory = {
@@ -42,7 +44,7 @@ function harness() {
   const clipboard = { writeText: (text) => calls.push(['clipboard', text]) }
   const dialog = { showSaveDialog: async () => ({ canceled: false, filePath: 'C:\\saved\\page.html' }) }
   const panel = new ContextMenuPanel({}, { overlay, createTab, clipboard, dialog })
-  return { panel, sender, shown, get hides() { return hides }, calls, tab }
+  return { panel, sender, shown, relayouts, get hides() { return hides }, calls, tab }
 }
 
 test('opens clamped to the page and exposes enabled navigation commands', async () => {
@@ -51,8 +53,36 @@ test('opens clamped to the page and exposes enabled navigation commands', async 
   const shown = h.shown[0]
   assert.equal(shown.bounds.x + shown.bounds.width <= 900, true)
   assert.equal(shown.bounds.y + shown.bounds.height <= 640, true)
+  assert.equal(shown.captureBleed, 40)
   assert.equal(shown.state.items.find((item) => item.id === 'back').enabled, true)
   assert.equal(shown.state.items.find((item) => item.id === 'forward').enabled, false)
+})
+
+test('menuHeight includes shell padding and both border pixels', () => {
+  assert.equal(menuHeight([{ id: 'reload' }]), 54)
+})
+
+test('constrains a command-rich menu to the usable page height', async () => {
+  const h = harness()
+  await h.panel.open({
+    tab: h.tab,
+    params: {
+      x: 20, y: 20, isEditable: true, selectionText: 'Ember',
+      misspelledWord: 'Embr', dictionarySuggestions: ['Ember', 'Embers', 'Amber'],
+      linkURL: 'https://link.example/', mediaType: 'image', srcURL: 'https://link.example/a.png',
+      editFlags: { canUndo: true, canRedo: true, canCut: true, canCopy: true, canPaste: true, canDelete: true, canSelectAll: true },
+    },
+  })
+  assert.equal(h.shown[0].bounds.height <= 540, true)
+})
+
+test('layout refreshes the captured texture with the same bleed contract', async () => {
+  const h = harness()
+  await h.panel.open({ tab: h.tab, params: { x: 20, y: 20 } })
+  h.panel.layout()
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(h.relayouts[0].captureBleed, 40)
+  assert.equal(h.relayouts[0].targetView, h.tab.view)
 })
 
 test('routes contextual, editing, spelling, navigation, and inspect actions', async () => {

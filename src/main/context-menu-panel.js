@@ -4,9 +4,10 @@ const { placePointPanel } = require('../shared/floating-geometry')
 const { buildContextMenu } = require('./context-menu-model')
 
 const MENU_WIDTH = 318
+const CAPTURE_BLEED = 40
 
 function menuHeight(items) {
-  return 14 + items.reduce((height, item) => height + (item.type === 'separator' ? 13 : 38), 0)
+  return 16 + items.reduce((height, item) => height + (item.type === 'separator' ? 13 : 38), 0)
 }
 
 function safeFileName(value) {
@@ -41,7 +42,21 @@ class ContextMenuPanel {
       y: viewport.y + params.y,
     }, { width: MENU_WIDTH, height: menuHeight(items) }, 8)
     this.active = { tab, params, items }
-    await this.overlay.show({ bounds, state: { kind: 'context-menu', items }, targetView: tab.view })
+    const opened = await this.overlay.show({
+      bounds, state: { kind: 'context-menu', items }, targetView: tab.view,
+      captureBleed: CAPTURE_BLEED,
+    })
+    if (!opened || this.active?.tab !== tab || this.active.params !== params) return
+    const liveViewport = tab.view.getBounds()
+    const liveBounds = placePointPanel(liveViewport, {
+      x: liveViewport.x + params.x,
+      y: liveViewport.y + params.y,
+    }, { width: MENU_WIDTH, height: menuHeight(items) }, 8)
+    if (Object.keys(bounds).some((key) => bounds[key] !== liveBounds[key])) {
+      await this.overlay.relayout({
+        bounds: liveBounds, targetView: tab.view, captureBleed: CAPTURE_BLEED,
+      })
+    }
   }
 
   isSender(webContents) {
@@ -58,10 +73,15 @@ class ContextMenuPanel {
     if (!this.active) return
     const { tab, params, items } = this.active
     const viewport = tab.view.getBounds()
-    this.overlay.setBounds(placePointPanel(viewport, {
+    const bounds = placePointPanel(viewport, {
       x: viewport.x + params.x,
       y: viewport.y + params.y,
-    }, { width: MENU_WIDTH, height: menuHeight(items) }, 8))
+    }, { width: MENU_WIDTH, height: menuHeight(items) }, 8)
+    if (this.overlay.relayout) {
+      void this.overlay.relayout({ bounds, targetView: tab.view, captureBleed: CAPTURE_BLEED })
+    } else {
+      this.overlay.setBounds(bounds)
+    }
   }
 
   async handleAction(sender, action) {

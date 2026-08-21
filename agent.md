@@ -76,12 +76,33 @@
 - Link/image/selection/editing/spelling/navigation/save/print/source/inspect
   commands route to real WebContents, clipboard, dialog, and tab operations.
 - Disabled states come from Chromium; arrows, Home/End, Enter, and Escape work.
-- In progress: replace the generic blur with the canonical Master.dev dual SVG
-  displacement filters. The outer shell and selector keep distinct fixed WebP
-  maps; a 40 px capture bleed will preserve texture around menu boundaries.
-- In progress: one persistent selector lens will share cached row geometry and
-  active-item state across pointer and keyboard input, with rapid retargeting and
-  no queued animations. Separators and disabled rows are never destinations.
+- The optical core is the canonical Master.dev dual SVG displacement technique:
+  `switcher` uses object-bounding-box blur `0.04`; `toggler` uses `0.01`; both
+  retain scale `0.5`, R/G channels, and their pinned fixed WebP source maps.
+- A raw `capturePage()` texture sits beneath same-view `backdrop-filter` layers,
+  allowing the switcher shell and toggler lens to refract real page pixels while
+  menu text/icons stay unfiltered above them.
+- Context captures include 40 CSS px of edge-clipped bleed. `backdropRect` stores
+  exact overlay offsets, DIP size, and available native pixel size; resize layout
+  recaptures without reopening or stealing focus. No cover fit or visual scaling.
+- One persistent selector caches row rectangles and retargets CSS transform
+  properties in 180 ms with `cubic-bezier(.2,.8,.2,1)`. Pointer and keyboard use
+  the same controller; separators and disabled rows are skipped, so hovering a
+  disabled row intentionally leaves the lens on the last enabled destination.
+- Rich menus clamp to the page and scroll internally; scroll/resize refresh lens
+  geometry. Direct property retargeting creates no animation queue.
+
+## Liquid Glass Assets and Fallback
+
+- `glass-switcher-map.webp` and `glass-toggler-map.webp` are the two canonical
+  source occurrences, pinned at SHA-256 `6475a2bf80d1dad57b98ffe7bb38acd62eac3386abdca245e73dd9f36287813d`.
+- `scripts/sync-liquid-glass-maps.js` can reproduce both files from the pinned
+  source revision and refuses bytes with any other hash.
+- `ember://` serves WebP with `image/webp`; CSP remains self/data image only and
+  does not add inline script or remote content allowances.
+- Chromium without SVG URL backdrop-filter support keeps the captured texture
+  and uses a bounded neutral blur fallback; the primary Electron path uses both
+  displacement filters.
 
 ## Bookmarks
 
@@ -126,13 +147,18 @@
 
 ## Tests Performed
 
-- `npm test`: 51 tests pass.
+- `npm test`: 62 tests pass, including map hashes, bleed/DPI metadata, edge
+  clipping, resize recapture/open races, stale-capture clearing, controller
+  geometry, disabled-row skipping, and renderer optical contracts.
 - `npm run smoke`: covers real page file inputs, clipboard/recents/native
   fallback, cancellation, custom right-clicks at four corners, link commands,
+  the one shared lens across rapid pointer/keyboard retargeting,
   extensions/popups, bookmarks, and four window sizes in isolated userData.
 - `node --check`: all project JavaScript files parse.
 - Visual captures: new tab/chrome at wide, medium, compact; upload at 650×430
-  and 596×312; context menu at 318×430, all without document overflow.
+  and 596×312; liquid menu at first/middle/bottom positions over near-black and
+  near-white high-contrast backgrounds. Tall-menu capture is 318×540 with
+  internal scrolling and no document overflow.
 
 ## Remaining Issues
 

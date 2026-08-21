@@ -1,5 +1,8 @@
+const shell = document.getElementById('menu-shell')
 const menu = document.getElementById('context-menu')
-const backdrop = document.getElementById('glass-backdrop')
+const backdrop = document.getElementById('outer-texture')
+const lens = document.getElementById('selector-lens')
+const lensController = EmberMenuLens.createLensController(shell, lens)
 
 const glyphs = {
   back: '←', forward: '→', reload: '↻', undo: '↶', redo: '↷',
@@ -10,29 +13,31 @@ const glyphs = {
 }
 
 let buttons = []
-let activeIndex = -1
 
 function glyphFor(id) {
   if (id.startsWith('spell:')) return '✓'
   return glyphs[id] || '·'
 }
 
-function activate(index, focus = true, direction = 1) {
-  if (!buttons.length) return
-  let next = index
-  for (let attempts = 0; attempts < buttons.length; attempts += 1) {
-    next = (next + buttons.length) % buttons.length
-    if (!buttons[next].disabled) break
-    next += direction
+function setBackdrop(state) {
+  if (!state.backdrop) {
+    backdrop.removeAttribute('src')
+    backdrop.removeAttribute('style')
+    return
   }
-  activeIndex = next
-  buttons.forEach((button, position) => button.dataset.active = String(position === activeIndex))
-  if (focus) buttons[activeIndex].focus({ preventScroll: true })
-  buttons[activeIndex].scrollIntoView({ block: 'nearest' })
+  const rect = state.backdropRect || { x: 0, y: 0, width: innerWidth, height: innerHeight }
+  backdrop.src = state.backdrop
+  Object.assign(backdrop.style, {
+    left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px`,
+  })
+  shell.style.setProperty('--backdrop-x', `${rect.x}px`)
+  shell.style.setProperty('--backdrop-y', `${rect.y}px`)
+  shell.style.setProperty('--backdrop-width', `${rect.width}px`)
+  shell.style.setProperty('--backdrop-height', `${rect.height}px`)
 }
 
 function render(state) {
-  if (state.backdrop) backdrop.src = state.backdrop
+  setBackdrop(state)
   const nodes = state.items.map((item) => {
     if (item.type === 'separator') {
       const separator = document.createElement('div')
@@ -55,24 +60,31 @@ function render(state) {
     shortcut.className = 'menu-shortcut'
     shortcut.textContent = item.shortcut || ''
     button.append(icon, label, shortcut)
+    button.addEventListener('pointerenter', () => {
+      if (!button.disabled) lensController.activate(buttons.indexOf(button), { focus: false })
+    })
     button.onclick = () => window.emberOverlay.action(item.id)
     return button
   })
   menu.replaceChildren(...nodes)
   buttons = [...menu.querySelectorAll('.menu-item')]
-  activeIndex = buttons.findIndex((button) => !button.disabled)
-  if (activeIndex >= 0) activate(activeIndex, false)
+  lensController.setButtons(buttons)
+  const first = EmberMenuLens.findEnabledIndex(buttons, 0, 1)
+  if (first >= 0) lensController.activate(first, { focus: false })
 }
 
+window.addEventListener('resize', () => lensController.refresh())
+menu.addEventListener('scroll', () => lensController.refresh())
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') { event.preventDefault(); window.emberOverlay.close(); return }
   if (!buttons.length) return
-  if (event.key === 'ArrowDown') { event.preventDefault(); activate(activeIndex + 1, true, 1) }
-  else if (event.key === 'ArrowUp') { event.preventDefault(); activate(activeIndex - 1, true, -1) }
-  else if (event.key === 'Home') { event.preventDefault(); activate(0, true, 1) }
-  else if (event.key === 'End') { event.preventDefault(); activate(buttons.length - 1, true, -1) }
-  else if ((event.key === 'Enter' || event.key === ' ') && activeIndex >= 0) {
-    event.preventDefault(); buttons[activeIndex].click()
+  const active = lensController.activeIndex
+  if (event.key === 'ArrowDown') { event.preventDefault(); lensController.activate(active + 1, { direction: 1 }) }
+  else if (event.key === 'ArrowUp') { event.preventDefault(); lensController.activate(active - 1, { direction: -1 }) }
+  else if (event.key === 'Home') { event.preventDefault(); lensController.activate(0, { direction: 1 }) }
+  else if (event.key === 'End') { event.preventDefault(); lensController.activate(buttons.length - 1, { direction: -1 }) }
+  else if ((event.key === 'Enter' || event.key === ' ') && active >= 0) {
+    event.preventDefault(); buttons[active].click()
   }
 })
 
