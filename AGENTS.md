@@ -19,9 +19,8 @@ are. Open a file only when you are about to read or change its logic.
 
 **Repo:** `v11exe/ember` · branch `main` · Windows dev machines.
 
-**Stack:** Electron `^43.4.1`, CommonJS JS (TypeScript still planned, not
-started). No build step. `npm start` runs it, `npm run smoke` boots it headless
-and exits non-zero on failure — that is the pre-push gate.
+**Stack:** Electron `^43.4.1`, CommonJS JS (TypeScript still planned). No build
+step. `npm start` runs it; gates are `npm test` and `npm run smoke`.
 
 **File map** (complete):
 
@@ -30,21 +29,26 @@ src/main/index.js        app bootstrap, BaseWindow, IPC handlers, lifecycle
 src/main/tabs.js         TabManager — create/close/select/layout, CHROME_HEIGHT=84
 src/main/extensions.js   Chrome Web Store install + chrome.* APIs + "Add to Ember"
 src/main/panel.js        extensions dropdown, its own WebContentsView
+src/main/bookmarks.js    bookmark HTML parser + atomic JSON userData store
+src/main/popup-positioner.js  viewport guard for real extension popup windows
 src/main/protocol.js     ember:// scheme, serves src/renderer/pages flat
 src/main/page-preload.js sandboxed preload; ember:// pages only, nav verbs only
 src/renderer/preload.js  chrome UI bridge (contextBridge "ember"), browser-action
 src/renderer/chrome.*    tab strip, toolbar, extensions panel (html/css/js)
 src/renderer/theme.css   the palette — every colour is defined here, once
+src/renderer/brand.*     reusable Ember icon/wordmark + supplied Necosmic font
 src/renderer/panel-preload.js  panel bridge + injectBrowserAction()
 src/renderer/pages/      internal pages, flat: newtab.*, extensions.*
 src/shared/ipc.js        channel names, SEARCH_URL, NEW_TAB_URL
 src/shared/urls.js       toNavigationUrl() — URL vs Google search
 scripts/smoke.js         boot check
+scripts/capture-ui.js    offscreen wide/medium/compact visual QA captures
+test/                    node:test unit/contracts + two real popup fixtures
 ```
 
 **Milestones** — 1 shell ✅ · 2 tab manager ✅ · 3 chrome UI + IPC ✅ ·
 8 extensions ✅ (built early, out of order) · 4 sessions and partitions ·
-5 adblock + per-site Shields · 6 history/bookmarks/downloads · 7 GX layer
+5 adblock + per-site Shields · 6 history/bookmarks/downloads (bookmarks ✅) · 7 GX layer
 (theming partly done via `theme.css`; network limiter, tab discarding, tab
 islands, sidebar outstanding).
 
@@ -57,6 +61,8 @@ islands, sidebar outstanding).
   so popups open **leftward** by default. Putting `right` in `alignment` flips
   that and shoves them off-screen. Anchor rects are **window**-relative, so a
   panel in its own view must add its own offset (see `PANEL_ORIGIN`).
+- The package does not clamp popup windows. `PopupPositioner` constrains real
+  popups against the parent window after preferred-size changes.
 - Dropdowns get their own `WebContentsView` (`src/main/panel.js`). Growing the
   chrome view to full height instead paints black over the whole page —
   transparency does not work there.
@@ -64,7 +70,7 @@ islands, sidebar outstanding).
   Multi-line string replacement in scripts silently no-ops against those.
   Verify edits landed instead of trusting the write.
 
-**Not yet set up** (don't go looking): TS config, linter, unit tests, CI,
+**Not yet set up** (don't go looking): TS config, linter, CI,
 CODEOWNERS, branch protection, `electron-updater`, tab reordering/drag,
 history/bookmarks persistence, private windows, settings page.
 
@@ -240,12 +246,3 @@ Newest at top. One entry per branch, updated in place. Status:
   `src/renderer/theme.css`; don't hardcode hex values elsewhere. Channel names
   are in `src/shared/ipc.js` — the sandboxed `page-preload.js` inlines three of
   them by necessity and says so.
-
-### 2026-08-21 — Claude Code — Add AGENTS.md
-- **Status / Branch:** merged · `main`
-- **Touches:** `AGENTS.md`, `CLAUDE.md`
-- **Summary:** Shared instruction set for both agents — orientation cache (§0),
-  sync protocol (§2), rules, this log. No per-directory ownership: either agent
-  may touch any file, and the humans decide who works on what.
-- **For the other agent:** read §0 instead of exploring the repo, add an entry
-  here before you start, and run the §2 sequence on every push.

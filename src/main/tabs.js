@@ -3,6 +3,7 @@ const { WebContentsView } = require('electron')
 const { IPC, NEW_TAB_URL } = require('../shared/ipc')
 
 const CHROME_HEIGHT = 84 // tab strip (38) + toolbar (46)
+const BOOKMARKS_HEIGHT = 30
 
 let nextId = 1
 
@@ -19,6 +20,7 @@ class TabManager {
     this.tabs = []
     this.activeId = null
     this.overlay = false // true while a chrome dropdown needs the full window
+    this.chromeHeight = CHROME_HEIGHT
     win.on('resize', () => this.layout())
   }
 
@@ -132,12 +134,17 @@ class TabManager {
     this.layout()
   }
 
+  setBookmarksVisible(visible) {
+    this.chromeHeight = CHROME_HEIGHT + (visible ? BOOKMARKS_HEIGHT : 0)
+    this.layout()
+  }
+
   layout() {
     const { width, height } = this.win.getContentBounds()
-    this.chromeView.setBounds({ x: 0, y: 0, width, height: CHROME_HEIGHT })
+    this.chromeView.setBounds({ x: 0, y: 0, width, height: this.chromeHeight })
     const active = this.active
     if (active) {
-      active.view.setBounds({ x: 0, y: CHROME_HEIGHT, width, height: Math.max(0, height - CHROME_HEIGHT) })
+      active.view.setBounds({ x: 0, y: this.chromeHeight, width, height: Math.max(0, height - this.chromeHeight) })
     }
   }
 
@@ -171,4 +178,4 @@ class TabManager {
   }
 }
 
-module.exports = { TabManager, CHROME_HEIGHT }
+module.exports = { TabManager, CHROME_HEIGHT, BOOKMARKS_HEIGHT }

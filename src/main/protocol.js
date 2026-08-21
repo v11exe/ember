@@ -5,11 +5,18 @@ const { protocol } = require('electron')
 // Electron has no chrome:// pages. Internal pages live on ember:// instead,
 // registered as a standard, secure scheme (AGENTS.md §0).
 const SCHEME = 'ember'
-const PAGES = path.join(__dirname, '..', 'renderer', 'pages')
+const RENDERER = path.join(__dirname, '..', 'renderer')
+const PAGES = path.join(RENDERER, 'pages')
+const SHARED_ASSETS = new Map([
+  ['/brand.js', path.join(RENDERER, 'brand.js')],
+  ['/brand.css', path.join(RENDERER, 'brand.css')],
+  ['/assets/Necosmic-PersonalUse.otf', path.join(RENDERER, 'assets', 'Necosmic-PersonalUse.otf')],
+])
 
 const MIME = {
   '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json',
+  '.otf': 'font/otf',
 }
 
 function registerSchemePrivileges() {
@@ -23,7 +30,7 @@ function handleInternalPages() {
     const { host, pathname } = new URL(request.url)
     // pages/ is flat: ember://newtab -> newtab.html, /newtab.css -> newtab.css
     const name = !pathname || pathname === '/' ? host + '.html' : path.basename(pathname)
-    const file = path.join(PAGES, name)
+    const file = SHARED_ASSETS.get(pathname) || path.join(PAGES, name)
 
     try {
       const body = await fs.readFile(file)

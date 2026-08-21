@@ -11,7 +11,7 @@ const { IPC } = require('../shared/ipc')
  */
 const WIDTH = 306
 const MARGIN = 10
-const TOP = 78 // just below the 84px chrome bar, slightly overlapping
+const TOP = 78 // baseline 84px chrome bar, with a deliberate 6px overlap
 
 class ExtensionPanel {
   constructor(win) {
@@ -19,6 +19,9 @@ class ExtensionPanel {
     this.view = null
     this.open = false
     this.height = 240
+    this.top = TOP
+    this.bounds = null
+    this.popupAnchor = null
   }
 
   #ensureView() {
@@ -59,11 +62,17 @@ class ExtensionPanel {
     if (this.open) this.layout()
   }
 
+  setTop(top) {
+    this.top = Math.max(MARGIN, Math.round(top))
+    if (this.open) this.layout()
+  }
+
   layout() {
     if (!this.view || !this.open) return
     const { width, height } = this.win.getContentBounds()
-    const h = Math.min(this.height, height - TOP - MARGIN)
-    const bounds = { x: Math.max(MARGIN, width - WIDTH - MARGIN), y: TOP, width: WIDTH, height: h }
+    const h = Math.min(this.height, height - this.top - MARGIN)
+    const bounds = { x: Math.max(MARGIN, width - WIDTH - MARGIN), y: this.top, width: WIDTH, height: h }
+    this.bounds = bounds
     this.view.setBounds(bounds)
     // Popup anchoring is window-relative, so the panel page needs its offset.
     this.view.webContents.send(IPC.PANEL_ORIGIN, { x: bounds.x, y: bounds.y })

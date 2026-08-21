@@ -21,16 +21,18 @@ function fit() {
  */
 function activate(extensionId, iconEl) {
   const rect = iconEl.getBoundingClientRect()
+  const anchorRect = {
+    x: origin.x + rect.left,
+    y: origin.y + rect.top,
+    width: rect.width,
+    height: rect.height,
+  }
+  window.emberPanel.setAnchor(anchorRect)
   window.browserAction.activate('_self', {
     eventType: 'click',
     extensionId,
     alignment: 'bottom',
-    anchorRect: {
-      x: origin.x + rect.left,
-      y: origin.y + rect.top,
-      width: rect.width,
-      height: rect.height,
-    },
+    anchorRect,
   })
 }
 
@@ -55,15 +57,16 @@ function render(extensions) {
     const launch = document.createElement('button')
     launch.className = 'ext-launch'
     launch.title = `Open ${ext.name}`
+    const icon = document.createElement('span')
+    icon.className = 'ext-icon'
     if (ext.icon) {
       const img = document.createElement('img')
       img.src = ext.icon
-      launch.append(img)
+      icon.append(img)
     } else {
-      launch.classList.add('fallback')
-      launch.textContent = (ext.name || '?').charAt(0).toUpperCase()
+      icon.classList.add('fallback')
+      icon.textContent = (ext.name || '?').charAt(0).toUpperCase()
     }
-    launch.onclick = () => activate(ext.id, launch)
 
     const meta = document.createElement('div')
     meta.className = 'ext-meta'
@@ -75,7 +78,8 @@ function render(extensions) {
     version.className = 'ext-version'
     version.textContent = 'v' + ext.version
     meta.append(name, version)
-    meta.onclick = () => activate(ext.id, launch)
+    launch.append(icon, meta)
+    launch.onclick = () => activate(ext.id, icon)
 
     const remove = document.createElement('button')
     remove.className = 'ext-remove'
@@ -87,7 +91,7 @@ function render(extensions) {
       render(next)
     }
 
-    row.append(launch, meta, remove)
+    row.append(launch, remove)
     return row
   }))
   fit()

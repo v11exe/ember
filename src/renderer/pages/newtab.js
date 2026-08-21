@@ -7,6 +7,8 @@ const LINKS = [
   { name: 'Twitch', url: 'https://www.twitch.tv', mark: 'T' },
 ]
 
+window.EmberBrand.mountBrand(document.getElementById('ember-brand'))
+
 // window.ember is injected by the sandboxed page preload for ember:// pages only.
 const nav = (url) => {
   if (window.ember?.navigate) window.ember.navigate(url)

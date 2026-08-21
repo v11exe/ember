@@ -1,0 +1,2 @@
+html, body { width: 760px; min-height: 560px; margin: 0; }
+body { box-sizing: border-box; padding: 28px; font: 16px system-ui; background: #f3f0e8; color: #211d18; }

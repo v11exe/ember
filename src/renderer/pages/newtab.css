@@ -9,7 +9,8 @@
 html, body { height: 100%; margin: 0; }
 body {
   background:
-    radial-gradient(900px 420px at 50% -8%, rgba(255,122,24,.16), transparent 70%),
+    radial-gradient(760px 420px at 82% 8%, rgba(255,122,24,.13), transparent 72%),
+    radial-gradient(820px 380px at 48% -12%, rgba(255,122,24,.08), transparent 70%),
     radial-gradient(600px 300px at 50% 105%, rgba(232,65,15,.10), transparent 70%),
     var(--bg);
   color: var(--text);
@@ -23,16 +24,14 @@ body {
 
 /* ---------- logo ---------- */
 .logo { margin-bottom: 34px; }
-.comet {
-  width: min(340px, 62vw); height: auto; display: block; margin: 0 auto 6px;
+.logo { display: grid; justify-items: center; gap: 14px; }
+.logo .ember-brand-icon {
+  display: block; width: min(340px, 62vw);
   filter: drop-shadow(0 0 26px rgba(255,138,31,.34));
 }
-.wordmark {
-  margin: 0;
-  font-size: clamp(38px, 8vw, 62px);
-  font-weight: 800;
-  letter-spacing: .14em;
-  text-indent: .14em;
+.logo .ember-brand-wordmark { display: block; }
+.logo .ember-wordmark {
+  font-size: clamp(54px, 10vw, 78px);
   color: #EFEFEF;
 }
 
@@ -110,3 +109,21 @@ body {
 }
 .foot button:hover { text-decoration: underline; }
 .dot { opacity: .5; }
+
+@media (max-height: 520px) {
+  body { place-items: start center; overflow-y: auto; }
+  .hero { width: min(720px, 92vw); margin-top: 0; padding: 14px 0 18px; }
+  .logo { gap: 5px; margin-bottom: 14px; }
+  .logo .ember-brand-icon { width: min(220px, 42vw); }
+  .logo .ember-wordmark { font-size: clamp(40px, 8vw, 52px); }
+  .search { height: 44px; }
+  .go { height: 34px; padding-inline: 17px; }
+  .tiles { margin-top: 14px; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+  .tile { gap: 5px; padding: 8px 3px 7px; border-radius: 9px; font-size: 11px; }
+  .tile-mark { width: 24px; height: 24px; border-radius: 7px; font-size: 12px; }
+  .foot { margin-top: 14px; }
+}
+
+@media (max-width: 560px) {
+  .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

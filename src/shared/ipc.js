@@ -20,10 +20,15 @@ const IPC = {
   PANEL_TOGGLE: 'panel:toggle',
   PANEL_CLOSE: 'panel:close',
   PANEL_RESIZE: 'panel:resize',
+  PANEL_ANCHOR: 'panel:anchor',
+  BOOKMARKS_GET: 'bookmarks:get',
+  BOOKMARKS_IMPORT: 'bookmarks:import',
+  BOOKMARKS_VISIBILITY: 'bookmarks:visibility',
 
   // main -> renderer
   STATE: 'browser:state',
   PANEL_ORIGIN: 'panel:origin', // panel view offset, for popup anchoring
+  BOOKMARKS_CHANGED: 'bookmarks:changed',
 }
 
 // Where the omnibox sends anything that isn't a URL.

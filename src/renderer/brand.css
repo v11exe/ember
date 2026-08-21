@@ -1,0 +1,18 @@
+@font-face {
+  font-family: "Necosmic Ember";
+  src: url("./assets/Necosmic-PersonalUse.otf") format("opentype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+}
+
+.ember-icon { display: block; width: 100%; height: auto; }
+.ember-wordmark {
+  display: block;
+  font-family: "Necosmic Ember", sans-serif;
+  font-style: normal;
+  font-weight: 400;
+  line-height: .78;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
