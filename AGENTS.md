@@ -151,7 +151,7 @@ Newest at top. One entry per branch, updated in place. Status:
 ```
 
 ### 2026-08-21 — Claude Code — Add AGENTS.md
-- **Status / Branch / Area:** pushed · `chore/agents-md` · repo root
+- **Status / Branch / Area:** merged · `chore/agents-md` · repo root
 - **Touches:** `AGENTS.md`, `CLAUDE.md`
 - **Summary:** Shared agent instruction set — orientation cache, ownership map,
   coordination protocol, rules, Work Log. `CLAUDE.md` points here so both agents
