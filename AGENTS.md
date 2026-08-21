@@ -208,7 +208,7 @@ Newest at top. One entry per branch, updated in place. Status:
 ```
 
 ### 2026-08-21 — Codex — Transparent meteor branding
-- **Status / Branch:** in-progress · `feat/transparent-meteor-branding`
+- **Status / Branch:** pushed · `feat/transparent-meteor-branding`
 - **Touches:** `AGENTS.md`, `src/main/{index,protocol}.js`, `src/renderer/{brand,chrome}.*`, `src/renderer/pages/newtab.*`, `src/renderer/assets/{ember-icon.png,Necosmic-PersonalUse.otf}`, `scripts/capture-ui.js`, `test/{brand,renderer-contracts}.test.js`
 - **Summary:** Make the supplied transparent meteor the one icon asset throughout Ember; compose the new-tab masthead from it and a dedicated Necosmic `ember` wordmark.
 - **For the other agent:** replaces active combined-logo use and adds a bundled font route; browser functionality and IPC contracts are unchanged.
