@@ -155,6 +155,13 @@ Renderer reaches main only through the preload bridge, `contextIsolation: true`,
 `chrome://` pages. Don't reuse Opera GX or Brave names, icons, sounds, or
 shaders — inspiration only.
 
+**Docs** — `README.md` stays exactly as it is: the title and the one-line
+description, nothing else. Do not expand it, do not add sections to it, and do
+not create other `README.md` files, a `docs/` folder, or any other prose
+documentation. This is deliberate — everything an agent needs belongs in §0 of
+this file, and everything a human needs is in the code. If you think something
+must be written down, put it in §0 or a Work Log entry.
+
 **Git** — branches `feat/… fix/… chore/… refactor/…`. Commits
 `<area>: <imperative summary>` (`main: add tab manager`). Rebase, don't merge.
 One PR per Work Log entry. Gates
@@ -183,6 +190,14 @@ Newest at top. One entry per branch, updated in place. Status:
 - **For the other agent:** new IPC channels, renamed files, contracts they must
   implement against. `none` if none.
 ```
+
+### 2026-08-21 — Claude Code — README stays minimal
+- **Status / Branch:** merged · `main`
+- **Touches:** `AGENTS.md`
+- **Summary:** Rule added to §3: `README.md` keeps only its title and one-line
+  description. No expanding it, no second READMEs, no `docs/`.
+- **For the other agent:** if you want something documented, it goes in §0 of
+  this file or a Work Log entry — not into prose files.
 
 ### 2026-08-21 — Claude Code — Panel fixes: own view, click-to-open, popup side
 - **Status / Branch:** merged · `main`
