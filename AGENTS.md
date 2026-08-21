@@ -19,35 +19,45 @@ are. Open a file only when you are about to read or change its logic.
 
 **Repo:** `v11exe/ember` · branch `main` · Windows dev machines.
 
-**Stack:** Electron `^43.4.1`, CommonJS JS today, TypeScript planned (not yet
-migrated). No build step yet. `npm start` → `electron .`.
+**Stack:** Electron `^43.4.1`, CommonJS JS (TypeScript still planned, not
+started). No build step. `npm start` runs it, `npm run smoke` boots it headless
+and exits non-zero on failure — that is the pre-push gate.
 
-**File map** (complete — the repo really is this small):
+**File map** (complete):
 
 ```
-package.json    electron dep, "start": "electron ."
-main.js         BaseWindow + one WebContentsView, hardcoded URL. Whole app.
-README.md       one-line project description
-.gitignore      node_modules
-AGENTS.md       this file
-CLAUDE.md       one line: @AGENTS.md
+src/main/index.js        app bootstrap, BaseWindow, IPC handlers, lifecycle
+src/main/tabs.js         TabManager — create/close/select/layout, CHROME_HEIGHT=84
+src/main/extensions.js   Chrome Web Store install + chrome.* APIs + "Add to Ember"
+src/main/protocol.js     ember:// scheme, serves src/renderer/pages flat
+src/main/page-preload.js sandboxed preload; ember:// pages only, nav verbs only
+src/renderer/preload.js  chrome UI bridge (contextBridge "ember"), browser-action
+src/renderer/chrome.*    tab strip + toolbar (html/css/js)
+src/renderer/theme.css   the palette — every colour is defined here, once
+src/renderer/pages/      internal pages, flat dir: newtab.html/.css/.js
+src/shared/ipc.js        channel names, SEARCH_URL, NEW_TAB_URL
+src/shared/urls.js       toNavigationUrl() — URL vs Google search
+scripts/smoke.js         boot check
 ```
 
-**Milestones** — 1 shell ✅ · 2 tab manager · 3 chrome UI + IPC · 4 sessions and
-partitions · 5 adblock + per-site Shields · 6 history/bookmarks/downloads ·
-7 GX layer (theming, network limiter, tab discarding, tab islands, sidebar) ·
-8 extensions (last, partial MV3).
+**Milestones** — 1 shell ✅ · 2 tab manager ✅ · 3 chrome UI + IPC ✅ ·
+8 extensions ✅ (built early, out of order) · 4 sessions and partitions ·
+5 adblock + per-site Shields · 6 history/bookmarks/downloads · 7 GX layer
+(theming partly done via `theme.css`; network limiter, tab discarding, tab
+islands, sidebar outstanding).
 
-**Not yet set up** (don't go looking): TS config, linter, tests, CI, CODEOWNERS,
-branch protection, `src/main`/`src/renderer` split, `src/shared` IPC package,
-`electron-updater`.
+**Not yet set up** (don't go looking): TS config, linter, unit tests, CI,
+CODEOWNERS, branch protection, `electron-updater`, tab reordering/drag,
+history/bookmarks persistence, private windows, settings page.
 
-**Decided, don't relitigate:** `WebContentsView` not `BrowserView` · adblock via
-`@ghostery/adblocker-electron` · Shields keyed by eTLD+1, enforced in
-`webRequest.onBeforeRequest` before the blocker · internal pages on a custom
-`app://` scheme via `protocol.handle` · `better-sqlite3` + `safeStorage` + JSON
-settings · no Widevine, so DRM video will not play · extensions are
-unpacked-only · fingerprint randomization ships off by default.
+**Decided, don't relitigate:** `WebContentsView` not `BrowserView` · frameless
+window with custom controls · omnibox falls back to Google search · extensions
+via `electron-chrome-web-store` + `electron-chrome-extensions`, which makes the
+project **GPL-3.0** · internal pages on `ember://` via `protocol.handle` ·
+adblock via `@ghostery/adblocker-electron` when milestone 5 lands · Shields
+keyed by eTLD+1 · `better-sqlite3` + `safeStorage` + JSON settings · no
+Widevine, so DRM video will not play · not every CWS extension works, Electron
+implements a subset of the platform.
 
 ---
 
@@ -164,6 +174,20 @@ Newest at top. One entry per branch, updated in place. Status:
 - **For the other agent:** new IPC channels, renamed files, contracts they must
   implement against. `none` if none.
 ```
+
+### 2026-08-21 — Claude Code — Browser shell: chrome UI, theme, CWS extensions
+- **Status / Branch:** merged · `main`
+- **Touches:** `src/main/*`, `src/renderer/*`, `src/shared/*`, `scripts/smoke.js`,
+  `package.json`, `README.md`, `AGENTS.md`; deleted root `main.js`
+- **Summary:** Milestones 2, 3 and 8. Tab manager, frameless chrome UI (tab strip,
+  omnibox, window controls), ember:// internal pages, Ember-themed new tab page
+  with Google search, and Chrome Web Store installs rebranded to "Add to Ember".
+- **For the other agent:** the flat root layout is gone — code now lives in
+  `src/main`, `src/renderer`, `src/shared`, and `package.json` main points at
+  `src/main/index.js`. Rebase before you touch anything. All colours come from
+  `src/renderer/theme.css`; don't hardcode hex values elsewhere. Channel names
+  are in `src/shared/ipc.js` — the sandboxed `page-preload.js` inlines three of
+  them by necessity and says so.
 
 ### 2026-08-21 — Claude Code — Add AGENTS.md
 - **Status / Branch:** merged · `main`

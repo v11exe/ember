@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Ember</title>
+  <link rel="stylesheet" href="theme.css" />
+  <link rel="stylesheet" href="chrome.css" />
+</head>
+<body>
+  <header class="tabstrip" id="tabstrip">
+    <div class="brand" title="Ember">
+      <span class="brand-spark"></span>
+    </div>
+    <div class="tabs" id="tabs"></div>
+    <button class="tab-new" id="new-tab" title="New tab (Ctrl+T)">+</button>
+    <div class="drag-fill"></div>
+    <div class="window-controls">
+      <button id="win-min" class="wc" title="Minimize"><svg viewBox="0 0 10 10"><path d="M0 5h10" /></svg></button>
+      <button id="win-max" class="wc" title="Maximize"><svg viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" /></svg></button>
+      <button id="win-close" class="wc wc-close" title="Close"><svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10" /></svg></button>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <div class="nav">
+      <button id="back" class="icon" title="Back"><svg viewBox="0 0 16 16"><path d="M10 3L5 8l5 5" /></svg></button>
+      <button id="forward" class="icon" title="Forward"><svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" /></svg></button>
+      <button id="reload" class="icon" title="Reload"><svg viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.5-3.5M13 2v3h-3" /></svg></button>
+    </div>
+
+    <form class="omnibox" id="omnibox-form">
+      <span class="omnibox-glyph" id="omnibox-glyph"></span>
+      <input id="omnibox" type="text" spellcheck="false" autocomplete="off"
+             placeholder="Search with Google or enter address" />
+    </form>
+
+    <div class="actions">
+      <browser-action-list id="actions"></browser-action-list>
+      <button id="store" class="icon" title="Extensions — Chrome Web Store">
+        <svg viewBox="0 0 16 16"><path d="M2 6h12v7H2zM5 6V4a3 3 0 0 1 6 0v2" /></svg>
+      </button>
+    </div>
+  </div>
+
+  <script src="chrome.js"></script>
+</body>
+</html>

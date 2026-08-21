@@ -1,0 +1,55 @@
+/* Ember theme — dark by default, ember gradient from the logo. */
+:root {
+  /* logo gradient, cool tail -> hot head */
+  --ember-deep:  #E8410F;
+  --ember-core:  #FF5A1F;
+  --ember-mid:   #FF8A1F;
+  --ember-warm:  #FFA62B;
+  --ember-hot:   #FFC93C;
+  --ember-glow:  #FBE6A2;
+  --ember-grad:  linear-gradient(90deg, var(--ember-deep), var(--ember-core) 30%, var(--ember-warm) 65%, var(--ember-glow));
+
+  /* dark surfaces */
+  --bg:        #000000;
+  --bg-1:      #0C0C0E;
+  --surface:   #141417;
+  --surface-2: #1C1C21;
+  --surface-3: #26262D;
+  --border:    #2A2A31;
+
+  --text:      #EDEDED;
+  --text-dim:  #9A9AA5;
+  --text-faint:#63636E;
+
+  --accent:      var(--ember-mid);
+  --accent-text: #12100C;
+  --focus-ring:  0 0 0 2px rgba(255, 138, 31, .45);
+
+  --radius:   9px;
+  --radius-sm:6px;
+  --font: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection { background: rgba(255,138,31,.32); }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--bg-1); }
+::-webkit-scrollbar-thumb {
+  background: var(--surface-3);
+  border-radius: 6px;
+  border: 2px solid var(--bg-1);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--ember-deep); }
+
+button { font-family: inherit; color: inherit; }
+:focus-visible { outline: none; box-shadow: var(--focus-ring); }
