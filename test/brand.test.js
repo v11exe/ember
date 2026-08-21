@@ -24,9 +24,18 @@ test('ships the supplied transparent meteor and Necosmic font byte-for-byte', ()
   assert.equal(digest('Necosmic-PersonalUse.otf'), '66FE3298A1A892AB71ED5B8DBBAD739D4D4E92251560DB7F4348499FE9FFB072')
 })
 
-test('uses the supplied icon for the native Ember window too', () => {
+test('uses a dedicated square meteor crop for the native Ember window', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'index.js'), 'utf8')
-  assert.match(source, /icon: path\.join\(__dirname, '\.\.', 'renderer', 'assets', 'ember-icon\.png'\)/)
+  assert.match(source, /icon: path\.join\(__dirname, '\.\.', 'renderer', 'assets', 'ember-app-icon\.png'\)/)
+  const icon = path.join(__dirname, '..', 'src', 'renderer', 'assets', 'ember-app-icon.png')
+  assert.equal(fs.existsSync(icon), true)
+  const bytes = fs.readFileSync(icon)
+  assert.equal(bytes.readUInt32BE(16), bytes.readUInt32BE(20))
+})
+
+test('resolves the meteor relative to each internal document', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'brand.js'), 'utf8')
+  assert.match(source, /new URL\(ICON_ASSET\.slice\(1\), target\.ownerDocument\.baseURI\)\.href/)
 })
 
 test('does not actively reference the deprecated combined raster logo', () => {

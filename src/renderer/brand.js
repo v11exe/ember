@@ -11,7 +11,7 @@
   function createMeteor(target, className, label) {
     const image = target.ownerDocument.createElement('img')
     image.className = className
-    image.src = ICON_ASSET
+    image.src = new URL(ICON_ASSET.slice(1), target.ownerDocument.baseURI).href
     image.alt = label
     return image
   }

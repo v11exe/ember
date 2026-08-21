@@ -37,7 +37,7 @@ function createBrowser() {
     minWidth: 620,
     minHeight: 420,
     frame: false,
-    icon: path.join(__dirname, '..', 'renderer', 'assets', 'ember-icon.png'),
+    icon: path.join(__dirname, '..', 'renderer', 'assets', 'ember-app-icon.png'),
     backgroundColor: '#000000',
     title: 'Ember',
   })
