@@ -210,6 +210,17 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
+### 2026-08-21 — Codex — Restore corrected context-menu glass
+- **Status / Branch:** in-progress · `fix/upload-liquid-glass-optics`
+- **Touches:** `AGENTS.md`, `agent.md`, `scripts/capture-ui.js`,
+  `src/main/{context-menu-panel,protocol}.js`,
+  `src/renderer/pages/{context-menu,context-menu-lens,context-menu-optics}.*`,
+  `test/{context-menu-lens,context-menu-optics,context-menu-panel,renderer-contracts}.test.js`
+- **Summary:** Restore the newer compact, edge-only Liquid Glass context menu
+  that was absent from this upload branch without changing menu commands.
+- **For the other agent:** restoring the context-menu renderer and its captured
+  backdrop contracts; upload actions and the new upload optics stay untouched.
+
 ### 2026-08-21 — Codex — Geometry-correct upload Liquid Glass
 - **Status / Branch:** pushed · `fix/upload-liquid-glass-optics`
 - **Touches:** `AGENTS.md`, `agent.md`, `src/main/upload-panel.js`,
