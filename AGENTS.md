@@ -67,6 +67,9 @@ islands, sidebar outstanding).
   chrome view to full height instead paints black over the whole page —
   transparency does not work there.
 - Upload/context overlays share `FloatingPanel`; never replace page bounds.
+- Upload outer optics use an aspect-matched map with a 24px active perimeter;
+  recapture its 40px bleed whenever the panel relayouts, and have its hover lens
+  sample the independently aligned raw capture rather than the processed shell.
 - Files are LF via `.gitattributes`, but Git may hand you CRLF working copies.
   Multi-line string replacement in scripts silently no-ops against those.
   Verify edits landed instead of trusting the write.
@@ -211,9 +214,10 @@ Newest at top. One entry per branch, updated in place. Status:
 - **Status / Branch:** in-progress · `fix/upload-liquid-glass-optics`
 - **Touches:** `AGENTS.md`, `agent.md`, `src/main/upload-panel.js`,
   `src/renderer/pages/{upload.html,upload.css,upload.js,upload-optics.js}`,
-  `test/{upload-panel,upload-optics,renderer-contracts}.test.js`
+  `scripts/capture-ui.js`, `test/{upload-panel,upload-optics,renderer-contracts}.test.js`
 - **Summary:** Replace the stretched upload-panel displacement map with a
-  generated edge-only map and make the hover lens sample the raw captured page.
+  generated edge-only map, recapture resize bleed, and make the hover lens sample
+  the raw captured page.
 - **For the other agent:** upload action payloads and panel geometry are
   unchanged; captured upload backdrops now request 40px edge-clipped bleed.
 

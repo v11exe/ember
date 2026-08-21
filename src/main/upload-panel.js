@@ -7,6 +7,7 @@ const { payloadFromPath, payloadFromClipboardImage } = require('./upload-files')
 const { IPC } = require('../shared/ipc')
 
 const DESIRED_SIZE = { width: 650, height: 430 }
+const CAPTURE_BLEED = 40
 
 class UploadPanel {
   constructor(win, {
@@ -42,7 +43,7 @@ class UploadPanel {
       if (generation !== this.openGeneration || this.active?.request !== request) return
       state.openSequence = ++this.openSequence
       const bounds = centerPanel(tab.view.getBounds(), DESIRED_SIZE, 12)
-      await this.overlay.show({ bounds, state, targetView: tab.view })
+      await this.overlay.show({ bounds, state, targetView: tab.view, captureBleed: CAPTURE_BLEED })
     } catch (error) {
       if (generation === this.openGeneration && this.active?.request === request) {
         this.active = null
@@ -80,7 +81,16 @@ class UploadPanel {
 
   layout() {
     if (!this.active) return
-    this.overlay.setBounds(centerPanel(this.active.tab.view.getBounds(), DESIRED_SIZE, 12))
+    const bounds = centerPanel(this.active.tab.view.getBounds(), DESIRED_SIZE, 12)
+    if (this.overlay.relayout) {
+      void this.overlay.relayout({
+        bounds,
+        targetView: this.active.tab.view,
+        captureBleed: CAPTURE_BLEED,
+      })
+      return
+    }
+    this.overlay.setBounds(bounds)
   }
 
   async #stateFor(request, tab) {

@@ -1,10 +1,14 @@
 const byId = (id) => document.getElementById(id)
-const backdrop = byId('glass-backdrop')
+const backdrop = byId('upload-texture')
+const hoverLens = byId('upload-hover-lens')
+const hoverSource = byId('upload-hover-source')
 const clipboardSection = byId('clipboard-section')
 const clipboardSlot = byId('clipboard-slot')
 const recentFiles = byId('recent-files')
 const shell = byId('upload-shell')
 let openSequence = Symbol('unopened')
+let backdropRect = { x: 0, y: 0, width: innerWidth, height: innerHeight }
+const optics = EmberUploadOptics.createOuterOptics(shell, byId('upload-switcher-map'))
 
 window.EmberBrand.mountIcon(byId('upload-brand'))
 
@@ -28,19 +32,35 @@ function preview(thumbnail, name) {
 
 function animateHover(button) {
   button.addEventListener('pointerenter', () => {
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
-    button.getAnimations?.().forEach((animation) => animation.cancel())
-    button.animate([
-      { transform: 'translate3d(0, 0, 0) scale(1)' },
-      { transform: 'translate3d(0, -1px, 0) scale(1.015)' },
-    ], {
-      duration: 180, easing: 'cubic-bezier(.2, .8, .2, 1)', fill: 'forwards',
-    })
+    const shellRect = shell.getBoundingClientRect()
+    const rect = button.getBoundingClientRect()
+    const x = rect.left - shellRect.left
+    const y = rect.top - shellRect.top
+    shell.style.setProperty('--hover-x', `${x}px`)
+    shell.style.setProperty('--hover-y', `${y}px`)
+    shell.style.setProperty('--hover-width', `${rect.width}px`)
+    shell.style.setProperty('--hover-height', `${rect.height}px`)
+    shell.style.setProperty('--sample-x', `${backdropRect.x - x}px`)
+    shell.style.setProperty('--sample-y', `${backdropRect.y - y}px`)
+    hoverLens.dataset.visible = 'true'
   })
   button.addEventListener('pointerleave', () => {
-    button.getAnimations?.().forEach((animation) => animation.cancel())
-    button.style.removeProperty('transform')
+    hoverLens.dataset.visible = 'false'
   })
+}
+
+function setBackdrop(state) {
+  if (!state.backdrop) {
+    backdrop.removeAttribute('src'); backdrop.removeAttribute('style')
+    hoverSource.style.removeProperty('background-image')
+    backdropRect = { x: 0, y: 0, width: innerWidth, height: innerHeight }
+    return
+  }
+  backdropRect = state.backdropRect || { x: 0, y: 0, width: innerWidth, height: innerHeight }
+  backdrop.src = state.backdrop
+  Object.assign(backdrop.style, { left: `${backdropRect.x}px`, top: `${backdropRect.y}px`, width: `${backdropRect.width}px`, height: `${backdropRect.height}px` })
+  hoverSource.style.backgroundImage = `url("${state.backdrop}")`
+  hoverSource.style.backgroundSize = `${backdropRect.width}px ${backdropRect.height}px`
 }
 
 function playOpening(state) {
@@ -59,7 +79,7 @@ function playOpening(state) {
 
 function render(state) {
   playOpening(state)
-  if (state.backdrop) backdrop.src = state.backdrop
+  setBackdrop(state)
   byId('upload-title').textContent = state.multiple ? 'Choose files' : 'Choose a file'
   byId('upload-origin').textContent = state.origin
   byId('accept-label').textContent = state.accept || 'All file types'
@@ -90,6 +110,7 @@ function render(state) {
   })
   recentFiles.replaceChildren(...cards)
   byId('upload-empty').hidden = cards.length > 0
+  void optics.refresh()
 }
 
 for (const button of [byId('show-all-files'), clipboardSlot, byId('upload-close')]) animateHover(button)
@@ -99,4 +120,5 @@ byId('upload-close').onclick = () => window.emberOverlay.close()
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') window.emberOverlay.close()
 })
+window.addEventListener('resize', () => { void optics.refresh() })
 window.emberOverlay.onState(render)

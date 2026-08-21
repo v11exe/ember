@@ -115,7 +115,7 @@ async function captureChrome(size) {
   return metrics
 }
 
-async function captureOverlay(name, page, size, state, activePosition = null) {
+async function captureOverlay(name, page, size, state, activePosition = null, hoverSelector = null) {
   console.log(`[capture] overlay ${name}`)
   const win = new BrowserWindow({
     show: false,
@@ -133,7 +133,7 @@ async function captureOverlay(name, page, size, state, activePosition = null) {
   })
   await win.loadURL(`ember://${page}`)
   win.webContents.send(IPC.OVERLAY_STATE, state)
-  await new Promise((resolve) => setTimeout(resolve, 150))
+  await new Promise((resolve) => setTimeout(resolve, page === 'upload' ? 500 : 150))
   if (activePosition) {
     await win.webContents.executeJavaScript(`(() => {
       const items = [...document.querySelectorAll('.menu-item:not(:disabled)')]
@@ -143,10 +143,15 @@ async function captureOverlay(name, page, size, state, activePosition = null) {
     })()`)
     await new Promise((resolve) => setTimeout(resolve, 220))
   }
+  if (hoverSelector) {
+    await win.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(hoverSelector)})?.dispatchEvent(new PointerEvent('pointerenter'))`)
+    await new Promise((resolve) => setTimeout(resolve, 220))
+  }
   const metrics = await win.webContents.executeJavaScript(`({
     viewport: [innerWidth, innerHeight],
     scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
     lens: (() => { const r = document.getElementById('selector-lens')?.getBoundingClientRect(); return r && [r.x, r.y, r.width, r.height] })(),
+    uploadLens: (() => { const r = document.getElementById('upload-hover-lens')?.getBoundingClientRect(); return r && [r.x, r.y, r.width, r.height] })(),
   })`)
   await screenshot(win, `${name}.png`)
   win.destroy()
@@ -166,6 +171,15 @@ function contrastBackdrop(tone, width, height) {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`
 }
 
+function colourBackdrop(width, height) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    <rect width="50%" height="50%" fill="#20d96b"/><rect x="50%" width="50%" height="50%" fill="#f2e929"/>
+    <rect y="50%" width="50%" height="50%" fill="#ff7a18"/><rect x="50%" y="50%" width="50%" height="50%" fill="#e62f2f"/>
+    <path d="M0 90H${width}M0 260H${width}M160 0V${height}M460 0V${height}" stroke="#111" stroke-width="4"/>
+  </svg>`
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`
+}
+
 app.whenReady().then(async () => {
   await fs.mkdir(output, { recursive: true })
   handleInternalPages()
@@ -179,9 +193,10 @@ app.whenReady().then(async () => {
   const brandIcon = nativeImage.createFromPath(path.join(__dirname, '..', 'src', 'renderer', 'assets', 'ember-icon.png'))
     .resize({ width: 180 }).toDataURL()
   const backdrop = nativeImage.createFromPath(path.join(output, 'newtab-wide.png')).resize({ width: 650 }).toDataURL()
-  const uploadState = {
+  const uploadBackdropRect = { x: -40, y: -40, width: 730, height: 510 }
+  const uploadState = (uploadBackdrop) => ({
     kind: 'upload', origin: 'uploads.example', accept: 'image/*', multiple: false,
-    backdrop,
+    backdrop: uploadBackdrop, backdropRect: uploadBackdropRect, openSequence: 1,
     clipboard: { name: 'clipboard-20260821.png', type: 'image/png', thumbnail: brandIcon },
     recents: [
       { name: 'ember-icon.png', path: 'icon', thumbnail: brandIcon },
@@ -190,9 +205,12 @@ app.whenReady().then(async () => {
       { name: 'product-shot.png', path: 'product', thumbnail: brandIcon },
       { name: 'visual-reference.png', path: 'reference', thumbnail: brandIcon },
     ],
-  }
-  results['upload-wide'] = await captureOverlay('upload-wide', 'upload', { width: 650, height: 430 }, uploadState)
-  results['upload-compact'] = await captureOverlay('upload-compact', 'upload', { width: 596, height: 312 }, uploadState)
+  })
+  results['upload-wide'] = await captureOverlay('upload-wide', 'upload', { width: 650, height: 430 }, uploadState(backdrop))
+  results['upload-compact'] = await captureOverlay('upload-compact', 'upload', { width: 596, height: 312 }, uploadState(backdrop))
+  results['upload-contrast'] = await captureOverlay('upload-contrast', 'upload', { width: 650, height: 430 }, uploadState(contrastBackdrop('light', 730, 510)))
+  results['upload-colour'] = await captureOverlay('upload-colour', 'upload', { width: 650, height: 430 }, uploadState(colourBackdrop(730, 510)))
+  results['upload-hover'] = await captureOverlay('upload-hover', 'upload', { width: 650, height: 430 }, uploadState(colourBackdrop(730, 510)), null, '#clipboard-slot')
   const contextItems = buildContextMenu({
     isEditable: true, selectionText: 'Ember', misspelledWord: 'Embr', dictionarySuggestions: ['Ember'],
     editFlags: { canUndo: true, canRedo: false, canCut: true, canCopy: true, canPaste: true, canDelete: true, canSelectAll: true },

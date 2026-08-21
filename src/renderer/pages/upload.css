@@ -1,32 +1,48 @@
+@property --hover-x { syntax: '<length>'; inherits: true; initial-value: 0px; }
+@property --hover-y { syntax: '<length>'; inherits: true; initial-value: 0px; }
+@property --hover-width { syntax: '<length>'; inherits: true; initial-value: 0px; }
+@property --hover-height { syntax: '<length>'; inherits: true; initial-value: 0px; }
+@property --sample-x { syntax: '<length>'; inherits: true; initial-value: 0px; }
+@property --sample-y { syntax: '<length>'; inherits: true; initial-value: 0px; }
+
 body { user-select: none; }
 .upload-filter-definitions { position: absolute; width: 0; height: 0; pointer-events: none; }
 .upload-shell {
   --open-motion: 320ms cubic-bezier(.16, 1, .3, 1);
+  --hover-x: 0px; --hover-y: 0px; --hover-width: 0px; --hover-height: 0px;
+  --sample-x: 0px; --sample-y: 0px;
   display: grid; grid-template-rows: auto 1px auto minmax(0, 1fr) auto auto;
   background: transparent; border-color: rgba(255, 255, 255, .18);
   opacity: 0; transform: translate3d(0, -10px, 0) scale(.92); transform-origin: 50% 0;
   transition: opacity var(--open-motion), transform var(--open-motion); will-change: opacity, transform;
 }
 .upload-shell[data-opening="true"] { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
-.upload-shell .glass-backdrop {
-  inset: 0; width: 100%; height: 100%; object-fit: fill; filter: none; opacity: 1; transform: none;
+.upload-texture {
+  position: absolute; z-index: -3; max-width: none; pointer-events: none; opacity: 1;
 }
-.upload-shell .glass-wash {
-  background: rgba(12, 12, 14, .26);
-  backdrop-filter: blur(8px) url(#switcher) saturate(1.05) brightness(.92);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
+.upload-shell .upload-material-tint {
+  position: absolute; inset: 0; z-index: -2; pointer-events: none;
+  background: rgba(255, 255, 255, .055); backdrop-filter: blur(1.4px) saturate(1.04);
+  box-shadow: inset 0 2px 2px -2px rgba(255, 255, 255, .28), inset 0 -2px 2px -2px rgba(0, 0, 0, .2);
 }
-.upload-shell .glass-light { opacity: .72; }
-.upload-shell .glass-grain { opacity: .1; }
+.upload-shell[data-optics-ready="true"] .upload-material-tint { backdrop-filter: url(#switcher) blur(.65px) saturate(1.06); }
+.upload-shell .glass-light, .upload-shell .glass-grain { display: none; }
+#upload-hover-lens {
+  position: absolute; z-index: 0; left: 0; top: 0; overflow: hidden; pointer-events: none;
+  width: var(--hover-width); height: var(--hover-height); border-radius: 13px;
+  transform: translate3d(var(--hover-x), var(--hover-y), 0);
+  transition: --hover-x 180ms cubic-bezier(.2, .8, .2, 1), --hover-y 180ms cubic-bezier(.2, .8, .2, 1), --hover-width 180ms cubic-bezier(.2, .8, .2, 1), --hover-height 180ms cubic-bezier(.2, .8, .2, 1), --sample-x 180ms cubic-bezier(.2, .8, .2, 1), --sample-y 180ms cubic-bezier(.2, .8, .2, 1), opacity 90ms linear;
+  opacity: 0;
+}
+#upload-hover-lens[data-visible="true"] { opacity: 1; }
+#upload-hover-source, #upload-hover-sample { position: absolute; inset: 0; }
+#upload-hover-source { background-repeat: no-repeat; background-position: var(--sample-x) var(--sample-y); }
+#upload-hover-sample { backdrop-filter: url(#toggler) saturate(1.06); }
+#upload-hover-sample::after { content: ''; position: absolute; inset: 0; background: rgba(255, 255, 255, .095); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .11), inset 2px 1px 0 -1px rgba(255, 255, 255, .52), inset -1px -1px 0 rgba(0, 0, 0, .14), 0 3px 7px rgba(0, 0, 0, .12); }
+.upload-head, .glass-divider, .clipboard-section, .recent-section, .upload-error, footer { position: relative; z-index: 1; }
 .upload-shell .glass-button {
-  position: relative; background: rgba(255, 255, 255, .055); border-color: rgba(255, 255, 255, .13);
-  backdrop-filter: url(#toggler) saturate(1.08) brightness(1.08);
-  box-shadow: inset 0 1px rgba(255, 255, 255, .24), inset 0 -1px rgba(0, 0, 0, .16), 0 3px 10px rgba(0, 0, 0, .1);
-  transition: background 180ms cubic-bezier(.2, .8, .2, 1), border-color 180ms cubic-bezier(.2, .8, .2, 1), box-shadow 180ms cubic-bezier(.2, .8, .2, 1);
-}
-.upload-shell .glass-button:hover {
-  background: rgba(255, 255, 255, .13); border-color: rgba(255, 250, 246, .38);
-  box-shadow: inset 0 1px rgba(255, 255, 255, .32), inset 0 -1px rgba(0, 0, 0, .14), 0 7px 18px rgba(0, 0, 0, .18);
+  position: relative; z-index: 1; background: transparent; border-color: transparent; box-shadow: none;
+  transition: color 180ms cubic-bezier(.2, .8, .2, 1);
 }
 .upload-shell .glass-button:active { transform: none; }
 .upload-head { display: flex; align-items: center; gap: 12px; padding: 16px 17px 14px; }
@@ -89,8 +105,8 @@ footer { padding: 5px 17px 13px; color: var(--text-faint); font-size: 10px; }
   .upload-shell .glass-button { transition-duration: 1ms; }
 }
 @supports not (backdrop-filter: url(#switcher)) {
-  .upload-shell .glass-wash { backdrop-filter: blur(8px) saturate(1.05) brightness(.92); }
+  .upload-shell[data-optics-ready="true"] .upload-material-tint { backdrop-filter: blur(1.4px) saturate(1.04); }
 }
 @supports not (backdrop-filter: url(#toggler)) {
-  .upload-shell .glass-button { backdrop-filter: blur(2px) saturate(1.08); }
+  #upload-hover-sample { backdrop-filter: blur(1px) saturate(1.04); }
 }

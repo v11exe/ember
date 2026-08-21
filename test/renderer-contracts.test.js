@@ -64,10 +64,16 @@ test('upload picker is a real glass overlay with browse, clipboard, and recent a
   assert.match(js, /window\.emberOverlay\.action\('recent'/)
   assert.match(html, /id="switcher"/)
   assert.match(html, /id="toggler"/)
+  assert.match(html, /id="upload-switcher-map"/)
+  assert.match(html, /upload-optics\.js/)
   assert.match(html, /id="upload-shell"/)
   assert.match(css, /\.upload-shell\[data-opening="true"\]/)
-  assert.match(css, /backdrop-filter:\s*url\(#switcher\)/)
+  assert.match(css, /backdrop-filter:\s*url\(#switcher\) blur\(\.65px\)/)
   assert.match(css, /backdrop-filter:\s*url\(#toggler\)/)
+  assert.match(html, /id="upload-hover-source"/)
+  assert.match(css, /#upload-hover-source[\s\S]+background-position:\s*var\(--sample-x\) var\(--sample-y\)/)
+  assert.doesNotMatch(css, /blur\(8px\)/)
+  assert.doesNotMatch(css, /rgba\(12,\s*12,\s*14,\s*\.26\)/)
   assert.match(js, /shell\.animate\(/)
   assert.match(js, /pointerenter/)
 })
@@ -125,6 +131,14 @@ test('visual QA captures selector travel over dark and light contrast backdrops'
   assert.match(capture, /context-dark-bottom/)
   assert.match(capture, /context-light-middle/)
   assert.match(capture, /activePosition/)
+})
+
+test('visual QA exercises upload optics on high-contrast and colourful page captures', () => {
+  const capture = read('scripts', 'capture-ui.js')
+  assert.match(capture, /upload-contrast/)
+  assert.match(capture, /upload-colour/)
+  assert.match(capture, /upload-hover/)
+  assert.match(capture, /uploadBackdropRect/)
 })
 
 test('context glass stays neutral so captured page color drives the surface', () => {
