@@ -3,11 +3,11 @@ const { FloatingPanel } = require('./floating-panel')
 const { placePointPanel } = require('../shared/floating-geometry')
 const { buildContextMenu } = require('./context-menu-model')
 
-const MENU_WIDTH = 318
+const MENU_WIDTH = 276
 const CAPTURE_BLEED = 40
 
 function menuHeight(items) {
-  return 16 + items.reduce((height, item) => height + (item.type === 'separator' ? 13 : 38), 0)
+  return 12 + items.reduce((height, item) => height + (item.type === 'separator' ? 9 : 34), 0)
 }
 
 function safeFileName(value) {

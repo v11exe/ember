@@ -2,7 +2,9 @@ const shell = document.getElementById('menu-shell')
 const menu = document.getElementById('context-menu')
 const backdrop = document.getElementById('outer-texture')
 const lens = document.getElementById('selector-lens')
+const source = document.getElementById('selector-source')
 const lensController = EmberMenuLens.createLensController(shell, lens)
+const optics = EmberMenuOptics.createOuterOptics(shell, document.getElementById('switcher-map'))
 
 const glyphs = {
   back: '←', forward: '→', reload: '↻', undo: '↶', redo: '↷',
@@ -23,6 +25,8 @@ function setBackdrop(state) {
   if (!state.backdrop) {
     backdrop.removeAttribute('src')
     backdrop.removeAttribute('style')
+    source.style.removeProperty('background-image')
+    lensController.setBackdropRect({ x: 0, y: 0 })
     return
   }
   const rect = state.backdropRect || { x: 0, y: 0, width: innerWidth, height: innerHeight }
@@ -30,6 +34,9 @@ function setBackdrop(state) {
   Object.assign(backdrop.style, {
     left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px`,
   })
+  source.style.backgroundImage = `url("${state.backdrop}")`
+  source.style.backgroundSize = `${rect.width}px ${rect.height}px`
+  lensController.setBackdropRect(rect)
   shell.style.setProperty('--backdrop-x', `${rect.x}px`)
   shell.style.setProperty('--backdrop-y', `${rect.y}px`)
   shell.style.setProperty('--backdrop-width', `${rect.width}px`)
@@ -69,20 +76,20 @@ function render(state) {
   menu.replaceChildren(...nodes)
   buttons = [...menu.querySelectorAll('.menu-item')]
   lensController.setButtons(buttons)
-  const first = EmberMenuLens.findEnabledIndex(buttons, 0, 1)
-  if (first >= 0) lensController.activate(first, { focus: false })
+  void optics.refresh()
 }
 
-window.addEventListener('resize', () => lensController.refresh())
+window.addEventListener('resize', () => { lensController.refresh(); void optics.refresh() })
 menu.addEventListener('scroll', () => lensController.refresh())
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') { event.preventDefault(); window.emberOverlay.close(); return }
   if (!buttons.length) return
   const active = lensController.activeIndex
-  if (event.key === 'ArrowDown') { event.preventDefault(); lensController.activate(active + 1, { direction: 1 }) }
-  else if (event.key === 'ArrowUp') { event.preventDefault(); lensController.activate(active - 1, { direction: -1 }) }
-  else if (event.key === 'Home') { event.preventDefault(); lensController.activate(0, { direction: 1 }) }
-  else if (event.key === 'End') { event.preventDefault(); lensController.activate(buttons.length - 1, { direction: -1 }) }
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End') {
+    event.preventDefault()
+    const direction = event.key === 'ArrowUp' || event.key === 'End' ? -1 : 1
+    lensController.activate(EmberMenuLens.keyboardStart(active, event.key, buttons.length), { direction })
+  }
   else if ((event.key === 'Enter' || event.key === ' ') && active >= 0) {
     event.preventDefault(); buttons[active].click()
   }

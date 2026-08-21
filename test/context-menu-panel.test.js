@@ -1,7 +1,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
-const { ContextMenuPanel, menuHeight } = require('../src/main/context-menu-panel')
+const { ContextMenuPanel, MENU_WIDTH, menuHeight } = require('../src/main/context-menu-panel')
 
 function harness() {
   const sender = {}
@@ -58,8 +58,10 @@ test('opens clamped to the page and exposes enabled navigation commands', async 
   assert.equal(shown.state.items.find((item) => item.id === 'forward').enabled, false)
 })
 
-test('menuHeight includes shell padding and both border pixels', () => {
-  assert.equal(menuHeight([{ id: 'reload' }]), 54)
+test('uses compact Windows-like menu width and row geometry', () => {
+  assert.equal(MENU_WIDTH, 276)
+  assert.equal(menuHeight([{ id: 'reload' }]), 46)
+  assert.equal(menuHeight([{ id: 'back' }, { type: 'separator' }, { id: 'reload' }]), 89)
 })
 
 test('constrains a command-rich menu to the usable page height', async () => {

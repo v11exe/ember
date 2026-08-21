@@ -1,74 +1,119 @@
 @property --lens-x { syntax: '<length>'; inherits: true; initial-value: 0px; }
 @property --lens-y { syntax: '<length>'; inherits: true; initial-value: 0px; }
 @property --lens-width { syntax: '<length>'; inherits: true; initial-value: 0px; }
-@property --lens-height { syntax: '<length>'; inherits: true; initial-value: 38px; }
+@property --lens-height { syntax: '<length>'; inherits: true; initial-value: 34px; }
+@property --sample-x { syntax: '<length>'; inherits: true; initial-value: 0px; }
+@property --sample-y { syntax: '<length>'; inherits: true; initial-value: 0px; }
 
 html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
 .filter-definitions { position: absolute; width: 0; height: 0; pointer-events: none; }
 .menu-shell {
-  --motion: 180ms cubic-bezier(.2, .8, .2, 1);
-  position: relative; width: 100%; height: 100%; padding: 7px; overflow: hidden;
-  border: 1px solid rgba(255, 246, 238, .38); border-radius: 17px;
-  background: transparent;
-  box-shadow: inset 0 1px rgba(255, 255, 255, .22), inset 0 -1px rgba(0, 0, 0, .24),
-    0 18px 48px rgba(0, 0, 0, .46), 0 5px 18px rgba(0, 0, 0, .24);
+  --motion: 170ms cubic-bezier(.5, 0, .1, 1);
+  --backdrop-x: 0px;
+  --backdrop-y: 0px;
+  --backdrop-width: 100%;
+  --backdrop-height: 100%;
+  position: relative; width: 100%; height: 100%; padding: 6px; overflow: hidden;
+  border-radius: 16px; background: transparent;
+  box-shadow:
+    inset 1.5px 2.5px 0 -2px rgba(255, 255, 255, .78),
+    inset -2px -2px 0 -2px rgba(255, 255, 255, .52),
+    inset 0 -1px 3px rgba(0, 0, 0, .2),
+    0 9px 24px rgba(0, 0, 0, .24);
   isolation: isolate;
 }
+.menu-shell::after {
+  content: ''; position: absolute; inset: 0; z-index: 3; pointer-events: none;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, .09),
+    inset 0 1px rgba(255, 255, 255, .2),
+    inset 0 -1px rgba(0, 0, 0, .18);
+}
 .outer-texture {
-  position: absolute; z-index: -3; max-width: none; pointer-events: none;
-  opacity: 1;
+  position: absolute; z-index: -3; max-width: none; pointer-events: none; opacity: 1;
 }
 .material-tint {
   position: absolute; inset: 0; z-index: -2; pointer-events: none;
-  backdrop-filter: blur(8px) url(#switcher) saturate(1.05) brightness(.92);
-  background-color: rgba(12, 12, 14, .26);
-  background-image: linear-gradient(135deg, rgba(255,255,255,.10), transparent 38%, rgba(0,0,0,.12));
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
+  backdrop-filter: blur(1.4px) saturate(1.04);
+  background-color: rgba(255, 255, 255, .055);
+  box-shadow:
+    inset 0 2px 2px -2px rgba(255, 255, 255, .28),
+    inset 0 -2px 2px -2px rgba(0, 0, 0, .2);
+}
+.menu-shell[data-optics-ready="true"] .material-tint {
+  backdrop-filter: url(#switcher) blur(.65px) saturate(1.06);
 }
 #selector-lens {
   position: absolute; z-index: 0; left: 0; top: 0; overflow: hidden; pointer-events: none;
-  width: var(--lens-width); height: var(--lens-height); border-radius: 12px;
+  width: var(--lens-width); height: var(--lens-height); border-radius: 999px;
   transform: translate3d(var(--lens-x), var(--lens-y), 0);
-  transition: --lens-x var(--motion), --lens-y var(--motion), --lens-width var(--motion),
-    --lens-height var(--motion), opacity 90ms linear;
-  backdrop-filter: url(#toggler) saturate(1.08) brightness(1.08);
-  background: rgba(255, 255, 255, .13);
-  border: 1px solid rgba(255, 250, 246, .38);
-  box-shadow: inset 0 1px rgba(255,255,255,.28), inset 0 -1px rgba(0,0,0,.16), 0 4px 14px rgba(0,0,0,.18);
-  opacity: 0;
+  transition:
+    --lens-x var(--motion), --lens-y var(--motion),
+    --lens-width var(--motion), --lens-height var(--motion),
+    --sample-x var(--motion), --sample-y var(--motion),
+    opacity 70ms linear, visibility 0s linear 70ms;
+  opacity: 0; visibility: hidden;
+  will-change: transform;
 }
-#selector-lens[data-visible="true"] { opacity: 1; }
+#selector-lens::after {
+  content: ''; position: absolute; inset: 0; z-index: 1; border-radius: inherit;
+  background-color: rgba(255, 255, 255, .095);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, .11),
+    inset 2px 1px 0 -1px rgba(255, 255, 255, .52),
+    inset -1.5px -1px 0 -1px rgba(255, 255, 255, .36),
+    inset -1px 2px 3px -1px rgba(0, 0, 0, .14),
+    inset 0 -4px 1px -3px rgba(0, 0, 0, .1),
+    0 3px 7px rgba(0, 0, 0, .12);
+}
+#selector-lens[data-visible="true"] {
+  opacity: 1; visibility: visible;
+  transition-delay: 0s;
+}
+#selector-source,
 #selector-sample {
   position: absolute; inset: 0;
 }
-#selector-sample::after {
-  content: ''; position: absolute; inset: 0;
-  background: linear-gradient(100deg, rgba(255,255,255,.18), rgba(255,255,255,.06) 55%, rgba(255,255,255,.12));
+#selector-source {
+  background-repeat: no-repeat;
+  background-position: var(--sample-x) var(--sample-y);
+}
+#selector-sample {
+  backdrop-filter: url(#toggler) saturate(1.06);
 }
 #context-menu {
   position: relative; z-index: 1; width: 100%; height: 100%; overflow-x: hidden; overflow-y: auto;
-  scrollbar-width: thin; scrollbar-color: rgba(255, 238, 226, .2) transparent;
+  scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .14) transparent;
 }
+#context-menu::-webkit-scrollbar { width: 4px; }
+#context-menu::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .14); border-radius: 4px; }
 .menu-item {
-  width: 100%; height: 38px; padding: 0 10px; border: 0; border-radius: 11px;
-  display: grid; grid-template-columns: 23px minmax(0, 1fr) auto; align-items: center; gap: 9px;
+  width: 100%; height: 34px; padding: 0 9px; border: 0; border-radius: 17px;
+  display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 8px;
   color: var(--text); background: transparent; font: 400 13px/1 var(--font); text-align: left;
-  outline: none; cursor: default; text-shadow: 0 1px 2px rgba(0, 0, 0, .72);
+  outline: none; cursor: default;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .82), 0 0 4px rgba(0, 0, 0, .3);
 }
 .menu-item:active:not(:disabled) { color: #fff; }
-.menu-item:focus-visible { box-shadow: inset 0 0 0 1px rgba(255, 246, 238, .3); }
-.menu-item:disabled { color: var(--text-faint); }
-.menu-icon { width: 19px; text-align: center; color: currentColor; font-size: 17px; }
+.menu-item:focus-visible { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22); }
+.menu-item:disabled { color: rgba(237, 237, 237, .42); }
+.menu-icon { width: 18px; text-align: center; color: currentColor; font-size: 15px; }
 .menu-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.menu-shortcut { color: rgba(237, 237, 237, .58); font-size: 10px; padding-left: 14px; }
-.menu-item:disabled .menu-shortcut { color: var(--text-faint); }
-.menu-separator { height: 13px; display: grid; place-items: center; }
-.menu-separator::before { content: ''; width: calc(100% - 22px); height: 1px; background: rgba(255, 238, 226, .15); }
+.menu-shortcut { color: rgba(237, 237, 237, .56); font-size: 10px; padding-left: 10px; }
+.menu-item:disabled .menu-shortcut { color: rgba(237, 237, 237, .34); }
+.menu-separator { height: 9px; display: grid; place-items: center; }
+.menu-separator::before {
+  content: ''; width: calc(100% - 20px); height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .14) 12%, rgba(0, 0, 0, .12) 88%, transparent);
+}
 
 @media (prefers-reduced-motion: reduce) {
   .menu-shell { --motion: 1ms linear; }
 }
 @supports not (backdrop-filter: url(#switcher)) {
-  .material-tint { backdrop-filter: blur(8px) saturate(1.12); }
-  #selector-lens { backdrop-filter: blur(2px) saturate(1.12); }
+  .menu-shell[data-optics-ready="true"] .material-tint { backdrop-filter: blur(1.4px) saturate(1.04); }
+}
+@supports not (backdrop-filter: url(#toggler)) {
+  #selector-sample { backdrop-filter: blur(1px) saturate(1.04); }
 }

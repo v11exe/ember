@@ -6,7 +6,7 @@ const { app, BrowserWindow, ipcMain, nativeImage } = require('electron')
 const { registerSchemePrivileges, handleInternalPages } = require('../src/main/protocol')
 const { IPC } = require('../src/shared/ipc')
 const { buildContextMenu } = require('../src/main/context-menu-model')
-const { menuHeight } = require('../src/main/context-menu-panel')
+const { MENU_WIDTH, menuHeight } = require('../src/main/context-menu-panel')
 
 registerSchemePrivileges()
 
@@ -133,6 +133,15 @@ async function captureOverlay(name, page, size, state, activePosition = null, ho
   })
   await win.loadURL(`ember://${page}`)
   win.webContents.send(IPC.OVERLAY_STATE, state)
+  await win.webContents.executeJavaScript(`new Promise((resolve) => {
+    const started = performance.now()
+    const check = () => {
+      const ready = document.getElementById('menu-shell')?.dataset.opticsReady
+      if (${JSON.stringify(page)} !== 'context-menu' || ready || performance.now() - started > 1200) resolve()
+      else requestAnimationFrame(check)
+    }
+    check()
+  })`)
   await new Promise((resolve) => setTimeout(resolve, page === 'upload' ? 500 : 150))
   if (activePosition) {
     await win.webContents.executeJavaScript(`(() => {
@@ -150,23 +159,19 @@ async function captureOverlay(name, page, size, state, activePosition = null, ho
   const metrics = await win.webContents.executeJavaScript(`({
     viewport: [innerWidth, innerHeight],
     scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
+    optics: document.getElementById('menu-shell')?.dataset.opticsReady || null,
     lens: (() => { const r = document.getElementById('selector-lens')?.getBoundingClientRect(); return r && [r.x, r.y, r.width, r.height] })(),
     uploadLens: (() => { const r = document.getElementById('upload-hover-lens')?.getBoundingClientRect(); return r && [r.x, r.y, r.width, r.height] })(),
+    lensVisible: document.getElementById('selector-lens')?.dataset.visible || null,
   })`)
   await screenshot(win, `${name}.png`)
   win.destroy()
   return metrics
 }
 
-function contrastBackdrop(tone, width, height) {
-  const light = tone === 'light'
-  const background = light ? '#f3e9df' : '#060608'
-  const foreground = light ? '#181114' : '#fff4e8'
+function svgBackdrop(body, width, height) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-    <rect width="100%" height="100%" fill="${background}"/>
-    <path d="M-70 40L450 560M-130 0L390 520M10 -30L430 390" stroke="#ff5a1f" stroke-width="32"/>
-    <circle cx="82" cy="142" r="62" fill="${foreground}"/><circle cx="330" cy="330" r="96" fill="${foreground}"/>
-    <path d="M0 238H${width}M0 276H${width}" stroke="#ffc93c" stroke-width="12"/>
+    ${body}
   </svg>`
   return `data:image/svg+xml,${encodeURIComponent(svg)}`
 }
@@ -178,6 +183,40 @@ function colourBackdrop(width, height) {
     <path d="M0 90H${width}M0 260H${width}M160 0V${height}M460 0V${height}" stroke="#111" stroke-width="4"/>
   </svg>`
   return `data:image/svg+xml,${encodeURIComponent(svg)}`
+}
+
+function gridBackdrop(width, height) {
+  let grid = ''
+  for (let x = 0; x <= width; x += 16) grid += `<path d="M${x} 0V${height}" stroke="${x % 64 ? '#43506a' : '#dce7ff'}" stroke-width="${x % 64 ? 1 : 2}"/>`
+  for (let y = 0; y <= height; y += 16) grid += `<path d="M0 ${y}H${width}" stroke="${y % 64 ? '#43506a' : '#dce7ff'}" stroke-width="${y % 64 ? 1 : 2}"/>`
+  return svgBackdrop(`<rect width="100%" height="100%" fill="#101624"/>${grid}
+    <text x="18" y="42" fill="#fff" font-family="Arial" font-size="22">HORIZONTAL / VERTICAL / CHECKER</text>`, width, height)
+}
+
+function saturatedBackdrop(width, height) {
+  return svgBackdrop(`<rect width="50%" height="50%" fill="#20d96b"/><rect x="50%" width="50%" height="50%" fill="#f2e929"/>
+    <rect y="50%" width="50%" height="50%" fill="#ff7a18"/><rect x="50%" y="50%" width="50%" height="50%" fill="#e62f2f"/>
+    <path d="M0 70H${width}M0 170H${width}M80 0V${height}M210 0V${height}" stroke="#111" stroke-width="3"/>
+    <text x="18" y="42" fill="#101010" font-family="Arial" font-weight="700" font-size="19">GREEN · YELLOW · ORANGE · RED</text>`, width, height)
+}
+
+function typeContrastBackdrop(width, height) {
+  return svgBackdrop(`<rect width="100%" height="50%" fill="#000"/><rect y="50%" width="100%" height="50%" fill="#fff"/>
+    <text x="14" y="58" fill="#fff" font-family="Arial" font-weight="700" font-size="24">WHITE ON BLACK 012345</text>
+    <text x="14" y="${Math.round(height / 2) + 58}" fill="#000" font-family="Arial" font-weight="700" font-size="24">BLACK ON WHITE 012345</text>
+    <path d="M0 ${Math.round(height / 2)}H${width}" stroke="#ff5a1f" stroke-width="4"/>`, width, height)
+}
+
+async function photographicBackdrop(width, height) {
+  try {
+    const response = await fetch('https://images.unsplash.com/photo-1706720094773-d91e070e4b90?auto=format&fit=crop&w=900&q=85')
+    if (!response.ok) throw new Error(`photo returned ${response.status}`)
+    const image = nativeImage.createFromBuffer(Buffer.from(await response.arrayBuffer()))
+    if (image.isEmpty()) throw new Error('photo decoded empty')
+    return image.resize({ width, height }).toDataURL()
+  } catch {
+    return gridBackdrop(width, height)
+  }
 }
 
 app.whenReady().then(async () => {
@@ -215,20 +254,30 @@ app.whenReady().then(async () => {
     isEditable: true, selectionText: 'Ember', misspelledWord: 'Embr', dictionarySuggestions: ['Ember'],
     editFlags: { canUndo: true, canRedo: false, canCut: true, canCopy: true, canPaste: true, canDelete: true, canSelectAll: true },
   }, { canGoBack: true, canGoForward: false })
-  const contextSize = { width: 318, height: Math.min(menuHeight(contextItems), 540) }
+  const contextSize = { width: MENU_WIDTH, height: Math.min(menuHeight(contextItems), 540) }
   const backdropRect = { x: -40, y: -40, width: contextSize.width + 80, height: contextSize.height + 80 }
-  const contextState = (tone) => ({
+  const contextState = (contextBackdrop) => ({
     kind: 'context-menu', items: contextItems, backdropRect,
-    backdrop: contrastBackdrop(tone, backdropRect.width, backdropRect.height),
+    backdrop: contextBackdrop,
   })
-  results['context-dark-first'] = await captureOverlay(
-    'context-dark-first', 'context-menu', contextSize, contextState('dark'), 'first')
-  results['context-dark-middle'] = await captureOverlay(
-    'context-dark-middle', 'context-menu', contextSize, contextState('dark'), 'middle')
-  results['context-dark-bottom'] = await captureOverlay(
-    'context-dark-bottom', 'context-menu', contextSize, contextState('dark'), 'bottom')
-  results['context-light-middle'] = await captureOverlay(
-    'context-light-middle', 'context-menu', contextSize, contextState('light'), 'middle')
+  const grid = gridBackdrop(backdropRect.width, backdropRect.height)
+  results['context-grid-rest'] = await captureOverlay(
+    'context-grid-rest', 'context-menu', contextSize, contextState(grid))
+  results['context-grid-first'] = await captureOverlay(
+    'context-grid-first', 'context-menu', contextSize, contextState(grid), 'first')
+  results['context-grid-middle'] = await captureOverlay(
+    'context-grid-middle', 'context-menu', contextSize, contextState(grid), 'middle')
+  results['context-grid-bottom'] = await captureOverlay(
+    'context-grid-bottom', 'context-menu', contextSize, contextState(grid), 'bottom')
+  results['context-saturated'] = await captureOverlay(
+    'context-saturated', 'context-menu', contextSize,
+    contextState(saturatedBackdrop(backdropRect.width, backdropRect.height)), 'middle')
+  results['context-type-contrast'] = await captureOverlay(
+    'context-type-contrast', 'context-menu', contextSize,
+    contextState(typeContrastBackdrop(backdropRect.width, backdropRect.height)), 'middle')
+  results['context-photo'] = await captureOverlay(
+    'context-photo', 'context-menu', contextSize,
+    contextState(await photographicBackdrop(backdropRect.width, backdropRect.height)), 'middle')
   console.log(JSON.stringify(results, null, 2))
   app.quit()
 }).catch((error) => {

@@ -70,6 +70,8 @@ islands, sidebar outstanding).
 - Upload outer optics use an aspect-matched map with a 24px active perimeter;
   recapture its 40px bleed whenever the panel relayouts, and have its hover lens
   sample the independently aligned raw capture rather than the processed shell.
+- Context-menu outer optics generate an aspect-matched map from the one canonical
+  switch map; the selector owns a separately aligned raw-capture sample.
 - Files are LF via `.gitattributes`, but Git may hand you CRLF working copies.
   Multi-line string replacement in scripts silently no-ops against those.
   Verify edits landed instead of trusting the write.

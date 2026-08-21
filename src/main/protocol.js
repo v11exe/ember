@@ -15,7 +15,6 @@ const SHARED_ASSETS = new Map([
   ['/assets/ember-icon.png', path.join(RENDERER, 'assets', 'ember-icon.png')],
   ['/assets/Necosmic-PersonalUse.otf', path.join(RENDERER, 'assets', 'Necosmic-PersonalUse.otf')],
   ['/assets/glass-switcher-map.webp', path.join(RENDERER, 'assets', 'glass-switcher-map.webp')],
-  ['/assets/glass-toggler-map.webp', path.join(RENDERER, 'assets', 'glass-toggler-map.webp')],
 ])
 
 const MIME = {
