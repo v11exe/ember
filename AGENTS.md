@@ -51,62 +51,81 @@ unpacked-only · fingerprint randomization ships off by default.
 
 ---
 
-## 1. Who owns what
+## 1. Shared codebase — nobody owns a directory
 
-| Person | Agent | Area |
-| --- | --- | --- |
-| duvvy8 | Claude Code | `src/main` — windows, tabs, sessions, adblock, proxy, storage, native modules |
-| co-owner | Codex | `src/renderer` — chrome UI, settings pages, internal pages |
+Either agent may touch any file. There are no fenced-off areas, because fences
+don't stop clobbering — they just make it a surprise when it happens. The rule
+that actually protects the work is §2: **every push must contain the other
+agent's changes as well as your own.**
 
-| Path | Owner | Rule |
-| --- | --- | --- |
-| `src/main/**` | Claude Code | other agent edits only with a Work Log entry |
-| `src/renderer/**` | Codex | other agent edits only with a Work Log entry |
-| `src/shared/**` | both | IPC names + schemas. Reviewed PR only, never unreviewed |
-| `AGENTS.md`, `CLAUDE.md` | both | Work Log is append-at-top; rule changes need both humans |
-| `package.json`, lockfile | both | adding a dep is fine; removing/bumping someone else's is not |
+Soft convention, not a fence: Claude Code tends to work the main process
+(windows, tabs, sessions, adblock, storage), Codex tends to work the renderer
+(chrome UI, settings, internal pages). Following it reduces collisions. Crossing
+it is fine — just say so in your Work Log entry.
+
+Default posture is **additive**. Add, extend, wrap. If finishing your change
+requires deleting or rewriting something the other agent wrote, that is not a
+merge decision you make alone — stop and ask your human first.
 
 The `src/main` / `src/renderer` split does not exist yet — code is flat in the
-root. Whoever does the split must announce it in the Work Log first; it moves
-every file and will conflict with everything in flight.
+root. Whoever does it must announce it in the Work Log first; it moves every
+file and will conflict with everything in flight.
 
 ---
 
-## 2. Coordination protocol
+## 2. Sync protocol
 
 ### Before starting
 
 1. `git fetch origin && git status`.
-2. Read the Work Log (§4). It says what the other agent is doing *right now*.
-3. If an `in-progress` entry touches your files: stop, tell your human. Do not
-   "just fix it too."
-4. Add your own Work Log entry **before** writing code; commit it first.
+2. Read the Work Log (§4) — it says what the other agent is doing *right now*.
+3. If an `in-progress` entry lists a file you're about to touch, say so in your
+   own entry and keep your change additive, or wait. Don't silently double up.
+4. Add your Work Log entry **before** writing code; commit it first.
 
-### Before pushing — always integrate their work first
+### Every push integrates their work first
+
+Never push without syncing. The sequence, every time:
 
 ```bash
 git fetch origin
+git log --oneline HEAD..origin/main        # what landed since you branched
+git diff HEAD...origin/main --stat         # which files they touched
 git rebase origin/main
-npm start          # smoke: window boots, no console errors
+npm start                                  # smoke: window boots, no errors
 git push
 ```
 
-Never push a branch that has not been rebased onto current `origin/main`.
+Lines 2 and 3 are the point: **look at what changed since your last sync before
+resolving anything.** If their commits touched a file you also touched, read
+their version before deciding what yours should do.
 
-Conflict rules:
-- In **their** area → keep **their** side.
-- In **shared** files (`src/shared`, `package.json`, `AGENTS.md`) → keep
-  **both**, merge by hand, never resolve by deleting their lines.
-- In **your** area → resolve normally.
+### Resolving conflicts — keep both, never overwrite
 
-Then read `git diff origin/main` and confirm every hunk is intentional. If the
-rebase dropped something they added, restore it before pushing.
+- Both added different things → keep **both**. This is most conflicts.
+- Both changed the same line → take **theirs** as the base, re-apply your change
+  on top of it. Never resolve by deleting their line.
+- They deleted something you edited, or vice versa → don't guess. Keep the
+  content, note it in your Work Log entry, tell your human.
+- Genuinely incompatible designs → stop. Don't pick a winner. Ask.
+
+### Confirm nothing was lost, before pushing
+
+A clean rebase is not proof you kept their work. Check:
+
+```bash
+git diff origin/main                 # every hunk should be intentionally yours
+git log --oneline origin/main..HEAD  # only your commits, none of theirs replayed away
+```
+
+If something they pushed is missing from your branch, restore it before pushing.
+If you can't tell, don't push — fetch again and re-read their commits.
 
 ### Never
 
-Force-push `main` · commit directly to `main` · revert/rewrite/"clean up" the
-other agent's commits · edit outside your area without a Work Log entry · end a
-session with a dirty tree without saying so.
+Force-push anything · rewrite, revert or "clean up" the other agent's commits ·
+resolve a conflict by taking your whole side · push a branch that isn't rebased
+onto current `origin/main` · end a session with a dirty tree without saying so.
 
 ---
 
@@ -124,7 +143,7 @@ shaders — inspiration only.
 
 **Git** — branches `feat/… fix/… chore/… refactor/…`. Commits
 `<area>: <imperative summary>` (`main: add tab manager`). Rebase, don't merge.
-One PR per Work Log entry, kept inside your own area where possible. Gates
+One PR per Work Log entry. Gates
 before push: `npm start` today; add `npm run typecheck` and `npm run lint` here
 as they come to exist.
 
@@ -143,18 +162,29 @@ Newest at top. One entry per branch, updated in place. Status:
 
 ```markdown
 ### <YYYY-MM-DD> — <agent> — <title>
-- **Status / Branch / Area:** in-progress · `feat/tab-manager` · src/main
-- **Touches:** `src/main/tabs.ts`, `src/shared/ipc.ts`
+- **Status / Branch:** in-progress · `feat/tab-manager`
+- **Touches:** `src/main/tabs.ts`, `src/shared/ipc.ts` — list every file; this
+  is how the other agent spots a collision before it happens
 - **Summary:** one or two sentences: what and why.
 - **For the other agent:** new IPC channels, renamed files, contracts they must
   implement against. `none` if none.
 ```
 
 ### 2026-08-21 — Claude Code — Add AGENTS.md
-- **Status / Branch / Area:** merged · `chore/agents-md` · repo root
+- **Status / Branch:** merged · `chore/agents-md`
 - **Touches:** `AGENTS.md`, `CLAUDE.md`
 - **Summary:** Shared agent instruction set — orientation cache, ownership map,
   coordination protocol, rules, Work Log. `CLAUDE.md` points here so both agents
   read one source of truth.
 - **For the other agent:** read §0 instead of exploring the repo; add a Work Log
   entry before you start and rebase onto `origin/main` before every push.
+
+### 2026-08-21 — Claude Code — Replace ownership model with push-time sync
+- **Status / Branch:** merged · `main`
+- **Touches:** `AGENTS.md`
+- **Summary:** Dropped per-directory ownership; either agent may touch any file.
+  Protection now comes from §2: check what landed since your last sync, keep
+  both sides on conflict, verify nothing was dropped before pushing.
+- **For the other agent:** you're no longer restricted to the renderer. In
+  exchange, run the §2 sequence on every push and list every file you touch in
+  your Work Log entry.
