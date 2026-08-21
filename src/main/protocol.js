@@ -11,7 +11,8 @@ const SHARED_ASSETS = new Map([
   ['/theme.css', path.join(RENDERER, 'theme.css')],
   ['/brand.js', path.join(RENDERER, 'brand.js')],
   ['/brand.css', path.join(RENDERER, 'brand.css')],
-  ['/assets/Necosmic-PersonalUse.otf', path.join(RENDERER, 'assets', 'Necosmic-PersonalUse.otf')],
+  ['/assets/ember-icon.png', path.join(RENDERER, 'assets', 'ember-icon.png')],
+  ['/assets/ember-logo.png', path.join(RENDERER, 'assets', 'ember-logo.png')],
 ])
 
 const MIME = {

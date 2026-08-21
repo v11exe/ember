@@ -17,15 +17,10 @@ body {
 
 /* ---------- logo ---------- */
 .logo { margin-bottom: 34px; }
-.logo { display: grid; justify-items: center; gap: 14px; }
-.logo .ember-brand-icon {
-  display: block; width: min(340px, 62vw);
+.logo { display: grid; justify-items: center; }
+.logo .ember-logo {
+  width: min(410px, 68vw);
   filter: drop-shadow(0 0 26px rgba(255,138,31,.34));
-}
-.logo .ember-brand-wordmark { display: block; }
-.logo .ember-wordmark {
-  font-size: clamp(54px, 10vw, 78px);
-  color: #EFEFEF;
 }
 
 /* ---------- search ---------- */
@@ -106,9 +101,8 @@ body {
 @media (max-height: 520px) {
   body { place-items: start center; overflow-y: auto; }
   .hero { width: min(720px, 92vw); margin-top: 0; padding: 14px 0 18px; }
-  .logo { gap: 5px; margin-bottom: 14px; }
-  .logo .ember-brand-icon { width: min(220px, 42vw); }
-  .logo .ember-wordmark { font-size: clamp(40px, 8vw, 52px); }
+  .logo { margin-bottom: 14px; }
+  .logo .ember-logo { width: min(300px, 52vw); }
   .search { height: 44px; }
   .go { height: 34px; padding-inline: 17px; }
   .tiles { margin-top: 14px; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }

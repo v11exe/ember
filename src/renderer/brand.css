@@ -1,18 +1,22 @@
-@font-face {
-  font-family: "Necosmic Ember";
-  src: url("./assets/Necosmic-PersonalUse.otf") format("opentype");
-  font-style: normal;
-  font-weight: 400;
-  font-display: block;
+.ember-icon,
+.ember-logo {
+  display: block;
+  width: 100%;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 100% auto;
 }
 
-.ember-icon { display: block; width: 100%; height: auto; }
-.ember-wordmark {
-  display: block;
-  font-family: "Necosmic Ember", sans-serif;
-  font-style: normal;
-  font-weight: 400;
-  line-height: .78;
-  letter-spacing: 0;
-  white-space: nowrap;
+/* The supplied sources include deliberate black presentation canvases. These
+   aspect-ratio frames crop only that canvas and preserve every logo pixel. */
+.ember-icon {
+  aspect-ratio: 5.15 / 1;
+  background-image: url("./assets/ember-icon.png");
+  background-size: 120% auto;
+}
+
+.ember-logo {
+  aspect-ratio: 2.7 / 1;
+  background-image: url("./assets/ember-logo.png");
+  background-size: 116% auto;
 }
