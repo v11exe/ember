@@ -207,6 +207,12 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
+### 2026-08-21 — Codex — Repair meteor icon presentation
+- **Status / Branch:** in-progress · `fix/meteor-icon-presentation`
+- **Touches:** `AGENTS.md`, `src/main/index.js`, `src/renderer/{brand}.js`, `src/renderer/assets/ember-app-icon.png`, `test/{brand,renderer-contracts}.test.js`
+- **Summary:** Repair the chrome asset URL and give the native window a square crop focused on the meteor head instead of the wide in-app mark.
+- **For the other agent:** in-app use stays on `ember-icon.png`; `ember-app-icon.png` is native-window-only. No IPC contracts change.
+
 ### 2026-08-21 — Codex — Upload picker Liquid Glass motion
 - **Status / Branch:** pushed · `feat/upload-liquid-glass`
 - **Touches:** `AGENTS.md`, `agent.md`, `src/main/upload-panel.js`,
