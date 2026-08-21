@@ -66,6 +66,12 @@
 
 - Real file-input clicks open a centered glass picker with matching existing
   recents, a live clipboard image tile, and a native Show all files fallback.
+- The picker derives an aspect-matched outer Liquid Glass map: a 24px edge
+  perimeter refracts while the large centre remains optically stable. Its raw
+  captured-page backdrop is bleed-aligned and recaptured after layout; hover
+  lenses sample that raw capture directly. Each new picker presentation has an
+  explicit 320 ms opening animation; state updates (including errors) retain the
+  same opening token and do not replay it.
 - Selections become genuine renderer `File` objects with source bytes, MIME,
   name, and modification time; directory inputs retain Chromium behavior.
 - Repeated requests, Escape, tab changes, page focus, and resize are bounded.
@@ -76,31 +82,45 @@
 - Link/image/selection/editing/spelling/navigation/save/print/source/inspect
   commands route to real WebContents, clipboard, dialog, and tab operations.
 - Disabled states come from Chromium; arrows, Home/End, Enter, and Escape work.
-- The optical core is the canonical Master.dev dual SVG displacement technique:
-  `switcher` uses object-bounding-box blur `0.04`; `toggler` uses `0.01`; both
-  retain scale `0.5`, R/G channels, and their pinned fixed WebP source maps.
-- A raw `capturePage()` texture sits beneath same-view `backdrop-filter` layers,
-  allowing the switcher shell and toggler lens to refract real page pixels while
-  menu text/icons stay unfiltered above them.
-- The shell itself is transparent and the optical layer uses only a 26% neutral
-  wash; there is no fixed purple/Ember tint, so the captured page supplies the
-  visible material colour on both light and dark backgrounds.
+- The previous balloon distortion came from mapping a 488×136 pill texture with
+  `preserveAspectRatio="none"` across a 318×540 surface at displacement scale
+  `0.5`; its vertical normals were expanded through the whole tall menu.
+- `context-menu-optics.js` now samples the canonical Master.dev map into an
+  aspect-matched map for the live menu size. A deterministic nine-slice
+  projection retains the source perimeter, fades it to neutral across 24 px,
+  and writes exact neutral R/G channels throughout the long central region.
+- The outer SVG uses R/G displacement scale `0.08`, normalized blur `0.004`,
+  and only `0.65px` CSS smoothing. The clear material has a 5.5% white-neutral
+  wash with no purple, orange, or dark acrylic normalization.
+- The selector contains its own inversely positioned raw capture layer. Its
+  separate `backdrop-filter` therefore sees original page pixels rather than
+  the already displaced/tinted outer material; R/G displacement scale `0.05`
+  and normalized blur `0.01` keep it visibly refractive without watery streaks.
 - Context captures include 40 CSS px of edge-clipped bleed. `backdropRect` stores
   exact overlay offsets, DIP size, and available native pixel size; resize layout
   recaptures without reopening or stealing focus. No cover fit or visual scaling.
+- The menu is 254 px wide with 35 px rows, 9 px separators, 6 px shell padding,
+  and a 16 px outer radius. Height is derived from the actual rows and capped at
+  364 px, so short menus stay short while richer command sets scroll internally.
+- Each presentation carries an incrementing opening token. The shell uses an
+  explicit Web Animations API keyframe from 92% scale/-10 px to settled size over
+  320 ms; a relayout reuses its token and never restarts the motion. Reduced
+  motion resolves both this and selector travel in 1 ms.
 - One persistent selector caches row rectangles and retargets CSS transform
-  properties in 180 ms with `cubic-bezier(.2,.8,.2,1)`. Pointer and keyboard use
-  the same controller; separators and disabled rows are skipped, so hovering a
-  disabled row intentionally leaves the lens on the last enabled destination.
+  properties in 170 ms with `cubic-bezier(.5,0,.1,1)`. Pointer-opened menus begin
+  with it hidden; first hover or keyboard navigation reveals the same controller.
+  Separators and disabled rows are skipped, and rapid retargets do not queue.
 - Rich menus clamp to the page and scroll internally; scroll/resize refresh lens
   geometry. Direct property retargeting creates no animation queue.
 
 ## Liquid Glass Assets and Fallback
 
-- `glass-switcher-map.webp` and `glass-toggler-map.webp` are the two canonical
-  source occurrences, pinned at SHA-256 `6475a2bf80d1dad57b98ffe7bb38acd62eac3386abdca245e73dd9f36287813d`.
-- `scripts/sync-liquid-glass-maps.js` can reproduce both files from the pinned
-  source revision and refuses bytes with any other hash.
+- The two prior asset files were byte-identical (488×136, 12,214 bytes, SHA-256
+  `6475a2bf80d1dad57b98ffe7bb38acd62eac3386abdca245e73dd9f36287813d`).
+  The live Master.dev Light/Dark/Dim demo has one displacement map on the outer
+  switcher; its moving pseudo-element is differentiated by tint and optical rim.
+- Ember now keeps only `glass-switcher-map.webp`. The synchronizer verifies every
+  pinned source occurrence agrees, then writes one canonical file.
 - `ember://` serves WebP with `image/webp`; CSP remains self/data image only and
   does not add inline script or remote content allowances.
 - Chromium without SVG URL backdrop-filter support keeps the captured texture
@@ -137,6 +157,8 @@
 - Panel origin did not account for a visible bookmarks bar.
 - Pending backdrop capture could resurrect a dismissed overlay.
 - The first context-menu render used the wrong glass wrapper and overflowed.
+- The fixed pill map was vertically stretched over the tall context menu, and
+  the selector filtered the already processed outer layer instead of raw pixels.
 
 ## Changes Completed
 
@@ -150,7 +172,8 @@
 
 ## Tests Performed
 
-- `npm test`: 63 tests pass, including map hashes, bleed/DPI metadata, edge
+- `npm test`: 68 tests pass, including adaptive-map geometry/neutral-centre
+  pixels, map determinism, one canonical map hash, bleed/DPI metadata, edge
   clipping, resize recapture/open races, stale-capture clearing, controller
   geometry, disabled-row skipping, and renderer optical contracts.
 - `npm run smoke`: covers real page file inputs, clipboard/recents/native
@@ -159,12 +182,15 @@
   extensions/popups, bookmarks, and four window sizes in isolated userData.
 - `node --check`: all project JavaScript files parse.
 - Visual captures: new tab/chrome at wide, medium, compact; upload at 650×430
-  and 596×312; liquid menu at first/middle/bottom positions over near-black and
-  near-white high-contrast backgrounds. Tall-menu capture is 318×540 with
-  internal scrolling and no document overflow.
+  and 596×312; 254×364 capped context menu at rest and first/middle/bottom selector
+  positions over fine grids, saturated green/yellow/orange/red, black/white
+  type contrast, and photography. All captures report primary optics active,
+  exact viewport dimensions, and no document overflow.
 
 ## Remaining Issues
 
 - History and download-manager milestones remain outside this change.
+- The backdrop remains a static `capturePage()` image by design; it is refreshed
+  on layout changes, not continuously while the underlying page animates.
 - `npm audit --omit=dev` reports the upstream `adm-zip <0.6.0` advisory through
   `electron-chrome-web-store`; npm reports no available fix.

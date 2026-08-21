@@ -6,6 +6,7 @@ const { IPC } = require('../src/shared/ipc')
 
 function harness() {
   const shown = []
+  const relayouts = []
   const hidden = []
   const sender = {}
   const overlay = {
@@ -14,6 +15,7 @@ function harness() {
     isSender: (value) => value === sender,
     updateState: () => {},
     setBounds: () => {},
+    relayout: async (value) => relayouts.push(value),
     open: false,
   }
   const recentsAdded = []
@@ -49,7 +51,7 @@ function harness() {
     view: { getBounds: () => ({ x: 0, y: 84, width: 900, height: 556 }) },
     webContents: { getURL: () => 'https://uploads.example/editor' },
   }
-  return { panel, overlay, shown, hidden, sender, recentsAdded, frame, tab, sent }
+  return { panel, overlay, shown, relayouts, hidden, sender, recentsAdded, frame, tab, sent }
 }
 
 test('opens with only matching real recents and a live clipboard image', async () => {
@@ -64,6 +66,8 @@ test('opens with only matching real recents and a live clipboard image', async (
   assert.equal(h.shown[0].state.recents.length, 1)
   assert.equal(h.shown[0].state.recents[0].name, 'ember.png')
   assert.equal(h.shown[0].state.clipboard.name.startsWith('clipboard-'), true)
+  assert.equal(h.shown[0].state.openSequence, 1)
+  assert.equal(h.shown[0].captureBleed, 40)
   assert.deepEqual(h.shown[0].bounds, { x: 125, y: 147, width: 650, height: 430 })
 })
 
@@ -100,4 +104,16 @@ test('clears a failed opening so the next file request can proceed', async () =>
     request: { requestId: 'broken', accept: '', multiple: false },
   }), /clipboard unavailable/)
   assert.equal(h.panel.active, null)
+})
+
+test('recaptures the upload backdrop with bleed when its panel is laid out again', async () => {
+  const h = harness()
+  await h.panel.openRequest({
+    tab: h.tab, frame: h.frame,
+    request: { requestId: 'relayout', accept: '', multiple: false },
+  })
+  h.panel.layout()
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(h.relayouts[0].captureBleed, 40)
+  assert.equal(h.relayouts[0].targetView, h.tab.view)
 })

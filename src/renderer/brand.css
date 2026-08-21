@@ -1,22 +1,7 @@
 .ember-icon,
-.ember-logo {
+.ember-meteor {
   display: block;
   width: 100%;
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 100% auto;
-}
-
-/* The supplied sources include deliberate black presentation canvases. These
-   aspect-ratio frames crop only that canvas and preserve every logo pixel. */
-.ember-icon {
-  aspect-ratio: 5.15 / 1;
-  background-image: url("./assets/ember-icon.png");
-  background-size: 120% auto;
-}
-
-.ember-logo {
-  aspect-ratio: 2.7 / 1;
-  background-image: url("./assets/ember-logo.png");
-  background-size: 116% auto;
+  height: auto;
+  object-fit: contain;
 }

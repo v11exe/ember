@@ -3,11 +3,16 @@ const { FloatingPanel } = require('./floating-panel')
 const { placePointPanel } = require('../shared/floating-geometry')
 const { buildContextMenu } = require('./context-menu-model')
 
-const MENU_WIDTH = 318
+const MENU_WIDTH = 254
+const MAX_MENU_HEIGHT = 364
 const CAPTURE_BLEED = 40
 
 function menuHeight(items) {
-  return 16 + items.reduce((height, item) => height + (item.type === 'separator' ? 13 : 38), 0)
+  return 12 + items.reduce((height, item) => height + (item.type === 'separator' ? 9 : 35), 0)
+}
+
+function menuSize(items) {
+  return { width: MENU_WIDTH, height: Math.min(menuHeight(items), MAX_MENU_HEIGHT) }
 }
 
 function safeFileName(value) {
@@ -27,6 +32,7 @@ class ContextMenuPanel {
     this.clipboard = clipboard
     this.dialog = dialog
     this.active = null
+    this.openSequence = 0
   }
 
   async open({ tab, params }) {
@@ -40,10 +46,10 @@ class ContextMenuPanel {
     const bounds = placePointPanel(viewport, {
       x: viewport.x + params.x,
       y: viewport.y + params.y,
-    }, { width: MENU_WIDTH, height: menuHeight(items) }, 8)
-    this.active = { tab, params, items }
+    }, menuSize(items), 8)
+    this.active = { tab, params, items, openSequence: ++this.openSequence }
     const opened = await this.overlay.show({
-      bounds, state: { kind: 'context-menu', items }, targetView: tab.view,
+      bounds, state: { kind: 'context-menu', items, openSequence: this.active.openSequence }, targetView: tab.view,
       captureBleed: CAPTURE_BLEED,
     })
     if (!opened || this.active?.tab !== tab || this.active.params !== params) return
@@ -51,7 +57,7 @@ class ContextMenuPanel {
     const liveBounds = placePointPanel(liveViewport, {
       x: liveViewport.x + params.x,
       y: liveViewport.y + params.y,
-    }, { width: MENU_WIDTH, height: menuHeight(items) }, 8)
+    }, menuSize(items), 8)
     if (Object.keys(bounds).some((key) => bounds[key] !== liveBounds[key])) {
       await this.overlay.relayout({
         bounds: liveBounds, targetView: tab.view, captureBleed: CAPTURE_BLEED,
@@ -76,7 +82,7 @@ class ContextMenuPanel {
     const bounds = placePointPanel(viewport, {
       x: viewport.x + params.x,
       y: viewport.y + params.y,
-    }, { width: MENU_WIDTH, height: menuHeight(items) }, 8)
+    }, menuSize(items), 8)
     if (this.overlay.relayout) {
       void this.overlay.relayout({ bounds, targetView: tab.view, captureBleed: CAPTURE_BLEED })
     } else {
@@ -127,4 +133,4 @@ class ContextMenuPanel {
   }
 }
 
-module.exports = { ContextMenuPanel, MENU_WIDTH, menuHeight }
+module.exports = { ContextMenuPanel, MENU_WIDTH, MAX_MENU_HEIGHT, menuHeight, menuSize }

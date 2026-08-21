@@ -10,9 +10,28 @@
   <link rel="stylesheet" href="/upload.css" />
 </head>
 <body>
-  <main class="glass-shell upload-shell" role="dialog" aria-modal="true" aria-labelledby="upload-title">
-    <img class="glass-backdrop" id="glass-backdrop" alt="" />
-    <div class="glass-wash"></div><div class="glass-light"></div><div class="glass-grain"></div>
+  <svg class="upload-filter-definitions" aria-hidden="true">
+    <defs>
+      <filter id="switcher" primitiveUnits="objectBoundingBox">
+        <feImage id="upload-switcher-map" x="0" y="0" width="1" height="1"
+          preserveAspectRatio="xMidYMid meet" result="map"></feImage>
+        <feGaussianBlur in="SourceGraphic" stdDeviation="0.004" result="blur"></feGaussianBlur>
+        <feDisplacementMap in="blur" in2="map" scale="0.08" xChannelSelector="R"
+          yChannelSelector="G"></feDisplacementMap>
+      </filter>
+      <filter id="toggler" primitiveUnits="objectBoundingBox">
+        <feImage href="/assets/glass-switcher-map.webp" x="0" y="0" width="1" height="1"
+          preserveAspectRatio="none" result="map"></feImage>
+        <feGaussianBlur in="SourceGraphic" stdDeviation="0.01" result="blur"></feGaussianBlur>
+        <feDisplacementMap in="blur" in2="map" scale="0.05" xChannelSelector="R"
+          yChannelSelector="G"></feDisplacementMap>
+      </filter>
+    </defs>
+  </svg>
+  <main class="glass-shell upload-shell" id="upload-shell" role="dialog" aria-modal="true" aria-labelledby="upload-title">
+    <img class="upload-texture" id="upload-texture" alt="" draggable="false" />
+    <div class="glass-wash upload-material-tint"></div><div class="glass-light"></div><div class="glass-grain"></div>
+    <div id="upload-hover-lens" aria-hidden="true"><div id="upload-hover-source"></div><div id="upload-hover-sample"></div></div>
     <header class="upload-head">
       <div class="upload-brand" id="upload-brand"></div>
       <div class="upload-heading">
@@ -43,6 +62,7 @@
     <footer>Choose a recent item, paste an image, or open the full system browser.</footer>
   </main>
   <script src="/brand.js"></script>
+  <script src="upload-optics.js"></script>
   <script src="/upload.js"></script>
 </body>
 </html>

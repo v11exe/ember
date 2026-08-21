@@ -67,6 +67,11 @@ islands, sidebar outstanding).
   chrome view to full height instead paints black over the whole page —
   transparency does not work there.
 - Upload/context overlays share `FloatingPanel`; never replace page bounds.
+- Upload outer optics use an aspect-matched map with a 24px active perimeter;
+  recapture its 40px bleed whenever the panel relayouts, and have its hover lens
+  sample the independently aligned raw capture rather than the processed shell.
+- Context-menu outer optics generate an aspect-matched map from the one canonical
+  switch map; the selector owns a separately aligned raw-capture sample.
 - Files are LF via `.gitattributes`, but Git may hand you CRLF working copies.
   Multi-line string replacement in scripts silently no-ops against those.
   Verify edits landed instead of trusting the write.
@@ -206,6 +211,69 @@ Newest at top. One entry per branch, updated in place. Status:
 - **For the other agent:** new IPC channels, renamed files, contracts they must
   implement against. `none` if none.
 ```
+
+### 2026-08-21 — Codex — Restore corrected context-menu glass
+- **Status / Branch:** pushed · `fix/upload-liquid-glass-optics`
+- **Touches:** `AGENTS.md`, `agent.md`, `scripts/capture-ui.js`,
+  `src/main/{context-menu-panel,protocol}.js`,
+  `src/renderer/pages/{context-menu,context-menu-lens,context-menu-optics}.*`,
+  `test/{context-menu-lens,context-menu-optics,context-menu-panel,renderer-contracts}.test.js`
+- **Summary:** Restore the newer compact, edge-only Liquid Glass context menu
+  that was absent from this upload branch without changing menu commands.
+- **For the other agent:** restoring the context-menu renderer and its captured
+  backdrop contracts; upload actions and the new upload optics stay untouched.
+
+### 2026-08-21 — Codex — Context-menu popover motion and proportions
+- **Status / Branch:** pushed · `fix/context-menu-open-motion`
+- **Touches:** `AGENTS.md`, `agent.md`, `src/main/context-menu-panel.js`,
+  `src/renderer/pages/{context-menu.css,context-menu.js}`,
+  `test/{context-menu-panel,renderer-contracts}.test.js`
+- **Summary:** Tune the compact glass menu's reference dimensions and its
+  reduced-motion-safe opening transition without replaying on relayout.
+- **For the other agent:** its captured-texture and selector contracts remain unchanged.
+
+### 2026-08-21 — Codex — Geometry-correct compact Liquid Glass context menu
+- **Status / Branch:** pushed · `fix/context-menu-liquid-glass`
+- **Touches:** `AGENTS.md`, `agent.md`, `scripts/capture-ui.js`,
+  `src/main/{context-menu-panel,protocol}.js`,
+  `src/renderer/pages/{context-menu,context-menu-lens,context-menu-optics}.*`,
+  `test/{context-menu-panel,context-menu-lens,context-menu-optics,renderer-contracts}.test.js`
+- **Summary:** Use an edge-concentrated, size-matched map and raw-capture selector
+  lens for the compact menu.
+- **For the other agent:** context-menu optics and sizing are restored here.
+
+### 2026-08-21 — Codex — Geometry-correct upload Liquid Glass
+- **Status / Branch:** pushed · `fix/upload-liquid-glass-optics`
+- **Touches:** `AGENTS.md`, `agent.md`, `src/main/upload-panel.js`,
+  `src/renderer/pages/{upload.html,upload.css,upload.js,upload-optics.js}`,
+  `scripts/capture-ui.js`, `test/{upload-panel,upload-optics,renderer-contracts}.test.js`
+- **Summary:** Replace the stretched upload-panel displacement map with a
+  generated edge-only map, recapture resize bleed, and make the hover lens sample
+  the raw captured page.
+- **For the other agent:** upload action payloads and panel geometry are
+  unchanged; captured upload backdrops now request 40px edge-clipped bleed.
+
+### 2026-08-21 — Codex — Repair meteor icon presentation
+- **Status / Branch:** merged · `fix/meteor-icon-presentation`
+- **Touches:** `AGENTS.md`, `src/main/index.js`, `src/renderer/{brand}.js`, `src/renderer/assets/ember-app-icon.png`, `test/{brand,renderer-contracts}.test.js`
+- **Summary:** Repair the chrome asset URL and give the native window a square crop focused on the meteor head instead of the wide in-app mark.
+- **For the other agent:** in-app use stays on `ember-icon.png`; `ember-app-icon.png` is native-window-only. No IPC contracts change.
+
+### 2026-08-21 — Codex — Upload picker Liquid Glass motion
+- **Status / Branch:** pushed · `feat/upload-liquid-glass`
+- **Touches:** `AGENTS.md`, `agent.md`, `src/main/upload-panel.js`,
+  `src/renderer/pages/{upload.html,upload.css,upload.js}`, `test/{upload-panel,renderer-contracts}.test.js`
+- **Summary:** Preserve the file picker commands and layout while applying the
+  context menu’s map-based Liquid Glass surface, opening animation, and hover
+  treatment to upload controls and recent-file cards.
+- **For the other agent:** upload state adds an opening token only; all existing
+  upload action names and payload contracts remain unchanged.
+
+### 2026-08-21 — Codex — Transparent meteor branding
+- **Status / Branch:** pushed · `feat/transparent-meteor-branding`
+- **Touches:** `AGENTS.md`, `src/main/{index,protocol}.js`, `src/renderer/{brand,chrome}.*`, `src/renderer/pages/newtab.*`, `src/renderer/assets/{ember-icon.png,Necosmic-PersonalUse.otf}`, `scripts/capture-ui.js`, `test/{brand,renderer-contracts}.test.js`
+- **Summary:** Make the supplied transparent meteor the one icon asset throughout Ember; compose the new-tab masthead from it and a dedicated Necosmic `ember` wordmark.
+- **For the other agent:** replaces active combined-logo use and adds a bundled font route; browser functionality and IPC contracts are unchanged.
 
 ### 2026-08-21 — Codex — Ember exact-map liquid-glass context menu
 - **Status / Branch:** pushed · `feat/ember-upgrade`

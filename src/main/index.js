@@ -37,7 +37,7 @@ function createBrowser() {
     minWidth: 620,
     minHeight: 420,
     frame: false,
-    icon: path.join(__dirname, '..', 'renderer', 'assets', 'ember-icon.png'),
+    icon: path.join(__dirname, '..', 'renderer', 'assets', 'ember-app-icon.png'),
     backgroundColor: '#000000',
     title: 'Ember',
   })
@@ -63,11 +63,11 @@ function createBrowser() {
     return []
   })
   const smokeUploadPaths = [
-    path.join(__dirname, '..', 'renderer', 'assets', 'ember-logo.png'),
     path.join(__dirname, '..', 'renderer', 'assets', 'ember-icon.png'),
+    path.join(__dirname, '..', 'renderer', 'assets', 'glass-toggler-map.webp'),
   ]
   const smokeClipboard = process.env.EMBER_SMOKE ? {
-    image: nativeImage.createFromPath(smokeUploadPaths[1]),
+    image: nativeImage.createFromPath(smokeUploadPaths[0]),
     readImage() { return this.image },
   } : null
   const uploadPanel = new UploadPanel(win, {
@@ -334,7 +334,7 @@ app.whenReady().then(() => {
         await clickInput('single')
         const uploadOpened = await waitFor(() => browser.uploadPanel.overlay.open && browser.uploadPanel.overlay.loaded)
         checks.push(['real file input opens Ember picker', !!uploadOpened && browser.uploadPanel.overlay.view.getVisible()])
-        checks.push(['picker shows real recent paths', browser.uploadPanel.overlay.state?.recents.some((item) => item.name === 'ember-logo.png')])
+        checks.push(['picker shows real recent paths', browser.uploadPanel.overlay.state?.recents.some((item) => item.name === 'ember-icon.png')])
         checks.push(['picker shows live clipboard image', !!browser.uploadPanel.overlay.state?.clipboard])
         await browser.uploadPanel.overlay.view.webContents.executeJavaScript("document.getElementById('clipboard-slot').click()")
         const clipboardUpload = await waitFor(async () => {
@@ -348,13 +348,13 @@ app.whenReady().then(() => {
         await clickInput('single')
         await waitFor(() => browser.uploadPanel.overlay.open)
         await browser.uploadPanel.overlay.view.webContents.executeJavaScript(
-          "[...document.querySelectorAll('.recent-file')].find((item) => item.textContent.includes('ember-logo.png')).click()"
+          "[...document.querySelectorAll('.recent-file')].find((item) => item.textContent.includes('ember-icon.png')).click()"
         )
         const recentUpload = await waitFor(async () => {
           const value = await active.webContents.executeJavaScript('document.body.dataset.upload || null')
           return value && JSON.parse(value)
         })
-        checks.push(['recent tile returns source bytes and metadata', recentUpload?.names[0] === 'ember-logo.png'
+        checks.push(['recent tile returns source bytes and metadata', recentUpload?.names[0] === 'ember-icon.png'
           && recentUpload.sizes[0] === (await fs.stat(browser.smokeUploadPaths[0])).size])
 
         await active.webContents.executeJavaScript('delete document.body.dataset.upload')
@@ -366,7 +366,7 @@ app.whenReady().then(() => {
           return value && JSON.parse(value)
         })
         checks.push(['Show all files supports a real multiple selection', multipleUpload?.names.length === 2
-          && multipleUpload.names.includes('ember-logo.png') && multipleUpload.names.includes('ember-icon.png')])
+          && multipleUpload.names.includes('ember-icon.png') && multipleUpload.names.includes('glass-toggler-map.webp')])
 
         browser.smokeClipboard.image = nativeImage.createEmpty()
         await clickInput('single')

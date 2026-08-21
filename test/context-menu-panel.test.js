@@ -1,7 +1,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
-const { ContextMenuPanel, menuHeight } = require('../src/main/context-menu-panel')
+const { ContextMenuPanel, MENU_WIDTH, MAX_MENU_HEIGHT, menuHeight, menuSize } = require('../src/main/context-menu-panel')
 
 function harness() {
   const sender = {}
@@ -58,8 +58,15 @@ test('opens clamped to the page and exposes enabled navigation commands', async 
   assert.equal(shown.state.items.find((item) => item.id === 'forward').enabled, false)
 })
 
-test('menuHeight includes shell padding and both border pixels', () => {
-  assert.equal(menuHeight([{ id: 'reload' }]), 54)
+test('uses compact Windows-like menu width and row geometry', () => {
+  assert.equal(MENU_WIDTH, 254)
+  assert.equal(menuHeight([{ id: 'reload' }]), 47)
+  assert.equal(menuHeight([{ id: 'back' }, { type: 'separator' }, { id: 'reload' }]), 91)
+  assert.equal(MAX_MENU_HEIGHT, 364)
+  assert.equal(menuSize([{ id: 'reload' }]).height, 47)
+  assert.deepEqual(menuSize(Array.from({ length: 18 }, (_, index) => ({ id: `command-${index}` }))), {
+    width: 254, height: 364,
+  })
 })
 
 test('constrains a command-rich menu to the usable page height', async () => {
@@ -73,7 +80,20 @@ test('constrains a command-rich menu to the usable page height', async () => {
       editFlags: { canUndo: true, canRedo: true, canCut: true, canCopy: true, canPaste: true, canDelete: true, canSelectAll: true },
     },
   })
-  assert.equal(h.shown[0].bounds.height <= 540, true)
+  assert.equal(h.shown[0].bounds.height <= MAX_MENU_HEIGHT, true)
+})
+
+test('identifies each opening presentation without changing the token on relayout', async () => {
+  const h = harness()
+  const params = { x: 20, y: 20 }
+  await h.panel.open({ tab: h.tab, params })
+  assert.equal(h.shown[0].state.openSequence, 1)
+  h.panel.layout()
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(h.relayouts[0].state, undefined)
+
+  await h.panel.open({ tab: h.tab, params: { x: 21, y: 21 } })
+  assert.equal(h.shown[1].state.openSequence, 2)
 })
 
 test('layout refreshes the captured texture with the same bleed contract', async () => {

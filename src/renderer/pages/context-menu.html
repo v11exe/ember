@@ -9,21 +9,22 @@
   <link rel="stylesheet" href="context-menu.css">
 </head>
 <body>
-  <!-- Exact fixed-map filters from https://codepen.io/ljgonzalez/pen/ogjmxGe -->
+  <!-- Optical profile adapted from the Light / Dark / Dim switch at
+       https://codepen.io/fooontic/pen/KwpRaGr (embedded by Master.dev). -->
   <svg class="filter-definitions" aria-hidden="true">
     <defs>
       <filter id="switcher" primitiveUnits="objectBoundingBox">
-        <feImage href="/assets/glass-switcher-map.webp" x="0" y="0" width="1" height="1"
-          preserveAspectRatio="none" result="map"></feImage>
-        <feGaussianBlur in="SourceGraphic" stdDeviation="0.04" result="blur"></feGaussianBlur>
-        <feDisplacementMap in="blur" in2="map" scale="0.5" xChannelSelector="R"
+        <feImage id="switcher-map" x="0" y="0" width="1" height="1"
+          preserveAspectRatio="xMidYMid meet" result="map"></feImage>
+        <feGaussianBlur in="SourceGraphic" stdDeviation="0.004" result="blur"></feGaussianBlur>
+        <feDisplacementMap in="blur" in2="map" scale="0.08" xChannelSelector="R"
           yChannelSelector="G"></feDisplacementMap>
       </filter>
       <filter id="toggler" primitiveUnits="objectBoundingBox">
-        <feImage href="/assets/glass-toggler-map.webp" x="0" y="0" width="1" height="1"
+        <feImage href="/assets/glass-switcher-map.webp" x="0" y="0" width="1" height="1"
           preserveAspectRatio="none" result="map"></feImage>
         <feGaussianBlur in="SourceGraphic" stdDeviation="0.01" result="blur"></feGaussianBlur>
-        <feDisplacementMap in="blur" in2="map" scale="0.5" xChannelSelector="R"
+        <feDisplacementMap in="blur" in2="map" scale="0.05" xChannelSelector="R"
           yChannelSelector="G"></feDisplacementMap>
       </filter>
     </defs>
@@ -31,9 +32,12 @@
   <main class="menu-shell" id="menu-shell" role="presentation">
     <img class="outer-texture" id="outer-texture" alt="" draggable="false">
     <div class="material-tint" aria-hidden="true"></div>
-    <div id="selector-lens" aria-hidden="true"><div id="selector-sample"></div></div>
+    <div id="selector-lens" aria-hidden="true">
+      <div id="selector-source"></div><div id="selector-sample"></div>
+    </div>
     <div id="context-menu" role="menu" aria-label="Page context menu"></div>
   </main>
+  <script src="context-menu-optics.js"></script>
   <script src="context-menu-lens.js"></script>
   <script src="context-menu.js"></script>
 </body>
