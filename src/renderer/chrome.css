@@ -1,10 +1,13 @@
 /* Browser chrome: 38px tab strip + 46px toolbar = 84px (TabManager.CHROME_HEIGHT) */
-body {
+/* The view is 84px tall normally, and full-window while a panel is open —
+   everything outside .chrome-shell must stay transparent. */
+html, body { height: 100%; }
+body { overflow: hidden; background: transparent; user-select: none; }
+
+.chrome-shell {
   height: 84px;
-  overflow: hidden;
   background: linear-gradient(180deg, #0A0A0C, var(--bg-1));
   border-bottom: 1px solid var(--border);
-  user-select: none;
 }
 
 /* ---------- tab strip ---------- */
@@ -147,3 +150,99 @@ body {
 .omnibox input::placeholder { color: var(--text-faint); }
 
 browser-action-list { display: flex; align-items: center; }
+
+/* ---------- extensions panel ---------- */
+.jigsaw { stroke-width: 1.5; }
+.icon.open { background: var(--surface-2); }
+.icon.open .jigsaw { stroke: var(--ember-warm); }
+
+.backdrop {
+  position: fixed; inset: 84px 0 0 0;
+  background: rgba(0, 0, 0, .35);
+  animation: fade .12s ease;
+}
+.backdrop[hidden] { display: none; }
+@keyframes fade { from { opacity: 0 } to { opacity: 1 } }
+
+.panel {
+  position: fixed; top: 78px; right: 10px;
+  width: 306px; max-height: calc(100vh - 96px);
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 44px rgba(0,0,0,.62), 0 0 0 1px rgba(255,138,31,.10);
+  overflow: hidden;
+  animation: drop .13s ease;
+}
+.panel[hidden] { display: none; }
+@keyframes drop { from { opacity: 0; transform: translateY(-6px) } to { opacity: 1; transform: none } }
+
+.panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 13px;
+  font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+.panel-store {
+  border: 0; border-radius: 999px;
+  padding: 5px 11px;
+  background: linear-gradient(95deg, var(--ember-deep), var(--ember-mid) 60%, var(--ember-hot));
+  color: #17110A; font: 600 11px/1 var(--font);
+  text-transform: none; letter-spacing: 0;
+  cursor: default;
+}
+.panel-store:hover { filter: brightness(1.12); }
+
+.panel-actions { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.panel-actions:empty, .panel-actions.hidden { display: none; }
+
+.panel-list { overflow-y: auto; padding: 6px; }
+
+.ext-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 9px; border-radius: 9px;
+}
+.ext-row:hover { background: var(--surface-2); }
+.ext-icon {
+  width: 26px; height: 26px; flex: none; border-radius: 7px;
+  background: var(--surface-3);
+  object-fit: contain;
+}
+.ext-icon-fallback {
+  display: grid; place-items: center;
+  color: var(--ember-warm); font: 700 12px/1 var(--font);
+  background: linear-gradient(140deg, rgba(232,65,15,.28), rgba(255,201,60,.16));
+}
+.ext-meta { flex: 1; min-width: 0; }
+.ext-name {
+  font-size: 13px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ext-version { font-size: 11px; color: var(--text-faint); }
+.ext-remove {
+  flex: none; border: 1px solid var(--border); border-radius: 7px;
+  padding: 4px 9px; background: transparent;
+  color: var(--text-dim); font: 500 11px/1 var(--font);
+  cursor: default;
+}
+.ext-remove:hover { border-color: var(--ember-deep); background: var(--ember-deep); color: #fff; }
+
+.ext-empty { padding: 22px 16px; text-align: center; color: var(--text-faint); font-size: 12px; line-height: 1.55; }
+.ext-empty strong { display: block; color: var(--text-dim); font-size: 13px; margin-bottom: 5px; }
+
+/* browser-action buttons live in shadow DOM; reachable only via ::part() */
+browser-action-list { display: flex; flex-wrap: wrap; gap: 4px; }
+browser-action-list::part(action) {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  background-size: 19px;
+  transition: background-color .12s ease;
+}
+browser-action-list::part(action):hover { background-color: var(--surface-3); }
+browser-action-list::part(badge) {
+  border-radius: 5px;
+  font-family: var(--font);
+  font-size: 9px;
+}

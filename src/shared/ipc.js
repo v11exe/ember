@@ -15,6 +15,9 @@ const IPC = {
   WIN_MAXIMIZE: 'win:maximize',
   WIN_CLOSE: 'win:close',
   EXT_OPEN_STORE: 'ext:open-store',
+  EXT_LIST: 'ext:list',
+  EXT_REMOVE: 'ext:remove',
+  CHROME_OVERLAY: 'chrome:overlay',
 
   // main -> renderer
   STATE: 'browser:state',

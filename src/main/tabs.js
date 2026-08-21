@@ -18,6 +18,7 @@ class TabManager {
     this.extensions = opts.extensions || null
     this.tabs = []
     this.activeId = null
+    this.overlay = false // true while a chrome dropdown needs the full window
     win.on('resize', () => this.layout())
   }
 
@@ -124,9 +125,14 @@ class TabManager {
     this.tabs = this.tabs.filter((t) => t.id !== id)
   }
 
+  setOverlay(open) {
+    this.overlay = !!open
+    this.layout()
+  }
+
   layout() {
     const { width, height } = this.win.getContentBounds()
-    this.chromeView.setBounds({ x: 0, y: 0, width, height: CHROME_HEIGHT })
+    this.chromeView.setBounds({ x: 0, y: 0, width, height: this.overlay ? height : CHROME_HEIGHT })
     const active = this.active
     if (active) {
       active.view.setBounds({ x: 0, y: CHROME_HEIGHT, width, height: Math.max(0, height - CHROME_HEIGHT) })

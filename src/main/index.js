@@ -4,7 +4,7 @@ const { app, BaseWindow, WebContentsView, ipcMain, session, shell } = require('e
 const { IPC, NEW_TAB_URL, WEB_STORE_URL } = require('../shared/ipc')
 const { toNavigationUrl } = require('../shared/urls')
 const { TabManager, CHROME_HEIGHT } = require('./tabs')
-const { setupExtensions, applyStoreRebranding } = require('./extensions')
+const { setupExtensions, applyStoreRebranding, listExtensions, removeExtension } = require('./extensions')
 const { registerSchemePrivileges, handleInternalPages } = require('./protocol')
 
 registerSchemePrivileges()
@@ -31,7 +31,7 @@ function createBrowser() {
       preload: path.join(__dirname, '..', 'renderer', 'preload.js'),
     },
   })
-  chrome.setBackgroundColor('#000000')
+  chrome.setBackgroundColor('#00000000') // transparent below the toolbar when a panel is open
   win.contentView.addChildView(chrome)
   chrome.webContents.loadFile(path.join(__dirname, '..', 'renderer', 'chrome.html'))
 
@@ -74,6 +74,16 @@ ipcMain.on(IPC.NAV_FORWARD, () => activeTabs()?.forward())
 ipcMain.on(IPC.NAV_RELOAD, () => activeTabs()?.reload())
 ipcMain.on(IPC.NAV_STOP, () => activeTabs()?.stop())
 ipcMain.on(IPC.EXT_OPEN_STORE, () => activeTabs()?.create(WEB_STORE_URL))
+ipcMain.handle(IPC.EXT_LIST, () => listExtensions(session.defaultSession))
+ipcMain.handle(IPC.EXT_REMOVE, async (_e, id) => {
+  const ok = await removeExtension(session.defaultSession, id)
+  return { ok, extensions: listExtensions(session.defaultSession) }
+})
+
+// The chrome view is 84px tall, so a dropdown would be clipped. While a panel
+// is open the view covers the window and paints its own backdrop; collapsing
+// hands clicks back to the page.
+ipcMain.on(IPC.CHROME_OVERLAY, (_e, open) => browser?.tabs.setOverlay(open))
 
 ipcMain.on(IPC.NAV_GO, (_e, input) => {
   const url = toNavigationUrl(input)

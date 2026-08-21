@@ -27,6 +27,10 @@ function setupExtensions(session, hooks) {
 
   try {
     const { ElectronChromeExtensions } = require('electron-chrome-extensions')
+
+    // Without this, browser action icons in the panel resolve to nothing.
+    ElectronChromeExtensions.handleCRXProtocol(session)
+
     extensions = new ElectronChromeExtensions({
       // GPL-3.0 is the free license offered by the package author.
       license: 'GPL-3.0',
@@ -110,3 +114,57 @@ function applyStoreRebranding(webContents) {
 }
 
 module.exports = { setupExtensions, applyStoreRebranding, extensionsDir }
+
+// ---------------------------------------------------------------------------
+// Panel support: what's installed, and removing one.
+
+const ICON_EXT = { '.png': 'image/png', '.svg': 'image/svg+xml', '.jpg': 'image/jpeg', '.webp': 'image/webp' }
+
+/** Best icon under 128px, inlined as a data URL for the chrome UI. */
+function iconDataUrl(ext) {
+  const icons = ext.manifest && ext.manifest.icons
+  if (!icons) return null
+  const size = Object.keys(icons)
+    .map(Number)
+    .filter((n) => Number.isFinite(n))
+    .sort((a, b) => b - a)
+    .find((n) => n <= 128)
+  if (!size) return null
+  try {
+    const file = path.join(ext.path, icons[String(size)])
+    const mime = ICON_EXT[path.extname(file).toLowerCase()]
+    if (!mime) return null
+    return `data:${mime};base64,${fs.readFileSync(file).toString('base64')}`
+  } catch {
+    return null
+  }
+}
+
+// Electron 43 moved these onto session.extensions; keep a fallback for older.
+function extensionHost(session) {
+  return session.extensions || session
+}
+
+function listExtensions(session) {
+  return extensionHost(session).getAllExtensions().map((ext) => ({
+    id: ext.id,
+    name: ext.name,
+    version: ext.version,
+    description: (ext.manifest && ext.manifest.description) || '',
+    icon: iconDataUrl(ext),
+  }))
+}
+
+async function removeExtension(session, id) {
+  try {
+    const { uninstallExtension } = require('electron-chrome-web-store')
+    await uninstallExtension(id, { session })
+    return true
+  } catch (err) {
+    console.error('[ember] uninstall failed:', err.message)
+    try { extensionHost(session).removeExtension(id); return true } catch { return false }
+  }
+}
+
+module.exports.listExtensions = listExtensions
+module.exports.removeExtension = removeExtension

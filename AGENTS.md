@@ -32,7 +32,7 @@ src/main/extensions.js   Chrome Web Store install + chrome.* APIs + "Add to Embe
 src/main/protocol.js     ember:// scheme, serves src/renderer/pages flat
 src/main/page-preload.js sandboxed preload; ember:// pages only, nav verbs only
 src/renderer/preload.js  chrome UI bridge (contextBridge "ember"), browser-action
-src/renderer/chrome.*    tab strip + toolbar (html/css/js)
+src/renderer/chrome.*    tab strip, toolbar, extensions panel (html/css/js)
 src/renderer/theme.css   the palette — every colour is defined here, once
 src/renderer/pages/      internal pages, flat dir: newtab.html/.css/.js
 src/shared/ipc.js        channel names, SEARCH_URL, NEW_TAB_URL
@@ -45,6 +45,13 @@ scripts/smoke.js         boot check
 5 adblock + per-site Shields · 6 history/bookmarks/downloads · 7 GX layer
 (theming partly done via `theme.css`; network limiter, tab discarding, tab
 islands, sidebar outstanding).
+
+**Extension gotchas** (cost real debugging time, don't rediscover): the panel's
+`<browser-action-list>` needs `injectBrowserAction()` *called* in the preload —
+requiring the module does nothing; icons need
+`ElectronChromeExtensions.handleCRXProtocol(session)`; the chrome view is 84px
+tall so dropdowns need `TabManager.setOverlay(true)` to grow it, and the
+renderer must ignore the resize that causes or the panel closes itself.
 
 **Not yet set up** (don't go looking): TS config, linter, unit tests, CI,
 CODEOWNERS, branch protection, `electron-updater`, tab reordering/drag,
@@ -174,6 +181,17 @@ Newest at top. One entry per branch, updated in place. Status:
 - **For the other agent:** new IPC channels, renamed files, contracts they must
   implement against. `none` if none.
 ```
+
+### 2026-08-21 — Claude Code — Extensions panel (jigsaw button)
+- **Status / Branch:** merged · `main`
+- **Touches:** `src/main/{index,tabs,extensions}.js`, `src/renderer/{preload,chrome.html,chrome.css,chrome.js}`, `src/shared/ipc.js`
+- **Summary:** Puzzle-piece button top-right opens a panel listing installed
+  extensions with icons, versions, working action buttons and Remove. Fixes the
+  reason extensions were uninstallable-but-unusable: `injectBrowserAction()` was
+  never called and `crx://` was unhandled.
+- **For the other agent:** new channels `ext:list`, `ext:remove`,
+  `chrome:overlay`. Any future dropdown in the chrome UI must call
+  `setOverlay(true)` or it will be clipped to 84px.
 
 ### 2026-08-21 — Claude Code — Browser shell: chrome UI, theme, CWS extensions
 - **Status / Branch:** merged · `main`

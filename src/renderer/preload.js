@@ -1,9 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron')
 const { IPC } = require('../shared/ipc')
 
-// Gives extension toolbar buttons (<browser-action-list>) to the chrome UI.
+// Defines the <browser-action-list> element used by the extensions panel.
+// Requiring the module is not enough — it has to be invoked.
 try {
-  require('electron-chrome-extensions/browser-action')
+  const { injectBrowserAction } = require('electron-chrome-extensions/browser-action')
+  injectBrowserAction()
 } catch (err) {
   console.warn('[ember] browser-action element unavailable:', err.message)
 }
@@ -21,6 +23,9 @@ contextBridge.exposeInMainWorld('ember', {
   reload: () => ipcRenderer.send(IPC.NAV_RELOAD),
   stop: () => ipcRenderer.send(IPC.NAV_STOP),
   openStore: () => ipcRenderer.send(IPC.EXT_OPEN_STORE),
+  listExtensions: () => ipcRenderer.invoke(IPC.EXT_LIST),
+  removeExtension: (id) => ipcRenderer.invoke(IPC.EXT_REMOVE, id),
+  setOverlay: (open) => ipcRenderer.send(IPC.CHROME_OVERLAY, !!open),
 
   minimize: () => ipcRenderer.send(IPC.WIN_MINIMIZE),
   maximize: () => ipcRenderer.send(IPC.WIN_MAXIMIZE),
