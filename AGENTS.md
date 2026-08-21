@@ -207,6 +207,16 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
+### 2026-08-21 — Codex — Upload picker Liquid Glass motion
+- **Status / Branch:** in-progress · `feat/upload-liquid-glass`
+- **Touches:** `AGENTS.md`, `agent.md`, `src/main/upload-panel.js`,
+  `src/renderer/pages/{upload.html,upload.css,upload.js}`, `test/{upload-panel,renderer-contracts}.test.js`
+- **Summary:** Preserve the file picker commands and layout while applying the
+  context menu’s map-based Liquid Glass surface, opening animation, and hover
+  treatment to upload controls and recent-file cards.
+- **For the other agent:** upload state adds an opening token only; all existing
+  upload action names and payload contracts remain unchanged.
+
 ### 2026-08-21 — Codex — Transparent meteor branding
 - **Status / Branch:** pushed · `feat/transparent-meteor-branding`
 - **Touches:** `AGENTS.md`, `src/main/{index,protocol}.js`, `src/renderer/{brand,chrome}.*`, `src/renderer/pages/newtab.*`, `src/renderer/assets/{ember-icon.png,Necosmic-PersonalUse.otf}`, `scripts/capture-ui.js`, `test/{brand,renderer-contracts}.test.js`
