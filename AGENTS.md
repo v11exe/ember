@@ -213,7 +213,7 @@ Newest at top. One entry per branch, updated in place. Status:
 ```
 
 ### 2026-08-21 — Codex — Restore corrected context-menu glass
-- **Status / Branch:** in-progress · `fix/upload-liquid-glass-optics`
+- **Status / Branch:** pushed · `fix/upload-liquid-glass-optics`
 - **Touches:** `AGENTS.md`, `agent.md`, `scripts/capture-ui.js`,
   `src/main/{context-menu-panel,protocol}.js`,
   `src/renderer/pages/{context-menu,context-menu-lens,context-menu-optics}.*`,
