@@ -223,6 +223,25 @@ Newest at top. One entry per branch, updated in place. Status:
 - **For the other agent:** restoring the context-menu renderer and its captured
   backdrop contracts; upload actions and the new upload optics stay untouched.
 
+### 2026-08-21 — Codex — Context-menu popover motion and proportions
+- **Status / Branch:** pushed · `fix/context-menu-open-motion`
+- **Touches:** `AGENTS.md`, `agent.md`, `src/main/context-menu-panel.js`,
+  `src/renderer/pages/{context-menu.css,context-menu.js}`,
+  `test/{context-menu-panel,renderer-contracts}.test.js`
+- **Summary:** Tune the compact glass menu's reference dimensions and its
+  reduced-motion-safe opening transition without replaying on relayout.
+- **For the other agent:** its captured-texture and selector contracts remain unchanged.
+
+### 2026-08-21 — Codex — Geometry-correct compact Liquid Glass context menu
+- **Status / Branch:** pushed · `fix/context-menu-liquid-glass`
+- **Touches:** `AGENTS.md`, `agent.md`, `scripts/capture-ui.js`,
+  `src/main/{context-menu-panel,protocol}.js`,
+  `src/renderer/pages/{context-menu,context-menu-lens,context-menu-optics}.*`,
+  `test/{context-menu-panel,context-menu-lens,context-menu-optics,renderer-contracts}.test.js`
+- **Summary:** Use an edge-concentrated, size-matched map and raw-capture selector
+  lens for the compact menu.
+- **For the other agent:** context-menu optics and sizing are restored here.
+
 ### 2026-08-21 — Codex — Geometry-correct upload Liquid Glass
 - **Status / Branch:** pushed · `fix/upload-liquid-glass-optics`
 - **Touches:** `AGENTS.md`, `agent.md`, `src/main/upload-panel.js`,

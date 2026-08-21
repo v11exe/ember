@@ -12,7 +12,8 @@ function menuHeight(items) {
 }
 
 function menuSize(items) {
-  return { width: MENU_WIDTH, height: Math.min(menuHeight(items), MAX_MENU_HEIGHT) }
+  void items
+  return { width: MENU_WIDTH, height: MAX_MENU_HEIGHT }
 }
 
 function safeFileName(value) {

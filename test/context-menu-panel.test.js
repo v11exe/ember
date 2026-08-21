@@ -63,6 +63,7 @@ test('uses compact Windows-like menu width and row geometry', () => {
   assert.equal(menuHeight([{ id: 'reload' }]), 47)
   assert.equal(menuHeight([{ id: 'back' }, { type: 'separator' }, { id: 'reload' }]), 91)
   assert.equal(MAX_MENU_HEIGHT, 364)
+  assert.equal(menuSize([{ id: 'reload' }]).height, 364)
   assert.deepEqual(menuSize(Array.from({ length: 18 }, (_, index) => ({ id: `command-${index}` }))), {
     width: 254, height: 364,
   })
