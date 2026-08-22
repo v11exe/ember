@@ -60,7 +60,9 @@ class NativeBackdrop {
   }
 
   destroy() {
-    for (const layer of [this.page, this.search]) this.win.contentView.removeChildView(layer)
+    for (const layer of [this.page, this.search]) {
+      try { this.win.contentView.removeChildView(layer) } catch { /* Electron may destroy the parent first. */ }
+    }
   }
 }
 

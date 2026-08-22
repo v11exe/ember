@@ -70,3 +70,20 @@ test('native backdrop stacks a second live blur only beneath the active new-tab 
   assert.deepEqual(layers[0].calls.at(-1), ['visible', false])
   assert.deepEqual(layers[1].calls.at(-1), ['visible', false])
 })
+
+test('native backdrop teardown tolerates Electron destroying the parent first', () => {
+  class FakeView {
+    setBackgroundColor() {}
+    setBackgroundBlur() {}
+    setBorderRadius() {}
+    setVisible() {}
+  }
+  const win = {
+    contentView: {
+      addChildView() {},
+      removeChildView() { throw new TypeError('Object has been destroyed') },
+    },
+  }
+  const backdrop = new NativeBackdrop(win, FakeView)
+  assert.doesNotThrow(() => backdrop.destroy())
+})

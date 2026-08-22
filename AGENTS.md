@@ -225,7 +225,7 @@ Newest at top. One entry per branch, updated in place. Status:
 ### 2026-08-22 — Codex — Native Glass new-tab integration
 - **Status / Branch:** pushed · `native-glass`
 - **Touches:** `AGENTS.md`, `src/main/{index,native-backdrop}.js`, `src/main/page-preload.js`, `src/shared/{ipc,native-glass}.js`, `src/renderer/pages/{newtab.*,native-glass.js}`, `test/{native-glass,renderer-contracts}.test.js`
-- **Summary:** Make only the new-tab viewport expose a live Windows AccentBlurBehind surface tinted `8C000000`, then layer a configurable DOM-backed Liquid Glass search surface above it so the material visibly blurs a second time.
+- **Summary:** Make only the new-tab viewport expose a live Windows AccentBlurBehind surface tinted `8C000000`, then layer a configurable DOM-backed Liquid Glass search surface above it so the material visibly blurs a second time. The window root is transparent so the native layers are visible, and teardown is safe after Electron destroys the parent.
 - **For the other agent:** New native-glass configuration and IPC may be added; no `poc/` content, dependencies, files, or commits will enter this branch.
 
 ### 2026-08-22 — Claude Code — New tab restyle

@@ -48,8 +48,9 @@ function createBrowser() {
     minWidth: 620,
     minHeight: 420,
     frame: false,
+    transparent: true,
     icon: path.join(__dirname, '..', 'renderer', 'assets', 'ember-app-icon.png'),
-    backgroundColor: '#000000',
+    backgroundColor: '#00000000',
     title: 'Ember',
   })
   const nativeBackdrop = new NativeBackdrop(win, View)

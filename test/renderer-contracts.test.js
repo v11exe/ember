@@ -39,6 +39,8 @@ test('new tab keeps Ember content above configurable native double-blur layers',
   assert.doesNotMatch(css, /\.search\s*\{[^}]*backdrop-filter/)
   assert.match(css, /\.go[\s\S]+background:\s*linear-gradient/)
   assert.match(main, /function broadcastBookmarks[\s\S]+layoutNativeBackdrop\(\)/)
+  assert.match(main, /transparent:\s*true/)
+  assert.match(main, /backgroundColor:\s*'#00000000'/)
 })
 
 test('browser chrome provides a compact live bookmarks bar', () => {
