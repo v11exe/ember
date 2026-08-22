@@ -1,5 +1,7 @@
 # Ember Agent Notes
 
+> **Active standalone PoC task:** Before doing any liquid-glass search work, read `POC-LIQUID-GLASS-TASK.md` in full. That task is intentionally limited to the standalone Electron proof-of-concept, keeps the full tuning panel/sliders, preserves both Bryce-reference and native Windows/DWM backdrop modes, and must not be integrated into production `src/renderer/pages/newtab.*` yet.
+
 ## Current Architecture
 
 - Electron 43, CommonJS, frameless `BaseWindow`, no compile/build step.
