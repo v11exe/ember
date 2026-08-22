@@ -6,8 +6,9 @@
   <link rel="stylesheet" href="/theme.css" />
   <link rel="stylesheet" href="/history.css" />
   <link rel="stylesheet" href="/downloads.css" />
+  <link rel="stylesheet" href="/liquid-glass-ui.css" />
 </head>
-<body>
+<body class="native-glass-page">
   <div class="ambient" aria-hidden="true">
     <span class="blob blob-a"></span>
     <span class="blob blob-b"></span>
@@ -19,11 +20,11 @@
       <img class="mark" src="/assets/ember-icon.png" alt="" />
       <h1>Downloads</h1>
     </div>
-    <button id="clear-finished" class="pill pill-accent">Clear finished</button>
+    <button id="clear-finished" class="pill lg-button lg-accent" data-lg>Clear finished</button>
   </header>
 
   <div class="search-row">
-    <div class="search glass" data-glass>
+    <div class="search" data-lg>
       <svg class="search-icon" viewBox="0 0 16 16" aria-hidden="true">
         <circle cx="7" cy="7" r="4.6" /><path d="M10.6 10.6L14 14" />
       </svg>
@@ -34,18 +35,17 @@
   </div>
 
   <main class="layout">
-    <aside class="sidebar" data-glass>
+    <aside class="sidebar" data-lg>
       <h2 class="side-title">Filter</h2>
       <nav class="side-nav" id="side-nav"></nav>
       <h2 class="side-title">Storage</h2>
-      <div class="side-note" id="side-note">Nothing downloaded yet</div>
+      <div class="side-note" id="side-note" data-lg>Nothing downloaded yet</div>
     </aside>
 
     <section class="results" id="results" aria-live="polite"></section>
   </main>
 
-  <script src="/upload-optics.js"></script>
-  <script src="/page-glass.js"></script>
+  <script src="/liquid-glass-ui.js"></script>
   <script src="/downloads.js"></script>
 </body>
 </html>

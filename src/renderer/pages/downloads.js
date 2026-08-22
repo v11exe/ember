@@ -11,9 +11,9 @@ const els = {
 
 const api = window.ember?.downloads
 
-const glass = window.EmberPageGlass && window.EmberUploadOptics
-  ? window.EmberPageGlass.createPageGlass(document, window.EmberUploadOptics, { selector: '[data-glass]' })
-  : null
+const lg = window.EmberLiquidGlass
+const glass = lg ? lg.createGlass(document) : null
+glass?.track()
 
 let snapshot = { active: [], entries: [] }
 let query = ''
@@ -58,7 +58,8 @@ function statusText(entry) {
 
 function actionButton(label, action, id, { danger = false } = {}) {
   const button = document.createElement('button')
-  button.className = 'dl-action' + (danger ? ' danger' : '')
+  button.className = 'dl-action lg-button lg-sm' + (danger ? ' danger' : '')
+  button.dataset.lg = ''
   button.textContent = label
   button.onclick = async (event) => {
     event.stopPropagation()
@@ -137,14 +138,15 @@ function row(entry) {
 
 function card(title, rows) {
   const el = document.createElement('section')
-  el.className = 'card glass'
-  el.dataset.glass = ''
+  el.className = 'card'
+  el.dataset.lg = ''
   const head = document.createElement('div')
   head.className = 'card-head'
   const label = document.createElement('span')
   label.textContent = title
   head.append(label)
   el.append(head, ...rows)
+  lg?.attachLens(el, { items: '.dl-row', radius: 13 })
   return el
 }
 
@@ -171,8 +173,8 @@ function render() {
 
   if (!sections.length) {
     const empty = document.createElement('div')
-    empty.className = 'empty glass card'
-    empty.dataset.glass = ''
+    empty.className = 'empty card'
+    empty.dataset.lg = ''
     const strong = document.createElement('strong')
     strong.textContent = query || filter !== 'all' ? 'Nothing matches' : 'No downloads yet'
     empty.append(strong, document.createTextNode(
@@ -213,11 +215,12 @@ function renderSide() {
     button.onclick = () => { filter = id; render() }
     return button
   }))
+  lg?.attachLens(els.sideNav, { items: '.side-link', radius: 10 })
 
   const bytes = snapshot.entries.filter(isDone).reduce((sum, entry) => sum + (entry.totalBytes || 0), 0)
-  els.sideNote.textContent = counts.completed
+  lg?.setLabel(els.sideNote, counts.completed
     ? `${counts.completed} file${counts.completed === 1 ? '' : 's'}, ${formatBytes(bytes)} downloaded`
-    : 'Nothing downloaded yet'
+    : 'Nothing downloaded yet')
 }
 
 els.search.addEventListener('input', () => {
@@ -242,7 +245,6 @@ api?.onChange((next) => { snapshot = next; render() })
 async function load() {
   snapshot = (await api?.query()) || { active: [], entries: [] }
   render()
-  glass?.observe()
 }
 
 load()

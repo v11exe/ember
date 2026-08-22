@@ -5,10 +5,11 @@
   <title>History</title>
   <link rel="stylesheet" href="/theme.css" />
   <link rel="stylesheet" href="/history.css" />
+  <link rel="stylesheet" href="/liquid-glass-ui.css" />
 </head>
-<body>
-  <!-- Ambient colour behind the glass. Without something to refract, translucent
-       panels read as flat grey. -->
+<body class="native-glass-page">
+  <!-- Kept as the fallback wash for anywhere the window material is missing;
+       liquid-glass-ui.css hides it wherever the native backdrop is live. -->
   <div class="ambient" aria-hidden="true">
     <span class="blob blob-a"></span>
     <span class="blob blob-b"></span>
@@ -20,11 +21,11 @@
       <img class="mark" src="/assets/ember-icon.png" alt="" />
       <h1>History</h1>
     </div>
-    <button id="delete-data" class="pill pill-accent">Delete browsing data…</button>
+    <button id="delete-data" class="pill lg-button lg-accent" data-lg>Delete browsing data…</button>
   </header>
 
   <div class="search-row">
-    <div class="search glass" data-glass>
+    <div class="search" data-lg>
       <svg class="search-icon" viewBox="0 0 16 16" aria-hidden="true">
         <circle cx="7" cy="7" r="4.6" /><path d="M10.6 10.6L14 14" />
       </svg>
@@ -32,13 +33,13 @@
              placeholder="Search history" aria-label="Search history" />
       <button id="clear-search" class="clear" hidden aria-label="Clear search">×</button>
     </div>
-    <button id="date-filter" class="pill glass-pill compact-only">Filter by date</button>
+    <button id="date-filter" class="pill lg-button lg-sm compact-only" data-lg>Filter by date</button>
   </div>
 
   <main class="layout">
-    <aside class="sidebar" data-glass>
+    <aside class="sidebar" data-lg>
       <h2 class="side-title">Filter by Date</h2>
-      <label class="side-item glass-pill" for="date-input">
+      <label class="side-item lg-button lg-sm" for="date-input" data-lg>
         <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="2"/><path d="M2 6.5h12M5.5 2v2M10.5 2v2"/></svg>
         <span id="date-label">Pick the date</span>
         <input id="date-input" type="date" aria-label="Filter by date" />
@@ -51,12 +52,11 @@
     <section class="results" id="results" aria-live="polite"></section>
   </main>
 
-  <footer class="compact-footer compact-only" data-glass>
-    <button id="full-view" class="pill glass-pill wide">Open Full History View</button>
+  <footer class="compact-footer compact-only" data-lg>
+    <button id="full-view" class="pill lg-button wide" data-lg>Open Full History View</button>
   </footer>
 
-  <script src="/upload-optics.js"></script>
-  <script src="/page-glass.js"></script>
+  <script src="/liquid-glass-ui.js"></script>
   <script src="/history.js"></script>
 </body>
 </html>

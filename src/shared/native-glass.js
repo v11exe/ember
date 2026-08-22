@@ -1,4 +1,4 @@
-const { NEW_TAB_URL } = require('./ipc')
+const { NEW_TAB_URL, HISTORY_URL, DOWNLOADS_URL, SETTINGS_URL } = require('./ipc')
 
 const ACCENT_BLUR_TINT = '#8C000000'
 
@@ -23,8 +23,15 @@ const NATIVE_GLASS_DEFAULTS = Object.freeze({
   }),
 })
 
+// Every internal page sits on the live window material, not just the new tab.
+// ember://extensions is deliberately absent: it is the dropdown panel's own
+// document, which renders in a bounded view with nothing behind it to refract.
+const NATIVE_GLASS_URLS = Object.freeze([
+  NEW_TAB_URL, HISTORY_URL, DOWNLOADS_URL, SETTINGS_URL,
+])
+
 function isNativeGlassUrl(url) {
-  return typeof url === 'string' && url.startsWith(NEW_TAB_URL)
+  return typeof url === 'string' && NATIVE_GLASS_URLS.some((base) => url.startsWith(base))
 }
 
 function snapshotNativeGlassSettings(settings = NATIVE_GLASS_DEFAULTS) {
@@ -35,4 +42,7 @@ function snapshotNativeGlassSettings(settings = NATIVE_GLASS_DEFAULTS) {
   }
 }
 
-module.exports = { ACCENT_BLUR_TINT, NATIVE_GLASS_DEFAULTS, isNativeGlassUrl, snapshotNativeGlassSettings }
+module.exports = {
+  ACCENT_BLUR_TINT, NATIVE_GLASS_DEFAULTS, NATIVE_GLASS_URLS,
+  isNativeGlassUrl, snapshotNativeGlassSettings,
+}

@@ -15,11 +15,11 @@ const els = {
 
 const api = window.ember?.history
 
-// Real refraction on every glass surface, using the same displacement machinery
-// the overlays use. Cards are rebuilt on each render, so re-apply after.
-const glass = window.EmberPageGlass && window.EmberUploadOptics
-  ? window.EmberPageGlass.createPageGlass(document, window.EmberUploadOptics, { selector: '[data-glass]' })
-  : null
+// One material for every surface: the new tab search glass, elasticity removed.
+// Cards are rebuilt on each render, so re-mount after.
+const lg = window.EmberLiquidGlass
+const glass = lg ? lg.createGlass(document) : null
+glass?.track()
 let snapshot = { entries: [], recentlyClosed: [] }
 let query = ''
 let dayFilter = null
@@ -110,8 +110,8 @@ function row(entry, { stamp = entry.visitedAt } = {}) {
 
 function card(title, rows, extra) {
   const el = document.createElement('section')
-  el.className = 'card glass'
-  el.dataset.glass = ''
+  el.className = 'card'
+  el.dataset.lg = ''
 
   const head = document.createElement('div')
   head.className = 'card-head'
@@ -121,13 +121,15 @@ function card(title, rows, extra) {
   if (extra) head.append(extra)
 
   el.append(head, ...rows)
+  // The dropdown menu's hover: one lens sliding between rows, not a fill.
+  lg?.attachLens(el, { items: '.row', radius: 13 })
   return el
 }
 
 function renderDeleteButton() {
-  els.deleteData.textContent = selected.size
+  lg?.setLabel(els.deleteData, selected.size
     ? `Delete ${selected.size} selected`
-    : 'Delete browsing data…'
+    : 'Delete browsing data…')
 }
 
 function render() {
@@ -153,8 +155,8 @@ function render() {
 
   if (!sections.length) {
     const empty = document.createElement('div')
-    empty.className = 'empty glass card'
-    empty.dataset.glass = ''
+    empty.className = 'empty card'
+    empty.dataset.lg = ''
     const strong = document.createElement('strong')
     strong.textContent = query || dayFilter !== null ? 'Nothing matches' : 'No history yet'
     empty.append(strong, document.createTextNode(
@@ -200,6 +202,7 @@ function renderSideNav(visible) {
     button.onclick = () => jumpTo(id)
     return button
   }))
+  lg?.attachLens(els.sideNav, { items: '.side-link', radius: 10 })
   void visible
 }
 
@@ -262,7 +265,6 @@ window.addEventListener('keydown', (event) => {
 async function load() {
   snapshot = (await api?.query()) || { entries: [], recentlyClosed: [] }
   render()
-  glass?.observe()
 }
 
 load()

@@ -2,9 +2,9 @@
 
 const api = window.ember?.settings
 
-const glass = window.EmberPageGlass && window.EmberUploadOptics
-  ? window.EmberPageGlass.createPageGlass(document, window.EmberUploadOptics, { selector: '[data-glass]' })
-  : null
+const lg = window.EmberLiquidGlass
+const glass = lg ? lg.createGlass(document) : null
+glass?.track()
 
 const SESSION_OPTIONS = [
   { value: 'ask', label: 'Ask me', detail: 'Ember asks whether to reopen your tabs each time you close it.' },
@@ -17,8 +17,11 @@ const detail = document.getElementById('startup-detail')
 
 function moveThumb(thumb, active) {
   if (!thumb || !active) return
+  // Measure against the first segment, not the first child: the glass mounts an
+  // optical layer ahead of them, and it deliberately overhangs the control.
+  const first = active.parentElement.querySelector('.segment')
   thumb.style.width = `${active.offsetWidth}px`
-  thumb.style.transform = `translateX(${active.offsetLeft - active.parentElement.firstElementChild.offsetLeft}px)`
+  thumb.style.transform = `translateX(${active.offsetLeft - (first?.offsetLeft ?? 0)}px)`
 }
 
 function renderSessionRestore(current) {
@@ -62,7 +65,11 @@ async function load() {
   const settings = await api?.get()
   renderSessionRestore(settings?.sessionRestore || 'ask')
   document.getElementById('version').textContent = settings?.appVersion ? `Version ${settings.appVersion}` : ''
-  glass?.refresh().then(() => glass.observe())
+  glass?.refresh()
+  // Each card is a small menu, so it gets the dropdown's sliding lens too.
+  for (const card of document.querySelectorAll('.card')) {
+    lg?.attachLens(card, { items: '.setting', radius: 13 })
+  }
 }
 
 load()
