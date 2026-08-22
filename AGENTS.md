@@ -31,6 +31,7 @@ src/main/extensions.js   Chrome Web Store install + chrome.* APIs + "Add to Embe
 src/main/{panel,floating-panel}.js bounded dropdown/overlay WebContentsViews
 src/main/bookmarks.js    bookmark HTML parser + atomic JSON userData store
 src/main/history.js      visit log + recently-closed, atomic JSON, capped at 5000
+src/main/downloads.js    live DownloadItem mirror + finished list, atomic JSON
 src/main/popup-positioner.js  viewport guard for real extension popup windows
 src/main/{upload-panel,context-menu-panel}.js real file/menu controllers
 src/main/{recent-uploads,upload-files,context-menu-model}.js overlay data/actions
@@ -41,7 +42,8 @@ src/renderer/chrome.*    tab strip, toolbar, extensions panel (html/css/js)
 src/renderer/theme.css   the palette — every colour is defined here, once
 src/renderer/brand.*     exact supplied PNG icon/full-logo mounts
 src/renderer/panel-preload.js  panel bridge + injectBrowserAction()
-src/renderer/pages/      newtab, extensions, upload, context-menu, history pages
+src/renderer/pages/      newtab, extensions, upload, context-menu, history, downloads
+src/renderer/pages/page-glass.js  full-page refraction; reuses upload-optics maps
 src/shared/              IPC/URL/file-filter/floating-geometry contracts
 scripts/smoke.js         boot check
 scripts/capture-ui.js    offscreen wide/medium/compact visual QA captures
@@ -49,7 +51,7 @@ test/                    node:test unit/contracts + two real popup fixtures
 ```
 **Milestones** — 1 shell ✅ · 2 tab manager ✅ · 3 chrome UI + IPC ✅ ·
 8 extensions ✅ (built early, out of order) · 4 sessions and partitions ·
-5 adblock + per-site Shields · 6 history/bookmarks/downloads (bookmarks ✅, history ✅) · 7 GX layer
+5 adblock + per-site Shields · 6 history/bookmarks/downloads ✅ · 7 GX layer
 (theming + glass menus/uploads ✅; network limiter, tab discarding, tab
 islands, sidebar outstanding).
 
@@ -71,8 +73,10 @@ islands, sidebar outstanding).
 - Chrome-UI key handlers only fire when the chrome view has focus. Shortcuts that
   must work while a page is focused (Ctrl+H) go through `before-input-event` in
   `index.js`, not `chrome.js`.
-- CSS `backdrop-filter` needs colour behind it. Full-page glass (history) paints
-  its own ambient blobs; overlay glass samples a real capture instead.
+- CSS `backdrop-filter` needs colour behind it. Full-page glass (history,
+  downloads) paints its own ambient blobs; overlay glass samples a real capture.
+  `page-glass.js` builds one `feDisplacementMap` filter per distinct element size
+  from the same canonical switch map, so refraction is real, not a blur.
 - Upload outer optics use an aspect-matched map with a 24px active perimeter;
   recapture its 40px bleed whenever the panel relayouts, and have its hover lens
   sample the independently aligned raw capture rather than the processed shell.
@@ -218,6 +222,18 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
+### 2026-08-22 — Claude Code — Downloads page + real page glass
+- **Status / Branch:** pushed · `feat/downloads-and-page-glass`
+- **Touches:** `src/main/{downloads,index}.js`, `src/shared/ipc.js`,
+  `src/main/page-preload.js`, `src/renderer/pages/{downloads.*,page-glass.js,history.*}`,
+  `src/renderer/theme.css`, `test/downloads.test.js`, `AGENTS.md`
+- **Summary:** Milestone 6 downloads at `ember://downloads` (Ctrl+J): live progress,
+  pause/resume/cancel, open/show/remove, filters and totals. History and downloads
+  now use real refraction via `page-glass.js` rather than a plain blur.
+- **For the other agent:** new channels `downloads:query|action|changed` and
+  `DOWNLOADS_URL`. New ambient tokens live in `theme.css` — reuse those for any
+  future full-page surface instead of new rgba values.
+
 ### 2026-08-22 — Claude Code — History page (Ctrl+H)
 - **Status / Branch:** pushed · `feat/history-page`
 - **Touches:** `src/main/{history,index,tabs,page-preload}.js`, `src/shared/ipc.js`,
@@ -304,18 +320,4 @@ Newest at top. One entry per branch, updated in place. Status:
 - **Touches:** `AGENTS.md`, `src/main/{index,protocol}.js`, `src/renderer/{brand,chrome}.*`, `src/renderer/pages/newtab.*`, `src/renderer/assets/{ember-icon.png,Necosmic-PersonalUse.otf}`, `scripts/capture-ui.js`, `test/{brand,renderer-contracts}.test.js`
 - **Summary:** Make the supplied transparent meteor the one icon asset throughout Ember; compose the new-tab masthead from it and a dedicated Necosmic `ember` wordmark.
 - **For the other agent:** replaces active combined-logo use and adds a bundled font route; browser functionality and IPC contracts are unchanged.
-
-### 2026-08-21 — Codex — Ember exact-map liquid-glass context menu
-- **Status / Branch:** pushed · `feat/ember-upgrade`
-- **Touches:** `AGENTS.md`, `agent.md`, `src/main/{index,floating-panel,context-menu-panel}.js`,
-  `src/renderer/pages/{context-menu,context-menu-lens}.*`, `src/renderer/assets/*`,
-  `src/main/protocol.js`, `scripts/{capture-ui,sync-liquid-glass-maps}.js`,
-  `test/{floating-panel,renderer-contracts,context-menu-panel,context-menu-lens}.test.js`
-- **Summary:** Replace the context menu's generic blur with the exact Master.dev
-  fixed-map `switcher`/`toggler` optical technique, bleed-aligned capture, and one
-  shared pointer/keyboard selector lens. A neutral wash lets captured page colour
-  drive the translucent surface while retaining every existing command.
-- **For the other agent:** context-menu backdrop state and renderer structure are
-  changing; upload overlay contracts remain unchanged. Coordinate before editing
-  the listed files.
 

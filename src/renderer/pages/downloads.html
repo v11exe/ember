@@ -2,13 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>History</title>
+  <title>Downloads</title>
   <link rel="stylesheet" href="/theme.css" />
   <link rel="stylesheet" href="/history.css" />
+  <link rel="stylesheet" href="/downloads.css" />
 </head>
 <body>
-  <!-- Ambient colour behind the glass. Without something to refract, translucent
-       panels read as flat grey. -->
   <div class="ambient" aria-hidden="true">
     <span class="blob blob-a"></span>
     <span class="blob blob-b"></span>
@@ -18,9 +17,9 @@
   <header class="topbar">
     <div class="brandline">
       <img class="mark" src="/assets/ember-icon.png" alt="" />
-      <h1>History</h1>
+      <h1>Downloads</h1>
     </div>
-    <button id="delete-data" class="pill pill-accent">Delete browsing data…</button>
+    <button id="clear-finished" class="pill pill-accent">Clear finished</button>
   </header>
 
   <div class="search-row">
@@ -29,34 +28,24 @@
         <circle cx="7" cy="7" r="4.6" /><path d="M10.6 10.6L14 14" />
       </svg>
       <input id="search" type="search" autocomplete="off" spellcheck="false"
-             placeholder="Search history" aria-label="Search history" />
+             placeholder="Search downloads" aria-label="Search downloads" />
       <button id="clear-search" class="clear" hidden aria-label="Clear search">×</button>
     </div>
-    <button id="date-filter" class="pill glass-pill compact-only">Filter by date</button>
   </div>
 
   <main class="layout">
     <aside class="sidebar" data-glass>
-      <h2 class="side-title">Filter by Date</h2>
-      <label class="side-item glass-pill" for="date-input">
-        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="2"/><path d="M2 6.5h12M5.5 2v2M10.5 2v2"/></svg>
-        <span id="date-label">Pick the date</span>
-        <input id="date-input" type="date" aria-label="Filter by date" />
-      </label>
-
-      <h2 class="side-title">Navigate to</h2>
+      <h2 class="side-title">Filter</h2>
       <nav class="side-nav" id="side-nav"></nav>
+      <h2 class="side-title">Storage</h2>
+      <div class="side-note" id="side-note">Nothing downloaded yet</div>
     </aside>
 
     <section class="results" id="results" aria-live="polite"></section>
   </main>
 
-  <footer class="compact-footer compact-only" data-glass>
-    <button id="full-view" class="pill glass-pill wide">Open Full History View</button>
-  </footer>
-
   <script src="/upload-optics.js"></script>
   <script src="/page-glass.js"></script>
-  <script src="/history.js"></script>
+  <script src="/downloads.js"></script>
 </body>
 </html>

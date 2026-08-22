@@ -14,6 +14,12 @@ const els = {
 }
 
 const api = window.ember?.history
+
+// Real refraction on every glass surface, using the same displacement machinery
+// the overlays use. Cards are rebuilt on each render, so re-apply after.
+const glass = window.EmberPageGlass && window.EmberUploadOptics
+  ? window.EmberPageGlass.createPageGlass(document, window.EmberUploadOptics, { selector: '[data-glass]' })
+  : null
 let snapshot = { entries: [], recentlyClosed: [] }
 let query = ''
 let dayFilter = null
@@ -105,6 +111,7 @@ function row(entry, { stamp = entry.visitedAt } = {}) {
 function card(title, rows, extra) {
   const el = document.createElement('section')
   el.className = 'card glass'
+  el.dataset.glass = ''
 
   const head = document.createElement('div')
   head.className = 'card-head'
@@ -147,6 +154,7 @@ function render() {
   if (!sections.length) {
     const empty = document.createElement('div')
     empty.className = 'empty glass card'
+    empty.dataset.glass = ''
     const strong = document.createElement('strong')
     strong.textContent = query || dayFilter !== null ? 'Nothing matches' : 'No history yet'
     empty.append(strong, document.createTextNode(
@@ -158,6 +166,7 @@ function render() {
   }
 
   els.results.replaceChildren(...sections)
+  glass?.refresh()
   renderSideNav(visible)
   renderDeleteButton()
 }
@@ -253,6 +262,7 @@ window.addEventListener('keydown', (event) => {
 async function load() {
   snapshot = (await api?.query()) || { entries: [], recentlyClosed: [] }
   render()
+  glass?.observe()
 }
 
 load()

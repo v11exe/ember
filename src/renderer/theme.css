@@ -38,11 +38,11 @@
 
   /* full-page glass: ambient light behind translucent panels, plus the halo
      the omnibox and search fields share */
-  --ambient-deep:   rgba(232, 65, 15, .50);
-  --ambient-hot:    rgba(255, 201, 60, .26);
-  --ambient-mid:    rgba(255, 122, 24, .18);
-  --ambient-veil:   rgba(9, 4, 12, .34);
-  --ambient-veil-2: rgba(9, 4, 12, .62);
+  --ambient-deep:   rgba(232, 65, 15, .72);
+  --ambient-hot:    rgba(255, 201, 60, .42);
+  --ambient-mid:    rgba(255, 122, 24, .34);
+  --ambient-veil:   rgba(9, 4, 12, .18);
+  --ambient-veil-2: rgba(9, 4, 12, .46);
   --accent-halo:    rgba(255, 138, 31, .16);
   --accent-glow:    rgba(255, 138, 31, .80);
 

@@ -3,7 +3,7 @@ const fs = require('node:fs/promises')
 const { pathToFileURL } = require('node:url')
 const { app, BaseWindow, WebContentsView, clipboard, dialog, ipcMain, nativeImage, session, shell } = require('electron')
 
-const { IPC, NEW_TAB_URL, HISTORY_URL, WEB_STORE_URL } = require('../shared/ipc')
+const { IPC, NEW_TAB_URL, HISTORY_URL, DOWNLOADS_URL, WEB_STORE_URL } = require('../shared/ipc')
 const { toNavigationUrl } = require('../shared/urls')
 const { TabManager, CHROME_HEIGHT } = require('./tabs')
 const { setupExtensions, applyStoreRebranding, listExtensions, removeExtension } = require('./extensions')
@@ -11,6 +11,7 @@ const { registerSchemePrivileges, handleInternalPages } = require('./protocol')
 const { ExtensionPanel } = require('./panel')
 const { BookmarkStore } = require('./bookmarks')
 const { HistoryStore } = require('./history')
+const { DownloadStore } = require('./downloads')
 const { PopupPositioner } = require('./popup-positioner')
 const { RecentUploadStore } = require('./recent-uploads')
 const { UploadPanel } = require('./upload-panel')
@@ -59,6 +60,7 @@ function createBrowser() {
   const panel = new ExtensionPanel(win)
   const bookmarks = new BookmarkStore(path.join(app.getPath('userData'), 'bookmarks.json'))
   const history = new HistoryStore(path.join(app.getPath('userData'), 'history.json'))
+  const downloads = new DownloadStore(path.join(app.getPath('userData'), 'downloads.json'))
   const recentUploads = new RecentUploadStore(path.join(app.getPath('userData'), 'recent-uploads.json'))
   const recentUploadsReady = recentUploads.load().catch((error) => {
     console.warn('[ember] recent uploads could not be loaded:', error.message)
@@ -84,11 +86,19 @@ function createBrowser() {
     createTab: (url) => tabs.create(url), clipboard, dialog,
   })
   browser = {
-    win, chrome, tabs, panel, bookmarks, history, recentUploads, recentUploadsReady,
+    win, chrome, tabs, panel, bookmarks, history, downloads, recentUploads, recentUploadsReady,
     uploadPanel, contextMenu, smokeClipboard, smokeUploadPaths, popupPositioner: null,
   }
   tabs.onPageFocus = () => { panel.hide(); uploadPanel.cancel(); contextMenu.hide() }
   tabs.onVisit = (visit) => history.record(visit)
+  downloads.onChange = (snapshot) => {
+    for (const tab of tabs.tabs) {
+      if (tab.url.startsWith(DOWNLOADS_URL) && !tab.webContents.isDestroyed()) {
+        tab.webContents.send(IPC.DOWNLOADS_CHANGED, snapshot)
+      }
+    }
+  }
+  session.defaultSession.on('will-download', (_event, item) => downloads.track(item))
   tabs.onVisitDetail = (detail) => history.decorate(detail.url, detail)
   tabs.onTabClosed = (tab) => history.noteClosedTab(tab)
   tabs.onSelectionChange = () => { panel.hide(); uploadPanel.cancel(); contextMenu.hide() }
@@ -225,6 +235,26 @@ ipcMain.handle(IPC.BOOKMARKS_IMPORT, async () => {
     return { ok: false, canceled: false, error: error.message, snapshot: browser.bookmarks.snapshot() }
   }
 })
+const emptyDownloads = { version: 1, active: [], entries: [] }
+ipcMain.handle(IPC.DOWNLOADS_QUERY, () => browser?.downloads.snapshot() || emptyDownloads)
+ipcMain.handle(IPC.DOWNLOADS_ACTION, async (_e, { action, id } = {}) => {
+  const store = browser?.downloads
+  if (!store) return emptyDownloads
+  if (action === 'pause') store.pause(id)
+  else if (action === 'resume') store.resume(id)
+  else if (action === 'cancel') store.cancel(id)
+  else if (action === 'remove') return store.remove(id)
+  else if (action === 'clear') return store.clear()
+  else if (action === 'show') {
+    const entry = store.snapshot().entries.find((e) => e.id === id)
+    if (entry?.savePath) shell.showItemInFolder(entry.savePath)
+  } else if (action === 'open') {
+    const entry = store.snapshot().entries.find((e) => e.id === id)
+    if (entry?.savePath) shell.openPath(entry.savePath)
+  }
+  return store.snapshot()
+})
+
 const emptyHistory = { version: 1, entries: [], recentlyClosed: [] }
 ipcMain.handle(IPC.HISTORY_QUERY, () => browser?.history.snapshot() || emptyHistory)
 ipcMain.handle(IPC.HISTORY_DELETE, async (_e, ids) => {
@@ -263,21 +293,25 @@ ipcMain.on(IPC.WIN_MAXIMIZE, () => {
 ipcMain.on(IPC.WIN_CLOSE, () => browser?.win.close())
 
 // ---------------- app lifecycle ----------------
-function openHistory() {
+function openInternal(url) {
   const tabs = activeTabs()
   if (!tabs) return
-  const existing = tabs.tabs.find((tab) => tab.url.startsWith(HISTORY_URL))
+  const existing = tabs.tabs.find((tab) => tab.url.startsWith(url))
   if (existing) { tabs.select(existing.id); return }
-  tabs.create(HISTORY_URL)
+  tabs.create(url)
 }
+
+function openHistory() { openInternal(HISTORY_URL) }
 
 app.on('web-contents-created', (_e, wc) => {
   wc.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return
     if (!(input.control || input.meta) || input.alt) return
-    if (input.key.toLowerCase() !== 'h') return
+    const key = input.key.toLowerCase()
+    if (key !== 'h' && key !== 'j') return
     event.preventDefault()
-    openHistory()
+    if (key === 'h') openHistory()
+    else openInternal(DOWNLOADS_URL)
   })
   applyStoreRebranding(wc)
   // external protocols (mailto:, etc.) go to the OS, never to a tab
