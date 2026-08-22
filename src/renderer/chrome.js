@@ -97,14 +97,8 @@ $('win-min').onclick = () => window.ember.minimize()
 $('win-max').onclick = () => window.ember.maximize()
 $('win-close').onclick = () => window.ember.close()
 
-// ---------- shortcuts ----------
-window.addEventListener('keydown', (e) => {
-  const mod = e.ctrlKey || e.metaKey
-  if (!mod) return
-  if (e.key === 't') { e.preventDefault(); window.ember.newTab() }
-  else if (e.key === 'l') { e.preventDefault(); els.omnibox.focus() }
-  else if (e.key === 'r') { e.preventDefault(); window.ember.reload() }
-})
+// Shortcuts live in the main process (src/main/shortcuts.js) so they work
+// whether the chrome UI or a page has focus.
 
 // ---------- extensions ----------
 // The panel is a separate view owned by the main process (src/main/panel.js),

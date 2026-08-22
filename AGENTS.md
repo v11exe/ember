@@ -35,6 +35,7 @@ src/main/downloads.js    live DownloadItem mirror + finished list, atomic JSON
 src/main/settings.js     prefs (sessionRestore, window bounds), atomic JSON
 src/main/session.js      saved tab set for restore-on-launch, sync writes
 src/main/session-prompt.js  close-time "reopen tabs?" dialog on FloatingPanel
+src/main/shortcuts.js    pure key -> command table (Chrome parity) + zoom ladder
 src/main/popup-positioner.js  viewport guard for real extension popup windows
 src/main/{upload-panel,context-menu-panel}.js real file/menu controllers
 src/main/{recent-uploads,upload-files,context-menu-model}.js overlay data/actions
@@ -48,6 +49,7 @@ src/renderer/panel-preload.js  panel bridge + injectBrowserAction()
 src/renderer/pages/      newtab, extensions, upload, context-menu, history, downloads,
                          session-prompt, settings
 src/renderer/pages/page-glass.js  full-page refraction; reuses upload-optics maps
+src/renderer/pages/backdrop-contrast.js  flags light captures so overlays flip palette
 src/shared/              IPC/URL/file-filter/floating-geometry contracts
 scripts/smoke.js         boot check
 scripts/capture-ui.js    offscreen wide/medium/compact visual QA captures
@@ -92,6 +94,16 @@ islands, sidebar outstanding).
   than literal durations, and let the global reduced-motion rule handle opt-out.
 - Omnibox keywords (settings, extensions, history, downloads) resolve in
   `shared/urls.js`, before the bare-domain check, exact single word only.
+- `win.setFullScreen()` is a no-op on the transparent frameless window on
+  Windows. F11 fills the display bounds by hand and restores them (see
+  `fullScreenFrom`).
+- Overlays refract the page behind them, so over a white page light text
+  vanishes. `backdrop-contrast.js` measures the capture and sets
+  `data-backdrop="light"`, which flips the palette tokens in `glass.css`.
+- Shortcuts live only in main (`before-input-event`); the renderer must not
+  duplicate them or they double-fire when the chrome view has focus.
+- `browser` is the focused window; `browsers` holds them all. Private windows
+  run on the `persist:ember-private` partition and skip history.
 - Files are LF via `.gitattributes`, but Git may hand you CRLF working copies.
   Multi-line string replacement in scripts silently no-ops against those.
   Verify edits landed instead of trusting the write.
@@ -232,6 +244,20 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
+### 2026-08-22 — Claude Code — Shortcuts, multi-window, light-backdrop glass
+- **Status / Branch:** merged · `main`
+- **Touches:** `src/main/{shortcuts,index,tabs}.js`, `src/shared/ipc.js`,
+  `src/renderer/{glass.css,theme.css,chrome.js}`,
+  `src/renderer/pages/{backdrop-contrast.js,upload.js,context-menu.js,session-prompt.*,history.css}`,
+  `test/shortcuts.test.js`
+- **Summary:** Full Chrome-parity shortcut set incl. Ctrl+1..9, Ctrl+Tab,
+  Alt+arrows, F11, zoom and Ctrl+Shift+N private windows. Overlays now detect a
+  light captured backdrop and flip to dark text. Shared edge tokens unify glass
+  borders, rims and shadows.
+- **For the other agent:** shortcuts belong in `src/main/shortcuts.js` — add to
+  the table, not to renderer key handlers. Ctrl+Shift+B stayed in `chrome.js`
+  and still works because the table does not claim it.
+
 ### 2026-08-22 — Codex — Native Glass new-tab integration
 - **Status / Branch:** pushed · `native-glass`
 - **Touches:** `AGENTS.md`, `src/main/{index,native-backdrop}.js`, `src/main/page-preload.js`, `src/shared/{ipc,native-glass}.js`, `src/renderer/pages/{newtab.*,native-glass.js}`, `test/{native-glass,renderer-contracts}.test.js`
@@ -327,39 +353,3 @@ Newest at top. One entry per branch, updated in place. Status:
   reduced-motion-safe opening transition without replaying on relayout.
 - **For the other agent:** its captured-texture and selector contracts remain unchanged.
 
-### 2026-08-21 — Codex — Geometry-correct compact Liquid Glass context menu
-- **Status / Branch:** pushed · `fix/context-menu-liquid-glass`
-- **Touches:** `AGENTS.md`, `agent.md`, `scripts/capture-ui.js`,
-  `src/main/{context-menu-panel,protocol}.js`,
-  `src/renderer/pages/{context-menu,context-menu-lens,context-menu-optics}.*`,
-  `test/{context-menu-panel,context-menu-lens,context-menu-optics,renderer-contracts}.test.js`
-- **Summary:** Use an edge-concentrated, size-matched map and raw-capture selector
-  lens for the compact menu.
-- **For the other agent:** context-menu optics and sizing are restored here.
-
-### 2026-08-21 — Codex — Geometry-correct upload Liquid Glass
-- **Status / Branch:** pushed · `fix/upload-liquid-glass-optics`
-- **Touches:** `AGENTS.md`, `agent.md`, `src/main/upload-panel.js`,
-  `src/renderer/pages/{upload.html,upload.css,upload.js,upload-optics.js}`,
-  `scripts/capture-ui.js`, `test/{upload-panel,upload-optics,renderer-contracts}.test.js`
-- **Summary:** Replace the stretched upload-panel displacement map with a
-  generated edge-only map, recapture resize bleed, and make the hover lens sample
-  the raw captured page.
-- **For the other agent:** upload action payloads and panel geometry are
-  unchanged; captured upload backdrops now request 40px edge-clipped bleed.
-
-### 2026-08-21 — Codex — Repair meteor icon presentation
-- **Status / Branch:** merged · `fix/meteor-icon-presentation`
-- **Touches:** `AGENTS.md`, `src/main/index.js`, `src/renderer/{brand}.js`, `src/renderer/assets/ember-app-icon.png`, `test/{brand,renderer-contracts}.test.js`
-- **Summary:** Repair the chrome asset URL and give the native window a square crop focused on the meteor head instead of the wide in-app mark.
-- **For the other agent:** in-app use stays on `ember-icon.png`; `ember-app-icon.png` is native-window-only. No IPC contracts change.
-
-### 2026-08-21 — Codex — Upload picker Liquid Glass motion
-- **Status / Branch:** pushed · `feat/upload-liquid-glass`
-- **Touches:** `AGENTS.md`, `agent.md`, `src/main/upload-panel.js`,
-  `src/renderer/pages/{upload.html,upload.css,upload.js}`, `test/{upload-panel,renderer-contracts}.test.js`
-- **Summary:** Preserve the file picker commands and layout while applying the
-  context menu’s map-based Liquid Glass surface, opening animation, and hover
-  treatment to upload controls and recent-file cards.
-- **For the other agent:** upload state adds an opening token only; all existing
-  upload action names and payload contracts remain unchanged.

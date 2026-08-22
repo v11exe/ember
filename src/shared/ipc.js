@@ -53,6 +53,7 @@ const NEW_TAB_URL = 'ember://newtab'
 const HISTORY_URL = 'ember://history'
 const DOWNLOADS_URL = 'ember://downloads'
 const SETTINGS_URL = 'ember://settings'
+const EXTENSIONS_URL = 'ember://extensions'
 const WEB_STORE_URL = 'https://chromewebstore.google.com/'
 
-module.exports = { IPC, SEARCH_URL, NEW_TAB_URL, HISTORY_URL, DOWNLOADS_URL, SETTINGS_URL, WEB_STORE_URL }
+module.exports = { IPC, SEARCH_URL, NEW_TAB_URL, HISTORY_URL, DOWNLOADS_URL, SETTINGS_URL, EXTENSIONS_URL, WEB_STORE_URL }

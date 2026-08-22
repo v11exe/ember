@@ -6,17 +6,12 @@ body { display: grid; place-items: center; padding: 6px; }
 .shell {
   position: relative;
   width: 100%; height: 100%;
-  border: 1px solid var(--glass-border);
+  border: var(--glass-edge);
   border-radius: 26px;
   overflow: hidden;
   isolation: isolate;
   background: var(--glass-bg);
-  box-shadow:
-    0 30px 76px var(--glass-shadow),
-    0 10px 34px var(--glass-warm-shadow),
-    inset 0 1px var(--glass-specular),
-    inset 1px 0 var(--glass-inner),
-    inset 0 -1px var(--glass-inner);
+  box-shadow: var(--glass-lift), var(--glass-rim);
   animation: rise var(--dur-3) var(--ease);
 }
 @keyframes rise {

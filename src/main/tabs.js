@@ -18,6 +18,8 @@ class TabManager {
     this.win = win
     this.chromeView = chromeView
     this.extensions = opts.extensions || null
+    // Private windows run on their own session partition.
+    this.partition = opts.partition || null
     this.tabs = []
     this.activeId = null
     this.overlay = false // true while a chrome dropdown needs the full window
@@ -38,6 +40,7 @@ class TabManager {
         backgroundThrottling: true,
         nodeIntegrationInSubFrames: true,
         preload: path.join(__dirname, 'page-preload.js'),
+        ...(this.partition ? { partition: this.partition } : {}),
       },
     })
     view.setBackgroundColor(isNativeGlassUrl(url) ? '#00000000' : '#000000')
@@ -159,10 +162,34 @@ class TabManager {
   }
 
   // ---- navigation, applied to the active tab ----
+  /** Ctrl+1..8 pick a tab by position; out of range does nothing. */
+  selectIndex(index) {
+    const tab = this.tabs[index]
+    if (tab) this.select(tab.id)
+  }
+
+  selectLast() {
+    const tab = this.tabs[this.tabs.length - 1]
+    if (tab) this.select(tab.id)
+  }
+
+  /** Ctrl+Tab wraps around rather than stopping at the ends. */
+  cycle(delta) {
+    if (this.tabs.length < 2) return
+    const current = this.tabs.findIndex((tab) => tab.id === this.activeId)
+    const next = (current + delta + this.tabs.length) % this.tabs.length
+    this.select(this.tabs[next].id)
+  }
+
+  closeActive() {
+    if (this.activeId !== null) this.close(this.activeId)
+  }
+
   go(url) { this.active?.webContents.loadURL(url) }
   back() { const wc = this.active?.webContents; if (wc?.navigationHistory.canGoBack()) wc.navigationHistory.goBack() }
   forward() { const wc = this.active?.webContents; if (wc?.navigationHistory.canGoForward()) wc.navigationHistory.goForward() }
   reload() { this.active?.webContents.reload() }
+  hardReload() { this.active?.webContents.reloadIgnoringCache() }
   stop() { this.active?.webContents.stop() }
 
   state() {

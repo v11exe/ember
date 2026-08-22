@@ -71,3 +71,36 @@ body { color: var(--text); font-family: var(--font); -webkit-font-smoothing: ant
 .glass-button:focus-visible { outline: none; box-shadow: var(--focus-ring), inset 0 1px var(--glass-specular); }
 
 .glass-divider { height: 1px; background: var(--glass-divider); box-shadow: 0 1px var(--glass-inner); }
+
+/* ---------------------------------------------------------------------------
+   Light backdrop.
+
+   Overlays refract whatever page is behind them. Over a white page, light text
+   on light glass is unreadable, so backdrop-contrast.js flags the document and
+   the palette flips here. Overriding the tokens fixes every overlay at once,
+   rather than each page patching its own colours.
+   --------------------------------------------------------------------------- */
+:root[data-backdrop="light"] {
+  --text:      #16110C;
+  --text-dim:  rgba(22, 17, 12, .74);
+  --text-faint:rgba(22, 17, 12, .56);
+  --error:     #B3300B;
+
+  --glass-bg:          rgba(255, 251, 247, .62);
+  --glass-bg-strong:   rgba(255, 250, 244, .82);
+  --glass-border:      rgba(58, 38, 24, .30);
+  --glass-inner:       rgba(255, 255, 255, .55);
+  --glass-specular:    rgba(255, 255, 255, .95);
+  --glass-divider:     rgba(44, 28, 16, .16);
+  --glass-hover:       rgba(34, 22, 12, .09);
+  --glass-pressed:     rgba(34, 22, 12, .16);
+  --glass-shadow:      rgba(62, 40, 24, .30);
+  --glass-warm-shadow: rgba(140, 70, 30, .22);
+
+  --accent-text: #FFF6EE; /* accent buttons stay ember, so their label goes light */
+}
+
+/* The captured page is bright, so dim it a little under the glass to hold contrast. */
+:root[data-backdrop="light"] .glass-backdrop { filter: blur(22px) saturate(1.1) brightness(.94); }
+:root[data-backdrop="light"] .glass-light { opacity: .45; }
+:root[data-backdrop="light"] .glass-grain { opacity: .08; }

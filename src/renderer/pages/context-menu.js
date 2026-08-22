@@ -26,12 +26,14 @@ function setBackdrop(state) {
   if (!state.backdrop) {
     backdrop.removeAttribute('src')
     backdrop.removeAttribute('style')
+    document.documentElement.dataset.backdrop = 'dark'
     source.style.removeProperty('background-image')
     lensController.setBackdropRect({ x: 0, y: 0 })
     return
   }
   const rect = state.backdropRect || { x: 0, y: 0, width: innerWidth, height: innerHeight }
   backdrop.src = state.backdrop
+  window.EmberBackdropContrast?.apply(state.backdrop)
   Object.assign(backdrop.style, {
     left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px`,
   })

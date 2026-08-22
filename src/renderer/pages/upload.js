@@ -52,11 +52,13 @@ function animateHover(button) {
 function setBackdrop(state) {
   if (!state.backdrop) {
     backdrop.removeAttribute('src'); backdrop.removeAttribute('style')
+    document.documentElement.dataset.backdrop = 'dark'
     hoverSource.style.removeProperty('background-image')
     backdropRect = { x: 0, y: 0, width: innerWidth, height: innerHeight }
     return
   }
   backdropRect = state.backdropRect || { x: 0, y: 0, width: innerWidth, height: innerHeight }
+  window.EmberBackdropContrast?.apply(state.backdrop)
   backdrop.src = state.backdrop
   Object.assign(backdrop.style, { left: `${backdropRect.x}px`, top: `${backdropRect.y}px`, width: `${backdropRect.width}px`, height: `${backdropRect.height}px` })
   hoverSource.style.backgroundImage = `url("${state.backdrop}")`

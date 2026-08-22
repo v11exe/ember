@@ -50,6 +50,14 @@
   --accent-text: #12100C;
   --focus-ring:  0 0 0 2px rgba(255, 138, 31, .45);
 
+  /* One edge treatment for every glass surface: same hairline border, same
+     specular rim, same shadow ramp. Radii stay per-surface because the
+     displacement optics are cut for each geometry. */
+  --glass-edge: 1px solid var(--glass-border);
+  --glass-rim: inset 0 1px var(--glass-specular), inset 0 -1px var(--glass-inner);
+  --glass-lift: 0 26px 62px var(--glass-shadow), 0 3px 12px var(--glass-warm-shadow);
+  --glass-lift-sm: 0 14px 34px var(--glass-shadow), 0 2px 8px var(--glass-warm-shadow);
+
   --radius:   9px;
   --radius-sm:6px;
 

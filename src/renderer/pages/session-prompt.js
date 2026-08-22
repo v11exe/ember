@@ -31,6 +31,7 @@ window.addEventListener('keydown', (event) => {
 
 window.emberOverlay.onState((state) => {
   if (state?.backdrop) els.backdrop.src = state.backdrop
+  window.EmberBackdropContrast?.apply(state?.backdrop)
   const count = Number(state?.tabCount) || 0
   els.detail.textContent = count
     ? `Ember will reopen ${count} tab${count === 1 ? '' : 's'} the next time you open it.`

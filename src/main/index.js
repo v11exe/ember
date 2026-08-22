@@ -1,9 +1,9 @@
 const path = require('node:path')
 const fs = require('node:fs/promises')
 const { pathToFileURL } = require('node:url')
-const { app, BaseWindow, WebContentsView, clipboard, dialog, ipcMain, nativeImage, session, shell } = require('electron')
+const { app, BaseWindow, WebContentsView, clipboard, dialog, ipcMain, nativeImage, screen, session, shell } = require('electron')
 
-const { IPC, NEW_TAB_URL, HISTORY_URL, DOWNLOADS_URL, WEB_STORE_URL } = require('../shared/ipc')
+const { IPC, NEW_TAB_URL, HISTORY_URL, DOWNLOADS_URL, SETTINGS_URL, EXTENSIONS_URL, WEB_STORE_URL } = require('../shared/ipc')
 const { toNavigationUrl } = require('../shared/urls')
 const { TabManager, CHROME_HEIGHT } = require('./tabs')
 const { setupExtensions, applyStoreRebranding, listExtensions, removeExtension } = require('./extensions')
@@ -16,6 +16,7 @@ const { SettingsStore, SESSION_RESTORE } = require('./settings')
 const { SessionStore } = require('./session')
 const { SessionPrompt } = require('./session-prompt')
 const { PopupPositioner } = require('./popup-positioner')
+const { resolveShortcut, COMMANDS, nextZoom } = require('./shortcuts')
 const { RecentUploadStore } = require('./recent-uploads')
 const { UploadPanel } = require('./upload-panel')
 const { ContextMenuPanel } = require('./context-menu-panel')
@@ -27,6 +28,7 @@ registerSchemePrivileges()
 
 /** @type {{ win: BaseWindow, chrome: WebContentsView, tabs: TabManager, uploadPanel: UploadPanel, contextMenu: ContextMenuPanel, nativeBackdrop: NativeBackdrop }|null} */
 let browser = null
+const browsers = new Set()
 
 function broadcastBookmarks(snapshot) {
   if (!browser) return snapshot
@@ -37,7 +39,7 @@ function broadcastBookmarks(snapshot) {
   return snapshot
 }
 
-function createBrowser() {
+function createBrowser({ privateMode = false } = {}) {
   const settings = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'))
   const sessionStore = new SessionStore(path.join(app.getPath('userData'), 'session.json'))
   const saved = settings.get('window')
@@ -68,7 +70,7 @@ function createBrowser() {
   win.contentView.addChildView(chrome)
   chrome.webContents.loadFile(path.join(__dirname, '..', 'renderer', 'chrome.html'))
 
-  const tabs = new TabManager(win, chrome)
+  const tabs = new TabManager(win, chrome, { partition: privateMode ? 'persist:ember-private' : undefined })
   const panel = new ExtensionPanel(win)
   const bookmarks = new BookmarkStore(path.join(app.getPath('userData'), 'bookmarks.json'))
   const history = new HistoryStore(path.join(app.getPath('userData'), 'history.json'))
@@ -97,13 +99,16 @@ function createBrowser() {
   const contextMenu = new ContextMenuPanel(win, {
     createTab: (url) => tabs.create(url), clipboard, dialog,
   })
-  browser = {
+  const self = {
     win, chrome, tabs, panel, bookmarks, history, downloads, settings, sessionStore,
     sessionPrompt: new SessionPrompt(win), closing: false, recentUploads, recentUploadsReady,
     uploadPanel, contextMenu, smokeClipboard, smokeUploadPaths, nativeBackdrop, popupPositioner: null,
+    privateMode, fullScreenFrom: null,
   }
+  browser = self
+  browsers.add(self)
   tabs.onPageFocus = () => { panel.hide(); uploadPanel.cancel(); contextMenu.hide() }
-  tabs.onVisit = (visit) => history.record(visit)
+  tabs.onVisit = (visit) => { if (!privateMode) history.record(visit) }
   downloads.onChange = (snapshot) => {
     for (const tab of tabs.tabs) {
       if (tab.url.startsWith(DOWNLOADS_URL) && !tab.webContents.isDestroyed()) {
@@ -205,7 +210,12 @@ function createBrowser() {
       win.close()
     })
   })
-  win.on('closed', () => { nativeBackdrop.destroy(); browser = null })
+  win.on('focus', () => { browser = self })
+  win.on('closed', () => {
+    nativeBackdrop.destroy()
+    browsers.delete(self)
+    if (browser === self) browser = [...browsers][browsers.size - 1] || null
+  })
   return browser
 }
 
@@ -373,15 +383,76 @@ function openInternal(url) {
 
 function openHistory() { openInternal(HISTORY_URL) }
 
+/** Run a resolved shortcut against the focused window. Returns true if handled. */
+function runCommand({ command, index }) {
+  const current = browser
+  const tabs = current?.tabs
+  const page = tabs?.active?.webContents
+
+  switch (command) {
+    case COMMANDS.NEW_TAB: tabs?.create(NEW_TAB_URL); return true
+    case COMMANDS.CLOSE_TAB: tabs?.closeActive(); return true
+    case COMMANDS.REOPEN_TAB: {
+      const closed = current?.history.snapshot().recentlyClosed[0]
+      if (closed) tabs?.create(closed.url)
+      return true
+    }
+    case COMMANDS.NEXT_TAB: tabs?.cycle(1); return true
+    case COMMANDS.PREVIOUS_TAB: tabs?.cycle(-1); return true
+    case COMMANDS.SELECT_TAB: tabs?.selectIndex(index); return true
+    case COMMANDS.LAST_TAB: tabs?.selectLast(); return true
+    case COMMANDS.NEW_WINDOW: createBrowser(); return true
+    case COMMANDS.NEW_PRIVATE_WINDOW: createBrowser({ privateMode: true }); return true
+    case COMMANDS.CLOSE_WINDOW: current?.win.close(); return true
+    case COMMANDS.BACK: tabs?.back(); return true
+    case COMMANDS.FORWARD: tabs?.forward(); return true
+    case COMMANDS.RELOAD: tabs?.reload(); return true
+    case COMMANDS.HARD_RELOAD: tabs?.hardReload(); return true
+    case COMMANDS.STOP: tabs?.stop(); return true
+    case COMMANDS.HISTORY: openHistory(); return true
+    case COMMANDS.DOWNLOADS: openInternal(DOWNLOADS_URL); return true
+    case COMMANDS.SETTINGS: openInternal(SETTINGS_URL); return true
+    case COMMANDS.EXTENSIONS: openInternal(EXTENSIONS_URL); return true
+    case COMMANDS.FULLSCREEN: {
+      if (!current) return false
+      // setFullScreen() is a no-op on a transparent frameless window on
+      // Windows, so fill the display by hand and restore the old bounds.
+      if (current.fullScreenFrom) {
+        current.win.setBounds(current.fullScreenFrom)
+        current.fullScreenFrom = null
+      } else {
+        current.fullScreenFrom = current.win.getBounds()
+        const display = screen.getDisplayMatching(current.win.getBounds())
+        current.win.setBounds(display.bounds)
+      }
+      return true
+    }
+    case COMMANDS.FOCUS_OMNIBOX:
+      current?.chrome.webContents.focus()
+      current?.chrome.webContents.executeJavaScript("document.getElementById('omnibox')?.select()").catch(() => {})
+      return true
+    case COMMANDS.FIND:
+      // No find bar yet; let the page keep the keystroke rather than eating it.
+      return false
+    case COMMANDS.ZOOM_IN:
+    case COMMANDS.ZOOM_OUT:
+    case COMMANDS.ZOOM_RESET: {
+      if (!page) return false
+      const level = command === COMMANDS.ZOOM_RESET
+        ? 0
+        : nextZoom(page.getZoomLevel(), command === COMMANDS.ZOOM_IN ? 1 : -1)
+      page.setZoomLevel(level)
+      return true
+    }
+    default: return false
+  }
+}
+
 app.on('web-contents-created', (_e, wc) => {
   wc.on('before-input-event', (event, input) => {
-    if (input.type !== 'keyDown') return
-    if (!(input.control || input.meta) || input.alt) return
-    const key = input.key.toLowerCase()
-    if (key !== 'h' && key !== 'j') return
-    event.preventDefault()
-    if (key === 'h') openHistory()
-    else openInternal(DOWNLOADS_URL)
+    const shortcut = resolveShortcut(input)
+    if (!shortcut) return
+    if (runCommand(shortcut)) event.preventDefault()
   })
   applyStoreRebranding(wc)
   // external protocols (mailto:, etc.) go to the OS, never to a tab
