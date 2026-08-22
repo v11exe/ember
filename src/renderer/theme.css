@@ -36,6 +36,16 @@
   --glass-shadow:      rgba(11, 4, 16, .72);
   --glass-warm-shadow: rgba(112, 36, 17, .24);
 
+  /* full-page glass: ambient light behind translucent panels, plus the halo
+     the omnibox and search fields share */
+  --ambient-deep:   rgba(232, 65, 15, .50);
+  --ambient-hot:    rgba(255, 201, 60, .26);
+  --ambient-mid:    rgba(255, 122, 24, .18);
+  --ambient-veil:   rgba(9, 4, 12, .34);
+  --ambient-veil-2: rgba(9, 4, 12, .62);
+  --accent-halo:    rgba(255, 138, 31, .16);
+  --accent-glow:    rgba(255, 138, 31, .80);
+
   --accent:      var(--ember-mid);
   --accent-text: #12100C;
   --focus-ring:  0 0 0 2px rgba(255, 138, 31, .45);

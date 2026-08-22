@@ -16,11 +16,11 @@ body {
 
 /* ---------- ambient light ---------- */
 .ambient { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
-.ambient::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.34), rgba(0,0,0,.62)); }
+.ambient::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, var(--ambient-veil), var(--ambient-veil-2)); }
 .blob { position: absolute; border-radius: 50%; filter: blur(110px); opacity: .3; }
-.blob-a { width: 40vw; height: 40vw; left: -12vw; top: -18vw; background: rgba(232, 65, 15, .5); }
-.blob-b { width: 32vw; height: 32vw; right: -10vw; top: -14vw; background: rgba(255, 201, 60, .26); }
-.blob-c { width: 44vw; height: 44vw; left: 30vw; bottom: -34vw; background: rgba(255, 122, 24, .18); }
+.blob-a { width: 40vw; height: 40vw; left: -12vw; top: -18vw; background: var(--ambient-deep); }
+.blob-b { width: 32vw; height: 32vw; right: -10vw; top: -14vw; background: var(--ambient-hot); }
+.blob-c { width: 44vw; height: 44vw; left: 30vw; bottom: -34vw; background: var(--ambient-mid); }
 
 /* ---------- shared glass ---------- */
 .glass {
@@ -88,7 +88,7 @@ body {
 }
 .search:focus-within {
   border-color: var(--ember-mid);
-  box-shadow: 0 0 0 3px rgba(255, 138, 31, .16), 0 18px 44px var(--glass-shadow), inset 0 1px var(--glass-specular);
+  box-shadow: 0 0 0 3px var(--accent-halo), 0 18px 44px var(--glass-shadow), inset 0 1px var(--glass-specular);
 }
 .search-icon { width: 17px; height: 17px; flex: none; fill: none; stroke: var(--text-faint); stroke-width: 1.7; stroke-linecap: round; }
 .search:focus-within .search-icon { stroke: var(--ember-warm); }
@@ -159,7 +159,7 @@ body {
 .side-link:hover { background: var(--glass-inner); }
 .side-link .dot {
   width: 6px; height: 6px; border-radius: 50%; flex: none;
-  background: var(--ember-mid); box-shadow: 0 0 8px rgba(255, 138, 31, .8);
+  background: var(--ember-mid); box-shadow: 0 0 8px var(--accent-glow);
 }
 .side-link[disabled] { color: var(--text-faint); }
 .side-link[disabled] .dot { background: var(--text-faint); box-shadow: none; }
