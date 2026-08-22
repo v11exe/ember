@@ -17,13 +17,17 @@ class NativeBackdrop {
     this.executable = options.executable || path.join(options.userDataPath || process.cwd(), 'ember-accent-blur.exe')
     this.destroyed = false
     this.sequence = 0
+    this.bridgePromise = null
   }
 
   async ensureBridge() {
     if (this.options.run) return
-    await fs.access(this.executable).catch(() => execFile(CSC, [
-      '/nologo', '/target:exe', `/out:${this.executable}`, SOURCE,
-    ], { windowsHide: true }))
+    if (!this.bridgePromise) {
+      this.bridgePromise = fs.access(this.executable).catch(() => execFile(CSC, [
+        '/nologo', '/target:exe', `/out:${this.executable}`, SOURCE,
+      ], { windowsHide: true }))
+    }
+    await this.bridgePromise
   }
 
   async setActiveUrl(url) {
