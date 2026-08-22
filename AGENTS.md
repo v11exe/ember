@@ -259,7 +259,7 @@ Newest at top. One entry per branch, updated in place. Status:
 ```
 
 ### 2026-08-22 — Claude Code — Native glass on every internal page
-- **Status / Branch:** pushed · `feat/glass-internal-pages`
+- **Status / Branch:** merged · `main`
 - **Touches:** `src/shared/native-glass.js`,
   `src/renderer/pages/{liquid-glass-ui.js,liquid-glass-ui.css,history.*,downloads.*,settings.*}`,
   `test/{native-glass,liquid-glass-ui}.test.js`
