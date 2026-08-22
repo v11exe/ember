@@ -1,7 +1,7 @@
 const path = require('node:path')
 const fs = require('node:fs/promises')
 const { pathToFileURL } = require('node:url')
-const { app, BaseWindow, View, WebContentsView, clipboard, dialog, ipcMain, nativeImage, session, shell } = require('electron')
+const { app, BaseWindow, WebContentsView, clipboard, dialog, ipcMain, nativeImage, session, shell } = require('electron')
 
 const { IPC, NEW_TAB_URL, HISTORY_URL, DOWNLOADS_URL, WEB_STORE_URL } = require('../shared/ipc')
 const { toNavigationUrl } = require('../shared/urls')
@@ -53,7 +53,7 @@ function createBrowser() {
     backgroundColor: '#00000000',
     title: 'Ember',
   })
-  const nativeBackdrop = new NativeBackdrop(win, View)
+  const nativeBackdrop = new NativeBackdrop(win, { userDataPath: app.getPath('userData') })
 
   const chrome = new WebContentsView({
     webPreferences: {

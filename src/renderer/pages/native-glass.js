@@ -10,6 +10,8 @@
     root.style.setProperty('--native-glass-corner-radius', `${material.cornerRadius}px`)
     root.style.setProperty('--native-glass-border-width', `${material.borderWidth}px`)
     root.style.setProperty('--native-glass-padding', material.padding)
+    root.style.setProperty('--native-glass-blur', `${4 + material.blurAmount * 32}px`)
+    root.style.setProperty('--native-glass-saturation', `${material.saturation}%`)
     search.dataset.displacementScale = String(material.displacementScale)
     search.dataset.blurAmount = String(material.blurAmount)
     search.dataset.saturation = String(material.saturation)

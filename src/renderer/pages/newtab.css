@@ -55,9 +55,11 @@ body {
   position: relative;
   display: flex; align-items: center; gap: 12px;
   height: 58px; padding: 0 8px 0 20px;
-  background: transparent;
-  border: var(--native-glass-border-width) solid var(--glass-border);
+  background: rgba(255, 255, 255, .12);
+  border: var(--native-glass-border-width) solid rgba(255, 255, 255, .34);
   border-radius: var(--native-glass-corner-radius);
+  backdrop-filter: blur(var(--native-glass-blur, 6px)) saturate(var(--native-glass-saturation, 95%));
+  -webkit-backdrop-filter: blur(var(--native-glass-blur, 6px)) saturate(var(--native-glass-saturation, 95%));
   box-shadow:
     0 26px 62px var(--glass-shadow),
     0 3px 12px var(--glass-warm-shadow),
@@ -96,14 +98,14 @@ body {
   position: relative;
   flex: none; height: 42px; padding: 0 22px;
   border: 0; border-radius: 999px;
-  background: linear-gradient(95deg, var(--ember-deep), var(--ember-mid) 58%, var(--ember-hot));
-  color: var(--accent-text);
+  background: transparent;
+  color: var(--text);
   font: 600 13px/1 var(--font);
   cursor: default;
-  box-shadow: 0 6px 18px var(--glass-warm-shadow);
-  transition: filter .15s ease, transform .1s ease;
+  box-shadow: none;
+  transition: opacity .15s ease, transform .1s ease;
 }
-.go:hover { filter: brightness(1.1); }
+.go:hover { opacity: .78; }
 .go:active { transform: translateY(1px); }
 
 /* ---------- quick links ---------- */
