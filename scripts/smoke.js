@@ -20,16 +20,22 @@ async function run() {
   child.stdout.on('data', collect)
   child.stderr.on('data', collect)
 
+  // A throwaway profile means every run pays cold-start: ~40s here versus
+  // ~22s warm. 30s sat between the two and failed most runs.
+  const TIMEOUT_MS = 120_000
+  const started = Date.now()
+
   const timer = setTimeout(() => {
-    console.error('\n[smoke] timed out after 30s')
+    console.error(`\n[smoke] timed out after ${TIMEOUT_MS / 1000}s`)
     child.kill()
-  }, 30_000)
+  }, TIMEOUT_MS)
 
   const code = await new Promise((resolve) => child.on('exit', resolve))
   clearTimeout(timer)
   await fs.rm(smokeData, { recursive: true, force: true })
   const ok = code === 0 && out.includes('[ember] smoke ok')
-  console.log(ok ? '\n[smoke] PASS' : `\n[smoke] FAIL (exit ${code})`)
+  const seconds = ((Date.now() - started) / 1000).toFixed(1)
+  console.log(ok ? `\n[smoke] PASS (${seconds}s)` : `\n[smoke] FAIL (exit ${code}, ${seconds}s)`)
   process.exitCode = ok ? 0 : 1
 }
 

@@ -212,6 +212,17 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
+### 2026-08-22 — Claude Code — Smoke gate timeout + flake report
+- **Status / Branch:** merged · `main`
+- **Touches:** `scripts/smoke.js`
+- **Summary:** Raised the smoke timeout 30s → 120s and made it print elapsed
+  time. A throwaway profile costs ~40s cold versus ~22s warm, so 30s sat
+  between the two and failed most runs.
+- **For the other agent:** the smoke probe still hangs intermittently — some
+  runs never reach `smoke ok` and get killed at the cap. Not isolated yet;
+  `await browser?.testExtensionsReady` (index.js) is unbounded and is the
+  prime suspect. Worth a timeout there so it fails loudly instead of hanging.
+
 ### 2026-08-21 — Codex — Restore corrected context-menu glass
 - **Status / Branch:** pushed · `fix/upload-liquid-glass-optics`
 - **Touches:** `AGENTS.md`, `agent.md`, `scripts/capture-ui.js`,
