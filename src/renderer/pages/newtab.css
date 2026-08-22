@@ -20,6 +20,17 @@ body {
 .blob-b { width: 34vw; height: 30vw; right: -8vw; top: -10vw; background: var(--ambient-hot); }
 .blob-c { width: 50vw; height: 38vw; left: 26vw; bottom: -18vw; background: var(--ambient-mid); }
 
+.hero > * { animation: hero-in var(--dur-3) var(--ease) backwards; }
+.logo { animation-delay: 40ms }
+.tagline { animation-delay: 110ms }
+.search { animation-delay: 170ms }
+.tiles { animation-delay: 230ms }
+.foot { animation-delay: 290ms }
+@keyframes hero-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+
 .hero { position: relative; z-index: 1; width: min(680px, 90vw); text-align: center; margin-top: -6vh; }
 
 /* ---------- logo ---------- */
@@ -82,10 +93,11 @@ body {
   color: var(--text-dim);
   font: 500 12px/1 var(--font);
   cursor: default;
-  transition: transform .13s ease, border-color .13s ease, color .13s ease, background .13s ease;
+  transition: transform var(--dur-2) var(--ease), border-color var(--dur-1) var(--ease-soft), color var(--dur-1) var(--ease-soft), background var(--dur-1) var(--ease-soft);
 }
+.tile:active { transform: translateY(0) scale(.97); }
 .tile:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   border-color: var(--glass-border);
   background: var(--glass-hover);
   color: var(--text);

@@ -28,6 +28,8 @@ const IPC = {
   HISTORY_DELETE: 'history:delete',
   HISTORY_CLEAR: 'history:clear',
   HISTORY_OPEN: 'history:open',
+  SETTINGS_GET: 'settings:get',
+  SETTINGS_SET: 'settings:set',
   DOWNLOADS_QUERY: 'downloads:query',
   DOWNLOADS_ACTION: 'downloads:action',
   NATIVE_GLASS_SETTINGS: 'native-glass:settings',
@@ -50,6 +52,7 @@ const SEARCH_URL = 'https://www.google.com/search?q='
 const NEW_TAB_URL = 'ember://newtab'
 const HISTORY_URL = 'ember://history'
 const DOWNLOADS_URL = 'ember://downloads'
+const SETTINGS_URL = 'ember://settings'
 const WEB_STORE_URL = 'https://chromewebstore.google.com/'
 
-module.exports = { IPC, SEARCH_URL, NEW_TAB_URL, HISTORY_URL, DOWNLOADS_URL, WEB_STORE_URL }
+module.exports = { IPC, SEARCH_URL, NEW_TAB_URL, HISTORY_URL, DOWNLOADS_URL, SETTINGS_URL, WEB_STORE_URL }

@@ -52,7 +52,22 @@
 
   --radius:   9px;
   --radius-sm:6px;
-  --font: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  /* Same neutral character as before, but Segoe UI Variable is optically sized
+     for screen text: rounder terminals, better spacing at UI sizes. Falls back
+     to the previous stack wherever it is unavailable. */
+  --font: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui,
+          Roboto, Helvetica, Arial, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI",
+          system-ui, Roboto, Helvetica, Arial, sans-serif;
+
+  /* One motion system for the whole browser. Interface motion is short and
+     decelerating; nothing eases in, because nothing should feel sluggish. */
+  --ease: cubic-bezier(.22, 1, .36, 1);
+  --ease-soft: cubic-bezier(.4, 0, .2, 1);
+  --dur-1: 110ms;  /* state flips: hover, press */
+  --dur-2: 180ms;  /* elements entering or leaving */
+  --dur-3: 280ms;  /* surfaces: panels, pages */
 }
 
 * { box-sizing: border-box; }
@@ -63,6 +78,18 @@ html, body {
   color: var(--text);
   font-family: var(--font);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-synthesis: none; /* never fake a weight the family already has */
+}
+
+/* Motion is a courtesy, not a requirement. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 ::selection { background: rgba(255,138,31,.32); }

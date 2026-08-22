@@ -42,11 +42,11 @@ src/main/protocol.js     ember:// scheme, serves internal pages + shared assets
 src/main/page-preload.js sandboxed nav bridge + real file-input interception
 src/renderer/preload.js  chrome UI bridge (contextBridge "ember"), browser-action
 src/renderer/chrome.*    tab strip, toolbar, extensions panel (html/css/js)
-src/renderer/theme.css   the palette — every colour is defined here, once
+src/renderer/theme.css   palette + type stack + motion tokens, all defined once
 src/renderer/brand.*     exact supplied PNG icon/full-logo mounts
 src/renderer/panel-preload.js  panel bridge + injectBrowserAction()
 src/renderer/pages/      newtab, extensions, upload, context-menu, history, downloads,
-                         session-prompt
+                         session-prompt, settings
 src/renderer/pages/page-glass.js  full-page refraction; reuses upload-optics maps
 src/shared/              IPC/URL/file-filter/floating-geometry contracts
 scripts/smoke.js         boot check
@@ -88,6 +88,10 @@ islands, sidebar outstanding).
   switch map; the selector owns a separately aligned raw-capture sample.
 - `capturePage()` returns an empty image once a window starts closing, so any
   close-time overlay needs its own light to refract, not just a capture.
+- Motion tokens live in `theme.css` (`--ease`, `--dur-1..3`); use them rather
+  than literal durations, and let the global reduced-motion rule handle opt-out.
+- Omnibox keywords (settings, extensions, history, downloads) resolve in
+  `shared/urls.js`, before the bare-domain check, exact single word only.
 - Files are LF via `.gitattributes`, but Git may hand you CRLF working copies.
   Multi-line string replacement in scripts silently no-ops against those.
   Verify edits landed instead of trusting the write.
@@ -233,6 +237,17 @@ Newest at top. One entry per branch, updated in place. Status:
 - **Touches:** `AGENTS.md`, `src/main/{index,native-backdrop}.js`, `src/main/page-preload.js`, `src/shared/{ipc,native-glass}.js`, `src/renderer/pages/{newtab.*,native-glass.js}`, `test/{native-glass,renderer-contracts}.test.js`
 - **Summary:** Make only the new-tab viewport expose a live Windows AccentBlurBehind surface tinted `8C000000`, then layer a configurable DOM-backed Liquid Glass search surface above it so the material visibly blurs a second time. The window root is transparent so the native layers are visible, and teardown is safe after Electron destroys the parent.
 - **For the other agent:** New native-glass configuration and IPC may be added; no `poc/` content, dependencies, files, or commits will enter this branch.
+### 2026-08-22 — Claude Code — Polish pass: motion, type, settings (BRANCH)
+- **Status / Branch:** pushed · `feat/polish` (stacked on `feat/session-restore`)
+- **Touches:** `src/renderer/theme.css`, `src/renderer/chrome.css`,
+  `src/renderer/pages/{newtab,history,downloads,session-prompt,settings}.*`,
+  `src/shared/urls.js`, `src/shared/ipc.js`, `src/main/{index,page-preload}.js`
+- **Summary:** One motion system in theme tokens applied across chrome and pages,
+  Segoe UI Variable for smoother UI text, omnibox keywords for internal pages,
+  and a real `ember://settings` page exposing the session-restore preference.
+- **For the other agent:** this branch contains `feat/session-restore` as well.
+  New channels `settings:get|set` and `SETTINGS_URL`.
+
 ### 2026-08-22 — Claude Code — Session restore + window state (BRANCH)
 - **Status / Branch:** pushed · `feat/session-restore`
 - **Touches:** `src/main/{settings,session,session-prompt,index}.js`,

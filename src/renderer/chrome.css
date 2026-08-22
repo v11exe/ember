@@ -40,19 +40,31 @@ body { overflow: hidden; background: transparent; user-select: none; }
   font-size: 12px;
   cursor: default;
   position: relative;
-  transition: background .12s ease, color .12s ease;
+  transition: background var(--dur-1) var(--ease-soft), color var(--dur-1) var(--ease-soft), transform var(--dur-1) var(--ease);
+  animation: tab-in var(--dur-2) var(--ease) backwards;
 }
 .tab:hover { background: var(--surface-2); color: var(--text); }
 .tab.active {
   background: var(--surface-2);
   color: var(--text);
 }
+@keyframes tab-in {
+  from { opacity: 0; transform: translateY(4px) scale(.98); }
+  to { opacity: 1; transform: none; }
+}
+
 .tab.active::after {
   content: ""; position: absolute; left: 6px; right: 6px; top: 0; height: 2px;
   border-radius: 2px;
   background: var(--ember-grad);
-  box-shadow: 0 0 9px rgba(255, 138, 31, .8);
+  box-shadow: 0 0 9px var(--accent-glow);
+  animation: underline-in var(--dur-2) var(--ease);
 }
+@keyframes underline-in {
+  from { transform: scaleX(.4); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
 .tab-favicon { width: 14px; height: 14px; flex: none; border-radius: 3px; }
 .tab-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tab-close {
@@ -60,7 +72,9 @@ body { overflow: hidden; background: transparent; user-select: none; }
   border: 0; border-radius: 4px; background: transparent;
   color: var(--text-faint); font-size: 13px; cursor: default;
 }
+.tab-close { transition: background var(--dur-1) var(--ease-soft), color var(--dur-1) var(--ease-soft), transform var(--dur-1) var(--ease); }
 .tab-close:hover { background: var(--ember-deep); color: #fff; }
+.tab-close:active { transform: scale(.86); }
 
 .spinner {
   width: 12px; height: 12px; flex: none;
@@ -78,7 +92,9 @@ body { overflow: hidden; background: transparent; user-select: none; }
   background: transparent; color: var(--text-dim);
   font-size: 17px; line-height: 1; cursor: default;
 }
+.tab-new { transition: background var(--dur-1) var(--ease-soft), color var(--dur-1) var(--ease-soft), transform var(--dur-1) var(--ease); }
 .tab-new:hover { background: var(--surface-2); color: var(--ember-warm); }
+.tab-new:active { transform: scale(.9); }
 
 /* ---------- window controls ---------- */
 .window-controls { -webkit-app-region: no-drag; display: flex; align-self: flex-start; }
@@ -108,8 +124,10 @@ body { overflow: hidden; background: transparent; user-select: none; }
   display: grid; place-items: center;
   cursor: default;
 }
-.icon svg { width: 16px; height: 16px; fill: none; stroke: var(--text-dim); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.icon svg { transition: stroke var(--dur-1) var(--ease-soft); width: 16px; height: 16px; fill: none; stroke: var(--text-dim); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.icon { transition: background var(--dur-1) var(--ease-soft), transform var(--dur-1) var(--ease); }
 .icon:hover { background: var(--surface-2); }
+.icon:active { transform: scale(.92); }
 .icon:hover svg { stroke: var(--ember-warm); }
 .icon[disabled] { opacity: .35; }
 .icon[disabled]:hover { background: transparent; }
@@ -122,7 +140,7 @@ body { overflow: hidden; background: transparent; user-select: none; }
   border-radius: 999px;
   background: var(--surface);
   border: 1px solid var(--border);
-  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+  transition: border-color var(--dur-2) var(--ease-soft), box-shadow var(--dur-2) var(--ease-soft), background var(--dur-2) var(--ease-soft);
 }
 .omnibox:focus-within {
   background: var(--surface-2);

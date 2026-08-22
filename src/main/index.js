@@ -298,6 +298,12 @@ ipcMain.handle(IPC.BOOKMARKS_IMPORT, async () => {
     return { ok: false, canceled: false, error: error.message, snapshot: browser.bookmarks.snapshot() }
   }
 })
+ipcMain.handle(IPC.SETTINGS_GET, () => (browser ? { ...browser.settings.snapshot(), appVersion: app.getVersion() } : null))
+ipcMain.handle(IPC.SETTINGS_SET, async (_e, { key, value } = {}) => {
+  if (!browser) return null
+  return browser.settings.set(String(key), value)
+})
+
 const emptyDownloads = { version: 1, active: [], entries: [] }
 ipcMain.handle(IPC.DOWNLOADS_QUERY, () => browser?.downloads.snapshot() || emptyDownloads)
 ipcMain.handle(IPC.DOWNLOADS_ACTION, async (_e, { action, id } = {}) => {

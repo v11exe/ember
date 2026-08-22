@@ -128,3 +128,35 @@ test('remembered window geometry survives a restart', async () => {
   assert.equal(reopened.width, 1400)
   assert.equal(reopened.x, 100)
 })
+
+// ---------------------------------------------------------------- omnibox keywords
+
+const { toNavigationUrl, keywordUrl } = require('../src/shared/urls')
+
+test('typing the name of an internal page goes there', () => {
+  assert.equal(toNavigationUrl('settings'), 'ember://settings')
+  assert.equal(toNavigationUrl('extensions'), 'ember://extensions')
+  assert.equal(toNavigationUrl('history'), 'ember://history')
+  assert.equal(toNavigationUrl('downloads'), 'ember://downloads')
+})
+
+test('keywords are case and whitespace insensitive', () => {
+  assert.equal(toNavigationUrl('  Settings '), 'ember://settings')
+  assert.equal(toNavigationUrl('EXTENSIONS'), 'ember://extensions')
+})
+
+test('a keyword inside a phrase still searches', () => {
+  assert.match(toNavigationUrl('settings for macbook'), /^https:\/\/www\.google\.com\/search/)
+  assert.match(toNavigationUrl('how to fix settings'), /^https:\/\/www\.google\.com\/search/)
+  assert.match(toNavigationUrl('setting'), /^https:\/\/www\.google\.com\/search/)
+})
+
+test('keywords never shadow a real domain', () => {
+  assert.equal(toNavigationUrl('settings.com'), 'https://settings.com')
+  assert.equal(toNavigationUrl('https://example.com/settings'), 'https://example.com/settings')
+})
+
+test('keywordUrl reports null for anything unmapped', () => {
+  assert.equal(keywordUrl('nonsense'), null)
+  assert.equal(keywordUrl(''), null)
+})

@@ -13,6 +13,8 @@ const HISTORY_QUERY = 'history:query'
 const HISTORY_DELETE = 'history:delete'
 const HISTORY_CLEAR = 'history:clear'
 const HISTORY_OPEN = 'history:open'
+const SETTINGS_GET = 'settings:get'
+const SETTINGS_SET = 'settings:set'
 const DOWNLOADS_QUERY = 'downloads:query'
 const DOWNLOADS_ACTION = 'downloads:action'
 const DOWNLOADS_CHANGED = 'downloads:changed'
@@ -77,6 +79,10 @@ if (location.protocol === 'ember:') {
       remove: (ids) => ipcRenderer.invoke(HISTORY_DELETE, ids),
       clear: (range) => ipcRenderer.invoke(HISTORY_CLEAR, range),
       open: (url) => ipcRenderer.send(HISTORY_OPEN, String(url)),
+    },
+    settings: {
+      get: () => ipcRenderer.invoke(SETTINGS_GET),
+      set: (key, value) => ipcRenderer.invoke(SETTINGS_SET, { key, value }),
     },
     downloads: {
       query: () => ipcRenderer.invoke(DOWNLOADS_QUERY),
