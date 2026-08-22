@@ -1,7 +1,6 @@
 * { box-sizing: border-box; }
-html, body { height: 100%; margin: 0; }
+html, body { height: 100%; margin: 0; background: transparent; }
 body {
-  background: transparent;
   color: var(--text);
   font-family: var(--font);
   display: grid;
@@ -96,12 +95,12 @@ body {
 .go {
   position: relative;
   flex: none; height: 42px; padding: 0 22px;
-  border: 0; border-radius: inherit;
-  background: transparent;
-  color: var(--text);
+  border: 0; border-radius: 999px;
+  background: linear-gradient(95deg, var(--ember-deep), var(--ember-mid) 58%, var(--ember-hot));
+  color: var(--accent-text);
   font: 600 13px/1 var(--font);
   cursor: default;
-  box-shadow: none;
+  box-shadow: 0 6px 18px var(--glass-warm-shadow);
   transition: filter .15s ease, transform .1s ease;
 }
 .go:hover { filter: brightness(1.1); }

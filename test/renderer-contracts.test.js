@@ -28,14 +28,17 @@ test('new tab keeps Ember content above configurable native double-blur layers',
   const html = read('src', 'renderer', 'pages', 'newtab.html')
   const css = read('src', 'renderer', 'pages', 'newtab.css')
   const js = read('src', 'renderer', 'pages', 'native-glass.js')
+  const main = read('src', 'main', 'index.js')
   assert.match(html, /class="native-glass-page"/)
   assert.match(html, /native-glass\.js/)
   assert.match(html, /data-native-glass-search/)
   assert.match(js, /nativeGlass\?\.getSettings/)
   assert.match(js, /nativeGlass\?\.layoutSearch/)
-  assert.match(css, /body[\s\S]+background:\s*transparent/)
+  assert.match(css, /html,\s*body\s*\{[^}]*background:\s*transparent/)
   assert.match(css, /\.search[\s\S]+background:\s*transparent/)
   assert.doesNotMatch(css, /\.search\s*\{[^}]*backdrop-filter/)
+  assert.match(css, /\.go[\s\S]+background:\s*linear-gradient/)
+  assert.match(main, /function broadcastBookmarks[\s\S]+layoutNativeBackdrop\(\)/)
 })
 
 test('browser chrome provides a compact live bookmarks bar', () => {

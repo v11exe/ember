@@ -26,6 +26,7 @@ class NativeBackdrop {
     }
     this.page.setBackgroundBlur(settings.pageBlurRadius)
     this.search.setBackgroundBlur(Math.round(settings.search.blurAmount * settings.blurAmountToRadius))
+    this.search.setBorderRadius(settings.search.cornerRadius)
   }
 
   setActiveUrl(url) {

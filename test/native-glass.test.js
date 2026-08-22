@@ -45,6 +45,7 @@ test('native backdrop stacks a second live blur only beneath the active new-tab 
     constructor() { this.calls = [] }
     setBackgroundColor(value) { this.calls.push(['color', value]) }
     setBackgroundBlur(value) { this.calls.push(['blur', value]) }
+    setBorderRadius(value) { this.calls.push(['radius', value]) }
     setVisible(value) { this.calls.push(['visible', value]) }
     setBounds(value) { this.calls.push(['bounds', value]) }
   }
@@ -58,6 +59,7 @@ test('native backdrop stacks a second live blur only beneath the active new-tab 
   assert.equal(layers.length, 2)
   assert.ok(layers[0].calls.some((call) => JSON.stringify(call) === JSON.stringify(['blur', 18])))
   assert.ok(layers[1].calls.some((call) => JSON.stringify(call) === JSON.stringify(['blur', 2])))
+  assert.ok(layers[1].calls.some((call) => JSON.stringify(call) === JSON.stringify(['radius', 48])))
   assert.deepEqual(layers[0].calls.at(-1), ['visible', true])
   assert.ok(layers[1].calls.some((call) => JSON.stringify(call) === JSON.stringify([
     'bounds', { x: 300, y: 284, width: 680, height: 58 },

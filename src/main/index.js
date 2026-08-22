@@ -28,10 +28,17 @@ let browser = null
 function broadcastBookmarks(snapshot) {
   if (!browser) return snapshot
   browser.tabs.setBookmarksVisible(snapshot.visible)
+  layoutNativeBackdrop()
   browser.panel.setTop(browser.tabs.chromeHeight - 6)
   browser.popupPositioner?.layout()
   browser.chrome.webContents.send(IPC.BOOKMARKS_CHANGED, snapshot)
   return snapshot
+}
+
+function layoutNativeBackdrop() {
+  if (!browser) return
+  const { width, height } = browser.win.getContentBounds()
+  browser.nativeBackdrop.layoutPage({ chromeHeight: browser.tabs.chromeHeight, width, height })
 }
 
 function createBrowser() {
@@ -104,10 +111,6 @@ function createBrowser() {
   session.defaultSession.on('will-download', (_event, item) => downloads.track(item))
   tabs.onVisitDetail = (detail) => history.decorate(detail.url, detail)
   tabs.onTabClosed = (tab) => history.noteClosedTab(tab)
-  const layoutNativeBackdrop = () => {
-    const { width, height } = win.getContentBounds()
-    nativeBackdrop.layoutPage({ chromeHeight: tabs.chromeHeight, width, height })
-  }
   tabs.onSelectionChange = (tab) => {
     panel.hide(); uploadPanel.cancel(); contextMenu.hide()
     nativeBackdrop.setActiveUrl(tab.url)
