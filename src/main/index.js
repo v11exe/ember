@@ -12,6 +12,9 @@ const { ExtensionPanel } = require('./panel')
 const { BookmarkStore } = require('./bookmarks')
 const { HistoryStore } = require('./history')
 const { DownloadStore } = require('./downloads')
+const { SettingsStore, SESSION_RESTORE } = require('./settings')
+const { SessionStore } = require('./session')
+const { SessionPrompt } = require('./session-prompt')
 const { PopupPositioner } = require('./popup-positioner')
 const { RecentUploadStore } = require('./recent-uploads')
 const { UploadPanel } = require('./upload-panel')
@@ -35,9 +38,14 @@ function broadcastBookmarks(snapshot) {
 }
 
 function createBrowser() {
+  const settings = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'))
+  const sessionStore = new SessionStore(path.join(app.getPath('userData'), 'session.json'))
+  const saved = settings.get('window')
+
   const win = new BaseWindow({
-    width: 1280,
-    height: 820,
+    width: saved?.width || 1280,
+    height: saved?.height || 820,
+    ...(Number.isFinite(saved?.x) ? { x: saved.x, y: saved.y } : {}),
     minWidth: 620,
     minHeight: 420,
     frame: false,
@@ -90,7 +98,8 @@ function createBrowser() {
     createTab: (url) => tabs.create(url), clipboard, dialog,
   })
   browser = {
-    win, chrome, tabs, panel, bookmarks, history, downloads, recentUploads, recentUploadsReady,
+    win, chrome, tabs, panel, bookmarks, history, downloads, settings, sessionStore,
+    sessionPrompt: new SessionPrompt(win), closing: false, recentUploads, recentUploadsReady,
     uploadPanel, contextMenu, smokeClipboard, smokeUploadPaths, nativeBackdrop, popupPositioner: null,
   }
   tabs.onPageFocus = () => { panel.hide(); uploadPanel.cancel(); contextMenu.hide() }
@@ -148,13 +157,53 @@ function createBrowser() {
   }
 
   chrome.webContents.once('did-finish-load', () => {
-    tabs.create(NEW_TAB_URL)
+    // Reopen the saved session when the user asked for it, otherwise a fresh tab.
+    const restorable = settings.get('sessionRestore') !== SESSION_RESTORE.NEVER && sessionStore.hasSession()
+    if (restorable) {
+      const saved = sessionStore.snapshot().tabs
+      for (const tab of saved) tabs.create(tab.url, { active: false })
+      const active = saved.findIndex((tab) => tab.active)
+      const target = tabs.tabs[active >= 0 ? active : 0]
+      if (target) tabs.select(target.id)
+      else tabs.create(NEW_TAB_URL)
+    } else {
+      tabs.create(NEW_TAB_URL)
+    }
     broadcastBookmarks(bookmarks.snapshot())
     tabs.layout()
   })
 
   win.on('resize', () => {
     tabs.layout(); panel.layout(); uploadPanel.layout(); contextMenu.layout(); browser?.popupPositioner?.layout()
+    browser?.sessionPrompt?.layout(); rememberGeometry()
+  })
+  win.on('move', () => rememberGeometry())
+
+  function rememberGeometry() {
+    if (win.isDestroyed() || win.isMinimized()) return
+    if (win.isMaximized()) { settings.rememberWindow({ ...(settings.get('window') || win.getBounds()), maximized: true }); return }
+    settings.rememberWindow({ ...win.getBounds(), maximized: false })
+  }
+
+  // Ask before closing, then save or discard the session accordingly.
+  win.on('close', (event) => {
+    if (browser?.closing) return
+    const open = tabs.tabs.filter((tab) => /^(https?|ember):/i.test(tab.url))
+    const preference = settings.get('sessionRestore')
+
+    if (preference === SESSION_RESTORE.ALWAYS) { sessionStore.saveSync(tabs.tabs, tabs.activeId); return }
+    if (preference === SESSION_RESTORE.NEVER || open.length === 0) { sessionStore.clearSync(); return }
+
+    event.preventDefault()
+    browser.sessionPrompt.ask({ tabCount: open.length, targetView: tabs.active?.view }).then(async (answer) => {
+      if (answer === 'cancel') return
+      if (answer === 'always') await settings.set('sessionRestore', SESSION_RESTORE.ALWAYS)
+      if (answer === 'never') await settings.set('sessionRestore', SESSION_RESTORE.NEVER)
+      if (answer === 'yes' || answer === 'always') sessionStore.saveSync(tabs.tabs, tabs.activeId)
+      else sessionStore.clearSync()
+      browser.closing = true
+      win.close()
+    })
   })
   win.on('closed', () => { nativeBackdrop.destroy(); browser = null })
   return browser
@@ -210,6 +259,10 @@ ipcMain.on(IPC.OVERLAY_ACTION, (event, action, payload) => {
   const current = browser
   if (!current) return
   const command = String(action || '')
+  if (command === 'session') {
+    current.sessionPrompt.resolve(String(payload?.answer || 'cancel'))
+    return
+  }
   if (current.uploadPanel.isSender(event.sender)) {
     current.uploadPanel.handleAction(event.sender, command, payload)
     return

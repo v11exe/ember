@@ -1,0 +1,99 @@
+/* Close-time "reopen tabs?" dialog. Uses the shared captured-backdrop glass
+   (glass.css) so it refracts the real page behind it. */
+
+body { display: grid; place-items: center; padding: 6px; }
+
+.shell {
+  position: relative;
+  width: 100%; height: 100%;
+  border: 1px solid var(--glass-border);
+  border-radius: 26px;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--glass-bg);
+  box-shadow:
+    0 30px 76px var(--glass-shadow),
+    0 10px 34px var(--glass-warm-shadow),
+    inset 0 1px var(--glass-specular),
+    inset 1px 0 var(--glass-inner),
+    inset 0 -1px var(--glass-inner);
+  animation: rise .18s cubic-bezier(.22, 1, .36, 1);
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px) scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+
+.ambient { position: absolute; inset: 0; z-index: -2; overflow: hidden; pointer-events: none; }
+.blob { position: absolute; border-radius: 50%; filter: blur(46px); opacity: .55; }
+.blob-a { width: 70%; height: 120%; left: -18%; top: -40%; background: var(--ambient-deep); }
+.blob-b { width: 60%; height: 110%; right: -14%; bottom: -46%; background: var(--ambient-hot); }
+/* When a real capture arrives it sits above the fallback and wins. */
+.glass-backdrop { z-index: -1; }
+.glass-backdrop:not([src]) { display: none; }
+
+.content {
+  position: relative;
+  z-index: 10;
+  height: 100%;
+  display: flex; flex-direction: column;
+  gap: 10px;
+  padding: 24px 26px 20px;
+  text-align: center;
+}
+
+h1 {
+  margin: 0;
+  font-size: 17px; font-weight: 650; letter-spacing: .005em;
+  color: var(--text);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .5);
+}
+
+.detail {
+  margin: 0 0 4px;
+  font-size: 12.5px; line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.actions { display: flex; gap: 10px; margin-top: auto; }
+
+.btn {
+  flex: 1;
+  height: 38px; padding: 0 16px;
+  border: 1px solid var(--glass-divider);
+  border-radius: 12px;
+  background: var(--glass-inner);
+  color: var(--text);
+  font: 600 13px/1 var(--font);
+  cursor: default;
+  box-shadow: inset 0 1px var(--glass-inner);
+  transition: background .15s ease, border-color .15s ease, transform .1s ease;
+}
+.btn:hover { background: var(--glass-hover); border-color: var(--glass-border); }
+.btn:active { background: var(--glass-pressed); transform: translateY(1px); }
+.btn:focus-visible { outline: none; box-shadow: var(--focus-ring), inset 0 1px var(--glass-specular); }
+
+.btn-primary {
+  border-color: transparent;
+  background: linear-gradient(95deg, var(--ember-deep), var(--ember-mid) 58%, var(--ember-hot));
+  color: var(--accent-text);
+  box-shadow: 0 6px 18px var(--glass-warm-shadow);
+}
+.btn-primary:hover { filter: brightness(1.1); background: linear-gradient(95deg, var(--ember-deep), var(--ember-mid) 58%, var(--ember-hot)); }
+
+.btn-quiet {
+  flex: none;
+  height: 32px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-dim);
+  font-weight: 500; font-size: 12px;
+  box-shadow: none;
+}
+.btn-quiet:hover { background: var(--glass-inner); color: var(--text); }
+.btn-never:hover { color: var(--error); }
+
+@media (prefers-reduced-motion: reduce) {
+  .shell { animation: none; }
+  .btn { transition: none; }
+}

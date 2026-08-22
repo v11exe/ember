@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' data:; script-src 'self'" />
+  <title>Reopen tabs?</title>
+  <link rel="stylesheet" href="/theme.css" />
+  <link rel="stylesheet" href="/glass.css" />
+  <link rel="stylesheet" href="/session-prompt.css" />
+</head>
+<body>
+  <div class="shell" id="shell" role="dialog" aria-modal="true" aria-labelledby="prompt-title">
+    <!-- Real capture of the page behind, refracted by the glass above it. -->
+    <img class="glass-backdrop" id="backdrop" alt="" />
+    <!-- Fallback light: capturePage returns nothing once the window starts
+         closing, so the glass needs something of its own to refract. -->
+    <span class="ambient" aria-hidden="true">
+      <span class="blob blob-a"></span>
+      <span class="blob blob-b"></span>
+    </span>
+    <span class="glass-wash" aria-hidden="true"></span>
+    <span class="glass-light" aria-hidden="true"></span>
+    <span class="glass-grain" aria-hidden="true"></span>
+
+    <div class="content">
+      <h1 id="prompt-title">Reopen these tabs next time?</h1>
+      <p class="detail" id="detail">Ember can restore this session when you open it again.</p>
+
+      <div class="actions">
+        <button class="btn btn-primary" id="yes" autofocus>Yes</button>
+        <button class="btn" id="no">No</button>
+      </div>
+      <button class="btn btn-quiet" id="always">Yes, and don't ask again</button>
+      <button class="btn btn-quiet btn-never" id="never">No, and don't ask again</button>
+    </div>
+  </div>
+
+  <script src="/session-prompt.js"></script>
+</body>
+</html>

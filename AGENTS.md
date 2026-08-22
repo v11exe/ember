@@ -32,6 +32,9 @@ src/main/{panel,floating-panel}.js bounded dropdown/overlay WebContentsViews
 src/main/bookmarks.js    bookmark HTML parser + atomic JSON userData store
 src/main/history.js      visit log + recently-closed, atomic JSON, capped at 5000
 src/main/downloads.js    live DownloadItem mirror + finished list, atomic JSON
+src/main/settings.js     prefs (sessionRestore, window bounds), atomic JSON
+src/main/session.js      saved tab set for restore-on-launch, sync writes
+src/main/session-prompt.js  close-time "reopen tabs?" dialog on FloatingPanel
 src/main/popup-positioner.js  viewport guard for real extension popup windows
 src/main/{upload-panel,context-menu-panel}.js real file/menu controllers
 src/main/{recent-uploads,upload-files,context-menu-model}.js overlay data/actions
@@ -42,7 +45,8 @@ src/renderer/chrome.*    tab strip, toolbar, extensions panel (html/css/js)
 src/renderer/theme.css   the palette — every colour is defined here, once
 src/renderer/brand.*     exact supplied PNG icon/full-logo mounts
 src/renderer/panel-preload.js  panel bridge + injectBrowserAction()
-src/renderer/pages/      newtab, extensions, upload, context-menu, history, downloads
+src/renderer/pages/      newtab, extensions, upload, context-menu, history, downloads,
+                         session-prompt
 src/renderer/pages/page-glass.js  full-page refraction; reuses upload-optics maps
 src/shared/              IPC/URL/file-filter/floating-geometry contracts
 scripts/smoke.js         boot check
@@ -82,6 +86,8 @@ islands, sidebar outstanding).
   sample the independently aligned raw capture rather than the processed shell.
 - Context-menu outer optics generate an aspect-matched map from the one canonical
   switch map; the selector owns a separately aligned raw-capture sample.
+- `capturePage()` returns an empty image once a window starts closing, so any
+  close-time overlay needs its own light to refract, not just a capture.
 - Files are LF via `.gitattributes`, but Git may hand you CRLF working copies.
   Multi-line string replacement in scripts silently no-ops against those.
   Verify edits landed instead of trusting the write.
@@ -227,6 +233,18 @@ Newest at top. One entry per branch, updated in place. Status:
 - **Touches:** `AGENTS.md`, `src/main/{index,native-backdrop}.js`, `src/main/page-preload.js`, `src/shared/{ipc,native-glass}.js`, `src/renderer/pages/{newtab.*,native-glass.js}`, `test/{native-glass,renderer-contracts}.test.js`
 - **Summary:** Make only the new-tab viewport expose a live Windows AccentBlurBehind surface tinted `8C000000`, then layer a configurable DOM-backed Liquid Glass search surface above it so the material visibly blurs a second time. The window root is transparent so the native layers are visible, and teardown is safe after Electron destroys the parent.
 - **For the other agent:** New native-glass configuration and IPC may be added; no `poc/` content, dependencies, files, or commits will enter this branch.
+### 2026-08-22 — Claude Code — Session restore + window state (BRANCH)
+- **Status / Branch:** pushed · `feat/session-restore`
+- **Touches:** `src/main/{settings,session,session-prompt,index}.js`,
+  `src/renderer/pages/session-prompt.*`, `src/renderer/pages/liquid-glass.js`,
+  `test/session.test.js`, `AGENTS.md`
+- **Summary:** Closing with tabs open asks "Reopen these tabs next time?" with
+  Yes / No / Yes-and-don't-ask-again / No-and-don't-ask-again, on the shared
+  captured-backdrop glass. Saved tabs reopen on next launch. Window size and
+  position persist too.
+- **For the other agent:** new stores write `settings.json` and `session.json`
+  in userData. The prompt reuses `FloatingPanel` and the existing
+  `overlay:action` channel with command `session`; no new IPC channels.
 
 ### 2026-08-22 — Claude Code — New tab restyle
 - **Status / Branch:** merged · `main`
