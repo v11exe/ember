@@ -222,6 +222,12 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
+### 2026-08-22 — Codex — Native Glass new-tab integration
+- **Status / Branch:** in-progress · `native-glass`
+- **Touches:** `AGENTS.md`, `src/main/{index,native-backdrop}.js`, `src/main/page-preload.js`, `src/shared/ipc.js`, `src/renderer/pages/{newtab.*,native-glass.js}`, `src/renderer/theme.css`, `test/{native-backdrop,renderer-contracts}.test.js`
+- **Summary:** Make only the new-tab viewport expose a live Windows AccentBlurBehind surface tinted `8C000000`, then layer a configurable DOM-backed Liquid Glass search surface above it so the material visibly blurs a second time.
+- **For the other agent:** New native-glass configuration and IPC may be added; no `poc/` content, dependencies, files, or commits will enter this branch.
+
 ### 2026-08-22 — Claude Code — New tab restyle
 - **Status / Branch:** merged · `main`
 - **Touches:** `src/renderer/pages/newtab.{html,css,js}`
@@ -324,4 +330,3 @@ Newest at top. One entry per branch, updated in place. Status:
   treatment to upload controls and recent-file cards.
 - **For the other agent:** upload state adds an opening token only; all existing
   upload action names and payload contracts remain unchanged.
-
