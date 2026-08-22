@@ -48,6 +48,7 @@ src/renderer/brand.*     exact supplied PNG icon/full-logo mounts
 src/renderer/panel-preload.js  panel bridge + injectBrowserAction()
 src/renderer/pages/      newtab, extensions, upload, context-menu, history, downloads,
                          session-prompt, settings
+src/renderer/pages/liquid-glass-ui.{js,css}  shared page material + selector lens
 src/renderer/pages/page-glass.js  full-page refraction; reuses upload-optics maps
 src/renderer/pages/backdrop-contrast.js  flags light captures so overlays flip palette
 src/shared/              IPC/URL/file-filter/floating-geometry contracts
@@ -100,6 +101,19 @@ islands, sidebar outstanding).
 - Overlays refract the page behind them, so over a white page light text
   vanishes. `backdrop-contrast.js` measures the capture and sets
   `data-backdrop="light"`, which flips the palette tokens in `glass.css`.
+- `isNativeGlassUrl` covers newtab, history, downloads and settings; those pages
+  ride the native window material and must paint no background of their own.
+  `body.native-glass-page` (liquid-glass-ui.css) does that and hides `.ambient`.
+- Their surfaces are the new-tab search material, mounted by
+  `liquid-glass-ui.js` on `[data-lg]`. The layers are real children, so
+  `element.textContent = …` wipes them — use `EmberLiquidGlass.setLabel()`;
+  children keep any `position`/`z-index` they already declare. List hover is
+  the dropdown's selector lens, `attachLens(host, { items })`, re-callable after
+  a re-render. The aberration pushes blue 40px, so `.lg-warp` overhangs by
+  `--lg-bleed` and `.lg` clips it — without that a small control loses its fill.
+- `ember://extensions` is the dropdown panel's own document and needs
+  `window.emberPanel`, which only the panel preload provides. As a tab it renders
+  an empty shell, which is why it stays off the native glass list.
 - Shortcuts live only in main (`before-input-event`); the renderer must not
   duplicate them or they double-fire when the chrome view has focus.
 - `browser` is the focused window; `browsers` holds them all. Private windows
@@ -110,7 +124,7 @@ islands, sidebar outstanding).
 
 **Not yet set up** (don't go looking): TS config, linter, CI,
 CODEOWNERS, branch protection, `electron-updater`, tab reordering/drag,
-downloads, private windows, settings page.
+find bar, `ember://extensions` as a real tab.
 
 **Decided, don't relitigate:** `WebContentsView` not `BrowserView` · frameless
 window with custom controls · omnibox falls back to Google search · extensions
@@ -244,6 +258,21 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
+### 2026-08-22 — Claude Code — Native glass on every internal page
+- **Status / Branch:** pushed · `feat/glass-internal-pages`
+- **Touches:** `src/shared/native-glass.js`,
+  `src/renderer/pages/{liquid-glass-ui.js,liquid-glass-ui.css,history.*,downloads.*,settings.*}`,
+  `test/{native-glass,liquid-glass-ui}.test.js`
+- **Summary:** The Windows AccentBlurBehind surface now backs history, downloads
+  and settings as well as the new tab, so they sit on the same translucent window
+  instead of the ambient purple-orange wash. Every surface on those pages is the
+  new-tab search material (same blur, saturation, aberration and rim; elasticity
+  0) and lists hover with the dropdown menu's sliding selector lens.
+- **For the other agent:** `isNativeGlassUrl` now matches those four URLs — for
+  new-tab-only behaviour compare against `NEW_TAB_URL` directly. New shared
+  renderer modules `liquid-glass-ui.{js,css}` are served from `pages/`;
+  `page-glass.js` is now used only by whatever still opts into it.
+
 ### 2026-08-22 — Claude Code — Shortcuts, multi-window, light-backdrop glass
 - **Status / Branch:** merged · `main`
 - **Touches:** `src/main/{shortcuts,index,tabs}.js`, `src/shared/ipc.js`,
@@ -343,13 +372,3 @@ Newest at top. One entry per branch, updated in place. Status:
   that was absent from this upload branch without changing menu commands.
 - **For the other agent:** restoring the context-menu renderer and its captured
   backdrop contracts; upload actions and the new upload optics stay untouched.
-
-### 2026-08-21 — Codex — Context-menu popover motion and proportions
-- **Status / Branch:** pushed · `fix/context-menu-open-motion`
-- **Touches:** `AGENTS.md`, `agent.md`, `src/main/context-menu-panel.js`,
-  `src/renderer/pages/{context-menu.css,context-menu.js}`,
-  `test/{context-menu-panel,renderer-contracts}.test.js`
-- **Summary:** Tune the compact glass menu's reference dimensions and its
-  reduced-motion-safe opening transition without replaying on relayout.
-- **For the other agent:** its captured-texture and selector contracts remain unchanged.
-

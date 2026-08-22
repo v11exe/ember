@@ -6,8 +6,9 @@
   <link rel="stylesheet" href="/theme.css" />
   <link rel="stylesheet" href="/history.css" />
   <link rel="stylesheet" href="/settings.css" />
+  <link rel="stylesheet" href="/liquid-glass-ui.css" />
 </head>
-<body>
+<body class="native-glass-page">
   <div class="ambient" aria-hidden="true">
     <span class="blob blob-a"></span>
     <span class="blob blob-b"></span>
@@ -23,47 +24,47 @@
 
   <main class="layout settings-layout">
     <section class="results" id="results">
-      <section class="card glass" data-glass style="--enter: 1">
+      <section class="card" data-lg style="--enter: 1">
         <div class="card-head"><span>On startup</span></div>
         <div class="setting">
           <div class="setting-text">
             <div class="setting-name">When you close Ember</div>
             <p class="setting-detail" id="startup-detail">Choose whether your open tabs come back next time.</p>
           </div>
-          <div class="segmented" id="session-restore" role="radiogroup" aria-label="When you close Ember"></div>
+          <div class="segmented" id="session-restore" data-lg role="radiogroup" aria-label="When you close Ember"></div>
         </div>
       </section>
 
-      <section class="card glass" data-glass style="--enter: 2">
+      <section class="card" data-lg style="--enter: 2">
         <div class="card-head"><span>Browsing data</span></div>
         <div class="setting">
           <div class="setting-text">
             <div class="setting-name">History</div>
             <p class="setting-detail">Pages you have visited, kept on this machine.</p>
           </div>
-          <button class="pill glass-pill" data-open="ember://history">Open history</button>
+          <button class="pill lg-button lg-sm" data-lg data-open="ember://history">Open history</button>
         </div>
         <div class="setting">
           <div class="setting-text">
             <div class="setting-name">Downloads</div>
             <p class="setting-detail">Files you have saved, and anything still transferring.</p>
           </div>
-          <button class="pill glass-pill" data-open="ember://downloads">Open downloads</button>
+          <button class="pill lg-button lg-sm" data-lg data-open="ember://downloads">Open downloads</button>
         </div>
       </section>
 
-      <section class="card glass" data-glass style="--enter: 3">
+      <section class="card" data-lg style="--enter: 3">
         <div class="card-head"><span>Extensions</span></div>
         <div class="setting">
           <div class="setting-text">
             <div class="setting-name">Installed extensions</div>
             <p class="setting-detail">Add from the Chrome Web Store, where the install button reads “Add to Ember”.</p>
           </div>
-          <button class="pill glass-pill" data-open="ember://extensions">Manage</button>
+          <button class="pill lg-button lg-sm" data-lg data-open="ember://extensions">Manage</button>
         </div>
       </section>
 
-      <section class="card glass" data-glass style="--enter: 4">
+      <section class="card" data-lg style="--enter: 4">
         <div class="card-head"><span>About</span></div>
         <div class="setting">
           <div class="setting-text">
@@ -76,8 +77,7 @@
     </section>
   </main>
 
-  <script src="/upload-optics.js"></script>
-  <script src="/page-glass.js"></script>
+  <script src="/liquid-glass-ui.js"></script>
   <script src="/settings.js"></script>
 </body>
 </html>

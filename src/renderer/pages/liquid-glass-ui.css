@@ -1,0 +1,184 @@
+/* Shared Liquid Glass UI — one material for every ember:// page.
+ *
+ * The new tab search pill is the reference. Its numbers come from
+ * NATIVE_GLASS_DEFAULTS.search (shared/native-glass.js): blur 4 + .05 * 32,
+ * saturation 95%, aberration 20, and a two-pass screen/overlay rim. The only
+ * value that changes here is elasticity, which is 0 — surfaces stay put under
+ * the cursor instead of stretching towards it. The directional highlight still
+ * tracks the pointer, because that was never an elasticity term.
+ *
+ * Hover comes from the dropdown menu: a pill-shaped lens that slides between
+ * rows on the same 170ms curve, refracting the surface it sits on.
+ *
+ * liquid-glass-ui.js builds the aberration filter and mounts the layers; this
+ * file owns everything that does not need measuring.
+ */
+
+@property --lens-x { syntax: '<length>'; inherits: true; initial-value: 0px; }
+@property --lens-y { syntax: '<length>'; inherits: true; initial-value: 0px; }
+@property --lens-width { syntax: '<length>'; inherits: true; initial-value: 0px; }
+@property --lens-height { syntax: '<length>'; inherits: true; initial-value: 0px; }
+
+:root {
+  --lg-blur: 5.6px;         /* 4 + blurAmount(.05) * 32 */
+  --lg-saturation: 95%;
+  --lg-tint: rgba(255, 255, 255, .055);
+  --lg-tint-hover: rgba(255, 255, 255, .095);
+  --lg-tint-pressed: rgba(255, 255, 255, .14);
+  /* The aberration pushes the blue channel 40px; without material to spare, a
+     small control's warp is displaced clean off itself. .lg clips the excess. */
+  --lg-bleed: 48px;
+  --lg-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+  --lg-shadow-sm: 0 6px 18px rgba(0, 0, 0, .22);
+  --lg-motion: 170ms cubic-bezier(.5, 0, .1, 1);
+  /* The rim the dropdown's selector lens wears, reused by every hover state. */
+  --lg-lens-rim:
+    inset 0 0 0 1px rgba(255, 255, 255, .11),
+    inset 2px 1px 0 -1px rgba(255, 255, 255, .52),
+    inset -1.5px -1px 0 -1px rgba(255, 255, 255, .36),
+    inset -1px 2px 3px -1px rgba(0, 0, 0, .14),
+    inset 0 -4px 1px -3px rgba(0, 0, 0, .1),
+    0 3px 7px rgba(0, 0, 0, .12);
+}
+
+/* ---------------------------------------------------------------------------
+   The window is the background.
+
+   NativeBackdrop paints a live AccentBlurBehind surface behind every internal
+   page, so the page must not paint over it. The ambient blob wash these pages
+   used to carry is what it replaces.
+   --------------------------------------------------------------------------- */
+html:has(body.native-glass-page),
+body.native-glass-page {
+  background: transparent;
+}
+body.native-glass-page {
+  /* Text sits on whatever is behind the window, so it carries its own contrast,
+     exactly like the dropdown menu's labels do. */
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .82), 0 0 4px rgba(0, 0, 0, .3);
+}
+.native-glass-page .ambient { display: none; }
+
+/* ---------------------------------------------------------------------------
+   The material
+   --------------------------------------------------------------------------- */
+.lg {
+  position: relative;
+  border: 0;
+  background: transparent;
+  box-shadow: var(--lg-shadow);
+  overflow: hidden;
+  transition: box-shadow var(--dur-2) var(--ease), transform var(--dur-1) var(--ease);
+}
+.lg-sm { box-shadow: var(--lg-shadow-sm); }
+
+.lg-layer {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+/* Real content sits above the optical layers. liquid-glass-ui.js positions and
+   raises the children that have no opinion of their own, so text nodes cannot
+   fall behind the warp and a control that layers itself keeps its own order. */
+
+/* backdrop-filter and the aberration filter are set inline, because both depend
+   on the material the main process hands the page. */
+.lg-warp {
+  z-index: 0;
+  inset: calc(-1 * var(--lg-bleed));
+  border-radius: 0;
+  background: var(--lg-tint);
+  transition: background var(--dur-1) var(--ease-soft);
+}
+
+.lg-highlight {
+  z-index: 2;
+  padding: 1.5px;
+  mix-blend-mode: screen;
+  opacity: .2;
+  background: linear-gradient(
+    var(--lg-angle, 135deg),
+    transparent 0%,
+    rgba(255, 255, 255, var(--lg-highlight, .12)) 36%,
+    rgba(255, 255, 255, .45) 66%,
+    transparent 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  box-shadow:
+    0 0 0 .5px rgba(255, 255, 255, .5) inset,
+    0 1px 3px rgba(255, 255, 255, .25) inset,
+    0 1px 4px rgba(0, 0, 0, .35) inset;
+}
+.lg-highlight-overlay { mix-blend-mode: overlay; }
+
+/* ---------------------------------------------------------------------------
+   Interactive glass — buttons, pills, controls.
+   No elasticity: nothing stretches or leans towards the cursor. The lit rim and
+   the press are all that move.
+   --------------------------------------------------------------------------- */
+.lg-button { cursor: default; color: var(--text); }
+.lg-button:hover .lg-warp { background: var(--lg-tint-hover); }
+.lg-button:hover { box-shadow: var(--lg-shadow-sm), var(--lg-lens-rim); }
+.lg-button:active .lg-warp { background: var(--lg-tint-pressed); }
+.lg-button:active { transform: scale(.985); }
+.lg-button:focus-visible { outline: none; box-shadow: var(--focus-ring), var(--lg-lens-rim); }
+.lg-button:disabled { opacity: .45; }
+.lg-button:disabled:hover { box-shadow: var(--lg-shadow-sm); }
+.lg-button:disabled:hover .lg-warp { background: var(--lg-tint); }
+
+/* Accent glass keeps the ember identity without going opaque. */
+.lg-accent .lg-warp {
+  background:
+    linear-gradient(95deg, rgba(232, 65, 15, .42), rgba(255, 138, 31, .34) 58%, rgba(255, 201, 60, .30));
+}
+.lg-accent { color: var(--ember-light); }
+.lg-accent:hover .lg-warp {
+  background:
+    linear-gradient(95deg, rgba(232, 65, 15, .58), rgba(255, 138, 31, .50) 58%, rgba(255, 201, 60, .44));
+}
+
+/* ---------------------------------------------------------------------------
+   Selector lens — the dropdown menu's hover, on any list.
+   --------------------------------------------------------------------------- */
+.lg-lens-host { position: relative; }
+.lg-lens-host > *:not(.lg-lens):not(.lg-layer) { position: relative; z-index: 1; }
+
+.lg-lens {
+  position: absolute;
+  left: 0; top: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  width: var(--lens-width);
+  height: var(--lens-height);
+  border-radius: var(--lens-radius, 999px);
+  transform: translate3d(var(--lens-x), var(--lens-y), 0);
+  transition:
+    --lens-x var(--lg-motion), --lens-y var(--lg-motion),
+    --lens-width var(--lg-motion), --lens-height var(--lg-motion),
+    opacity 70ms linear, visibility 0s linear 70ms;
+  opacity: 0;
+  visibility: hidden;
+  will-change: transform;
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturation));
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturation));
+}
+.lg-lens::after {
+  content: '';
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  background-color: rgba(255, 255, 255, .095);
+  box-shadow: var(--lg-lens-rim);
+}
+.lg-lens[data-visible="true"] {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --lg-motion: 1ms linear; }
+  .lg-button:active { transform: none; }
+}
