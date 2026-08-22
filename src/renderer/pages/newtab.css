@@ -1,7 +1,6 @@
 * { box-sizing: border-box; }
-html, body { height: 100%; margin: 0; }
+html, body { height: 100%; margin: 0; background: transparent; }
 body {
-  background: var(--bg);
   color: var(--text);
   font-family: var(--font);
   display: grid;
@@ -11,7 +10,7 @@ body {
 ::selection { background: var(--accent-halo); }
 
 /* Ambient light the glass refracts, same system as history and downloads. */
-.ambient { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+.ambient { display: none; }
 .ambient::after {
   content: ""; position: absolute; inset: 0;
   background: linear-gradient(180deg, var(--ambient-veil), var(--ambient-veil-2));
@@ -51,63 +50,22 @@ body {
   letter-spacing: .01em;
 }
 
-/* ---------- search ---------- */
-.search {
-  position: relative;
-  display: flex; align-items: center; gap: 12px;
-  height: 58px; padding: 0 8px 0 20px;
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  border-radius: 999px;
-  backdrop-filter: blur(18px) saturate(1.45);
-  -webkit-backdrop-filter: blur(18px) saturate(1.45);
-  box-shadow:
-    0 26px 62px var(--glass-shadow),
-    0 3px 12px var(--glass-warm-shadow),
-    inset 0 1px var(--glass-specular),
-    inset 0 -1px var(--glass-inner);
-  transition: border-color .16s ease, box-shadow .16s ease;
-}
-.search::after {
-  content: '';
-  position: absolute; inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  background:
-    radial-gradient(120% 60% at 12% -10%, var(--glass-specular), transparent 60%),
-    radial-gradient(60% 40% at 96% 4%, var(--glass-inner), transparent 70%);
-  mix-blend-mode: screen;
-  opacity: .9;
-}
-.search:focus-within {
-  border-color: var(--ember-mid);
-  box-shadow:
-    0 0 0 3px var(--accent-halo),
-    0 26px 62px var(--glass-shadow),
-    inset 0 1px var(--glass-specular);
-}
-.search-icon { width: 18px; height: 18px; flex: none; fill: none; stroke: var(--text-faint); stroke-width: 1.6; stroke-linecap: round; }
-.search:focus-within .search-icon { stroke: var(--ember-warm); }
-.search input {
-  flex: 1; height: 100%; min-width: 0;
-  border: 0; background: transparent; outline: none;
-  color: var(--text); font-size: 15.5px; font-family: inherit;
-}
-.search input::placeholder { color: var(--text-faint); }
-
-.go {
-  position: relative;
-  flex: none; height: 42px; padding: 0 22px;
-  border: 0; border-radius: 999px;
-  background: linear-gradient(95deg, var(--ember-deep), var(--ember-mid) 58%, var(--ember-hot));
-  color: var(--accent-text);
-  font: 600 13px/1 var(--font);
-  cursor: default;
-  box-shadow: 0 6px 18px var(--glass-warm-shadow);
-  transition: filter .15s ease, transform .1s ease;
-}
-.go:hover { filter: brightness(1.1); }
-.go:active { transform: translateY(1px); }
+/* ---------- LiquidGlass search: the glass owns every optical layer ---------- */
+#native-liquid-glass { height: 58px; }
+.liquid-glass-root { position: relative; width: 100%; height: 58px; transition: transform .2s ease-out; will-change: transform; }
+.liquid-glass-filter { position: absolute; width: 100%; height: 100%; pointer-events: none; }
+.glass { position: relative; display: inline-flex; align-items: center; width: 100%; height: 100%; padding: var(--glass-padding); overflow: hidden; border-radius: var(--glass-radius); box-sizing: border-box; box-shadow: 0 12px 40px rgba(0, 0, 0, .25); transition: all .2s ease-in-out; }
+.glass__warp { position: absolute; inset: 0; border-radius: inherit; }
+.glass__content { position: relative; z-index: 1; width: 100%; color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.4); }
+.liquid-glass-highlight { position: absolute; inset: 0; padding: 1.5px; pointer-events: none; border-radius: var(--glass-radius); mix-blend-mode: screen; opacity: .2; background: linear-gradient(var(--glass-angle, 135deg), transparent 0%, rgba(255,255,255,var(--glass-highlight,.12)) 36%, rgba(255,255,255,.45) 66%, transparent 100%); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; box-shadow: 0 0 0 .5px rgba(255,255,255,.5) inset, 0 1px 3px rgba(255,255,255,.25) inset, 0 1px 4px rgba(0,0,0,.35); }
+.liquid-glass-highlight-overlay { mix-blend-mode: overlay; }
+.liquid-glass-search { display: flex; align-items: center; gap: 13px; width: 100%; height: 100%; min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; color: #fff; }
+.liquid-glass-search-icon { width: 21px; height: 21px; flex: none; color: #fff; opacity: .98; }
+.liquid-glass-search input { flex: 1; min-width: 0; height: 100%; margin: 0; padding: 0; border: 0; outline: none; appearance: none; background: transparent; color: #fff; caret-color: #fff; font: 600 15.5px/1 var(--font); text-shadow: 0 2px 12px rgba(0,0,0,.4); }
+.liquid-glass-search input:focus, .liquid-glass-search input:focus-visible { outline: 0 !important; border: 0 !important; box-shadow: none !important; }
+.liquid-glass-search input::placeholder { color: rgba(255,255,255,.92); opacity: 1; }
+.liquid-glass-search input::-webkit-search-cancel-button { display: none; }
+.liquid-glass-search > button { flex: none; padding: 0; border: 0; outline: none; background: transparent; color: #fff; font: 600 13px/1 var(--font); cursor: default; }
 
 /* ---------- quick links ---------- */
 .tiles {
@@ -155,4 +113,5 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
+  .liquid-glass-root { transform: none !important; }
 }

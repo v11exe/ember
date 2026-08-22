@@ -1,6 +1,7 @@
 const path = require('node:path')
 const { WebContentsView } = require('electron')
 const { IPC, NEW_TAB_URL } = require('../shared/ipc')
+const { isNativeGlassUrl } = require('../shared/native-glass')
 
 const CHROME_HEIGHT = 84 // tab strip (38) + toolbar (46)
 const BOOKMARKS_HEIGHT = 30
@@ -39,7 +40,7 @@ class TabManager {
         preload: path.join(__dirname, 'page-preload.js'),
       },
     })
-    view.setBackgroundColor('#000000')
+    view.setBackgroundColor(isNativeGlassUrl(url) ? '#00000000' : '#000000')
 
     const tab = { id: nextId++, view, title: 'New tab', url, favicon: null, loading: false }
     this.tabs.push(tab)
@@ -75,8 +76,13 @@ class TabManager {
     wc.on('page-title-updated', (_e, title) => { tab.title = title; this.onVisitDetail?.({ url: wc.getURL(), title }); this.emit() })
     wc.on('did-start-loading', () => { tab.loading = true; this.emit() })
     wc.on('did-stop-loading', () => { tab.loading = false; sync() })
-    wc.on('did-navigate', (_e, url) => { sync(); this.onVisit?.({ url, title: wc.getTitle(), favicon: tab.favicon }) })
-    wc.on('did-navigate-in-page', sync)
+    const navigationChanged = () => {
+      sync()
+      tab.view.setBackgroundColor(isNativeGlassUrl(tab.url) ? '#00000000' : '#000000')
+      this.onNavigationChange?.(tab)
+    }
+    wc.on('did-navigate', (_e, url) => { navigationChanged(); this.onVisit?.({ url, title: wc.getTitle(), favicon: tab.favicon }) })
+    wc.on('did-navigate-in-page', navigationChanged)
     wc.on('page-favicon-updated', (_e, icons) => { tab.favicon = icons[0] || null; this.onVisitDetail?.({ url: wc.getURL(), favicon: tab.favicon }); this.emit() })
     wc.on('destroyed', () => this.#forget(tab.id))
     // clicking back into the page dismisses any open chrome dropdown

@@ -16,11 +16,13 @@ const { PopupPositioner } = require('./popup-positioner')
 const { RecentUploadStore } = require('./recent-uploads')
 const { UploadPanel } = require('./upload-panel')
 const { ContextMenuPanel } = require('./context-menu-panel')
+const { NativeBackdrop } = require('./native-backdrop')
+const { NATIVE_GLASS_DEFAULTS, snapshotNativeGlassSettings } = require('../shared/native-glass')
 
 if (process.env.EMBER_SMOKE_USER_DATA) app.setPath('userData', process.env.EMBER_SMOKE_USER_DATA)
 registerSchemePrivileges()
 
-/** @type {{ win: BaseWindow, chrome: WebContentsView, tabs: TabManager, uploadPanel: UploadPanel, contextMenu: ContextMenuPanel }|null} */
+/** @type {{ win: BaseWindow, chrome: WebContentsView, tabs: TabManager, uploadPanel: UploadPanel, contextMenu: ContextMenuPanel, nativeBackdrop: NativeBackdrop }|null} */
 let browser = null
 
 function broadcastBookmarks(snapshot) {
@@ -39,10 +41,12 @@ function createBrowser() {
     minWidth: 620,
     minHeight: 420,
     frame: false,
+    transparent: true,
     icon: path.join(__dirname, '..', 'renderer', 'assets', 'ember-app-icon.png'),
-    backgroundColor: '#000000',
+    backgroundColor: '#00000000',
     title: 'Ember',
   })
+  const nativeBackdrop = new NativeBackdrop(win, { userDataPath: app.getPath('userData') })
 
   const chrome = new WebContentsView({
     webPreferences: {
@@ -87,7 +91,7 @@ function createBrowser() {
   })
   browser = {
     win, chrome, tabs, panel, bookmarks, history, downloads, recentUploads, recentUploadsReady,
-    uploadPanel, contextMenu, smokeClipboard, smokeUploadPaths, popupPositioner: null,
+    uploadPanel, contextMenu, smokeClipboard, smokeUploadPaths, nativeBackdrop, popupPositioner: null,
   }
   tabs.onPageFocus = () => { panel.hide(); uploadPanel.cancel(); contextMenu.hide() }
   tabs.onVisit = (visit) => history.record(visit)
@@ -101,7 +105,13 @@ function createBrowser() {
   session.defaultSession.on('will-download', (_event, item) => downloads.track(item))
   tabs.onVisitDetail = (detail) => history.decorate(detail.url, detail)
   tabs.onTabClosed = (tab) => history.noteClosedTab(tab)
-  tabs.onSelectionChange = () => { panel.hide(); uploadPanel.cancel(); contextMenu.hide() }
+  tabs.onSelectionChange = (tab) => {
+    panel.hide(); uploadPanel.cancel(); contextMenu.hide()
+    nativeBackdrop.setActiveUrl(tab.url)
+  }
+  tabs.onNavigationChange = (tab) => {
+    if (tabs.active?.id === tab.id) nativeBackdrop.setActiveUrl(tab.url)
+  }
   tabs.onContextMenu = (tab, event, params) => {
     event.preventDefault()
     panel.hide()
@@ -146,7 +156,7 @@ function createBrowser() {
   win.on('resize', () => {
     tabs.layout(); panel.layout(); uploadPanel.layout(); contextMenu.layout(); browser?.popupPositioner?.layout()
   })
-  win.on('closed', () => { browser = null })
+  win.on('closed', () => { nativeBackdrop.destroy(); browser = null })
   return browser
 }
 
@@ -255,6 +265,7 @@ ipcMain.handle(IPC.DOWNLOADS_ACTION, async (_e, { action, id } = {}) => {
   return store.snapshot()
 })
 
+ipcMain.handle(IPC.NATIVE_GLASS_SETTINGS, () => snapshotNativeGlassSettings(NATIVE_GLASS_DEFAULTS))
 const emptyHistory = { version: 1, entries: [], recentlyClosed: [] }
 ipcMain.handle(IPC.HISTORY_QUERY, () => browser?.history.snapshot() || emptyHistory)
 ipcMain.handle(IPC.HISTORY_DELETE, async (_e, ids) => {

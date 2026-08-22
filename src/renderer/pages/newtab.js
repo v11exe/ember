@@ -34,21 +34,21 @@ tiles.replaceChildren(...LINKS.map(({ name, url, mark }) => {
   return el
 }))
 
-document.getElementById('search-form').addEventListener('submit', (e) => {
-  e.preventDefault()
-  const q = document.getElementById('q').value.trim()
-  if (q) nav(q) // main resolves URL-vs-search via shared/urls.js
-})
+function bindSearch() {
+  const form = document.getElementById('search-form')
+  if (!form || form.dataset.bound) return
+  form.dataset.bound = 'true'
+  form.addEventListener('submit', (e) => {
+    e.preventDefault()
+    const q = document.getElementById('q').value.trim()
+    if (q) nav(q) // main resolves URL-vs-search via shared/urls.js
+  })
+  document.getElementById('q').focus()
+}
+document.addEventListener('native-liquid-glass-ready', bindSearch)
+bindSearch()
 
 document.querySelector('[data-store]').onclick = () => {
   if (window.ember?.openStore) window.ember.openStore()
   else nav('https://chromewebstore.google.com/')
 }
-
-// Same refraction system as history and downloads.
-if (window.EmberPageGlass && window.EmberUploadOptics) {
-  const glass = window.EmberPageGlass.createPageGlass(document, window.EmberUploadOptics, { selector: '[data-glass]' })
-  glass.refresh().then(() => glass.observe())
-}
-
-document.getElementById('q').focus()
