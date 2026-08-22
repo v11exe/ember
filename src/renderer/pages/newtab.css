@@ -23,7 +23,7 @@ body {
 .hero > * { animation: hero-in var(--dur-3) var(--ease) backwards; }
 .logo { animation-delay: 40ms }
 .tagline { animation-delay: 110ms }
-.search { animation-delay: 170ms }
+#native-liquid-glass { animation-delay: 170ms }
 .tiles { animation-delay: 230ms }
 .foot { animation-delay: 290ms }
 @keyframes hero-in {
