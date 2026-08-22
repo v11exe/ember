@@ -41,6 +41,8 @@ test('new tab keeps Ember content above configurable native double-blur layers',
   assert.doesNotMatch(css, /\.search\s*\{/)
   assert.match(css, /\.liquid-glass-search[\s\S]+background:\s*transparent/)
   assert.match(css, /\.liquid-glass-search[\s\S]+border:\s*0/)
+  assert.match(css, /\.liquid-glass-search input:focus[\s\S]+outline:\s*0\s*!important/)
+  assert.match(css, /\.liquid-glass-search input:focus[\s\S]+box-shadow:\s*none\s*!important/)
   assert.match(main, /transparent:\s*true/)
   assert.match(main, /backgroundColor:\s*'#00000000'/)
 })
