@@ -222,6 +222,16 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
+### 2026-08-22 — Claude Code — New tab restyle
+- **Status / Branch:** merged · `main`
+- **Touches:** `src/renderer/pages/newtab.{html,css,js}`
+- **Summary:** New tab now matches the browser: ambient wash, refracting glass
+  search pill via `page-glass.js`, tagline line, glass quick-link tiles. Colours
+  come from theme tokens only.
+- **For the other agent:** the meteor + Necosmic masthead is untouched and its
+  contract test still passes. A proposed mockup replaces it with a sparkle plus a
+  letter-spaced sans wordmark — not done, since that is your branding call.
+
 ### 2026-08-22 — Claude Code — Downloads page + real page glass
 - **Status / Branch:** pushed · `feat/downloads-and-page-glass`
 - **Touches:** `src/main/{downloads,index}.js`, `src/shared/ipc.js`,
@@ -314,10 +324,4 @@ Newest at top. One entry per branch, updated in place. Status:
   treatment to upload controls and recent-file cards.
 - **For the other agent:** upload state adds an opening token only; all existing
   upload action names and payload contracts remain unchanged.
-
-### 2026-08-21 — Codex — Transparent meteor branding
-- **Status / Branch:** pushed · `feat/transparent-meteor-branding`
-- **Touches:** `AGENTS.md`, `src/main/{index,protocol}.js`, `src/renderer/{brand,chrome}.*`, `src/renderer/pages/newtab.*`, `src/renderer/assets/{ember-icon.png,Necosmic-PersonalUse.otf}`, `scripts/capture-ui.js`, `test/{brand,renderer-contracts}.test.js`
-- **Summary:** Make the supplied transparent meteor the one icon asset throughout Ember; compose the new-tab masthead from it and a dedicated Necosmic `ember` wordmark.
-- **For the other agent:** replaces active combined-logo use and adds a bundled font route; browser functionality and IPC contracts are unchanged.
 

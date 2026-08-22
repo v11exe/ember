@@ -9,10 +9,17 @@
   <link rel="stylesheet" href="/newtab.css" />
 </head>
 <body>
+  <div class="ambient" aria-hidden="true">
+    <span class="blob blob-a"></span>
+    <span class="blob blob-b"></span>
+    <span class="blob blob-c"></span>
+  </div>
+
   <main class="hero">
     <div class="logo" id="ember-brand"></div>
+    <p class="tagline">Private by default · Search runs on Google</p>
 
-    <form class="search" id="search-form" role="search">
+    <form class="search" id="search-form" role="search" data-glass>
       <svg class="search-icon" viewBox="0 0 16 16" aria-hidden="true">
         <circle cx="7" cy="7" r="4.5" /><path d="M10.5 10.5L14 14" />
       </svg>
@@ -31,6 +38,8 @@
   </main>
 
   <script src="/brand.js"></script>
+  <script src="/upload-optics.js"></script>
+  <script src="/page-glass.js"></script>
   <script src="/newtab.js"></script>
 </body>
 </html>

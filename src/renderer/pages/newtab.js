@@ -45,4 +45,10 @@ document.querySelector('[data-store]').onclick = () => {
   else nav('https://chromewebstore.google.com/')
 }
 
+// Same refraction system as history and downloads.
+if (window.EmberPageGlass && window.EmberUploadOptics) {
+  const glass = window.EmberPageGlass.createPageGlass(document, window.EmberUploadOptics, { selector: '[data-glass]' })
+  glass.refresh().then(() => glass.observe())
+}
+
 document.getElementById('q').focus()
