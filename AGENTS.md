@@ -244,6 +244,21 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
+### 2026-08-22 — Claude Code — Native glass on every internal page
+- **Status / Branch:** in-progress · `feat/glass-internal-pages`
+- **Touches:** `src/shared/native-glass.js`, `src/main/{index,tabs}.js`,
+  `src/renderer/pages/{liquid-glass-ui.js,liquid-glass-ui.css,history.css,downloads.*,settings.*,history.*,extensions.*,newtab.css}`,
+  `test/{native-glass,liquid-glass-ui}.test.js`
+- **Summary:** The Windows AccentBlurBehind surface now backs every `ember://`
+  page, not just the new tab, so history/downloads/settings/extensions sit on the
+  same translucent window instead of the ambient purple-orange wash. Buttons,
+  rows and cards on those pages use the new-tab search material (same blur,
+  saturation, aberration and rim, elasticity removed) plus the dropdown menu's
+  sliding selector lens on hover.
+- **For the other agent:** `isNativeGlassUrl` now matches every internal page —
+  if you need new-tab-only behaviour use `NEW_TAB_URL` directly. New shared
+  renderer modules `liquid-glass-ui.{js,css}` are served from `pages/`.
+
 ### 2026-08-22 — Claude Code — Shortcuts, multi-window, light-backdrop glass
 - **Status / Branch:** merged · `main`
 - **Touches:** `src/main/{shortcuts,index,tabs}.js`, `src/shared/ipc.js`,
@@ -343,13 +358,3 @@ Newest at top. One entry per branch, updated in place. Status:
   that was absent from this upload branch without changing menu commands.
 - **For the other agent:** restoring the context-menu renderer and its captured
   backdrop contracts; upload actions and the new upload optics stay untouched.
-
-### 2026-08-21 — Codex — Context-menu popover motion and proportions
-- **Status / Branch:** pushed · `fix/context-menu-open-motion`
-- **Touches:** `AGENTS.md`, `agent.md`, `src/main/context-menu-panel.js`,
-  `src/renderer/pages/{context-menu.css,context-menu.js}`,
-  `test/{context-menu-panel,renderer-contracts}.test.js`
-- **Summary:** Tune the compact glass menu's reference dimensions and its
-  reduced-motion-safe opening transition without replaying on relayout.
-- **For the other agent:** its captured-texture and selector contracts remain unchanged.
-
