@@ -24,6 +24,10 @@ const IPC = {
   BOOKMARKS_GET: 'bookmarks:get',
   BOOKMARKS_IMPORT: 'bookmarks:import',
   BOOKMARKS_VISIBILITY: 'bookmarks:visibility',
+  HISTORY_QUERY: 'history:query',
+  HISTORY_DELETE: 'history:delete',
+  HISTORY_CLEAR: 'history:clear',
+  HISTORY_OPEN: 'history:open',
   UPLOAD_REQUEST: 'upload:request',
   OVERLAY_ACTION: 'overlay:action',
   OVERLAY_CLOSE: 'overlay:close',
@@ -40,6 +44,7 @@ const IPC = {
 // Where the omnibox sends anything that isn't a URL.
 const SEARCH_URL = 'https://www.google.com/search?q='
 const NEW_TAB_URL = 'ember://newtab'
+const HISTORY_URL = 'ember://history'
 const WEB_STORE_URL = 'https://chromewebstore.google.com/'
 
-module.exports = { IPC, SEARCH_URL, NEW_TAB_URL, WEB_STORE_URL }
+module.exports = { IPC, SEARCH_URL, NEW_TAB_URL, HISTORY_URL, WEB_STORE_URL }

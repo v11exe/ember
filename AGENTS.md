@@ -30,6 +30,7 @@ src/main/tabs.js         TabManager — create/close/select/layout, CHROME_HEIGH
 src/main/extensions.js   Chrome Web Store install + chrome.* APIs + "Add to Ember"
 src/main/{panel,floating-panel}.js bounded dropdown/overlay WebContentsViews
 src/main/bookmarks.js    bookmark HTML parser + atomic JSON userData store
+src/main/history.js      visit log + recently-closed, atomic JSON, capped at 5000
 src/main/popup-positioner.js  viewport guard for real extension popup windows
 src/main/{upload-panel,context-menu-panel}.js real file/menu controllers
 src/main/{recent-uploads,upload-files,context-menu-model}.js overlay data/actions
@@ -40,7 +41,7 @@ src/renderer/chrome.*    tab strip, toolbar, extensions panel (html/css/js)
 src/renderer/theme.css   the palette — every colour is defined here, once
 src/renderer/brand.*     exact supplied PNG icon/full-logo mounts
 src/renderer/panel-preload.js  panel bridge + injectBrowserAction()
-src/renderer/pages/      newtab, extensions, upload, context-menu pages
+src/renderer/pages/      newtab, extensions, upload, context-menu, history pages
 src/shared/              IPC/URL/file-filter/floating-geometry contracts
 scripts/smoke.js         boot check
 scripts/capture-ui.js    offscreen wide/medium/compact visual QA captures
@@ -48,7 +49,7 @@ test/                    node:test unit/contracts + two real popup fixtures
 ```
 **Milestones** — 1 shell ✅ · 2 tab manager ✅ · 3 chrome UI + IPC ✅ ·
 8 extensions ✅ (built early, out of order) · 4 sessions and partitions ·
-5 adblock + per-site Shields · 6 history/bookmarks/downloads (bookmarks ✅) · 7 GX layer
+5 adblock + per-site Shields · 6 history/bookmarks/downloads (bookmarks ✅, history ✅) · 7 GX layer
 (theming + glass menus/uploads ✅; network limiter, tab discarding, tab
 islands, sidebar outstanding).
 
@@ -67,6 +68,11 @@ islands, sidebar outstanding).
   chrome view to full height instead paints black over the whole page —
   transparency does not work there.
 - Upload/context overlays share `FloatingPanel`; never replace page bounds.
+- Chrome-UI key handlers only fire when the chrome view has focus. Shortcuts that
+  must work while a page is focused (Ctrl+H) go through `before-input-event` in
+  `index.js`, not `chrome.js`.
+- CSS `backdrop-filter` needs colour behind it. Full-page glass (history) paints
+  its own ambient blobs; overlay glass samples a real capture instead.
 - Upload outer optics use an aspect-matched map with a 24px active perimeter;
   recapture its 40px bleed whenever the panel relayouts, and have its hover lens
   sample the independently aligned raw capture rather than the processed shell.
@@ -78,7 +84,7 @@ islands, sidebar outstanding).
 
 **Not yet set up** (don't go looking): TS config, linter, CI,
 CODEOWNERS, branch protection, `electron-updater`, tab reordering/drag,
-history/bookmarks persistence, private windows, settings page.
+downloads, private windows, settings page.
 
 **Decided, don't relitigate:** `WebContentsView` not `BrowserView` · frameless
 window with custom controls · omnibox falls back to Google search · extensions
@@ -212,6 +218,19 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
+### 2026-08-22 — Claude Code — History page (Ctrl+H)
+- **Status / Branch:** pushed · `feat/history-page`
+- **Touches:** `src/main/{history,index,tabs,page-preload}.js`, `src/shared/ipc.js`,
+  `src/renderer/pages/history.{html,css,js}`, `test/history.test.js`, `AGENTS.md`
+- **Summary:** Milestone 6 history. Visit log recorded from tab navigation, stored
+  as capped atomic JSON beside bookmarks.json, surfaced at `ember://history` with
+  Opera One layout (search, date filter, day-grouped cards, recently closed) in
+  Ember colours with liquid-glass surfaces. Ctrl+H opens or focuses the page.
+- **For the other agent:** new channels `history:query|delete|clear|open` and
+  `HISTORY_URL` in `src/shared/ipc.js`. `TabManager` gained optional `onVisit`,
+  `onVisitDetail` and `onTabClosed` hooks — unset by default, so nothing changes
+  if you do not use them.
+
 ### 2026-08-22 — Claude Code — Smoke gate timeout + flake report
 - **Status / Branch:** merged · `main`
 - **Touches:** `scripts/smoke.js`
@@ -300,35 +319,3 @@ Newest at top. One entry per branch, updated in place. Status:
   changing; upload overlay contracts remain unchanged. Coordinate before editing
   the listed files.
 
-### 2026-08-21 — Claude Code — README stays minimal
-- **Status / Branch:** merged · `main`
-- **Touches:** `AGENTS.md`
-- **Summary:** Rule added to §3: `README.md` keeps only its title and one-line
-  description. No expanding it, no second READMEs, no `docs/`.
-- **For the other agent:** if you want something documented, it goes in §0 of
-  this file or a Work Log entry — not into prose files.
-
-### 2026-08-21 — Claude Code — Extensions panel (jigsaw button)
-- **Status / Branch:** merged · `main`
-- **Touches:** `src/main/{index,tabs,extensions,panel}.js`, `src/renderer/{chrome.*,preload,panel-preload}`, `src/renderer/pages/extensions.*`, `src/shared/ipc.js`, `.gitattributes`
-- **Summary:** Puzzle-piece button top right opens a panel listing installed
-  extensions — icon doubles as the launch button, plus version and Remove. The
-  panel is its own `WebContentsView`, popups open leftward, and extensions work
-  at all now that `injectBrowserAction()` is called and `crx://` is handled.
-- **For the other agent:** new channels `ext:list`, `ext:remove`,
-  `panel:toggle|close|resize|origin`. `.gitattributes` normalises to LF. Model
-  any new dropdown on `src/main/panel.js` — never grow the chrome view.
-
-### 2026-08-21 — Claude Code — Browser shell: chrome UI, theme, CWS extensions
-- **Status / Branch:** merged · `main`
-- **Touches:** `src/main/*`, `src/renderer/*`, `src/shared/*`, `scripts/smoke.js`,
-  `package.json`, `README.md`, `AGENTS.md`; deleted root `main.js`
-- **Summary:** Milestones 2, 3 and 8. Tab manager, frameless chrome UI (tab strip,
-  omnibox, window controls), ember:// internal pages, Ember-themed new tab page
-  with Google search, and Chrome Web Store installs rebranded to "Add to Ember".
-- **For the other agent:** the flat root layout is gone — code now lives in
-  `src/main`, `src/renderer`, `src/shared`, and `package.json` main points at
-  `src/main/index.js`. Rebase before you touch anything. All colours come from
-  `src/renderer/theme.css`; don't hardcode hex values elsewhere. Channel names
-  are in `src/shared/ipc.js` — the sandboxed `page-preload.js` inlines three of
-  them by necessity and says so.

@@ -72,12 +72,12 @@ class TabManager {
       this.emit()
     }
 
-    wc.on('page-title-updated', (_e, title) => { tab.title = title; this.emit() })
+    wc.on('page-title-updated', (_e, title) => { tab.title = title; this.onVisitDetail?.({ url: wc.getURL(), title }); this.emit() })
     wc.on('did-start-loading', () => { tab.loading = true; this.emit() })
     wc.on('did-stop-loading', () => { tab.loading = false; sync() })
-    wc.on('did-navigate', sync)
+    wc.on('did-navigate', (_e, url) => { sync(); this.onVisit?.({ url, title: wc.getTitle(), favicon: tab.favicon }) })
     wc.on('did-navigate-in-page', sync)
-    wc.on('page-favicon-updated', (_e, icons) => { tab.favicon = icons[0] || null; this.emit() })
+    wc.on('page-favicon-updated', (_e, icons) => { tab.favicon = icons[0] || null; this.onVisitDetail?.({ url: wc.getURL(), favicon: tab.favicon }); this.emit() })
     wc.on('destroyed', () => this.#forget(tab.id))
     // clicking back into the page dismisses any open chrome dropdown
     wc.on('focus', () => this.onPageFocus?.())
@@ -109,6 +109,7 @@ class TabManager {
   close(id) {
     const tab = this.tabs.find((t) => t.id === id)
     if (!tab) return
+    this.onTabClosed?.({ url: tab.url, title: tab.title, favicon: tab.favicon })
     const wasActive = this.activeId === id
     const index = this.tabs.indexOf(tab)
     this.#forget(id)

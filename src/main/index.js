@@ -3,13 +3,14 @@ const fs = require('node:fs/promises')
 const { pathToFileURL } = require('node:url')
 const { app, BaseWindow, WebContentsView, clipboard, dialog, ipcMain, nativeImage, session, shell } = require('electron')
 
-const { IPC, NEW_TAB_URL, WEB_STORE_URL } = require('../shared/ipc')
+const { IPC, NEW_TAB_URL, HISTORY_URL, WEB_STORE_URL } = require('../shared/ipc')
 const { toNavigationUrl } = require('../shared/urls')
 const { TabManager, CHROME_HEIGHT } = require('./tabs')
 const { setupExtensions, applyStoreRebranding, listExtensions, removeExtension } = require('./extensions')
 const { registerSchemePrivileges, handleInternalPages } = require('./protocol')
 const { ExtensionPanel } = require('./panel')
 const { BookmarkStore } = require('./bookmarks')
+const { HistoryStore } = require('./history')
 const { PopupPositioner } = require('./popup-positioner')
 const { RecentUploadStore } = require('./recent-uploads')
 const { UploadPanel } = require('./upload-panel')
@@ -57,6 +58,7 @@ function createBrowser() {
   const tabs = new TabManager(win, chrome)
   const panel = new ExtensionPanel(win)
   const bookmarks = new BookmarkStore(path.join(app.getPath('userData'), 'bookmarks.json'))
+  const history = new HistoryStore(path.join(app.getPath('userData'), 'history.json'))
   const recentUploads = new RecentUploadStore(path.join(app.getPath('userData'), 'recent-uploads.json'))
   const recentUploadsReady = recentUploads.load().catch((error) => {
     console.warn('[ember] recent uploads could not be loaded:', error.message)
@@ -82,10 +84,13 @@ function createBrowser() {
     createTab: (url) => tabs.create(url), clipboard, dialog,
   })
   browser = {
-    win, chrome, tabs, panel, bookmarks, recentUploads, recentUploadsReady,
+    win, chrome, tabs, panel, bookmarks, history, recentUploads, recentUploadsReady,
     uploadPanel, contextMenu, smokeClipboard, smokeUploadPaths, popupPositioner: null,
   }
   tabs.onPageFocus = () => { panel.hide(); uploadPanel.cancel(); contextMenu.hide() }
+  tabs.onVisit = (visit) => history.record(visit)
+  tabs.onVisitDetail = (detail) => history.decorate(detail.url, detail)
+  tabs.onTabClosed = (tab) => history.noteClosedTab(tab)
   tabs.onSelectionChange = () => { panel.hide(); uploadPanel.cancel(); contextMenu.hide() }
   tabs.onContextMenu = (tab, event, params) => {
     event.preventDefault()
@@ -220,6 +225,21 @@ ipcMain.handle(IPC.BOOKMARKS_IMPORT, async () => {
     return { ok: false, canceled: false, error: error.message, snapshot: browser.bookmarks.snapshot() }
   }
 })
+const emptyHistory = { version: 1, entries: [], recentlyClosed: [] }
+ipcMain.handle(IPC.HISTORY_QUERY, () => browser?.history.snapshot() || emptyHistory)
+ipcMain.handle(IPC.HISTORY_DELETE, async (_e, ids) => {
+  if (!browser) return emptyHistory
+  return browser.history.remove(Array.isArray(ids) ? ids : [ids])
+})
+ipcMain.handle(IPC.HISTORY_CLEAR, async (_e, range) => {
+  if (!browser) return emptyHistory
+  return browser.history.clear(range || {})
+})
+ipcMain.on(IPC.HISTORY_OPEN, (_e, url) => {
+  const target = toNavigationUrl(url)
+  if (target) activeTabs()?.create(target)
+})
+
 ipcMain.on(IPC.BOOKMARKS_VISIBILITY, async (_e, visible) => {
   if (!browser) return
   try {
@@ -243,7 +263,22 @@ ipcMain.on(IPC.WIN_MAXIMIZE, () => {
 ipcMain.on(IPC.WIN_CLOSE, () => browser?.win.close())
 
 // ---------------- app lifecycle ----------------
+function openHistory() {
+  const tabs = activeTabs()
+  if (!tabs) return
+  const existing = tabs.tabs.find((tab) => tab.url.startsWith(HISTORY_URL))
+  if (existing) { tabs.select(existing.id); return }
+  tabs.create(HISTORY_URL)
+}
+
 app.on('web-contents-created', (_e, wc) => {
+  wc.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+    if (!(input.control || input.meta) || input.alt) return
+    if (input.key.toLowerCase() !== 'h') return
+    event.preventDefault()
+    openHistory()
+  })
   applyStoreRebranding(wc)
   // external protocols (mailto:, etc.) go to the OS, never to a tab
   wc.setWindowOpenHandler(({ url }) => {

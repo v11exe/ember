@@ -9,6 +9,10 @@ const { contextBridge, ipcRenderer } = require('electron')
 const NAV_GO = 'nav:go'
 const TAB_CREATE = 'tab:create'
 const EXT_OPEN_STORE = 'ext:open-store'
+const HISTORY_QUERY = 'history:query'
+const HISTORY_DELETE = 'history:delete'
+const HISTORY_CLEAR = 'history:clear'
+const HISTORY_OPEN = 'history:open'
 const UPLOAD_REQUEST = 'upload:request'
 const UPLOAD_RESULT = 'upload:result'
 
@@ -64,5 +68,11 @@ if (location.protocol === 'ember:') {
     navigate: (url) => ipcRenderer.send(NAV_GO, String(url)),
     newTab: (url) => ipcRenderer.send(TAB_CREATE, String(url)),
     openStore: () => ipcRenderer.send(EXT_OPEN_STORE),
+    history: {
+      query: () => ipcRenderer.invoke(HISTORY_QUERY),
+      remove: (ids) => ipcRenderer.invoke(HISTORY_DELETE, ids),
+      clear: (range) => ipcRenderer.invoke(HISTORY_CLEAR, range),
+      open: (url) => ipcRenderer.send(HISTORY_OPEN, String(url)),
+    },
   })
 }
