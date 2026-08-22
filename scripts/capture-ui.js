@@ -53,7 +53,7 @@ async function captureNewTab(size) {
   await win.loadURL('ember://newtab')
   const metrics = await win.webContents.executeJavaScript(`(() => {
     const hero = document.querySelector('.hero').getBoundingClientRect()
-    const search = document.querySelector('.search').getBoundingClientRect()
+    const search = document.querySelector('.liquid-glass-root').getBoundingClientRect()
     return {
       viewport: [innerWidth, innerHeight],
       scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],

@@ -46,8 +46,6 @@ class NativeBackdrop {
     }
   }
 
-  layoutPage() {}
-  layoutSearch() {}
   destroy() { this.destroyed = true; this.sequence += 1 }
 }
 

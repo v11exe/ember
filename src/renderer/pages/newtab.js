@@ -34,15 +34,21 @@ tiles.replaceChildren(...LINKS.map(({ name, url, mark }) => {
   return el
 }))
 
-document.getElementById('search-form').addEventListener('submit', (e) => {
-  e.preventDefault()
-  const q = document.getElementById('q').value.trim()
-  if (q) nav(q) // main resolves URL-vs-search via shared/urls.js
-})
+function bindSearch() {
+  const form = document.getElementById('search-form')
+  if (!form || form.dataset.bound) return
+  form.dataset.bound = 'true'
+  form.addEventListener('submit', (e) => {
+    e.preventDefault()
+    const q = document.getElementById('q').value.trim()
+    if (q) nav(q) // main resolves URL-vs-search via shared/urls.js
+  })
+  document.getElementById('q').focus()
+}
+document.addEventListener('native-liquid-glass-ready', bindSearch)
+bindSearch()
 
 document.querySelector('[data-store]').onclick = () => {
   if (window.ember?.openStore) window.ember.openStore()
   else nav('https://chromewebstore.google.com/')
 }
-
-document.getElementById('q').focus()

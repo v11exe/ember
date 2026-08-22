@@ -17,7 +17,6 @@ const DOWNLOADS_QUERY = 'downloads:query'
 const DOWNLOADS_ACTION = 'downloads:action'
 const DOWNLOADS_CHANGED = 'downloads:changed'
 const NATIVE_GLASS_SETTINGS = 'native-glass:settings'
-const NATIVE_GLASS_LAYOUT = 'native-glass:layout'
 const UPLOAD_REQUEST = 'upload:request'
 const UPLOAD_RESULT = 'upload:result'
 
@@ -86,7 +85,6 @@ if (location.protocol === 'ember:') {
     },
     nativeGlass: {
       getSettings: () => ipcRenderer.invoke(NATIVE_GLASS_SETTINGS),
-      layoutSearch: (rect) => ipcRenderer.send(NATIVE_GLASS_LAYOUT, rect),
     },
   })
 }

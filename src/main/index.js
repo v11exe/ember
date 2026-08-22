@@ -28,17 +28,10 @@ let browser = null
 function broadcastBookmarks(snapshot) {
   if (!browser) return snapshot
   browser.tabs.setBookmarksVisible(snapshot.visible)
-  layoutNativeBackdrop()
   browser.panel.setTop(browser.tabs.chromeHeight - 6)
   browser.popupPositioner?.layout()
   browser.chrome.webContents.send(IPC.BOOKMARKS_CHANGED, snapshot)
   return snapshot
-}
-
-function layoutNativeBackdrop() {
-  if (!browser) return
-  const { width, height } = browser.win.getContentBounds()
-  browser.nativeBackdrop.layoutPage({ chromeHeight: browser.tabs.chromeHeight, width, height })
 }
 
 function createBrowser() {
@@ -115,7 +108,6 @@ function createBrowser() {
   tabs.onSelectionChange = (tab) => {
     panel.hide(); uploadPanel.cancel(); contextMenu.hide()
     nativeBackdrop.setActiveUrl(tab.url)
-    layoutNativeBackdrop()
   }
   tabs.onNavigationChange = (tab) => {
     if (tabs.active?.id === tab.id) nativeBackdrop.setActiveUrl(tab.url)
@@ -159,11 +151,10 @@ function createBrowser() {
     tabs.create(NEW_TAB_URL)
     broadcastBookmarks(bookmarks.snapshot())
     tabs.layout()
-    layoutNativeBackdrop()
   })
 
   win.on('resize', () => {
-    tabs.layout(); layoutNativeBackdrop(); panel.layout(); uploadPanel.layout(); contextMenu.layout(); browser?.popupPositioner?.layout()
+    tabs.layout(); panel.layout(); uploadPanel.layout(); contextMenu.layout(); browser?.popupPositioner?.layout()
   })
   win.on('closed', () => { nativeBackdrop.destroy(); browser = null })
   return browser
@@ -275,12 +266,6 @@ ipcMain.handle(IPC.DOWNLOADS_ACTION, async (_e, { action, id } = {}) => {
 })
 
 ipcMain.handle(IPC.NATIVE_GLASS_SETTINGS, () => snapshotNativeGlassSettings(NATIVE_GLASS_DEFAULTS))
-ipcMain.on(IPC.NATIVE_GLASS_LAYOUT, (event, rect) => {
-  const tab = browser?.tabs.tabs.find((candidate) => candidate.webContents === event.sender)
-  if (!tab || browser?.tabs.active?.id !== tab.id) return
-  browser.nativeBackdrop.layoutSearch(rect)
-})
-
 const emptyHistory = { version: 1, entries: [], recentlyClosed: [] }
 ipcMain.handle(IPC.HISTORY_QUERY, () => browser?.history.snapshot() || emptyHistory)
 ipcMain.handle(IPC.HISTORY_DELETE, async (_e, ids) => {
