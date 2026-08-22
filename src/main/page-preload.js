@@ -16,6 +16,8 @@ const HISTORY_OPEN = 'history:open'
 const DOWNLOADS_QUERY = 'downloads:query'
 const DOWNLOADS_ACTION = 'downloads:action'
 const DOWNLOADS_CHANGED = 'downloads:changed'
+const NATIVE_GLASS_SETTINGS = 'native-glass:settings'
+const NATIVE_GLASS_LAYOUT = 'native-glass:layout'
 const UPLOAD_REQUEST = 'upload:request'
 const UPLOAD_RESULT = 'upload:result'
 
@@ -81,6 +83,10 @@ if (location.protocol === 'ember:') {
       query: () => ipcRenderer.invoke(DOWNLOADS_QUERY),
       action: (action, id) => ipcRenderer.invoke(DOWNLOADS_ACTION, { action, id }),
       onChange: (fn) => ipcRenderer.on(DOWNLOADS_CHANGED, (_event, snapshot) => fn(snapshot)),
+    },
+    nativeGlass: {
+      getSettings: () => ipcRenderer.invoke(NATIVE_GLASS_SETTINGS),
+      layoutSearch: (rect) => ipcRenderer.send(NATIVE_GLASS_LAYOUT, rect),
     },
   })
 }

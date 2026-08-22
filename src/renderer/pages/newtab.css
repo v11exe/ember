@@ -1,7 +1,7 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
-  background: var(--bg);
+  background: transparent;
   color: var(--text);
   font-family: var(--font);
   display: grid;
@@ -11,7 +11,7 @@ body {
 ::selection { background: var(--accent-halo); }
 
 /* Ambient light the glass refracts, same system as history and downloads. */
-.ambient { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+.ambient { display: none; }
 .ambient::after {
   content: ""; position: absolute; inset: 0;
   background: linear-gradient(180deg, var(--ambient-veil), var(--ambient-veil-2));
@@ -56,11 +56,9 @@ body {
   position: relative;
   display: flex; align-items: center; gap: 12px;
   height: 58px; padding: 0 8px 0 20px;
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  border-radius: 999px;
-  backdrop-filter: blur(18px) saturate(1.45);
-  -webkit-backdrop-filter: blur(18px) saturate(1.45);
+  background: transparent;
+  border: var(--native-glass-border-width) solid var(--glass-border);
+  border-radius: var(--native-glass-corner-radius);
   box-shadow:
     0 26px 62px var(--glass-shadow),
     0 3px 12px var(--glass-warm-shadow),
@@ -98,12 +96,12 @@ body {
 .go {
   position: relative;
   flex: none; height: 42px; padding: 0 22px;
-  border: 0; border-radius: 999px;
-  background: linear-gradient(95deg, var(--ember-deep), var(--ember-mid) 58%, var(--ember-hot));
-  color: var(--accent-text);
+  border: 0; border-radius: inherit;
+  background: transparent;
+  color: var(--text);
   font: 600 13px/1 var(--font);
   cursor: default;
-  box-shadow: 0 6px 18px var(--glass-warm-shadow);
+  box-shadow: none;
   transition: filter .15s ease, transform .1s ease;
 }
 .go:hover { filter: brightness(1.1); }

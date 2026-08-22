@@ -30,6 +30,8 @@ const IPC = {
   HISTORY_OPEN: 'history:open',
   DOWNLOADS_QUERY: 'downloads:query',
   DOWNLOADS_ACTION: 'downloads:action',
+  NATIVE_GLASS_SETTINGS: 'native-glass:settings',
+  NATIVE_GLASS_LAYOUT: 'native-glass:layout',
   UPLOAD_REQUEST: 'upload:request',
   OVERLAY_ACTION: 'overlay:action',
   OVERLAY_CLOSE: 'overlay:close',
