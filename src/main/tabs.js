@@ -2,11 +2,47 @@ const path = require('node:path')
 const { WebContentsView } = require('electron')
 const { IPC, NEW_TAB_URL, UNREACHABLE_URL } = require('../shared/ipc')
 const { isNativeGlassUrl } = require('../shared/native-glass')
-const { MEDIA_PROBE_SCRIPT } = require('./hibernation')
+const { MEDIA_PROBE_SCRIPT, scrollRestoreScript } = require('./hibernation')
 const { isNetworkFailure, describeFailure, isDeadStatus } = require('../shared/archive')
 
 const CHROME_HEIGHT = 84 // tab strip (38) + toolbar (46)
 const BOOKMARKS_HEIGHT = 30
+// A hidden view often has no frame to screenshot; do not wait long for one.
+const CAPTURE_TIMEOUT = 600
+// The outgoing tab stays visible only this long while being photographed.
+const DESELECT_CAPTURE_BUDGET = 700
+// How long to give navigationHistory.restore() before assuming it did nothing.
+const RESTORE_FALLBACK = 1500
+// Chromium keeps 50 navigation entries per tab; matching it keeps the
+// serialised page states from growing without bound.
+const MAX_HISTORY_ENTRIES = 50
+
+/**
+ * The back/forward stack, trimmed the way Chromium trims its own. Each entry
+ * carries a `pageState` blob, so this is the expensive part of a sleeping tab
+ * and the one worth capping.
+ */
+function readHistory(wc) {
+  try {
+    const history = wc.navigationHistory
+    const entries = history.getAllEntries()
+    if (!entries.length) return null
+    let index = Math.max(0, Math.min(history.getActiveIndex(), entries.length - 1))
+    if (entries.length <= MAX_HISTORY_ENTRIES) return { entries, index }
+    // Keep the window around where the reader actually is.
+    const start = Math.max(0, Math.min(index - Math.floor(MAX_HISTORY_ENTRIES / 2), entries.length - MAX_HISTORY_ENTRIES))
+    return { entries: entries.slice(start, start + MAX_HISTORY_ENTRIES), index: index - start }
+  } catch {
+    return null
+  }
+}
+
+/** capturePage() wants page coordinates; view bounds are window-relative. */
+function pageRect(view) {
+  const bounds = view?.getBounds?.()
+  if (!bounds || bounds.width < 1 || bounds.height < 1) return null
+  return { x: 0, y: 0, width: Math.round(bounds.width), height: Math.round(bounds.height) }
+}
 
 let nextId = 1
 
@@ -66,7 +102,10 @@ class TabManager {
       loading: false,
       asleep: false,
       neverSleep: false,
-      scroll: null,
+      // Set while asleep: the back/forward entries, and the scroll and zoom to
+      // put back once the renderer exists again.
+      history: null,
+      restore: null,
       // 0 while the page is fine; a Chromium net error or a dead HTTP status
       // once it is not. `failedUrl` is the address the reader actually wanted.
       pageStatus: 0,
@@ -138,7 +177,7 @@ class TabManager {
     // gets a counter it can be asked about before we discard it.
     wc.on('dom-ready', () => {
       wc.executeJavaScript(MEDIA_PROBE_SCRIPT, true).catch(() => {})
-      this.#restoreScroll(tab)
+      this.#applyRestore(tab)
     })
     const navigationChanged = () => {
       // A fresh navigation clears whatever the last one failed with, unless
@@ -173,12 +212,23 @@ class TabManager {
     const tab = this.tabs.find((t) => t.id === id)
     if (!tab) return
     const previous = this.active
-    if (previous && previous.id !== id) this.rememberThumbnail(previous)
+    if (previous && previous.id !== id) {
+      // The idle clock starts when you leave a tab, not when you arrived at
+      // it. Without this a page you read for an hour is stale the instant you
+      // click away from it.
+      previous.lastActiveAt = Date.now()
+    }
     if (tab.asleep) this.wake(id)
     this.activeId = id
     tab.lastActiveAt = Date.now()
     this.onSelectionChange?.(tab)
-    for (const t of this.tabs) t.view?.setVisible(t.id === id)
+    // The tab being left is the last chance to photograph it, and a hidden
+    // view has no frame to give — so it stays visible until the shutter has
+    // closed. It is behind the incoming tab by then, so nobody sees it.
+    for (const t of this.tabs) {
+      if (t.id === id) t.view?.setVisible(true)
+      else if (t !== previous) t.view?.setVisible(false)
+    }
     // keep the chrome UI painted above the page view
     this.win.contentView.addChildView(tab.view)
     this.win.contentView.addChildView(this.chromeView)
@@ -186,7 +236,27 @@ class TabManager {
       try { this.extensions.selectTab(tab.webContents) } catch { /* non-fatal */ }
     }
     this.layout()
+    if (previous && previous.id !== id) this.#photographAndHide(previous)
     this.emit()
+  }
+
+  /**
+   * Screenshot the tab being left, then put it away. Bounded by the cache, so
+   * a compositor that has stopped answering cannot strand a visible view.
+   */
+  #photographAndHide(tab) {
+    const view = tab.view
+    if (!view) return
+    const hide = () => { if (tab.view === view && tab.id !== this.activeId) view.setVisible(false) }
+    if (!this.thumbnails || !tab.webContents || tab.asleep) { hide(); return }
+    // A machine that cannot produce frames — anything fullscreen in front of
+    // Ember will do it — makes every attempt fail slowly. Put the view away on
+    // a deadline regardless, so a dead compositor cannot leave it composited.
+    const deadline = setTimeout(hide, DESELECT_CAPTURE_BUDGET)
+    deadline.unref?.()
+    this.thumbnails.capture(tab.id, tab.webContents, { rect: pageRect(view) })
+      .catch(() => null)
+      .then(() => { clearTimeout(deadline); hide() }, () => { clearTimeout(deadline); hide() })
   }
 
   // ---- hibernation ----
@@ -198,40 +268,125 @@ class TabManager {
   async hibernate(id) {
     const tab = this.tabs.find((t) => t.id === id)
     if (!tab || tab.asleep || !tab.view || tab.id === this.activeId) return false
-    const wc = tab.webContents
-
-    tab.scroll = await this.#readScroll(wc)
-    await this.thumbnails?.capture(tab.id, wc)
-    if (!wc.isDestroyed()) {
-      tab.url = wc.getURL() || tab.url
-      tab.title = wc.getTitle() || tab.title
-    }
-
     const view = tab.view
+    const wc = tab.webContents
+    if (wc.isDestroyed()) return false
+
+    // The synchronous state first: this is what rebuilds the tab.
+    const url = wc.getURL() || tab.url
+    const title = wc.getTitle() || tab.title
+    const history = readHistory(wc)
+    const zoomLevel = wc.getZoomLevel?.() || 0
+
+    // Then the slow parts, each followed by a re-check. A click on this very
+    // tab can land while a screenshot is in flight, and discarding the page
+    // the reader just asked for is the worst outcome available.
+    const scroll = await this.#readScroll(wc)
+    if (!this.#stillDiscardable(tab, view, wc)) return false
+    await this.#captureBeforeSleep(tab, wc)
+    if (!this.#stillDiscardable(tab, view, wc)) return false
+
+    tab.url = url
+    tab.title = title
+    tab.history = history
+    tab.restore = { scroll, zoomLevel }
     tab.asleep = true
     tab.sleptAt = Date.now()
     tab.loading = false
     tab.view = null
     tab.webContents = null
+
+    // The extension host indexes tabs by webContents; leaving a destroyed one
+    // in its table makes chrome.tabs report a tab that cannot answer.
+    if (this.extensions) {
+      try { this.extensions.removeTab(wc) } catch { /* it may not have been tracked */ }
+    }
     try {
       this.win.contentView.removeChildView(view)
-      view.webContents.destroy()
+      wc.destroy()
     } catch { /* already gone */ }
 
     this.emit()
     return true
   }
 
-  /** Rebuild a sleeping tab's renderer. Scroll is restored once the DOM exists. */
+  /** Nothing may have moved underneath us while an await was in flight. */
+  #stillDiscardable(tab, view, wc) {
+    return this.tabs.includes(tab)
+      && tab.view === view
+      && tab.webContents === wc
+      && !tab.asleep
+      && tab.id !== this.activeId
+      && !wc.isDestroyed()
+  }
+
+  /**
+   * The spec asks for a screenshot taken immediately before the renderer goes.
+   * A hidden view usually has no frame to give, so this is best effort and
+   * bounded; the cache still holds the shot taken when the tab was deselected.
+   */
+  async #captureBeforeSleep(tab, wc) {
+    if (!this.thumbnails) return
+    await Promise.race([
+      this.thumbnails.capture(tab.id, wc, { rect: pageRect(tab.view) }).catch(() => null),
+      new Promise((resolve) => {
+        const timer = setTimeout(resolve, CAPTURE_TIMEOUT)
+        timer.unref?.()
+      }),
+    ])
+  }
+
+  /**
+   * Rebuild a sleeping tab's renderer, with its back and forward entries. A
+   * bare loadURL would strand the reader on a tab with no way back to wherever
+   * they came from, which is the thing that makes discarding feel lossy.
+   */
   wake(id) {
     const tab = this.tabs.find((t) => t.id === id)
     if (!tab || !tab.asleep) return tab || null
     this.#attachView(tab)
     tab.loading = true
     tab.sleptAt = null
-    tab.webContents.loadURL(tab.url)
+    tab.lastActiveAt = Date.now()
+
+    if (!this.#restoreHistory(tab)) tab.webContents.loadURL(tab.url)
+    tab.history = null
     this.emit()
     return tab
+  }
+
+  #restoreHistory(tab) {
+    const history = tab.history
+    const wc = tab.webContents
+    if (!history?.entries?.length || !wc) return false
+    try {
+      wc.navigationHistory.restore({ entries: history.entries, index: history.index })
+    } catch (error) {
+      console.warn('[ember] navigation history could not be restored:', error.message)
+      return false
+    }
+    // restore() usually starts the load itself. If it quietly did not, the tab
+    // would sit blank, so fall back rather than leave the reader with nothing.
+    const timer = setTimeout(() => {
+      if (tab.webContents === wc && !wc.isDestroyed() && !wc.getURL() && !wc.isLoading()) {
+        wc.loadURL(tab.url)
+      }
+    }, RESTORE_FALLBACK)
+    timer.unref?.()
+    return true
+  }
+
+  /** Put back the scroll offset and zoom the tab had when it was discarded. */
+  #applyRestore(tab) {
+    const pending = tab.restore
+    if (!pending) return
+    tab.restore = null
+    const wc = tab.webContents
+    if (!wc) return
+    if (Number.isFinite(pending.zoomLevel) && pending.zoomLevel !== 0) wc.setZoomLevel(pending.zoomLevel)
+    const { x = 0, y = 0 } = pending.scroll || {}
+    if (!x && !y) return
+    wc.executeJavaScript(scrollRestoreScript(x, y), true).catch(() => {})
   }
 
   /**
@@ -267,12 +422,6 @@ class TabManager {
     return true
   }
 
-  /** Fire-and-forget screenshot of a tab that is still on screen. */
-  rememberThumbnail(tab) {
-    if (!this.thumbnails || !tab?.webContents || tab.asleep) return
-    this.thumbnails.capture(tab.id, tab.webContents).catch(() => {})
-  }
-
   async #readScroll(wc) {
     if (!wc || wc.isDestroyed()) return null
     try {
@@ -282,14 +431,6 @@ class TabManager {
     }
   }
 
-  #restoreScroll(tab) {
-    const target = tab.scroll
-    if (!target || (!target.x && !target.y)) return
-    tab.scroll = null
-    tab.webContents?.executeJavaScript(
-      `window.scrollTo(${Number(target.x) || 0}, ${Number(target.y) || 0})`, true
-    ).catch(() => {})
-  }
 
   close(id) {
     const tab = this.tabs.find((t) => t.id === id)
@@ -399,4 +540,4 @@ class TabManager {
   }
 }
 
-module.exports = { TabManager, CHROME_HEIGHT, BOOKMARKS_HEIGHT }
+module.exports = { TabManager, CHROME_HEIGHT, BOOKMARKS_HEIGHT, readHistory, MAX_HISTORY_ENTRIES }

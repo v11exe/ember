@@ -75,9 +75,26 @@ islands, sidebar outstanding).
 - `webContents.destroy()` fires `'destroyed'` a turn late, so a stale handler
   would forget a tab that has since been woken. `#wire` compares
   `tab.webContents === wc` rather than reading a flag.
-- `capturePage()` on a hidden `WebContentsView` has no frame and comes back
-  empty, so `TabManager` screenshots the *outgoing* tab in `select()`.
-  `ThumbnailCache` keeps the previous entry when a capture fails.
+- `capturePage()` on a `WebContentsView` wants an **explicit rect**. The
+  no-argument form takes another path inside Electron and answers
+  `UnknownVizError` or "current display surface not available". It can also
+  reject or never settle, so bound every attempt.
+- Nothing composites while another app is fullscreen (a game, say): captures
+  fail and CSS transitions never advance. The smoke gate probes once and
+  reports frame-dependent checks as **skipped**, not passed.
+- A hidden view has no frame either, so `select()` keeps the outgoing tab
+  visible — behind the incoming one, so invisibly — until its screenshot is
+  taken, on a 700ms budget. `ThumbnailCache` keeps the previous entry on
+  failure.
+- `navigationHistory.restore({ entries, index })` rebuilds the back/forward
+  stack and starts the load itself. Entry `pageState` does **not** carry the
+  live scroll of the current entry (Chromium folds that in on navigate-away,
+  which `destroy()` skips), so scroll is restored separately.
+- `tab.lastActiveAt` is stamped when a tab is *left*, not when it is opened,
+  and `0` means "never looked at" — test it with `Number.isFinite`, never
+  `|| now`.
+- Anything slow inside `hibernate()` must re-check `#stillDiscardable`
+  afterwards: a click on that very tab can land mid-await.
 - `.setting` sets `display`, outranking the user agent's `[hidden]` rule; a
   settings row that can hide needs `.setting[hidden] { display: none }`.
 - `injectBrowserAction()` must be *called* in a preload; requiring the module
@@ -298,6 +315,22 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
+### 2026-08-23 — Claude Code — Hibernation refinement pass
+- **Status / Branch:** merged · `main`
+- **Touches:** `src/main/{hibernation,tabs,tab-thumbnails,index}.js`,
+  `test/{hibernation,tab-thumbnails}.test.js`
+- **Summary:** Roadmap feature 1, second pass. A woken tab gets its back/forward
+  stack, scroll offset and zoom back. The idle clock starts when you leave a
+  tab rather than when you opened it, a discard re-checks after every await,
+  and beforeunload / picture-in-picture / fullscreen now block sleeping.
+  Thumbnails were mostly never captured — `capturePage()` needs an explicit
+  rect and a still-visible view — and the smoke gate was hanging rather than
+  telling anyone.
+- **For the other agent:** `TabManager.rememberThumbnail()` is gone; `select()`
+  photographs the outgoing tab itself. `ThumbnailCache.capture()` takes a third
+  argument `{ rect }` and you want to pass one. The smoke probe can now report
+  `SKIPPED` checks — a machine with a fullscreen app in front renders no frames.
+
 ### 2026-08-23 — Claude Code — Arc-style Ctrl+Tab switcher
 - **Status / Branch:** merged · `main`
 - **Touches:** `src/main/{switcher-panel,shortcuts,index,floating-panel,tabs}.js`,
@@ -407,16 +440,3 @@ Newest at top. One entry per branch, updated in place. Status:
   and a real `ember://settings` page exposing the session-restore preference.
 - **For the other agent:** this branch contains `feat/session-restore` as well.
   New channels `settings:get|set` and `SETTINGS_URL`.
-
-### 2026-08-22 — Claude Code — Session restore + window state (BRANCH)
-- **Status / Branch:** pushed · `feat/session-restore`
-- **Touches:** `src/main/{settings,session,session-prompt,index}.js`,
-  `src/renderer/pages/session-prompt.*`, `src/renderer/pages/liquid-glass.js`,
-  `test/session.test.js`, `AGENTS.md`
-- **Summary:** Closing with tabs open asks "Reopen these tabs next time?" with
-  Yes / No / Yes-and-don't-ask-again / No-and-don't-ask-again, on the shared
-  captured-backdrop glass. Saved tabs reopen on next launch. Window size and
-  position persist too.
-- **For the other agent:** new stores write `settings.json` and `session.json`
-  in userData. The prompt reuses `FloatingPanel` and the existing
-  `overlay:action` channel with command `session`; no new IPC channels.

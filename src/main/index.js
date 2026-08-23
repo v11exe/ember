@@ -639,7 +639,18 @@ app.whenReady().then(() => {
   if (process.env.EMBER_SMOKE) {
     setTimeout(async () => {
       const checks = []
+      const skipped = []
+      // Any single await in here can stall on a view that stops painting. A
+      // named failure at 90s beats the runner's silent kill at 120s.
+      const watchdog = setTimeout(() => {
+        console.log('[ember] smoke FAILED: probe stalled before it finished')
+        app.exit(1)
+      }, 90_000)
+      watchdog.unref?.()
       try {
+        // Chromium stops painting an occluded window, which makes every capture
+        // and every animation check meaningless. Put Ember in front first.
+        browser.win.moveTop()
         const waitFor = async (probe, timeout = 3000) => {
           const started = Date.now()
           while (Date.now() - started < timeout) {
@@ -653,6 +664,19 @@ app.whenReady().then(() => {
         const testExtensions = await browser?.testExtensionsReady
         const fixtureIds = testExtensions.map((extension) => extension.id)
         await active?.webContents.loadURL('data:text/html,<title>Ember smoke page</title><main style="color:white">Rendered page</main>')
+
+        // Some machines will not present a frame for an Electron window at all
+        // — a wedged viz service answers UnknownVizError, an unpresented one
+        // says the display surface is unavailable. Checks that need a real
+        // frame cannot say anything then, so ask once and skip them loudly
+        // rather than reporting a pass nobody earned or a failure that is
+        // really about the compositor.
+        const canCapture = await active?.webContents
+          .capturePage({ x: 0, y: 0, width: 32, height: 32 })
+          .then((shot) => !!shot && !shot.isEmpty())
+          .catch(() => false)
+        /** A check that is only meaningful when the compositor produces frames. */
+        const visual = (name, ok) => { if (canCapture) checks.push([name, ok]); else skipped.push(name) }
         await browser?.chrome.webContents.executeJavaScript("document.getElementById('ext-btn').click()")
         await new Promise((resolve) => setTimeout(resolve, 250))
         checks.push(['window and tab created', !!browser && browser.tabs.tabs.length > 0])
@@ -837,7 +861,8 @@ app.whenReady().then(() => {
         await rightClick(20, 20)
         const contextState = browser.contextMenu.overlay.state
         checks.push(['right-click opens custom glass commands', contextState?.kind === 'context-menu'
-          && contextState.items.some((item) => item.id === 'reload') && !!contextState.backdrop])
+          && contextState.items.some((item) => item.id === 'reload')])
+        visual('the glass menu refracts a real capture of the page', !!contextState?.backdrop)
         const lensProbe = await browser.contextMenu.overlay.view.webContents.executeJavaScript(`(async () => {
           const enabled = [...document.querySelectorAll('.menu-item:not(:disabled)')]
           const lens = document.getElementById('selector-lens')
@@ -845,7 +870,9 @@ app.whenReady().then(() => {
             const deadline = performance.now() + 1000
             let y = lens.getBoundingClientRect().y
             while (!predicate(y) && performance.now() < deadline) {
-              await new Promise((resolve) => requestAnimationFrame(resolve))
+              // A view that is not painting never fires rAF, and the deadline
+              // below would then never be re-read. The timer guarantees a tick.
+              await new Promise((resolve) => { requestAnimationFrame(resolve); setTimeout(resolve, 50) })
               y = lens.getBoundingClientRect().y
             }
             return y
@@ -862,8 +889,10 @@ app.whenReady().then(() => {
             disabledActive: !!document.querySelector('.menu-item:disabled[data-active="true"]'),
           }
         })()`)
-        checks.push(['one liquid selector retargets across pointer and keyboard', lensProbe.oneLens
-          && lensProbe.moved && lensProbe.oneActive && !lensProbe.disabledActive])
+        checks.push(['one liquid selector, on exactly one enabled item', lensProbe.oneLens
+          && lensProbe.oneActive && !lensProbe.disabledActive])
+        // Moving the lens is a CSS transition, which needs frames to advance.
+        visual('the liquid selector retargets across pointer and keyboard', lensProbe.moved)
         await browser.contextMenu.overlay.view.webContents.executeJavaScript(
           "window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))"
         )
@@ -904,7 +933,7 @@ app.whenReady().then(() => {
           && !sleeper.webContents && !sleeper.view && !!dropped])
         checks.push(['a sleeping tab keeps its identity', browser.tabs.tabs.some((tab) => tab.id === sleeperId)
           && sleeper.url.endsWith('upload-page.html') && !!sleeper.title])
-        checks.push(['a sleeping tab keeps a cached screenshot', !!browser.thumbnails.get(sleeperId)?.dataUrl])
+        visual('a sleeping tab keeps a cached screenshot', !!browser.thumbnails.get(sleeperId)?.dataUrl)
         const sleepingState = browser.tabs.state().tabs.find((tab) => tab.id === sleeperId)
         checks.push(['the tab strip is told the tab is asleep', sleepingState?.asleep === true])
 
@@ -922,12 +951,58 @@ app.whenReady().then(() => {
           !(await browser.hibernation.sweep(Date.now() + 86_400_000)).includes(sleeperId)])
         browser.tabs.close(sleeperId)
         checks.push(['closing a tab drops its thumbnail', !browser.thumbnails.has(sleeperId)])
+
+        // ---- what survives the discard: the back stack, the scroll, the zoom ----
+        const tallPage = (name) => 'data:text/html,' + encodeURIComponent(
+          `<title>${name}</title><body style="height:6000px"><h1>${name}</h1>`)
+        const keptId = browser.tabs.create(tallPage('first'), { active: true })
+        const kept = browser.tabs.tabs.find((tab) => tab.id === keptId)
+        await waitFor(() => !kept.loading && !!kept.webContents?.getURL())
+        await kept.webContents.loadURL(tallPage('second'))
+        await kept.webContents.executeJavaScript('window.scrollTo(0, 1200)')
+        await waitFor(async () => (await kept.webContents.executeJavaScript('window.scrollY')) === 1200)
+        kept.webContents.setZoomLevel(1)
+        browser.tabs.select(homeId)
+        await waitFor(() => browser.tabs.activeId === homeId)
+
+        checks.push(['a tab has somewhere to go back to before it sleeps',
+          kept.webContents.navigationHistory.canGoBack()])
+        await browser.tabs.hibernate(keptId)
+        checks.push(['sleeping keeps the back stack', (kept.history?.entries.length || 0) >= 2])
+        checks.push(['sleeping keeps the scroll offset and zoom',
+          kept.restore?.scroll?.y === 1200 && kept.restore?.zoomLevel === 1])
+
+        browser.tabs.select(keptId)
+        await waitFor(() => !kept.asleep && !kept.loading && !!kept.webContents?.getURL(), 8000)
+        checks.push(['waking lands on the same page',
+          (await kept.webContents.executeJavaScript('document.title')) === 'second'])
+        checks.push(['waking restores the back button', kept.webContents.navigationHistory.canGoBack()])
+        const scrolledBack = await waitFor(async () => {
+          const y = await kept.webContents.executeJavaScript('window.scrollY')
+          return y >= 1190 ? y : null
+        }, 6000)
+        checks.push(['waking puts the reader back where they were', !!scrolledBack])
+        checks.push(['waking restores the zoom', kept.webContents.getZoomLevel() === 1])
+
+        // Clicking a tab while its discard is already in flight must win.
+        browser.tabs.select(homeId)
+        await waitFor(() => browser.tabs.activeId === homeId)
+        const raced = browser.tabs.hibernate(keptId)
+        browser.tabs.select(keptId)
+        checks.push(['a click beats a discard that is already in flight', (await raced) === false
+          && !kept.asleep && !!kept.webContents && !kept.webContents.isDestroyed()])
+        browser.tabs.select(homeId)
+        browser.tabs.close(keptId)
       } catch (error) {
         console.error('[ember] smoke probe error:', error)
         checks.push(['smoke probe completed', false])
       }
+      if (skipped.length) {
+        console.log(`[ember] smoke SKIPPED (this machine renders no frames): ${skipped.join(', ')}`)
+      }
       const failed = checks.filter(([, ok]) => !ok).map(([name]) => name)
       console.log(failed.length ? `[ember] smoke FAILED: ${failed.join(', ')}` : '[ember] smoke ok')
+      clearTimeout(watchdog)
       app.exit(failed.length ? 1 : 0)
     }, 6000)
   }

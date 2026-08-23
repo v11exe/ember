@@ -68,3 +68,57 @@ test('forget and clear drop entries', async () => {
   cache.clear()
   assert.equal(cache.size, 0)
 })
+
+// ---- what it takes to get a frame out of Chromium ----
+
+test('the capture asks for an explicit rect, and nudges the view first', async () => {
+  const cache = new ThumbnailCache({ width: 480 })
+  const calls = []
+  let invalidated = 0
+  const rect = { x: 0, y: 0, width: 900, height: 600 }
+  await cache.capture(1, {
+    isDestroyed: () => false,
+    invalidate: () => { invalidated += 1 },
+    capturePage: async (...args) => { calls.push(args); return stubImage(900, 600) },
+  }, { rect })
+
+  assert.equal(invalidated, 1)
+  assert.deepEqual(calls, [[rect]], 'the whole-page form is the one Electron refuses')
+})
+
+test('a rejected capture is retried once, then given up on', async () => {
+  const cache = new ThumbnailCache({ width: 480, retryDelay: 1 })
+  let attempts = 0
+  const entry = await cache.capture(1, {
+    isDestroyed: () => false,
+    capturePage: async () => { attempts += 1; throw new Error('Current display surface not available for capture') },
+  })
+  assert.equal(entry, null)
+  assert.equal(attempts, 2)
+})
+
+test('a retry that succeeds is kept', async () => {
+  const cache = new ThumbnailCache({ width: 480, retryDelay: 1 })
+  let attempts = 0
+  const entry = await cache.capture(1, {
+    isDestroyed: () => false,
+    capturePage: async () => {
+      attempts += 1
+      if (attempts === 1) throw new Error('UnknownVizError')
+      return stubImage(480, 300)
+    },
+  })
+  assert.equal(entry.width, 480)
+  assert.equal(attempts, 2)
+})
+
+test('a capture that never answers cannot hold up its caller', async () => {
+  const cache = new ThumbnailCache({ width: 480, retryDelay: 1, attemptTimeout: 20 })
+  const started = Date.now()
+  const entry = await cache.capture(1, {
+    isDestroyed: () => false,
+    capturePage: () => new Promise(() => {}), // never settles
+  })
+  assert.equal(entry, null)
+  assert.ok(Date.now() - started < 1000, 'it gave up rather than waiting on the compositor')
+})
