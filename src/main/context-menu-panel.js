@@ -80,7 +80,9 @@ class ContextMenuPanel {
     if (this.active) this.hide()
     const items = buildTabContextMenu(tab, context)
     const viewport = targetView.getBounds()
-    const point = { x: viewport.x + Math.round(x), y: viewport.y }
+    // The chrome view spans the window, so its clientX is already in window
+    // coordinates. Only page context-menu coordinates need viewport.x added.
+    const point = { x: Math.round(x), y: viewport.y }
     const bounds = placePointPanel(viewport, point, menuSize(items), 8)
     this.active = { kind: 'tab', tab, targetView, x, items, openSequence: ++this.openSequence }
     await this.overlay.show({
@@ -139,7 +141,7 @@ class ContextMenuPanel {
     if (this.active.kind === 'tab') {
       const { targetView, x, items } = this.active
       const viewport = targetView.getBounds()
-      const bounds = placePointPanel(viewport, { x: viewport.x + Math.round(x), y: viewport.y }, menuSize(items), 8)
+      const bounds = placePointPanel(viewport, { x: Math.round(x), y: viewport.y }, menuSize(items), 8)
       void this.overlay.relayout?.({ bounds, targetView, captureBleed: CAPTURE_BLEED })
       return
     }

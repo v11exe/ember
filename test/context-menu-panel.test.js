@@ -70,6 +70,19 @@ test('uses compact Windows-like menu width and row geometry', () => {
   })
 })
 
+test('anchors a tab menu under the window-relative tab-strip cursor', async () => {
+  const h = harness()
+  const targetView = { getBounds: () => ({ x: 168, y: 32, width: 724, height: 600 }) }
+  await h.panel.openTabMenu({
+    tab: { id: 7, url: 'https://ember.example/', active: true },
+    targetView,
+    x: 300,
+    context: { domain: 'ember.example', hibernationEnabled: true, neverSleep: false },
+  })
+  assert.equal(h.shown[0].bounds.x, 300)
+  assert.equal(h.shown[0].bounds.y, 40)
+})
+
 test('constrains a command-rich menu to the usable page height', async () => {
   const h = harness()
   await h.panel.open({
