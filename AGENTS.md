@@ -289,6 +289,16 @@ Newest first. One entry per active/recent unit of work.
 - **For the other agent:** contracts/risks they must know, or `none`
 ```
 
+### 2026-08-23 — Codex — Unified Ember shell and Favorites sidebar
+- **Status / Branch:** in-progress · `feat/ember-shell`
+- **Touches:** `src/{main,renderer,shared}`, `test/`, `scripts/capture-ui.js`,
+  `ROADMAP.md`, `README.md`, `AGENTS.md`, `docs/superpowers/`
+- **Summary:** Replacing the conventional two-row chrome with the supplied
+  unified Ember shell, native rounded page viewport, collapsible Favorite-site
+  rail, lifecycle-aware tabs and native caption controls.
+- **For the other agent:** preserve the native-glass backdrop pipeline; shell
+  geometry will become a shared contract used by every future visible page.
+
 ### 2026-08-23 — Claude Code — Omnibox quick-search refinement
 - **Status / Branch:** merged · `main`
 - **Touches:** `src/shared/{urls,ipc}.js`, `src/main/{index,page-preload}.js`,
