@@ -1,4 +1,6 @@
-const MAX_FAVORITES = 12
+const FAVORITE_GRID_DEFAULTS = Object.freeze({ columns: 2, rows: 2 })
+const FAVORITE_GRID_LIMITS = Object.freeze({ columns: 4, rows: 7 })
+const MAX_FAVORITES = FAVORITE_GRID_LIMITS.columns * FAVORITE_GRID_LIMITS.rows
 
 const DEFAULT_FAVORITES = Object.freeze([
   Object.freeze({
@@ -48,13 +50,32 @@ function sanitiseIcon(value) {
   return url ? url.href : ''
 }
 
-function sanitiseFavorites(value) {
+function clampInteger(value, fallback, minimum, maximum) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return fallback
+  return Math.min(maximum, Math.max(minimum, Math.round(number)))
+}
+
+function sanitiseFavoriteGrid(value) {
+  return {
+    columns: clampInteger(value?.columns, FAVORITE_GRID_DEFAULTS.columns, 1, FAVORITE_GRID_LIMITS.columns),
+    rows: clampInteger(value?.rows, FAVORITE_GRID_DEFAULTS.rows, 1, FAVORITE_GRID_LIMITS.rows),
+  }
+}
+
+function favoriteCapacity(value) {
+  const grid = sanitiseFavoriteGrid(value)
+  return grid.columns * grid.rows
+}
+
+function sanitiseFavorites(value, limit = MAX_FAVORITES) {
   const source = Array.isArray(value) ? value : DEFAULT_FAVORITES
+  const maximum = clampInteger(limit, MAX_FAVORITES, 0, MAX_FAVORITES)
   const sites = new Set()
   const ids = new Set()
   const result = []
   for (const entry of source) {
-    if (!entry || result.length >= MAX_FAVORITES) break
+    if (!entry || result.length >= maximum) break
     const url = webUrl(entry.url)
     const key = siteKey(entry.url)
     if (!url || !key || sites.has(key)) continue
@@ -68,6 +89,40 @@ function sanitiseFavorites(value) {
     ids.add(id)
   }
   return result
+}
+
+function placementIndex(index, maximum, fallback) {
+  if (index === null || index === undefined || !Number.isFinite(Number(index))) return fallback
+  return Math.min(maximum, Math.max(0, Math.round(Number(index))))
+}
+
+/** Ordered insert/reorder/replace used by both live tab drops and Favorite drags. */
+function placeFavorite(candidate, current = [], gridValue, index = null) {
+  const capacity = favoriteCapacity(gridValue)
+  const favorites = sanitiseFavorites(current, capacity)
+  const incoming = sanitiseFavorites([candidate], 1)[0]
+  if (!incoming) return { status: 'invalid', favorite: null, favorites }
+
+  const existingIndex = favorites.findIndex((entry) => sameFavoriteSite(entry.url, incoming.url))
+  if (existingIndex >= 0) {
+    const favorite = favorites[existingIndex]
+    if (index === null || index === undefined) return { status: 'existing', favorite, favorites }
+    const next = [...favorites]
+    next.splice(existingIndex, 1)
+    next.splice(placementIndex(index, next.length, next.length), 0, favorite)
+    const changed = next.some((entry, entryIndex) => entry.id !== favorites[entryIndex]?.id)
+    return { status: changed ? 'moved' : 'existing', favorite, favorites: next }
+  }
+
+  if (favorites.length < capacity) {
+    const next = [...favorites]
+    next.splice(placementIndex(index, next.length, next.length), 0, incoming)
+    return { status: 'added', favorite: incoming, favorites: next }
+  }
+  if (index === null || index === undefined) return { status: 'full', favorite: null, favorites }
+  const next = [...favorites]
+  next[placementIndex(index, capacity - 1, capacity - 1)] = incoming
+  return { status: 'replaced', favorite: incoming, favorites: next }
 }
 
 function sameFavoriteSite(favoriteUrl, tabUrl) {
@@ -84,13 +139,10 @@ function findFavoriteTab(tabs, favoriteUrl) {
  * Turn a live tab into a persistent Favorite without trusting renderer data.
  * The exact page is kept for opening; site identity is only for de-duplication.
  */
-function favoriteFromTab(tab, current = []) {
-  const favorites = sanitiseFavorites(current)
+function favoriteFromTab(tab, current = [], gridValue = FAVORITE_GRID_DEFAULTS, index = null) {
+  const favorites = sanitiseFavorites(current, favoriteCapacity(gridValue))
   const url = webUrl(tab?.url)
   if (!url) return { status: 'invalid', favorite: null, favorites }
-  const existing = favorites.find((entry) => sameFavoriteSite(entry.url, url.href))
-  if (existing) return { status: 'existing', favorite: existing, favorites }
-  if (favorites.length >= MAX_FAVORITES) return { status: 'full', favorite: null, favorites }
 
   const candidate = {
     id: siteKey(url.href).replace(/[^a-z0-9]+/g, '-') || `favorite-${favorites.length + 1}`,
@@ -98,16 +150,18 @@ function favoriteFromTab(tab, current = []) {
     url: url.href,
     ...(sanitiseIcon(tab?.favicon) ? { icon: sanitiseIcon(tab.favicon) } : {}),
   }
-  const next = sanitiseFavorites([...favorites, candidate])
-  const favorite = next.find((entry) => sameFavoriteSite(entry.url, url.href)) || null
-  if (!favorite || next.length === favorites.length) return { status: 'invalid', favorite: null, favorites }
-  return { status: 'added', favorite, favorites: next }
+  return placeFavorite(candidate, favorites, gridValue, index)
 }
 
 module.exports = {
   DEFAULT_FAVORITES,
+  FAVORITE_GRID_DEFAULTS,
+  FAVORITE_GRID_LIMITS,
   MAX_FAVORITES,
+  sanitiseFavoriteGrid,
+  favoriteCapacity,
   sanitiseFavorites,
+  placeFavorite,
   sameFavoriteSite,
   findFavoriteTab,
   favoriteFromTab,
