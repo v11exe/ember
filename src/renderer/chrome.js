@@ -7,6 +7,7 @@ const els = {
   back: $('back'),
   forward: $('forward'),
   reload: $('reload'),
+  archive: $('archive-btn'),
 }
 
 let omniboxDirty = false
@@ -66,6 +67,9 @@ function renderTabs(tabs) {
 function renderNav(nav) {
   els.back.disabled = !nav.canGoBack
   els.forward.disabled = !nav.canGoForward
+  // The archive action only appears for a page that failed or is gone.
+  els.archive.hidden = !nav.archiveUrl
+  if (!nav.archiveUrl) els.archive.classList.remove('busy')
   if (!omniboxDirty && document.activeElement !== els.omnibox) {
     els.omnibox.value = nav.url && !nav.url.startsWith('ember://') ? nav.url : ''
   }
@@ -96,6 +100,12 @@ els.omnibox.addEventListener('keydown', (e) => {
 els.back.onclick = () => window.ember.back()
 els.forward.onclick = () => window.ember.forward()
 els.reload.onclick = () => window.ember.reload()
+els.archive.onclick = async () => {
+  els.archive.classList.add('busy')
+  const result = await window.ember.openArchived()
+  els.archive.classList.remove('busy')
+  els.archive.title = result?.ok ? 'View archived version' : 'The Internet Archive has no copy of this page'
+}
 $('new-tab').onclick = () => window.ember.newTab()
 
 $('win-min').onclick = () => window.ember.minimize()

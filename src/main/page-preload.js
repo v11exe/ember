@@ -22,6 +22,7 @@ const NATIVE_GLASS_SETTINGS = 'native-glass:settings'
 const UPLOAD_REQUEST = 'upload:request'
 const UPLOAD_RESULT = 'upload:result'
 const SELECTION_CHANGED = 'selection:changed'
+const ARCHIVE_OPEN = 'archive:open'
 
 const uploadTargets = new Map()
 
@@ -129,6 +130,9 @@ if (location.protocol === 'ember:') {
       query: () => ipcRenderer.invoke(DOWNLOADS_QUERY),
       action: (action, id) => ipcRenderer.invoke(DOWNLOADS_ACTION, { action, id }),
       onChange: (fn) => ipcRenderer.on(DOWNLOADS_CHANGED, (_event, snapshot) => fn(snapshot)),
+    },
+    archive: {
+      open: (url) => ipcRenderer.invoke(ARCHIVE_OPEN, String(url)),
     },
     nativeGlass: {
       getSettings: () => ipcRenderer.invoke(NATIVE_GLASS_SETTINGS),

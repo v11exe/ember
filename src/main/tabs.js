@@ -1,8 +1,9 @@
 const path = require('node:path')
 const { WebContentsView } = require('electron')
-const { IPC, NEW_TAB_URL } = require('../shared/ipc')
+const { IPC, NEW_TAB_URL, UNREACHABLE_URL } = require('../shared/ipc')
 const { isNativeGlassUrl } = require('../shared/native-glass')
 const { MEDIA_PROBE_SCRIPT } = require('./hibernation')
+const { isNetworkFailure, describeFailure, isDeadStatus } = require('../shared/archive')
 
 const CHROME_HEIGHT = 84 // tab strip (38) + toolbar (46)
 const BOOKMARKS_HEIGHT = 30
@@ -66,6 +67,10 @@ class TabManager {
       asleep: false,
       neverSleep: false,
       scroll: null,
+      // 0 while the page is fine; a Chromium net error or a dead HTTP status
+      // once it is not. `failedUrl` is the address the reader actually wanted.
+      pageStatus: 0,
+      failedUrl: null,
       lastActiveAt: Date.now(),
     }
     this.tabs.push(tab)
@@ -115,6 +120,19 @@ class TabManager {
 
     wc.on('page-title-updated', (_e, title) => { tab.title = title; this.onVisitDetail?.({ url: wc.getURL(), title }); this.emit() })
     wc.on('did-start-loading', () => { tab.loading = true; this.emit() })
+    // A page that never arrived gets Ember's own, which offers the archive.
+    wc.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (!isMainFrame || !isNetworkFailure(errorCode)) return
+      const failed = validatedURL || tab.url
+      if (failed.startsWith(UNREACHABLE_URL)) return
+      tab.failedUrl = failed
+      tab.pageStatus = errorCode
+      const target = new URL(UNREACHABLE_URL)
+      target.searchParams.set('url', failed)
+      target.searchParams.set('code', String(errorCode))
+      target.searchParams.set('reason', describeFailure(errorCode, errorDescription))
+      wc.loadURL(target.href)
+    })
     wc.on('did-stop-loading', () => { tab.loading = false; sync() })
     // Camera/microphone use is invisible from the main process, so each document
     // gets a counter it can be asked about before we discard it.
@@ -123,6 +141,12 @@ class TabManager {
       this.#restoreScroll(tab)
     })
     const navigationChanged = () => {
+      // A fresh navigation clears whatever the last one failed with, unless
+      // this *is* the error page standing in for it.
+      if (!wc.getURL().startsWith(UNREACHABLE_URL)) {
+        tab.failedUrl = null
+        tab.pageStatus = 0
+      }
       sync()
       tab.view?.setBackgroundColor(isNativeGlassUrl(tab.url) ? '#00000000' : '#000000')
       this.onNavigationChange?.(tab)
@@ -208,6 +232,31 @@ class TabManager {
     tab.webContents.loadURL(tab.url)
     this.emit()
     return tab
+  }
+
+  /**
+   * The HTTP status of a main-frame response, from the session's webRequest.
+   * Kept beside the URL it belongs to, because it can arrive either side of
+   * the navigation event that would otherwise clear it.
+   */
+  noteStatus(webContents, url, status) {
+    const tab = this.tabs.find((candidate) => candidate.webContents === webContents)
+    if (!tab) return
+    tab.httpStatus = { url, status: Number(status) || 0 }
+    this.emit()
+  }
+
+  /** A 404 or 410 the reader is looking at right now, else 0. */
+  #deadStatus(tab) {
+    if (!tab?.httpStatus || tab.httpStatus.url !== tab.url) return 0
+    return isDeadStatus(tab.httpStatus.status) ? tab.httpStatus.status : 0
+  }
+
+  /** The address to look up on archive.org, or '' when there is nothing wrong. */
+  archiveTarget(tab = this.active) {
+    if (!tab) return ''
+    if (tab.failedUrl) return tab.failedUrl
+    return this.#deadStatus(tab) ? tab.url : ''
   }
 
   setNeverSleep(id, value) {
@@ -332,7 +381,11 @@ class TabManager {
         asleep: t.asleep, neverSleep: t.neverSleep,
       })),
       nav: {
-        url: active?.url || '',
+        // On the error page the omnibox keeps showing what was asked for, so
+        // pressing Enter is itself a retry.
+        url: active?.failedUrl || active?.url || '',
+        pageStatus: active?.pageStatus || this.#deadStatus(active) || 0,
+        archiveUrl: this.archiveTarget(active),
         loading: !!active?.loading,
         canGoBack: wc ? wc.navigationHistory.canGoBack() : false,
         canGoForward: wc ? wc.navigationHistory.canGoForward() : false,

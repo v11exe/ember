@@ -50,6 +50,10 @@ function buildContextMenu(params = {}, navigation = {}) {
   items.push(command('forward', 'Forward', !!navigation.canGoForward, 'Alt+Right'))
   items.push(command('reload', 'Reload', true, 'Ctrl+R'))
   separator(items)
+  if (navigation.archivable) {
+    items.push(command('view-archived', 'View archived version'))
+    separator(items)
+  }
   items.push(command('save-page', 'Save page as…', true, 'Ctrl+S'))
   items.push(command('print', 'Print…', true, 'Ctrl+P'))
   items.push(command('view-source', 'View page source'))

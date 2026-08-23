@@ -37,6 +37,7 @@ src/main/hibernation.js  idle-tab discard policy (pure) + sweep timer + probes
 src/main/tab-thumbnails.js  cached page screenshots, keyed by tab id
 src/main/selection-panel.js  conversion popup beside a selected value
 src/main/rates.js        ECB exchange rates, fetched lazily, cached for a day
+src/main/archive.js      Wayback availability lookup, cached, click-only
 src/main/session.js      saved tab set for restore-on-launch, sync writes
 src/main/session-prompt.js  close-time "reopen tabs?" dialog on FloatingPanel
 src/main/shortcuts.js    pure key -> command table (Chrome parity) + zoom ladder
@@ -51,11 +52,11 @@ src/renderer/theme.css   palette + type stack + motion tokens, all defined once
 src/renderer/brand.*     exact supplied PNG icon/full-logo mounts
 src/renderer/panel-preload.js  panel bridge + injectBrowserAction()
 src/renderer/pages/      newtab, extensions, upload, context-menu, history, downloads,
-                         session-prompt, settings, conversion
+                         session-prompt, settings, conversion, unreachable
 src/renderer/pages/liquid-glass-ui.{js,css}  shared page material + selector lens
 src/renderer/pages/page-glass.js  full-page refraction; reuses upload-optics maps
 src/renderer/pages/backdrop-contrast.js  flags light captures so overlays flip palette
-src/shared/              IPC/URL/bangs/conversions/file-filter/geometry contracts
+src/shared/              IPC/URL/bangs/conversions/archive/file/geometry contracts
 scripts/smoke.js         boot check
 scripts/capture-ui.js    offscreen wide/medium/compact visual QA captures
 test/                    node:test unit/contracts + two real popup fixtures
@@ -121,6 +122,11 @@ islands, sidebar outstanding).
   causes a network request (frankfurter.app, ECB daily reference rates).
 - The conversion popup sits *above* the selection by preference, the way Opera
   does: covering lines already read beats covering the ones still ahead.
+- A main-frame `did-fail-load` swaps in `ember://unreachable`; a 404/410 does
+  not, because the site's own page is often the useful one. Statuses arrive via
+  `session.webRequest.onCompleted`, whose filter needs `urls` as well as
+  `types`, and can land either side of `did-navigate` — hence `tab.httpStatus`
+  carries the URL it belongs to. archive.org is asked only on a click.
 - `win.setFullScreen()` is a no-op on the transparent frameless window on
   Windows. F11 fills the display bounds by hand and restores them (see
   `fullScreenFrom`).
@@ -284,6 +290,18 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
+### 2026-08-23 — Claude Code — Internet Archive fallback
+- **Status / Branch:** merged · `main`
+- **Touches:** `src/shared/{archive,ipc}.js`, `src/main/{archive,tabs,index,context-menu-model}.js`,
+  `src/renderer/pages/unreachable.{html,css,js}`, `src/renderer/chrome.{html,css,js}`,
+  `src/renderer/{chrome.*,preload.js}`, `test/archive.test.js`
+- **Summary:** Roadmap feature 4. A page that cannot be reached gets Ember's own
+  error page with Retry and View archived version; a 404 or 410 keeps the site's
+  own page and surfaces the archive as a toolbar action instead. Nothing
+  redirects on its own.
+- **For the other agent:** new channel `archive:open` and `UNREACHABLE_URL`.
+  `TabManager` tabs gain `pageStatus`, reported in `state().nav`.
+
 ### 2026-08-23 — Claude Code — Smart selection conversions
 - **Status / Branch:** merged · `main`
 - **Touches:** `src/shared/{conversions,ipc}.js`,
@@ -394,15 +412,4 @@ Newest at top. One entry per branch, updated in place. Status:
 - **For the other agent:** new channels `downloads:query|action|changed` and
   `DOWNLOADS_URL`. New ambient tokens live in `theme.css` — reuse those for any
   future full-page surface instead of new rgba values.
-
-### 2026-08-22 — Claude Code — Smoke gate timeout + flake report
-- **Status / Branch:** merged · `main`
-- **Touches:** `scripts/smoke.js`
-- **Summary:** Raised the smoke timeout 30s → 120s and made it print elapsed
-  time. A throwaway profile costs ~40s cold versus ~22s warm, so 30s sat
-  between the two and failed most runs.
-- **For the other agent:** the smoke probe still hangs intermittently — some
-  runs never reach `smoke ok` and get killed at the cap. Not isolated yet;
-  `await browser?.testExtensionsReady` (index.js) is unbounded and is the
-  prime suspect. Worth a timeout there so it fails loudly instead of hanging.
 

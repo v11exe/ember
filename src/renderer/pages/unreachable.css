@@ -1,0 +1,54 @@
+/* ember://unreachable — shown in place of a page that never arrived.
+   Inherits ambient and glass from history.css. */
+
+.unreachable {
+  position: relative; z-index: 1;
+  flex: 1; min-height: 0;
+  display: grid; place-items: center;
+  padding: 24px;
+}
+
+.panel {
+  width: min(520px, 100%);
+  padding: 34px 34px 28px;
+  border-radius: 20px;
+  text-align: center;
+  animation: rise var(--dur-3) var(--ease);
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+h1 {
+  margin: 0;
+  font: 650 20px/1.3 var(--font-display);
+  letter-spacing: .004em;
+  color: var(--text);
+}
+
+.address {
+  margin: 12px 0 0;
+  font: 400 12px/1.5 var(--mono);
+  color: var(--ember-warm);
+  overflow-wrap: anywhere;
+}
+
+.reason {
+  margin: 10px 0 0;
+  font-size: 13px; line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.choices {
+  margin-top: 24px;
+  display: flex; justify-content: center; flex-wrap: wrap; gap: 10px;
+}
+.choices .pill { padding: 0 20px; height: 38px; }
+
+.status {
+  margin: 14px 0 0;
+  min-height: 17px;
+  font-size: 12px; line-height: 17px;
+  color: var(--text-faint);
+}

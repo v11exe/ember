@@ -22,6 +22,8 @@ const { UploadPanel } = require('./upload-panel')
 const { ContextMenuPanel } = require('./context-menu-panel')
 const { SelectionPanel } = require('./selection-panel')
 const { RateStore } = require('./rates')
+const { ArchiveLookup } = require('./archive')
+const { isDeadStatus, isArchivable } = require('../shared/archive')
 const { NativeBackdrop } = require('./native-backdrop')
 const { ThumbnailCache } = require('./tab-thumbnails')
 const { HibernationManager, hostnameOf, sanitiseHibernation } = require('./hibernation')
@@ -109,6 +111,7 @@ function createBrowser({ privateMode = false } = {}) {
     createTab: (url) => tabs.create(url), clipboard, dialog,
   })
   const rates = new RateStore(path.join(app.getPath('userData'), 'rates.json'))
+  const archive = new ArchiveLookup()
   const selection = new SelectionPanel(win, {
     clipboard,
     rates,
@@ -125,7 +128,7 @@ function createBrowser({ privateMode = false } = {}) {
   const self = {
     win, chrome, tabs, panel, bookmarks, history, downloads, settings, sessionStore, thumbnails, hibernation,
     sessionPrompt: new SessionPrompt(win), closing: false, recentUploads, recentUploadsReady,
-    uploadPanel, contextMenu, selection, rates, smokeClipboard, smokeUploadPaths, nativeBackdrop, popupPositioner: null,
+    uploadPanel, contextMenu, selection, rates, archive, smokeClipboard, smokeUploadPaths, nativeBackdrop, popupPositioner: null,
     privateMode, fullScreenFrom: null,
   }
   browser = self
@@ -170,6 +173,8 @@ function createBrowser({ privateMode = false } = {}) {
     })
   }
   contextMenu.onTabCommand = (tab, action) => runTabCommand(self, tab, action)
+  contextMenu.onViewArchived = (tab, url) => openArchived(self, url)
+  watchMainFrameStatus(privateMode ? session.fromPartition('persist:ember-private') : session.defaultSession, tabs)
   panel.onVisibilityChange = (open) => {
     if (!chrome.webContents.isDestroyed()) chrome.webContents.send(IPC.PANEL_CHANGED, open)
   }
@@ -263,6 +268,34 @@ function createBrowser({ privateMode = false } = {}) {
     if (browser === self) browser = [...browsers][browsers.size - 1] || null
   })
   return browser
+}
+
+// ---------------- unreachable pages and the archive ----------------
+// One webRequest listener per session, so main-frame statuses reach the tab
+// that asked for them. Only 404 and 410 mean anything to us.
+const watchedSessions = new WeakSet()
+
+function watchMainFrameStatus(target, tabs) {
+  if (!target || watchedSessions.has(target)) return
+  watchedSessions.add(target)
+  target.webRequest.onCompleted({ urls: ['http://*/*', 'https://*/*'], types: ['mainFrame'] }, (details) => {
+    if (!isDeadStatus(details.statusCode)) return
+    const contents = webContents.fromId(details.webContentsId)
+    if (contents) tabs.noteStatus(contents, details.url, details.statusCode)
+  })
+}
+
+/**
+ * Ask the Wayback Machine and, if it has a copy, go there. Never automatic —
+ * every path into this function starts with someone choosing it.
+ */
+async function openArchived(current, url) {
+  const target = String(url || current?.tabs.archiveTarget() || current?.tabs.active?.url || '')
+  if (!current || !isArchivable(target)) return { ok: false, reason: 'unsupported' }
+  const snapshot = await current.archive.find(target)
+  if (!snapshot) return { ok: false, reason: 'not-archived' }
+  current.tabs.go(snapshot.url)
+  return { ok: true, ...snapshot }
 }
 
 // ---------------- tab strip commands ----------------
@@ -446,6 +479,11 @@ ipcMain.handle(IPC.DOWNLOADS_ACTION, async (_e, { action, id } = {}) => {
     if (entry?.savePath) shell.openPath(entry.savePath)
   }
   return store.snapshot()
+})
+
+ipcMain.handle(IPC.ARCHIVE_OPEN, async (_e, url) => {
+  if (!browser) return { ok: false, reason: 'unsupported' }
+  return openArchived(browser, url)
 })
 
 ipcMain.handle(IPC.NATIVE_GLASS_SETTINGS, () => snapshotNativeGlassSettings(NATIVE_GLASS_DEFAULTS))
