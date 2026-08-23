@@ -31,6 +31,7 @@ const { HibernationManager, hostnameOf, sanitiseHibernation } = require('./hiber
 const { listBangs, DEFAULT_BANGS } = require('../shared/bangs')
 const { NATIVE_GLASS_DEFAULTS, snapshotNativeGlassSettings } = require('../shared/native-glass')
 const { findFavoriteTab } = require('../shared/favorites')
+const { TOPBAR_HEIGHT, viewportBounds } = require('../shared/chrome-layout')
 
 if (process.env.EMBER_SMOKE_USER_DATA) app.setPath('userData', process.env.EMBER_SMOKE_USER_DATA)
 registerSchemePrivileges()
@@ -79,6 +80,14 @@ function createBrowser({ privateMode = false } = {}) {
     minHeight: 420,
     frame: false,
     transparent: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#1A1210',
+      symbolColor: '#F2F2F2',
+      height: TOPBAR_HEIGHT,
+    },
+    roundedCorners: true,
+    hasShadow: true,
     icon: path.join(__dirname, '..', 'renderer', 'assets', 'ember-app-icon.png'),
     backgroundColor: '#00000000',
     title: 'Ember',
@@ -101,6 +110,7 @@ function createBrowser({ privateMode = false } = {}) {
   const tabs = new TabManager(win, chrome, {
     thumbnails,
     partition: privateMode ? 'persist:ember-private' : undefined,
+    sidebarOpen: settings.get('sidebarOpen'),
   })
   const panel = new ExtensionPanel(win)
   const bookmarks = new BookmarkStore(path.join(app.getPath('userData'), 'bookmarks.json'))
@@ -868,10 +878,13 @@ app.whenReady().then(() => {
           browser.popupPositioner.layout()
           const content = browser.win.getContentBounds()
           const page = active.view.getBounds()
+          const { radius: _radius, ...expectedPage } = viewportBounds({
+            ...content,
+            sidebarOpen: browser.tabs.sidebarOpen,
+            bookmarksVisible: browser.tabs.bookmarksVisible,
+          })
           const panel = browser.panel.bounds
-          checks.push([`layout ${width}x${height}`, page.y === browser.tabs.chromeHeight
-            && page.width === content.width
-            && page.height === content.height - browser.tabs.chromeHeight
+          checks.push([`layout ${width}x${height}`, JSON.stringify(page) === JSON.stringify(expectedPage)
             && panel.x >= 0 && panel.x + panel.width <= content.width
             && panel.y >= browser.tabs.chromeHeight - 6
             && panel.y + panel.height <= content.height])

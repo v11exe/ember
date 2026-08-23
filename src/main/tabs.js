@@ -4,9 +4,12 @@ const { IPC, NEW_TAB_URL, UNREACHABLE_URL } = require('../shared/ipc')
 const { isNativeGlassUrl } = require('../shared/native-glass')
 const { MEDIA_PROBE_SCRIPT, scrollRestoreScript } = require('./hibernation')
 const { isNetworkFailure, describeFailure, isDeadStatus } = require('../shared/archive')
+const {
+  TOPBAR_HEIGHT, BOOKMARKS_HEIGHT, VIEWPORT_RADIUS, SIDEBAR_TRANSITION_MS,
+  viewportBounds,
+} = require('../shared/chrome-layout')
 
-const CHROME_HEIGHT = 84 // tab strip (38) + toolbar (46)
-const BOOKMARKS_HEIGHT = 30
+const CHROME_HEIGHT = TOPBAR_HEIGHT
 // A hidden view often has no frame to screenshot; do not wait long for one.
 const CAPTURE_TIMEOUT = 600
 // The outgoing tab stays visible only this long while being photographed.
@@ -64,6 +67,8 @@ class TabManager {
     this.activeId = null
     this.overlay = false // true while a chrome dropdown needs the full window
     this.chromeHeight = CHROME_HEIGHT
+    this.bookmarksVisible = false
+    this.sidebarOpen = opts.sidebarOpen !== false
     win.on('resize', () => this.layout())
   }
 
@@ -84,6 +89,7 @@ class TabManager {
       },
     })
     view.setBackgroundColor(isNativeGlassUrl(url) ? '#00000000' : '#000000')
+    view.setBorderRadius?.(VIEWPORT_RADIUS)
     return view
   }
 
@@ -229,9 +235,10 @@ class TabManager {
       if (t.id === id) t.view?.setVisible(true)
       else if (t !== previous) t.view?.setVisible(false)
     }
-    // keep the chrome UI painted above the page view
-    this.win.contentView.addChildView(tab.view)
+    // The chrome renderer paints only the exposed shell. Keeping it underneath
+    // the page preserves page input and the live native backdrop in the centre.
     this.win.contentView.addChildView(this.chromeView)
+    this.win.contentView.addChildView(tab.view)
     if (this.extensions) {
       try { this.extensions.selectTab(tab.webContents) } catch { /* non-fatal */ }
     }
@@ -468,16 +475,28 @@ class TabManager {
   }
 
   setBookmarksVisible(visible) {
-    this.chromeHeight = CHROME_HEIGHT + (visible ? BOOKMARKS_HEIGHT : 0)
+    this.bookmarksVisible = !!visible
+    this.chromeHeight = CHROME_HEIGHT + (this.bookmarksVisible ? BOOKMARKS_HEIGHT : 0)
     this.layout()
   }
 
-  layout() {
+  setSidebarOpen(open, { animate = false } = {}) {
+    this.sidebarOpen = !!open
+    this.layout({ animate })
+  }
+
+  layout({ animate = false } = {}) {
     const { width, height } = this.win.getContentBounds()
-    this.chromeView.setBounds({ x: 0, y: 0, width, height: this.chromeHeight })
+    this.chromeView.setBounds({ x: 0, y: 0, width, height })
     const active = this.active
     if (active?.view) {
-      active.view.setBounds({ x: 0, y: this.chromeHeight, width, height: Math.max(0, height - this.chromeHeight) })
+      const { radius, ...bounds } = viewportBounds({
+        width, height, sidebarOpen: this.sidebarOpen, bookmarksVisible: this.bookmarksVisible,
+      })
+      active.view.setBorderRadius?.(radius)
+      active.view.setBounds(bounds, animate ? {
+        animate: { duration: SIDEBAR_TRANSITION_MS, easing: 'ease-in-out' },
+      } : undefined)
     }
   }
 

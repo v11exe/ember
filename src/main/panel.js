@@ -1,6 +1,7 @@
 const path = require('node:path')
 const { WebContentsView } = require('electron')
 const { IPC } = require('../shared/ipc')
+const { TOPBAR_HEIGHT } = require('../shared/chrome-layout')
 
 /**
  * The extensions dropdown, hosted in its own WebContentsView.
@@ -11,7 +12,7 @@ const { IPC } = require('../shared/ipc')
  */
 const WIDTH = 306
 const MARGIN = 10
-const TOP = 78 // baseline 84px chrome bar, with a deliberate 6px overlap
+const TOP = TOPBAR_HEIGHT - 6
 
 class ExtensionPanel {
   constructor(win) {
