@@ -258,6 +258,23 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
+### 2026-08-23 — Claude Code — Tab hibernation + thumbnail cache
+- **Status / Branch:** in-progress · `feat/tab-hibernation`
+- **Touches:** `src/main/{hibernation,tab-thumbnails,tabs,settings,index,context-menu-model,context-menu-panel}.js`,
+  `src/shared/ipc.js`, `src/renderer/{preload.js,chrome.js,chrome.css}`,
+  `src/renderer/pages/settings.{html,js,css}`, `test/{hibernation,tab-thumbnails}.test.js`
+- **Summary:** Roadmap feature 1. Idle background tabs genuinely lose their
+  renderer after a configurable timeout; the tab record survives with url, title,
+  favicon, scroll and a cached screenshot, and clicking it rebuilds the view.
+  Protected categories (active, audible, capturing, downloading, dirty forms,
+  never-sleep tab/domain, internal pages) are exempt. Right-click a tab for
+  Sleep now / Never sleep this tab / Never sleep this domain.
+- **For the other agent:** `TabManager` tabs may now have `view === null` and
+  `webContents === null` when `tab.asleep` is true — guard before touching them.
+  New channels `tab:action` and `tab:context-menu`. `ThumbnailCache`
+  (`src/main/tab-thumbnails.js`) is the one place page screenshots are cached;
+  read from it rather than calling `capturePage()` for a preview.
+
 ### 2026-08-22 — Claude Code — Native glass on every internal page
 - **Status / Branch:** merged · `main`
 - **Touches:** `src/shared/native-glass.js`,
