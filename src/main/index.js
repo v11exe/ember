@@ -30,7 +30,7 @@ const { ThumbnailCache } = require('./tab-thumbnails')
 const { HibernationManager, hostnameOf, sanitiseHibernation } = require('./hibernation')
 const { listBangs, DEFAULT_BANGS } = require('../shared/bangs')
 const { NATIVE_GLASS_DEFAULTS, snapshotNativeGlassSettings } = require('../shared/native-glass')
-const { DEFAULT_FAVORITES, findFavoriteTab, favoriteFromTab } = require('../shared/favorites')
+const { DEFAULT_FAVORITES, findFavoriteTab, favoriteFromTab, placeFavorite } = require('../shared/favorites')
 const { TOPBAR_HEIGHT, OUTER_RADIUS, viewportBounds } = require('../shared/chrome-layout')
 
 if (process.env.EMBER_SMOKE_USER_DATA) app.setPath('userData', process.env.EMBER_SMOKE_USER_DATA)
@@ -653,12 +653,28 @@ ipcMain.on(IPC.FAVORITE_OPEN, (event, id) => {
   else target.tabs.create(favorite.url)
 })
 
-ipcMain.handle(IPC.FAVORITE_PIN_TAB, async (event, id) => {
+ipcMain.handle(IPC.FAVORITE_PIN_TAB, async (event, payload) => {
   const source = browserFromSender(event.sender) || browser
+  const id = payload && typeof payload === 'object' ? payload.id : payload
+  const index = payload && typeof payload === 'object' ? payload.index : null
   const tab = source?.tabs.tabs.find((candidate) => candidate.id === Number(id))
   if (!source || !tab) return { status: 'invalid', id: null }
-  const result = favoriteFromTab(tab, source.settings.get('favorites'))
-  if (result.status === 'added') await persistFavorites(source, result.favorites)
+  const result = favoriteFromTab(
+    tab, source.settings.get('favorites'), source.settings.get('favoriteGrid'), index,
+  )
+  if (['added', 'moved', 'replaced'].includes(result.status)) {
+    await persistFavorites(source, result.favorites)
+  }
+  return { status: result.status, id: result.favorite?.id || null }
+})
+
+ipcMain.handle(IPC.FAVORITE_MOVE, async (event, { id, index } = {}) => {
+  const source = browserFromSender(event.sender) || browser
+  const current = source?.settings.get('favorites') || []
+  const favorite = current.find((entry) => entry.id === String(id))
+  if (!source || !favorite) return { status: 'invalid', id: null }
+  const result = placeFavorite(favorite, current, source.settings.get('favoriteGrid'), index)
+  if (result.status === 'moved') await persistFavorites(source, result.favorites)
   return { status: result.status, id: result.favorite?.id || null }
 })
 

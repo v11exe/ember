@@ -77,6 +77,7 @@ test('chrome preload exposes bookmark import, visibility, and live updates', asy
 /** Boot the chrome preload against stub IPC and hand back what it exposed. */
 function bootPreload({ bangs = [], chromeConfig = null } = {}) {
   const sent = []
+  const invoked = []
   const listeners = new Map()
   let exposed
   const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'preload.js'), 'utf8')
@@ -85,7 +86,8 @@ function bootPreload({ bangs = [], chromeConfig = null } = {}) {
     ipcRenderer: {
       on: (channel, fn) => listeners.set(channel, fn),
       send: (...args) => sent.push(args),
-      invoke: async (channel) => {
+      invoke: async (channel, payload) => {
+        invoked.push([channel, payload])
         if (channel === IPC.BANGS_GET) return bangs
         if (channel === IPC.CHROME_CONFIG_GET) return chromeConfig
         return { channel }
@@ -102,18 +104,19 @@ function bootPreload({ bangs = [], chromeConfig = null } = {}) {
     throw new Error(`Unexpected require: ${id}`)
   }
   vm.runInNewContext(`(function(require){${source}\n})`, {})(sandboxRequire)
-  return { exposed, listeners, sent }
+  return { exposed, listeners, sent, invoked }
 }
 
 test('chrome preload bridges live shell configuration and Favorite actions', async () => {
   const chromeConfig = { sidebarOpen: true, favorites: [{ id: 'youtube' }] }
-  const { exposed, listeners, sent } = bootPreload({ chromeConfig })
+  const { exposed, listeners, sent, invoked } = bootPreload({ chromeConfig })
 
   assert.deepEqual(await exposed.getChromeConfig(), chromeConfig)
   exposed.setSidebarOpen(false)
   exposed.openFavorite('youtube')
   exposed.reorderTab(4, 2)
-  assert.deepEqual(await exposed.pinFavoriteFromTab(4), { channel: IPC.FAVORITE_PIN_TAB })
+  assert.deepEqual(await exposed.pinFavoriteFromTab(4, 3), { channel: IPC.FAVORITE_PIN_TAB })
+  assert.deepEqual(await exposed.moveFavorite('youtube', 1), { channel: IPC.FAVORITE_MOVE })
   exposed.favoriteContextMenu('youtube', 44, 58)
   assert.equal(exposed.tabMaximum({ availableWidth: 800, count: 5 }), 127)
   assert.equal(exposed.sameFavoriteSite('https://www.youtube.com/', 'https://youtube.com/watch?v=x'), true)
@@ -122,6 +125,10 @@ test('chrome preload bridges live shell configuration and Favorite actions', asy
     [IPC.FAVORITE_OPEN, 'youtube'],
     [IPC.TAB_REORDER, { id: 4, beforeId: 2 }],
     [IPC.FAVORITE_CONTEXT_MENU, { id: 'youtube', x: 44, y: 58 }],
+  ])
+  assert.deepEqual(JSON.parse(JSON.stringify(invoked.slice(1))), [
+    [IPC.FAVORITE_PIN_TAB, { id: 4, index: 3 }],
+    [IPC.FAVORITE_MOVE, { id: 'youtube', index: 1 }],
   ])
 
   let update = null

@@ -53,7 +53,12 @@ contextBridge.exposeInMainWorld('ember', {
   onChromeConfig: (fn) => ipcRenderer.on(IPC.CHROME_CONFIG_CHANGED, (_e, config) => fn(config)),
   setSidebarOpen: (open) => ipcRenderer.send(IPC.SIDEBAR_SET, !!open),
   openFavorite: (id) => ipcRenderer.send(IPC.FAVORITE_OPEN, String(id)),
-  pinFavoriteFromTab: (id) => ipcRenderer.invoke(IPC.FAVORITE_PIN_TAB, Number(id)),
+  pinFavoriteFromTab: (id, index) => ipcRenderer.invoke(IPC.FAVORITE_PIN_TAB, {
+    id: Number(id), index: Number(index),
+  }),
+  moveFavorite: (id, index) => ipcRenderer.invoke(IPC.FAVORITE_MOVE, {
+    id: String(id), index: Number(index),
+  }),
   favoriteContextMenu: (id, x, y) => ipcRenderer.send(IPC.FAVORITE_CONTEXT_MENU, {
     id: String(id), x: Number(x) || 0, y: Number(y) || 0,
   }),

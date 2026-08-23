@@ -36,6 +36,7 @@ const IPC = {
   SIDEBAR_SET: 'sidebar:set',
   FAVORITE_OPEN: 'favorite:open',
   FAVORITE_PIN_TAB: 'favorite:pin-tab',
+  FAVORITE_MOVE: 'favorite:move',
   FAVORITE_CONTEXT_MENU: 'favorite:context-menu',
   FAVORITE_REMOVE: 'favorite:remove',
   HISTORY_QUERY: 'history:query',
