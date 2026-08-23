@@ -12,7 +12,7 @@ body { user-select: none; }
   height: 100%;
   padding: 34px 9px 8px;
   overflow: hidden;
-  border-radius: 12px 0 0 12px;
+  border-radius: var(--outer-radius) 0 0 var(--outer-radius);
   -electron-corner-smoothing: 75%;
 }
 body.maximized .sidebar-surface { border-radius: 0; }
@@ -21,6 +21,8 @@ body.maximized .sidebar-surface { border-radius: 0; }
   display: grid;
   grid-template-columns: repeat(2, var(--tile-width));
   grid-auto-rows: var(--tile-height);
+  min-height: calc(var(--tile-height) * 2 + 12px);
+  align-content: start;
   gap: 10px;
   opacity: 1;
   transform: translateX(0);

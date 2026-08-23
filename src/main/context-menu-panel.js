@@ -91,25 +91,24 @@ class ContextMenuPanel {
     })
   }
 
-  async openFavoriteMenu({ favorite, targetView, point }) {
+  async openFavoriteMenu({ favorite, targetView, backdropView = targetView, point }) {
     if (this.active) this.hide()
     const items = buildFavoriteContextMenu()
-    const content = this.win.getContentBounds()
-    const viewport = { x: 0, y: 0, width: content.width, height: content.height }
+    const viewport = backdropView.getBounds()
     const target = targetView.getBounds()
     const anchor = {
-      x: target.x + Math.round(point?.x || 0),
+      x: viewport.x + 8,
       y: target.y + Math.round(point?.y || 0),
     }
     const bounds = placePointPanel(viewport, anchor, menuSize(items), 8)
     this.active = {
-      kind: 'favorite', favorite, targetView, point: { ...point }, items,
+      kind: 'favorite', favorite, targetView, backdropView, point: { ...point }, items,
       openSequence: ++this.openSequence,
     }
     await this.overlay.show({
       bounds,
       state: { kind: 'context-menu', items, openSequence: this.active.openSequence },
-      targetView,
+      targetView: backdropView,
       captureBleed: CAPTURE_BLEED,
     })
   }
@@ -127,15 +126,14 @@ class ContextMenuPanel {
   layout() {
     if (!this.active) return
     if (this.active.kind === 'favorite') {
-      const { targetView, point, items } = this.active
-      const content = this.win.getContentBounds()
-      const viewport = { x: 0, y: 0, width: content.width, height: content.height }
+      const { targetView, backdropView, point, items } = this.active
+      const viewport = backdropView.getBounds()
       const target = targetView.getBounds()
       const bounds = placePointPanel(viewport, {
-        x: target.x + Math.round(point?.x || 0),
+        x: viewport.x + 8,
         y: target.y + Math.round(point?.y || 0),
       }, menuSize(items), 8)
-      void this.overlay.relayout?.({ bounds, targetView, captureBleed: CAPTURE_BLEED })
+      void this.overlay.relayout?.({ bounds, targetView: backdropView, captureBleed: CAPTURE_BLEED })
       return
     }
     if (this.active.kind === 'tab') {

@@ -670,6 +670,7 @@ ipcMain.on(IPC.FAVORITE_CONTEXT_MENU, (event, { id, x, y } = {}) => {
   source.contextMenu.openFavoriteMenu({
     favorite,
     targetView: source.sidebarView,
+    backdropView: source.tabs.active?.view || source.sidebarView,
     point: { x: Number(x) || 0, y: Number(y) || 0 },
   }).catch((error) => console.error('[ember] Favorite menu could not open:', error.message))
 })

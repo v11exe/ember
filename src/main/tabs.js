@@ -6,7 +6,7 @@ const { MEDIA_PROBE_SCRIPT, scrollRestoreScript } = require('./hibernation')
 const { isNetworkFailure, describeFailure, isDeadStatus } = require('../shared/archive')
 const {
   TOPBAR_HEIGHT, BOOKMARKS_HEIGHT, VIEWPORT_RADIUS, SIDEBAR_TRANSITION_MS,
-  SIDEBAR_WIDTH, COLLAPSED_RAIL_WIDTH, OUTER_INSET, SHELL_INSET,
+  SIDEBAR_WIDTH, COLLAPSED_RAIL_WIDTH, OUTER_INSET, OUTER_RADIUS, SHELL_INSET,
   viewportBounds,
 } = require('../shared/chrome-layout')
 
@@ -541,6 +541,7 @@ class TabManager {
     if (!wc || wc.isDestroyed?.()) return
     wc.send(IPC.SHELL_METRICS, {
       width, height, x: bounds.x, y: bounds.y,
+      outerRadius: OUTER_RADIUS, contentRadius: VIEWPORT_RADIUS, frameInset: SHELL_INSET,
     })
   }
 

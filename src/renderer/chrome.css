@@ -3,9 +3,6 @@
   --sidebar-collapsed-width: 8px;
   --sidebar-header-width: 168px;
   --topbar-height: 32px;
-  --outer-radius: 12px;
-  --viewport-radius: 12px;
-  --shell-inset: 8px;
   --tab-height: 28px;
   --tab-radius: 6px;
   --tab-gap: 8px;
@@ -337,7 +334,7 @@ button, input, .top-navigation, .tabstrip, .top-actions,
   position: absolute;
   z-index: 3;
   left: var(--sidebar-width);
-  right: var(--shell-inset);
+  right: var(--frame-inset);
   top: var(--topbar-height);
   height: 30px;
   min-width: 0;

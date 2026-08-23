@@ -474,13 +474,16 @@ Favorites should feel like persistent shortcuts to important browser application
 Implemented with Ember's Arc-calibrated 32px shell, a collapsible 168px feature rail,
 ordered persistent Favorites, settings-based add/edit/reorder/remove/reset, and
 existing-tab reuse that also wakes hibernated Favorite tabs without making them
-permanent renderer consumers.
+permanent renderer consumers. A horizontal tab can also be reordered in place or
+dropped onto the Favorite region to persist its exact page URL and favicon; site
+identity is used for duplicate detection and open-tab reuse. Favorite tiles expose
+a restrained open-site state and a one-action right-click removal menu.
 
 Preserve these rules:
 
-- Favorites are feature shortcuts, never a second tab strip. Their selected
-  appearance derives from the active tab's site while the real tab remains in
-  Ember's horizontal tab system.
+- Favorites are feature shortcuts, never a second tab strip. Their open appearance
+  reflects any matching live or sleeping tab while the real tab remains in Ember's
+  reorderable horizontal tab system.
 - Shell and page geometry come from `shared/chrome-layout.js`. Top chrome,
   Favorite rail and 8px perimeter gradients are separate bounded views; none
   sits beneath the transparent page. Four anti-aliased 12px radial overlays clip
@@ -491,9 +494,11 @@ Preserve these rules:
   bounds together for 210ms. Blank top-row dragging uses a pointer-captured IPC
   bridge because CSS caption regions on child WebContentsViews expose only a
   narrow strip through BaseWindow on Windows.
-- Sidebar open/closed state and Favorite order are user preferences. A Favorite
-  resolves by stored tab id first, then same-site reuse, then creation, so a
-  sleeping match wakes through normal `tabs.select()` lifecycle behavior.
+- Sidebar open/closed state and Favorite order are user preferences. A dropped tab
+  stores its exact HTTP(S) page while same-site identity prevents duplicate
+  shortcuts. Clicking resolves a same-site tab before creation, so a sleeping
+  match wakes through normal `tabs.select()` lifecycle behavior. Removing a
+  Favorite never closes a matching tab.
 - Future Workspaces (#12) may add explicit workspace-scoped Favorites, but the
   current list remains global until a real scope model exists. Profiles (#13)
   must resolve Favorite reuse inside the correct browsing session.

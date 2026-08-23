@@ -95,8 +95,8 @@ async function captureChrome(size) {
     document.body.prepend(page)
 
     const sidebar = document.createElement('aside')
-    sidebar.className = 'qa-sidebar'
-    sidebar.style.cssText = 'position:fixed;z-index:1;inset:0 auto 0 0;width:168px;padding:34px 9px 8px;display:grid;grid-template-columns:repeat(2,69px);grid-auto-rows:43px;align-content:start;gap:10px;border-radius:12px 0 0 12px;background:radial-gradient(ellipse 245px 205px at 0 0,rgba(255,96,0,.4),transparent 74%),linear-gradient(180deg,transparent,rgba(10,8,8,.8)),linear-gradient(100deg,#542006,#29150d);'
+    sidebar.className = 'qa-sidebar shell-material shell-edge shell-edge-sidebar'
+    sidebar.style.cssText = 'position:fixed;z-index:1;inset:0 auto 0 0;width:168px;padding:34px 9px 8px;display:grid;grid-template-columns:repeat(2,69px);grid-auto-rows:43px;align-content:start;gap:10px;border-radius:var(--outer-radius) 0 0 var(--outer-radius);'
     document.body.prepend(sidebar)
 
     const favorites = [

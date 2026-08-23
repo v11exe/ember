@@ -150,15 +150,17 @@ test('opens and routes the one-action Favorite removal menu', async () => {
   const h = harness()
   const favorite = { id: 'youtube', name: 'YouTube', url: 'https://youtube.com/' }
   const targetView = { getBounds: () => ({ x: 0, y: 0, width: 168, height: 640 }) }
+  const backdropView = { getBounds: () => ({ x: 168, y: 32, width: 724, height: 560 }) }
   const commands = []
   h.panel.onFavoriteCommand = (entry, action) => { commands.push([entry.id, action]); return true }
 
-  await h.panel.openFavoriteMenu({ favorite, targetView, point: { x: 76, y: 52 } })
+  await h.panel.openFavoriteMenu({ favorite, targetView, backdropView, point: { x: 76, y: 52 } })
   assert.deepEqual(h.shown[0].state.items.map(({ id, label }) => ({ id, label })), [
     { id: 'favorite-remove', label: 'Remove quick site' },
   ])
-  assert.equal(h.shown[0].bounds.x >= 0, true)
-  assert.equal(h.shown[0].bounds.x + h.shown[0].bounds.width <= 900, true)
+  assert.equal(h.shown[0].targetView, backdropView)
+  assert.equal(h.shown[0].bounds.x >= 176, true)
+  assert.equal(h.shown[0].bounds.x + h.shown[0].bounds.width <= 884, true)
 
   assert.equal(await h.panel.handleAction(h.sender, 'favorite-remove'), true)
   assert.deepEqual(commands, [['youtube', 'favorite-remove']])

@@ -71,8 +71,11 @@ test('browser chrome is one unified Ember shell rather than the old permanent to
   assert.match(js, /window\.ember\.close\(\)/)
   assert.match(html, /class="omnibox omnibox-transient"/, 'Ctrl+L survives as a transient surface')
 
-  for (const token of ['--sidebar-width', '--topbar-height', '--outer-radius', '--viewport-radius', '--shell-inset', '--tab-height', '--tab-max-width', '--tab-min-width', '--ember-orange']) {
+  for (const token of ['--sidebar-width', '--topbar-height', '--tab-height', '--tab-max-width', '--tab-min-width', '--ember-orange']) {
     assert.match(css, new RegExp(token))
+  }
+  for (const token of ['--outer-radius', '--content-radius', '--frame-inset']) {
+    assert.match(material, new RegExp(token))
   }
   assert.match(material, /radial-gradient[\s\S]+linear-gradient/, 'shell uses one smouldering compound gradient')
   assert.doesNotMatch(html, /shell-outline/, 'shell has no segmented orange outline overlay')
@@ -100,7 +103,7 @@ test('Favorite rail renders in a separate bounded view so native glass stays vis
   const cornerCss = read('src', 'renderer', 'corner-mask.css')
   assert.match(html, /id="favorites"/)
   assert.match(css, /\.sidebar-surface/)
-  assert.match(css, /border-radius:\s*12px\s+0\s+0\s+12px/)
+  assert.match(css, /border-radius:\s*var\(--outer-radius\)\s+0\s+0\s+var\(--outer-radius\)/)
   assert.doesNotMatch(css, /radial-gradient[\s\S]+linear-gradient/, 'sidebar does not paint an independent shell material')
   assert.match(js, /openFavorite/)
   assert.match(js, /sameFavoriteSite/)
@@ -111,7 +114,7 @@ test('Favorite rail renders in a separate bounded view so native glass stays vis
   assert.match(main, /contentView\.setBorderRadius/)
   assert.match(main, /frame\.html/)
   assert.doesNotMatch(frameCss, /#a43c03|#542006/i, 'frame does not own a competing lower-right gradient')
-  assert.match(frameCss, /border-radius:\s*0\s+0\s+12px\s+0/)
+  assert.match(frameCss, /border-radius:\s*0\s+0\s+var\(--outer-radius\)\s+0/)
   assert.match(frameCss, /\.maximized\s+\.frame-surface/)
   assert.match(main, /pageCornerMasks/)
   assert.match(main, /CORNER_MASK_INPUT/)
@@ -181,6 +184,7 @@ test('tabs reorder with a custom drag image and can pin into the full Favorite g
   assert.match(sidebarJs, /favoriteContextMenu/)
   assert.match(sidebarJs, /application\/x-ember-tab/)
   assert.match(sidebarCss, /\.favorites\.drop-ready/)
+  assert.match(sidebarCss, /\.favorites\s*\{[^}]*min-height:\s*calc\(var\(--tile-height\) \* 2 \+ 12px\)/s)
   assert.match(sidebarCss, /\.favorite\.is-open/)
 })
 

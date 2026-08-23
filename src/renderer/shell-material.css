@@ -3,6 +3,9 @@
   --shell-height: 100vh;
   --shell-x: 0px;
   --shell-y: 0px;
+  --outer-radius: 12px;
+  --content-radius: 12px;
+  --frame-inset: 8px;
   --shell-material:
     radial-gradient(ellipse 34% 62% at 2.5% 2%, rgba(255, 90, 0, .31) 0%, rgba(165, 58, 5, .19) 21%, rgba(84, 32, 6, .075) 45%, transparent 69%),
     radial-gradient(ellipse 48% 30% at 15% 0%, rgba(116, 45, 14, .10) 0%, transparent 64%),

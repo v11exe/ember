@@ -51,6 +51,8 @@ src/renderer/preload.js        chrome UI contextBridge
 src/renderer/chrome.*          unified 32px top shell + tab strip + caption controls
 src/renderer/{sidebar,frame,corner-mask}.*
                                bounded Favorite rail, perimeter gradients + page clipping
+src/renderer/shell-{material,metrics}.*
+                               synchronized whole-window material across bounded views
 src/renderer/theme.css         shared palette/type/motion tokens
 src/renderer/brand.*           canonical Ember branding mounts
 src/renderer/panel-preload.js  dropdown bridge/browser-action injection
@@ -125,9 +127,17 @@ test/                          node:test contracts/integration fixtures
 - Sidebar collapse interpolates sidebar, page and bottom-frame bounds together
   on 16ms ticks for 210ms. Do not restore Electron's platform `animate` bounds
   option: it is not frame-synchronous on Windows and made native glass jump.
-- The Favorite rail is global and ordered today. It resolves a stored tab id,
-  then a matching site, then creates a tab; selecting a sleeping match must wake
-  it through the ordinary tab lifecycle rather than keeping Favorites alive.
+- The Favorite rail is global and ordered today. It resolves a matching site,
+  then creates a tab at the stored exact URL; selecting a sleeping match must
+  wake it through the ordinary tab lifecycle rather than keeping Favorites alive.
+- Horizontal tab drag reorders the existing tab records without recreating their
+  renderers. Dropping a tab into the Favorite region stores its exact page URL,
+  de-duplicates and reuses by site, and never destroys the source tab. Favorite
+  open state includes matching background and sleeping tabs; removal does not
+  close them.
+- Top, sidebar, frame and corner-mask views receive window-relative shell metrics
+  and sample `shell-material.css`. Keep that single material synchronized on every
+  resize/collapse frame rather than restoring independent regional gradients.
 - Upload/context/switcher/selection overlays use bounded `FloatingPanel`
   infrastructure. Do not replace normal page bounds to fake an overlay.
 - Shortcuts that must work while a webpage owns focus go through
@@ -178,8 +188,8 @@ Google fallback search · `ember://` internal pages · extension support through
 or proprietary assets.
 
 Not yet established unless the repo later proves otherwise: TypeScript config,
-linter, CI, CODEOWNERS, branch protection, `electron-updater`, tab drag/reorder,
-find bar, or `ember://extensions` as a normal tab.
+linter, CI, CODEOWNERS, branch protection, `electron-updater`, find bar, or
+`ember://extensions` as a normal tab.
 
 ---
 
@@ -312,13 +322,14 @@ Newest first. One entry per active/recent unit of work.
 ```
 
 ### 2026-08-23 — Codex — Shell compositing and Favorite drag polish
-- **Status / Branch:** in-progress · `feat/ember-shell`
+- **Status / Branch:** completed · `feat/ember-shell`
 - **Touches:** `docs/superpowers/{specs,plans}/*`, `src/shared/{chrome-layout,favorites,ipc}.js`,
   `src/main/{index,tabs,context-menu-model,context-menu-panel}.js`,
   `src/renderer/{chrome,sidebar,frame,corner-mask,preload,brand}.*`, renderer assets,
   `test/*`, `scripts/capture-ui.js`, `ROADMAP.md`, `AGENTS.md`
-- **Summary:** Correcting the existing bounded-view shell compositing and material,
-  then adding horizontal tab reorder plus tab-to-Favorite pinning, open-state and removal.
+- **Summary:** Synchronized the bounded native shell surfaces, removed corner and
+  perimeter artifacts, restored the white-stroke chrome mark, and added horizontal
+  tab reorder plus tab-to-Favorite pinning, open-state and removal.
 - **For the other agent:** Preserve the accepted 32px/168px shell geometry and the
   hibernated-tab lifecycle; native page masks remain required on Windows.
 

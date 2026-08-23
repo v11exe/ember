@@ -17,18 +17,18 @@ html, body, .corner-mask {
 }
 
 body[data-corner="top-left"] .corner-mask::before {
-  -webkit-mask-image: radial-gradient(circle at 100% 100%, transparent 0 10.7px, rgba(0, 0, 0, .55) 11.3px, #000 12px);
-  mask-image: radial-gradient(circle at 100% 100%, transparent 0 10.7px, rgba(0, 0, 0, .55) 11.3px, #000 12px);
+  -webkit-mask-image: radial-gradient(circle at 100% 100%, transparent 0 calc(var(--content-radius) - 1.3px), rgba(0, 0, 0, .55) calc(var(--content-radius) - .7px), #000 var(--content-radius));
+  mask-image: radial-gradient(circle at 100% 100%, transparent 0 calc(var(--content-radius) - 1.3px), rgba(0, 0, 0, .55) calc(var(--content-radius) - .7px), #000 var(--content-radius));
 }
 body[data-corner="top-right"] .corner-mask::before {
-  -webkit-mask-image: radial-gradient(circle at 0 100%, transparent 0 10.7px, rgba(0, 0, 0, .55) 11.3px, #000 12px);
-  mask-image: radial-gradient(circle at 0 100%, transparent 0 10.7px, rgba(0, 0, 0, .55) 11.3px, #000 12px);
+  -webkit-mask-image: radial-gradient(circle at 0 100%, transparent 0 calc(var(--content-radius) - 1.3px), rgba(0, 0, 0, .55) calc(var(--content-radius) - .7px), #000 var(--content-radius));
+  mask-image: radial-gradient(circle at 0 100%, transparent 0 calc(var(--content-radius) - 1.3px), rgba(0, 0, 0, .55) calc(var(--content-radius) - .7px), #000 var(--content-radius));
 }
 body[data-corner="bottom-left"] .corner-mask::before {
-  -webkit-mask-image: radial-gradient(circle at 100% 0, transparent 0 10.7px, rgba(0, 0, 0, .55) 11.3px, #000 12px);
-  mask-image: radial-gradient(circle at 100% 0, transparent 0 10.7px, rgba(0, 0, 0, .55) 11.3px, #000 12px);
+  -webkit-mask-image: radial-gradient(circle at 100% 0, transparent 0 calc(var(--content-radius) - 1.3px), rgba(0, 0, 0, .55) calc(var(--content-radius) - .7px), #000 var(--content-radius));
+  mask-image: radial-gradient(circle at 100% 0, transparent 0 calc(var(--content-radius) - 1.3px), rgba(0, 0, 0, .55) calc(var(--content-radius) - .7px), #000 var(--content-radius));
 }
 body[data-corner="bottom-right"] .corner-mask::before {
-  -webkit-mask-image: radial-gradient(circle at 0 0, transparent 0 10.7px, rgba(0, 0, 0, .55) 11.3px, #000 12px);
-  mask-image: radial-gradient(circle at 0 0, transparent 0 10.7px, rgba(0, 0, 0, .55) 11.3px, #000 12px);
+  -webkit-mask-image: radial-gradient(circle at 0 0, transparent 0 calc(var(--content-radius) - 1.3px), rgba(0, 0, 0, .55) calc(var(--content-radius) - .7px), #000 var(--content-radius));
+  mask-image: radial-gradient(circle at 0 0, transparent 0 calc(var(--content-radius) - 1.3px), rgba(0, 0, 0, .55) calc(var(--content-radius) - .7px), #000 var(--content-radius));
 }

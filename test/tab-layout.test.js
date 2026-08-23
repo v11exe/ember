@@ -140,13 +140,14 @@ test('every bounded shell surface receives its absolute window-coordinate materi
   const { tabs, shellMetrics, frameViews } = fixture()
   tabs.layout()
 
-  assert.deepEqual(shellMetrics.chrome.at(-1), { width: 1270, height: 740, x: 0, y: 0 })
-  assert.deepEqual(shellMetrics.sidebar.at(-1), { width: 1270, height: 740, x: 0, y: 0 })
+  const radii = { outerRadius: 12, contentRadius: 12, frameInset: 8 }
+  assert.deepEqual(shellMetrics.chrome.at(-1), { width: 1270, height: 740, x: 0, y: 0, ...radii })
+  assert.deepEqual(shellMetrics.sidebar.at(-1), { width: 1270, height: 740, x: 0, y: 0, ...radii })
   assert.deepEqual(frameViews.right.getBounds(), { x: 1262, y: 32, width: 8, height: 700 })
   assert.deepEqual(frameViews.bottom.getBounds(), { x: 168, y: 732, width: 1102, height: 8 })
-  assert.deepEqual(shellMetrics.right.at(-1), { width: 1270, height: 740, x: 1262, y: 32 })
-  assert.deepEqual(shellMetrics.bottom.at(-1), { width: 1270, height: 740, x: 168, y: 732 })
+  assert.deepEqual(shellMetrics.right.at(-1), { width: 1270, height: 740, x: 1262, y: 32, ...radii })
+  assert.deepEqual(shellMetrics.bottom.at(-1), { width: 1270, height: 740, x: 168, y: 732, ...radii })
   assert.deepEqual(shellMetrics.masks['bottom-right'].at(-1), {
-    width: 1270, height: 740, x: 1250, y: 720,
+    width: 1270, height: 740, x: 1250, y: 720, ...radii,
   })
 })
