@@ -266,7 +266,7 @@ Preserve these rules:
 ## 5. Arc-style Ctrl+Tab visual tab switcher
 
 **Source:** Arc / Windows Alt+Tab concept  
-**Priority:** HIGH — not yet implemented
+**Priority:** HIGH
 
 **Status:** ✅ Completed
 
@@ -722,7 +722,7 @@ Workspaces and Profiles should remain separate concepts so multiple workspaces c
 
 ## 14. Universal tab search from the sidebar
 
-**Source:** Vivaldi / Workona concept**
+**Source:** Vivaldi / Workona concept
 
 **Status:** ⬜ Planned
 
@@ -753,7 +753,7 @@ Important: this is **a sidebar search tool**, not a permanent sidebar tab list.
 
 ## 15. Named fully-offloaded Sessions
 
-**Source:** Session Buddy / Tab Session Manager, made more aggressive**
+**Source:** Session Buddy / Tab Session Manager, made more aggressive
 
 **Status:** ⬜ Planned
 
@@ -998,7 +998,7 @@ Keep this subtle rather than constantly rearranging the browser.
 
 ## 24. Tree relationships between tabs
 
-**Source:** Orion / Sidebery / SigmaOS concept**
+**Source:** Orion / Sidebery / SigmaOS concept
 
 **Status:** ⬜ Planned
 
