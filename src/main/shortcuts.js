@@ -10,8 +10,11 @@ const COMMANDS = {
   NEW_TAB: 'new-tab',
   CLOSE_TAB: 'close-tab',
   REOPEN_TAB: 'reopen-tab',
-  NEXT_TAB: 'next-tab',
+  NEXT_TAB: 'next-tab',          // Ctrl+Tab: walks the switcher
   PREVIOUS_TAB: 'previous-tab',
+  NEXT_TAB_STRIP: 'next-tab-strip',      // Ctrl+PageDown: cycles the strip
+  PREVIOUS_TAB_STRIP: 'previous-tab-strip',
+  END_SWITCH: 'end-switch',      // Ctrl came back up
   SELECT_TAB: 'select-tab',       // carries an index
   LAST_TAB: 'last-tab',
   NEW_WINDOW: 'new-window',
@@ -39,7 +42,14 @@ const COMMANDS = {
  * @returns {{ command: string, index?: number }|null}
  */
 function resolveShortcut(input) {
-  if (!input || input.type !== 'keyDown') return null
+  if (!input) return null
+  // Releasing the modifier is what commits the Ctrl+Tab switcher, so keyUp is
+  // the one non-keyDown event this table cares about.
+  if (input.type === 'keyUp') {
+    const released = String(input.key || '').toLowerCase()
+    return released === 'control' || released === 'meta' ? { command: COMMANDS.END_SWITCH } : null
+  }
+  if (input.type !== 'keyDown') return null
 
   const key = String(input.key || '').toLowerCase()
   const mod = !!(input.control || input.meta)
@@ -70,8 +80,8 @@ function resolveShortcut(input) {
   }
 
   if (key === 'tab') return { command: shift ? COMMANDS.PREVIOUS_TAB : COMMANDS.NEXT_TAB }
-  if (key === 'pagedown') return { command: COMMANDS.NEXT_TAB }
-  if (key === 'pageup') return { command: COMMANDS.PREVIOUS_TAB }
+  if (key === 'pagedown') return { command: COMMANDS.NEXT_TAB_STRIP }
+  if (key === 'pageup') return { command: COMMANDS.PREVIOUS_TAB_STRIP }
 
   switch (key) {
     case 't': return { command: shift ? COMMANDS.REOPEN_TAB : COMMANDS.NEW_TAB }

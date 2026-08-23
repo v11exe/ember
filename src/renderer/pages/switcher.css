@@ -1,0 +1,93 @@
+/* Ctrl+Tab switcher. One row of cards on the shared captured-backdrop glass
+   (glass.css), sized to be read at a glance and gone again. */
+
+body { display: grid; place-items: stretch; }
+
+.shell {
+  position: relative;
+  width: 100%; height: 100%;
+  border: var(--glass-edge);
+  border-radius: 20px;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--glass-bg);
+  box-shadow: var(--glass-lift), var(--glass-rim);
+  animation: rise var(--dur-2) var(--ease);
+}
+@keyframes rise {
+  from { opacity: 0; transform: scale(.97); }
+  to { opacity: 1; transform: none; }
+}
+.glass-backdrop:not([src]) { display: none; }
+
+.cards {
+  position: relative; z-index: 10;
+  height: 100%;
+  display: flex; align-items: stretch; gap: 10px;
+  padding: 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.cards::-webkit-scrollbar { display: none; }
+
+.card {
+  flex: none;
+  width: 176px;
+  display: flex; flex-direction: column;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: var(--glass-inner);
+  color: var(--text-dim);
+  text-align: left;
+  cursor: default;
+  overflow: hidden;
+  transition: background var(--dur-1) var(--ease-soft), border-color var(--dur-1) var(--ease-soft),
+              transform var(--dur-1) var(--ease), color var(--dur-1) var(--ease-soft);
+}
+.card:hover { background: var(--glass-hover); color: var(--text); }
+.card[aria-selected="true"] {
+  border-color: var(--glass-border);
+  background: var(--glass-hover);
+  color: var(--text);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px var(--glass-shadow), 0 0 0 1px var(--accent-glow) inset;
+}
+
+.shot {
+  position: relative;
+  height: 92px;
+  background: var(--glass-bg-strong);
+  overflow: hidden;
+}
+.shot img {
+  width: 100%; height: 100%;
+  object-fit: cover; object-position: top center;
+  display: block;
+}
+/* No screenshot yet: a quiet placeholder beats a broken image. */
+.shot.empty { display: grid; place-items: center; }
+.shot.empty::after {
+  content: "";
+  width: 26px; height: 26px;
+  border-radius: 7px;
+  background: var(--glass-inner);
+}
+.card[data-asleep="true"] .shot img { filter: grayscale(.6) brightness(.8); }
+
+.meta {
+  display: flex; align-items: center; gap: 7px;
+  padding: 8px 10px 9px;
+  min-width: 0;
+}
+.meta img { width: 14px; height: 14px; flex: none; border-radius: 3px; }
+.text { min-width: 0; }
+.title {
+  font-size: 12px; line-height: 1.25;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.domain {
+  font-size: 10.5px; line-height: 1.3;
+  color: var(--text-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
