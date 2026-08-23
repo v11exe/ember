@@ -120,6 +120,12 @@ test('chrome preload bridges live shell configuration and Favorite actions', asy
   exposed.favoriteContextMenu('youtube', 44, 58)
   assert.equal(exposed.tabMaximum({ availableWidth: 800, count: 5 }), 127)
   assert.equal(exposed.sameFavoriteSite('https://www.youtube.com/', 'https://youtube.com/watch?v=x'), true)
+  assert.deepEqual(JSON.parse(JSON.stringify(exposed.previewFavoritePlacement(
+    { id: 'x', name: 'X', url: 'https://x.test/' },
+    [{ id: 'a', name: 'A', url: 'https://a.test/' }],
+    { columns: 2, rows: 2 },
+    0,
+  ).favorites.map(({ id }) => id))), ['x', 'a'])
   assert.deepEqual(JSON.parse(JSON.stringify(sent)), [
     [IPC.SIDEBAR_SET, false],
     [IPC.FAVORITE_OPEN, 'youtube'],

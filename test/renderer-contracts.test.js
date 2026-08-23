@@ -184,8 +184,18 @@ test('tabs reorder with a custom drag image and can pin into the full Favorite g
   assert.match(sidebarJs, /favoriteContextMenu/)
   assert.match(sidebarJs, /application\/x-ember-tab/)
   assert.match(sidebarCss, /\.favorites\.drop-ready/)
-  assert.match(sidebarCss, /\.favorites\s*\{[^}]*min-height:\s*calc\(var\(--tile-height\) \* 2 \+ 12px\)/s)
+  assert.match(sidebarCss, /\.favorites\s*\{[^}]*height:\s*var\(--favorite-grid-height\)/s)
   assert.match(sidebarCss, /\.favorite\.is-open/)
+  for (const token of ['--favorite-columns', '--favorite-rows', '--favorite-tile-height', '--favorite-gap', '--favorite-grid-height']) {
+    assert.match(sidebarCss, new RegExp(token))
+  }
+  assert.match(sidebarCss, /repeat\(var\(--favorite-columns\)/)
+  assert.match(sidebarCss, /\.favorite img\s*\{[^}]*width:\s*19px[^}]*height:\s*19px/s)
+  assert.match(sidebarJs, /favorite-slot/)
+  assert.match(sidebarJs, /previewFavoritePlacement/)
+  assert.match(sidebarJs, /node\.animate/)
+  assert.match(sidebarJs, /moveFavorite/)
+  assert.match(sidebarJs, /pinFavoriteFromTab\(id, index\)/)
 })
 
 test('extension icon and metadata share one keyboard-accessible launcher', () => {
