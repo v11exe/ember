@@ -194,3 +194,32 @@ test('context menu opens as a reduced-motion-safe popover and does not replay on
   assert.match(js, /requestAnimationFrame/)
   assert.match(js, /shell\.animate\(/)
 })
+
+test('the omnibox names the quick search before you commit to it', () => {
+  const html = read('src', 'renderer', 'chrome.html')
+  const css = read('src', 'renderer', 'chrome.css')
+  const js = read('src', 'renderer', 'chrome.js')
+
+  assert.match(html, /id="bang-chip"/)
+  assert.match(html, /id="bang-tip"/)
+  assert.match(css, /\.bang-chip\.engaged/, 'a committed engine looks different from a guess')
+  // Matching happens in the renderer, not over IPC, so it lands on the keystroke.
+  assert.match(js, /window\.ember\.resolveInput/)
+  assert.match(js, /addEventListener\('input', \(\) => \{ omniboxDirty = true; renderBang\(\) \}\)/)
+  // Tab commits, Backspace steps back out, and submit puts the keyword back.
+  assert.match(js, /e\.key === 'Tab'/)
+  assert.match(js, /e\.key === 'Backspace' && engaged/)
+  assert.match(js, /engaged \? `\$\{engaged\.alias\} \$\{typed\}`\.trim\(\) : typed/)
+})
+
+test('the new tab search names the quick search too', () => {
+  const js = read('src', 'renderer', 'pages', 'newtab.js')
+  const css = read('src', 'renderer', 'pages', 'newtab.css')
+  const search = read('src', 'renderer', 'pages', 'liquid-glass-search.js')
+
+  assert.match(search, /id="q-chip"/)
+  assert.match(css, /\.liquid-glass-search-chip/)
+  // A sandboxed page cannot load the resolver, so it asks the one main uses.
+  assert.match(js, /window\.ember\.omnibox\.resolve/)
+  assert.match(js, /if \(asked !== latest\) return/, 'a stale answer must not win')
+})

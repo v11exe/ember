@@ -22,6 +22,8 @@ const IPC = {
   PANEL_CLOSE: 'panel:close',
   PANEL_RESIZE: 'panel:resize',
   PANEL_ANCHOR: 'panel:anchor',
+  BANGS_GET: 'bangs:get',                 // the resolved quick-search table
+  OMNIBOX_RESOLVE: 'omnibox:resolve',     // what would Enter do with this text?
   BOOKMARKS_GET: 'bookmarks:get',
   BOOKMARKS_IMPORT: 'bookmarks:import',
   BOOKMARKS_VISIBILITY: 'bookmarks:visibility',
@@ -44,6 +46,7 @@ const IPC = {
   STATE: 'browser:state',
   PANEL_CHANGED: 'panel:changed',
   PANEL_ORIGIN: 'panel:origin', // panel view offset, for popup anchoring
+  BANGS_CHANGED: 'bangs:changed',
   BOOKMARKS_CHANGED: 'bookmarks:changed',
   UPLOAD_RESULT: 'upload:result',
   OVERLAY_STATE: 'overlay:state',

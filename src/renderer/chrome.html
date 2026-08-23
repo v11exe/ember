@@ -31,8 +31,11 @@
 
     <form class="omnibox" id="omnibox-form">
       <span class="omnibox-glyph" id="omnibox-glyph"></span>
+      <!-- Names the quick search the typed keyword resolves to, before Enter. -->
+      <span class="bang-chip" id="bang-chip" hidden></span>
       <input id="omnibox" type="text" spellcheck="false" autocomplete="off"
              placeholder="Search with Google or enter address" />
+      <span class="bang-tip" id="bang-tip" hidden>Tab</span>
     </form>
 
     <div class="actions">

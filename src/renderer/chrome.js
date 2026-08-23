@@ -8,9 +8,14 @@ const els = {
   forward: $('forward'),
   reload: $('reload'),
   archive: $('archive-btn'),
+  chip: $('bang-chip'),
+  tip: $('bang-tip'),
 }
 
+const DEFAULT_PLACEHOLDER = els.omnibox.placeholder
+
 let omniboxDirty = false
+let engaged = null // the quick search Tab committed the omnibox to, if any
 let bookmarkSnapshot = { version: 1, visible: false, items: [] }
 let bookmarkPath = []
 
@@ -71,7 +76,9 @@ function renderNav(nav) {
   els.archive.hidden = !nav.archiveUrl
   if (!nav.archiveUrl) els.archive.classList.remove('busy')
   if (!omniboxDirty && document.activeElement !== els.omnibox) {
+    engaged = null
     els.omnibox.value = nav.url && !nav.url.startsWith('ember://') ? nav.url : ''
+    renderBang()
   }
 }
 
@@ -80,22 +87,104 @@ window.ember.onState((state) => {
   renderNav(state.nav)
 })
 
+// ---------- quick searches ----------
+// Typing `yt liquid glass` should say YouTube before you commit to it, and
+// Tab should let you drop the keyword and keep only the query. Matching is a
+// synchronous call into the preload, so it happens on the keystroke.
+function bangFor(value) {
+  const resolved = window.ember.resolveInput(value)
+  return resolved?.kind === 'bang' ? resolved : null
+}
+
+/** True when the box holds a keyword and nothing else, so Tab has a job. */
+function readyToEngage(value) {
+  const bang = bangFor(value)
+  return bang && !bang.term ? bang : null
+}
+
+function renderBang() {
+  const value = els.omnibox.value
+  if (engaged) {
+    els.chip.hidden = false
+    els.chip.textContent = engaged.name
+    els.chip.classList.add('engaged')
+    els.chip.title = `Searching ${engaged.name}. Backspace to leave.`
+    els.tip.hidden = true
+    els.omnibox.placeholder = `Search ${engaged.name}`
+    return
+  }
+  els.chip.classList.remove('engaged')
+  els.omnibox.placeholder = DEFAULT_PLACEHOLDER
+  const bang = bangFor(value)
+  els.chip.hidden = !bang
+  els.tip.hidden = !readyToEngage(value)
+  if (bang) {
+    els.chip.textContent = bang.name
+    els.chip.title = bang.term ? `Search ${bang.name} for “${bang.term}”` : `Open ${bang.name}`
+  }
+}
+
+/** Drop the keyword out of the box and keep the engine beside it instead. */
+function engage(bang) {
+  engaged = { alias: bang.alias, name: bang.name }
+  els.omnibox.value = ''
+  renderBang()
+}
+
+function disengage({ restoreKeyword = false } = {}) {
+  if (!engaged) return false
+  const { alias } = engaged
+  engaged = null
+  if (restoreKeyword) els.omnibox.value = `${alias} ${els.omnibox.value}`.trimEnd()
+  // Paint before moving the caret: a selection API that objects must not be
+  // able to leave the chip showing an engine the omnibox has already left.
+  renderBang()
+  if (restoreKeyword) {
+    try {
+      els.omnibox.setSelectionRange(els.omnibox.value.length, els.omnibox.value.length)
+    } catch { /* not focused, or the box will not take a selection */ }
+  }
+  return true
+}
+
 // ---------- input ----------
 els.form.addEventListener('submit', (e) => {
   e.preventDefault()
-  const value = els.omnibox.value.trim()
+  const typed = els.omnibox.value.trim()
+  // While engaged the box holds only the query, so put the keyword back for
+  // the resolver — one code path decides what any input means.
+  const value = engaged ? `${engaged.alias} ${typed}`.trim() : typed
   if (!value) return
   omniboxDirty = false
+  disengage()
   window.ember.go(value)
   els.omnibox.blur()
 })
 
-els.omnibox.addEventListener('input', () => { omniboxDirty = true })
+els.omnibox.addEventListener('input', () => { omniboxDirty = true; renderBang() })
 els.omnibox.addEventListener('focus', () => els.omnibox.select())
 els.omnibox.addEventListener('blur', () => { omniboxDirty = false })
 els.omnibox.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { omniboxDirty = false; els.omnibox.blur() }
+  if (e.key === 'Tab' && !e.shiftKey && !engaged) {
+    const ready = readyToEngage(els.omnibox.value)
+    if (ready) { e.preventDefault(); engage(ready) }
+    return
+  }
+  // Backspace out of an empty query steps back to the keyword you typed.
+  if (e.key === 'Backspace' && engaged && !els.omnibox.value) {
+    e.preventDefault()
+    disengage({ restoreKeyword: true })
+    return
+  }
+  if (e.key === 'Escape') {
+    omniboxDirty = false
+    if (disengage()) return // first Escape leaves the engine, second the box
+    els.omnibox.blur()
+  }
 })
+
+window.ember.loadBangs().then(renderBang)
+window.ember.onBangsChanged(() => renderBang())
 
 els.back.onclick = () => window.ember.back()
 els.forward.onclick = () => window.ember.forward()

@@ -5,7 +5,7 @@ const {
   DEFAULT_BANGS, normaliseAlias, isValidAlias, isValidTemplate, homeUrl,
   sanitiseBang, sanitiseBangs, bangTable, listBangs, resolveBang, expandBang,
 } = require('../src/shared/bangs')
-const { toNavigationUrl } = require('../src/shared/urls')
+const { toNavigationUrl, resolveInput, INPUT } = require('../src/shared/urls')
 
 const YT = { alias: 'yt', name: 'YouTube', url: 'https://www.youtube.com/results?search_query=%s' }
 
@@ -162,4 +162,72 @@ test('a user table replaces the built-in one for that alias', () => {
 test('a prebuilt table is accepted as well as a stored list', () => {
   assert.equal(toNavigationUrl('yt cats', { bangs: table }),
     'https://www.youtube.com/results?search_query=cats')
+})
+
+// ---- what the omnibox shows before you press Enter ----
+
+test('resolveInput names what each kind of input will do', () => {
+  assert.deepEqual(resolveInput('https://example.com/x'),
+    { kind: INPUT.URL, url: 'https://example.com/x', input: 'https://example.com/x' })
+  assert.equal(resolveInput('history').kind, INPUT.KEYWORD)
+  assert.equal(resolveInput('example.com').kind, INPUT.SITE)
+  assert.equal(resolveInput('localhost:3000').kind, INPUT.SITE)
+  assert.equal(resolveInput('how tall is nelson').kind, INPUT.SEARCH)
+  assert.equal(resolveInput(''), null)
+  assert.equal(resolveInput('   '), null)
+})
+
+test('a recognised keyword reports the engine and the query so far', () => {
+  const typed = resolveInput('yt liquid glass')
+  assert.equal(typed.kind, INPUT.BANG)
+  assert.equal(typed.alias, 'yt')
+  assert.equal(typed.name, 'YouTube')
+  assert.equal(typed.term, 'liquid glass')
+  assert.equal(typed.url, 'https://www.youtube.com/results?search_query=liquid%20glass')
+})
+
+test('a keyword on its own reports no term, which is what Tab looks for', () => {
+  const bare = resolveInput('gh')
+  assert.equal(bare.kind, INPUT.BANG)
+  assert.equal(bare.term, '')
+  assert.equal(bare.url, 'https://github.com/')
+  assert.equal(resolveInput('gh ').term, '', 'a trailing space is still a bare keyword')
+})
+
+test('a custom name is what the chip would show, falling back to the alias', () => {
+  const named = resolveInput('ember bug', { bangs: [{ alias: 'ember', name: 'Ember issues', url: 'https://x.test/?q=%s' }] })
+  assert.equal(named.name, 'Ember issues')
+  const unnamed = resolveInput('zz thing', { bangs: [{ alias: 'zz', url: 'https://x.test/?q=%s' }] })
+  assert.equal(unnamed.name, 'zz')
+})
+
+test('a real host beats a shortcut someone named after it', () => {
+  const bangs = [{ alias: 'localhost', name: 'Not the dev server', url: 'https://x.test/?q=%s' }]
+  assert.equal(resolveInput('localhost', { bangs }).url, 'http://localhost')
+  assert.equal(resolveInput('localhost:8080', { bangs }).url, 'http://localhost:8080')
+  // …unless you insist.
+  assert.equal(resolveInput('!localhost', { bangs }).kind, INPUT.BANG)
+})
+
+test('typing a URL never shows a quick search', () => {
+  for (const text of ['example.com', 'https://yt.com', 'yt.com/watch', '192.168.0.1', 'sub.gh.com']) {
+    assert.notEqual(resolveInput(text)?.kind, INPUT.BANG, `${text} should not look like a keyword`)
+  }
+})
+
+test('the resolver and the navigator always agree', () => {
+  const bangs = [{ alias: 'ember', url: 'https://x.test/?q=%s' }]
+  for (const text of ['yt cats', '!gh electron', 'history', 'example.com', 'ember bug', 'plain words', 'localhost']) {
+    assert.equal(toNavigationUrl(text, { bangs }), resolveInput(text, { bangs }).url, text)
+  }
+})
+
+test('the same list is not rebuilt on every keystroke', () => {
+  const bangs = [{ alias: 'ember', url: 'https://x.test/?q=%s' }]
+  // Same array identity twice; the second call must reuse the built table.
+  const first = resolveInput('ember a', { bangs })
+  const second = resolveInput('ember b', { bangs })
+  assert.equal(first.name, second.name)
+  // A different array is a different table, and must not serve the stale one.
+  assert.equal(resolveInput('ember x', { bangs: [{ alias: 'ember', name: 'Other', url: 'https://y.test/?q=%s' }] }).name, 'Other')
 })

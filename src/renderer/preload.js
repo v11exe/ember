@@ -1,5 +1,14 @@
 const { contextBridge, ipcRenderer } = require('electron')
 const { IPC } = require('../shared/ipc')
+const { resolveInput } = require('../shared/urls')
+
+// The omnibox has to say what Enter will do while you are still typing, and it
+// has to do it on every keystroke. Keeping the quick-search list here means the
+// answer is a synchronous function call rather than a trip to the main process
+// — and it comes from the same resolver main will use, so the preview cannot
+// disagree with what actually happens.
+let bangs = []
+ipcRenderer.on(IPC.BANGS_CHANGED, (_event, list) => { bangs = Array.isArray(list) ? list : [] })
 
 // Defines the <browser-action-list> element used by the extensions panel.
 // Requiring the module is not enough — it has to be invoked.
@@ -20,6 +29,10 @@ contextBridge.exposeInMainWorld('ember', {
   openArchived: () => ipcRenderer.invoke(IPC.ARCHIVE_OPEN),
 
   go: (input) => ipcRenderer.send(IPC.NAV_GO, input),
+  /** What pressing Enter on this text would do. Synchronous by design. */
+  resolveInput: (input) => resolveInput(input, { bangs }),
+  loadBangs: async () => { bangs = (await ipcRenderer.invoke(IPC.BANGS_GET)) || []; return bangs },
+  onBangsChanged: (fn) => ipcRenderer.on(IPC.BANGS_CHANGED, (_e, list) => fn(list)),
   back: () => ipcRenderer.send(IPC.NAV_BACK),
   forward: () => ipcRenderer.send(IPC.NAV_FORWARD),
   reload: () => ipcRenderer.send(IPC.NAV_RELOAD),

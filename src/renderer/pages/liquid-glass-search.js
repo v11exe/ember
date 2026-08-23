@@ -49,7 +49,7 @@
     form.className = 'liquid-glass-search'
     form.id = 'search-form'
     form.setAttribute('role', 'search')
-    form.innerHTML = `<svg class="liquid-glass-search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="6.75" stroke="currentColor" stroke-width="2" /><path d="M16.2 16.2L21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg><input id="q" type="search" autocomplete="off" spellcheck="false" autofocus placeholder="Search Google or type a URL" aria-label="Search" /><button type="submit">Search</button>`
+    form.innerHTML = `<svg class="liquid-glass-search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="6.75" stroke="currentColor" stroke-width="2" /><path d="M16.2 16.2L21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg><span class="liquid-glass-search-chip" id="q-chip" hidden></span><input id="q" type="search" autocomplete="off" spellcheck="false" autofocus placeholder="Search Google or type a URL" aria-label="Search" /><button type="submit">Search</button>`
     content.append(form)
     glass.append(warp, content)
 

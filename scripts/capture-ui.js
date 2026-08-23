@@ -115,6 +115,65 @@ async function captureChrome(size) {
   return metrics
 }
 
+/** The same quick-search chip on the new tab search field. */
+async function captureNewTabChip(size) {
+  console.log('[capture] newtab chip')
+  const win = new BrowserWindow({
+    show: false,
+    width: size.width,
+    height: size.height,
+    frame: false,
+    webPreferences: { offscreen: true },
+  })
+  await win.loadURL('ember://newtab')
+  await win.webContents.executeJavaScript(`(() => {
+    const box = document.getElementById('q')
+    const chip = document.getElementById('q-chip')
+    box.value = 'yt liquid glass'
+    chip.hidden = false
+    chip.textContent = 'YouTube'
+  })()`)
+  await screenshot(win, 'newtab-chip.png')
+  win.destroy()
+}
+
+/**
+ * The omnibox quick-search chip, in both states. chrome.js is stripped from
+ * the preview, so the DOM is posed by hand — this shows the styling, and the
+ * smoke gate proves the behaviour that drives it.
+ */
+async function captureOmnibox(size, { engaged }) {
+  const label = engaged ? 'engaged' : 'hint'
+  console.log(`[capture] omnibox ${label}`)
+  const win = new BrowserWindow({
+    show: false,
+    width: size.width,
+    height: 92,
+    frame: false,
+    webPreferences: { offscreen: true },
+  })
+  await win.loadFile(path.join(output, 'chrome-preview.html'))
+  await win.webContents.executeJavaScript(`(() => {
+    EmberBrand.mountIcon(document.getElementById('chrome-brand'))
+    const box = document.getElementById('omnibox')
+    const chip = document.getElementById('bang-chip')
+    const tip = document.getElementById('bang-tip')
+    chip.hidden = false
+    chip.textContent = 'YouTube'
+    if (${JSON.stringify(!!engaged)}) {
+      chip.classList.add('engaged')
+      box.value = 'liquid glass'
+      box.placeholder = 'Search YouTube'
+    } else {
+      box.value = 'yt liquid glass'
+    }
+    tip.hidden = true
+    document.querySelector('.omnibox').classList.add('preview-focus')
+  })()`)
+  await screenshot(win, `omnibox-${label}.png`)
+  win.destroy()
+}
+
 async function captureOverlay(name, page, size, state, activePosition = null, hoverSelector = null) {
   console.log(`[capture] overlay ${name}`)
   const win = new BrowserWindow({
@@ -241,6 +300,11 @@ app.whenReady().then(async () => {
   for (const size of sizes) {
     results[`newtab-${size.name}`] = await captureNewTab(size)
     results[`chrome-${size.name}`] = await captureChrome(size)
+    if (size.name === 'wide') {
+      await captureOmnibox(size, { engaged: false })
+      await captureOmnibox(size, { engaged: true })
+      await captureNewTabChip(size)
+    }
   }
   const brandIcon = nativeImage.createFromPath(path.join(__dirname, '..', 'src', 'renderer', 'assets', 'ember-icon.png'))
     .resize({ width: 180 }).toDataURL()
