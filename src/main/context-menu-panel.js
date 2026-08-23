@@ -2,6 +2,7 @@ const path = require('node:path')
 const { FloatingPanel } = require('./floating-panel')
 const { placePointPanel } = require('../shared/floating-geometry')
 const { buildContextMenu, buildTabContextMenu } = require('./context-menu-model')
+const { isArchivable } = require('../shared/archive')
 
 const MENU_WIDTH = 254
 const MAX_MENU_HEIGHT = 364
@@ -43,6 +44,7 @@ class ContextMenuPanel {
     const items = buildContextMenu(params, {
       canGoBack: wc.navigationHistory.canGoBack(),
       canGoForward: wc.navigationHistory.canGoForward(),
+      archivable: isArchivable(wc.getURL()),
     })
     const viewport = tab.view.getBounds()
     const bounds = placePointPanel(viewport, {
@@ -154,6 +156,7 @@ class ContextMenuPanel {
     else if (action === 'view-source') this.createTab(`view-source:${wc.getURL()}`)
     else if (action === 'inspect') wc.inspectElement(params.x, params.y)
     else if (action === 'save-page') await this.#savePage(wc)
+    else if (action === 'view-archived') await this.onViewArchived?.(tab, wc.getURL())
     else return false
     return true
   }

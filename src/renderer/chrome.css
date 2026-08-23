@@ -103,6 +103,12 @@ body { overflow: hidden; background: transparent; user-select: none; }
 .tab-new:hover { background: var(--surface-2); color: var(--ember-warm); }
 .tab-new:active { transform: scale(.9); }
 
+/* Only there when the page did not arrive, so it never becomes furniture. */
+.archive-btn[hidden] { display: none; }
+.archive-btn svg { stroke: var(--ember-warm); }
+.archive-btn:hover svg { stroke: var(--ember-hot); }
+.archive-btn.busy { opacity: .55; }
+
 /* ---------- window controls ---------- */
 .window-controls { -webkit-app-region: no-drag; display: flex; align-self: flex-start; }
 .wc {

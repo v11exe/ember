@@ -36,6 +36,7 @@ const IPC = {
   NATIVE_GLASS_SETTINGS: 'native-glass:settings',
   UPLOAD_REQUEST: 'upload:request',
   SELECTION_CHANGED: 'selection:changed', // page reports its selected text
+  ARCHIVE_OPEN: 'archive:open',           // look the page up on archive.org and go
   OVERLAY_ACTION: 'overlay:action',
   OVERLAY_CLOSE: 'overlay:close',
 
@@ -55,7 +56,11 @@ const NEW_TAB_URL = 'ember://newtab'
 const HISTORY_URL = 'ember://history'
 const DOWNLOADS_URL = 'ember://downloads'
 const SETTINGS_URL = 'ember://settings'
+const UNREACHABLE_URL = 'ember://unreachable'
 const EXTENSIONS_URL = 'ember://extensions'
 const WEB_STORE_URL = 'https://chromewebstore.google.com/'
 
-module.exports = { IPC, SEARCH_URL, NEW_TAB_URL, HISTORY_URL, DOWNLOADS_URL, SETTINGS_URL, EXTENSIONS_URL, WEB_STORE_URL }
+module.exports = {
+  IPC, SEARCH_URL, NEW_TAB_URL, HISTORY_URL, DOWNLOADS_URL, SETTINGS_URL,
+  UNREACHABLE_URL, EXTENSIONS_URL, WEB_STORE_URL,
+}
