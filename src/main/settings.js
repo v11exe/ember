@@ -4,7 +4,7 @@ const path = require('node:path')
 const { HIBERNATION_DEFAULTS, sanitiseHibernation } = require('./hibernation')
 const { sanitiseBangs } = require('../shared/bangs')
 const { CONVERSION_DEFAULTS, sanitiseConversions } = require('../shared/conversions')
-const { sanitiseFavorites } = require('../shared/favorites')
+const { sanitiseFavoriteGrid, favoriteCapacity, sanitiseFavorites } = require('../shared/favorites')
 
 // Small preference store. Same atomic JSON pattern as bookmarks/history/downloads.
 //
@@ -14,6 +14,7 @@ const { sanitiseFavorites } = require('../shared/favorites')
 const SESSION_RESTORE = { ASK: 'ask', ALWAYS: 'always', NEVER: 'never' }
 
 function defaults() {
+  const favoriteGrid = sanitiseFavoriteGrid()
   return {
     version: 1,
     // 'ask' shows the prompt on close; the prompt's third button writes
@@ -29,7 +30,8 @@ function defaults() {
     conversions: { ...CONVERSION_DEFAULTS },
     // The feature rail is open by default and starts with the target trio.
     sidebarOpen: true,
-    favorites: sanitiseFavorites(),
+    favoriteGrid,
+    favorites: sanitiseFavorites(undefined, favoriteCapacity(favoriteGrid)),
   }
 }
 
@@ -60,6 +62,7 @@ class SettingsStore {
       const restore = Object.values(SESSION_RESTORE).includes(data.sessionRestore)
         ? data.sessionRestore
         : SESSION_RESTORE.ASK
+      const favoriteGrid = sanitiseFavoriteGrid(data.favoriteGrid)
       return {
         version: 1,
         sessionRestore: restore,
@@ -68,7 +71,8 @@ class SettingsStore {
         bangs: sanitiseBangs(data.bangs),
         conversions: sanitiseConversions(data.conversions),
         sidebarOpen: typeof data.sidebarOpen === 'boolean' ? data.sidebarOpen : true,
-        favorites: sanitiseFavorites(data.favorites),
+        favoriteGrid,
+        favorites: sanitiseFavorites(data.favorites, favoriteCapacity(favoriteGrid)),
       }
     } catch (error) {
       if (error.code !== 'ENOENT') console.warn('[ember] settings could not be read:', error.message)
@@ -91,7 +95,10 @@ class SettingsStore {
       // The page always sends the whole list, so this is a straight replace.
       this.data.bangs = sanitiseBangs(value)
     } else if (key === 'favorites') {
-      this.data.favorites = sanitiseFavorites(value)
+      this.data.favorites = sanitiseFavorites(value, favoriteCapacity(this.data.favoriteGrid))
+    } else if (key === 'favoriteGrid') {
+      this.data.favoriteGrid = sanitiseFavoriteGrid(value)
+      this.data.favorites = sanitiseFavorites(this.data.favorites, favoriteCapacity(this.data.favoriteGrid))
     } else if (key === 'sidebarOpen') {
       if (typeof value !== 'boolean') return false
       this.data.sidebarOpen = value

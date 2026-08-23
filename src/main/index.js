@@ -60,7 +60,8 @@ function chromeConfig(target = browser) {
   return target ? {
     sidebarOpen: target.tabs ? target.tabs.sidebarOpen : target.settings.get('sidebarOpen') !== false,
     favorites: target.settings.get('favorites') || [],
-  } : { sidebarOpen: true, favorites: [] }
+    favoriteGrid: target.settings.get('favoriteGrid'),
+  } : { sidebarOpen: true, favorites: [], favoriteGrid: { columns: 2, rows: 2 } }
 }
 
 function broadcastChromeConfig(target = browser) {
@@ -617,7 +618,7 @@ ipcMain.handle(IPC.SETTINGS_SET, async (event, { key, value } = {}) => {
   }
   // Every window's omnibox matches against the same list.
   if (preference === 'bangs') for (const target of browsers) broadcastBangs(target)
-  if (preference === 'favorites' || preference === 'sidebarOpen') {
+  if (preference === 'favorites' || preference === 'favoriteGrid' || preference === 'sidebarOpen') {
     for (const target of browsers) {
       if (preference === 'sidebarOpen') target.tabs.setSidebarOpen?.(snapshot.sidebarOpen)
       broadcastChromeConfig(target)

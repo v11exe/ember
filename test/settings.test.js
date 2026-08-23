@@ -5,7 +5,7 @@ const os = require('node:os')
 const path = require('node:path')
 
 const { SettingsStore } = require('../src/main/settings')
-const { DEFAULT_FAVORITES } = require('../src/shared/favorites')
+const { DEFAULT_FAVORITES, FAVORITE_GRID_DEFAULTS } = require('../src/shared/favorites')
 
 const tmp = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ember-shell-settings-')), 'settings.json')
 
@@ -13,6 +13,30 @@ test('the sidebar starts open with the target Favorite configuration', () => {
   const settings = new SettingsStore(tmp())
   assert.equal(settings.get('sidebarOpen'), true)
   assert.deepEqual(settings.get('favorites'), DEFAULT_FAVORITES)
+  assert.deepEqual(settings.get('favoriteGrid'), FAVORITE_GRID_DEFAULTS)
+})
+
+test('Favorite grid dimensions clamp and survive restart', async () => {
+  const file = tmp()
+  const settings = new SettingsStore(file)
+  await settings.set('favoriteGrid', { columns: 99, rows: 5.2 })
+  const reopened = new SettingsStore(file)
+  assert.deepEqual(reopened.get('favoriteGrid'), { columns: 4, rows: 5 })
+})
+
+test('reducing grid capacity keeps reading-order sites and preserves an explicit empty list', async () => {
+  const file = tmp()
+  const settings = new SettingsStore(file)
+  await settings.set('favoriteGrid', { columns: 2, rows: 3 })
+  await settings.set('favorites', Array.from({ length: 5 }, (_, index) => ({
+    id: `site-${index}`, name: `Site ${index}`, url: `https://site-${index}.test/`,
+  })))
+  const snapshot = await settings.set('favoriteGrid', { columns: 1, rows: 3 })
+  assert.deepEqual(snapshot.favorites.map(({ id }) => id), ['site-0', 'site-1', 'site-2'])
+
+  await settings.set('favorites', [])
+  await settings.set('favoriteGrid', { columns: 2, rows: 2 })
+  assert.deepEqual(new SettingsStore(file).get('favorites'), [])
 })
 
 test('sidebar state and sanitized Favorites survive restart', async () => {
