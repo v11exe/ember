@@ -20,6 +20,8 @@
   border-bottom: 1px solid var(--glass-divider);
 }
 .setting:last-child { border-bottom: 0; }
+/* .setting sets display, so it outranks the user agent's [hidden] rule. */
+.setting[hidden] { display: none; }
 
 .setting-text { min-width: 0; }
 .setting-name { font-size: 13.5px; color: var(--text); }
