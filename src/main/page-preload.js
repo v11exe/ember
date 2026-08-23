@@ -21,6 +21,7 @@ const DOWNLOADS_CHANGED = 'downloads:changed'
 const NATIVE_GLASS_SETTINGS = 'native-glass:settings'
 const UPLOAD_REQUEST = 'upload:request'
 const UPLOAD_RESULT = 'upload:result'
+const SELECTION_CHANGED = 'selection:changed'
 
 const uploadTargets = new Map()
 
@@ -68,6 +69,46 @@ ipcRenderer.on(UPLOAD_RESULT, (_event, result) => {
   input.dispatchEvent(new Event('input', { bubbles: true }))
   input.dispatchEvent(new Event('change', { bubbles: true }))
 })
+
+// ---- selected text, for the conversion popup ----
+// The text never leaves the machine: main decides whether it is a price or a
+// measurement, and only a currency selection causes any network traffic.
+const MAX_SELECTION = 120
+let selectionTimer = null
+let lastReport = ''
+
+function reportSelection() {
+  const selection = window.getSelection()
+  const text = selection && !selection.isCollapsed ? selection.toString().trim() : ''
+  if (!text || text.length > MAX_SELECTION) {
+    if (lastReport) {
+      lastReport = ''
+      ipcRenderer.send(SELECTION_CHANGED, { text: '' })
+    }
+    return
+  }
+  const range = selection.getRangeAt(0).getBoundingClientRect()
+  if (!range.width && !range.height) return
+  lastReport = text
+  ipcRenderer.send(SELECTION_CHANGED, {
+    text,
+    rect: { x: range.left, y: range.top, width: range.width, height: range.height },
+  })
+}
+
+function scheduleSelectionReport(delay = 180) {
+  clearTimeout(selectionTimer)
+  selectionTimer = setTimeout(reportSelection, delay)
+}
+
+document.addEventListener('selectionchange', () => scheduleSelectionReport())
+// A scrolled selection would leave the popup pointing at nothing.
+window.addEventListener('scroll', () => {
+  if (!lastReport) return
+  lastReport = ''
+  clearTimeout(selectionTimer)
+  ipcRenderer.send(SELECTION_CHANGED, { text: '' })
+}, true)
 
 if (location.protocol === 'ember:') {
   contextBridge.exposeInMainWorld('ember', {

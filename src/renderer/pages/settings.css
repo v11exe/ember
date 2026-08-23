@@ -34,6 +34,24 @@
 
 .version { color: var(--text-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
 
+/* ---------- selection conversions ---------- */
+/* Seven short rows in a row, so they sit tighter than a normal setting. */
+.conversion-row { padding-top: 10px; padding-bottom: 10px; }
+
+.field {
+  flex: none;
+  min-width: 150px;
+  padding: 7px 10px;
+  border: var(--glass-edge); border-radius: var(--radius-sm);
+  background: var(--glass-hover);
+  color: var(--text);
+  font: 400 12px/1.35 var(--font);
+  cursor: default;
+}
+.field:hover { background: var(--glass-pressed); }
+.field:focus { outline: none; box-shadow: var(--focus-ring); }
+.field option { background: var(--glass-bg-strong); color: var(--text); }
+
 /* ---------- search shortcuts ---------- */
 /* The list is wider than a control, so this row stacks instead of splitting. */
 .setting-stack { display: block; }

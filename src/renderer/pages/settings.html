@@ -81,6 +81,48 @@
       </section>
 
       <section class="card" data-lg style="--enter: 4">
+        <div class="card-head"><span>Selection conversions</span></div>
+        <div class="setting">
+          <div class="setting-text">
+            <div class="setting-name">Convert what you select</div>
+            <p class="setting-detail" id="conversion-detail">Selecting a price, a measurement or a time shows what it comes to in your units.</p>
+          </div>
+          <div class="segmented" id="conversion-enabled" data-lg role="radiogroup" aria-label="Convert what you select"></div>
+        </div>
+        <div class="setting conversion-row">
+          <div class="setting-text">
+            <div class="setting-name">Currency</div>
+            <p class="setting-detail">Daily reference rates from the European Central Bank, fetched only when you select a price in another currency.</p>
+          </div>
+          <select class="field" id="conversion-currency" aria-label="Preferred currency"></select>
+        </div>
+        <div class="setting conversion-row">
+          <div class="setting-text"><div class="setting-name">Temperature</div></div>
+          <div class="segmented" id="conversion-temperature" data-lg role="radiogroup" aria-label="Temperature"></div>
+        </div>
+        <div class="setting conversion-row">
+          <div class="setting-text"><div class="setting-name">Distance</div></div>
+          <div class="segmented" id="conversion-distance" data-lg role="radiogroup" aria-label="Distance"></div>
+        </div>
+        <div class="setting conversion-row">
+          <div class="setting-text"><div class="setting-name">Weight</div></div>
+          <div class="segmented" id="conversion-weight" data-lg role="radiogroup" aria-label="Weight"></div>
+        </div>
+        <div class="setting conversion-row">
+          <div class="setting-text"><div class="setting-name">Volume</div></div>
+          <div class="segmented" id="conversion-volume" data-lg role="radiogroup" aria-label="Volume"></div>
+        </div>
+        <div class="setting conversion-row">
+          <div class="setting-text"><div class="setting-name">Clock</div></div>
+          <div class="segmented" id="conversion-clock" data-lg role="radiogroup" aria-label="Clock"></div>
+        </div>
+        <div class="setting conversion-row">
+          <div class="setting-text"><div class="setting-name">Time zone</div></div>
+          <select class="field" id="conversion-timezone" aria-label="Time zone"></select>
+        </div>
+      </section>
+
+      <section class="card" data-lg style="--enter: 5">
         <div class="card-head"><span>Browsing data</span></div>
         <div class="setting">
           <div class="setting-text">
@@ -98,7 +140,7 @@
         </div>
       </section>
 
-      <section class="card" data-lg style="--enter: 5">
+      <section class="card" data-lg style="--enter: 6">
         <div class="card-head"><span>Extensions</span></div>
         <div class="setting">
           <div class="setting-text">
@@ -109,7 +151,7 @@
         </div>
       </section>
 
-      <section class="card" data-lg style="--enter: 6">
+      <section class="card" data-lg style="--enter: 7">
         <div class="card-head"><span>About</span></div>
         <div class="setting">
           <div class="setting-text">
