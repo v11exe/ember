@@ -311,6 +311,17 @@ Newest first. One entry per active/recent unit of work.
 - **For the other agent:** contracts/risks they must know, or `none`
 ```
 
+### 2026-08-23 — Codex — Shell compositing and Favorite drag polish
+- **Status / Branch:** in-progress · `feat/ember-shell`
+- **Touches:** `docs/superpowers/{specs,plans}/*`, `src/shared/{chrome-layout,favorites,ipc}.js`,
+  `src/main/{index,tabs,context-menu-model,context-menu-panel}.js`,
+  `src/renderer/{chrome,sidebar,frame,corner-mask,preload,brand}.*`, renderer assets,
+  `test/*`, `scripts/capture-ui.js`, `ROADMAP.md`, `AGENTS.md`
+- **Summary:** Correcting the existing bounded-view shell compositing and material,
+  then adding horizontal tab reorder plus tab-to-Favorite pinning, open-state and removal.
+- **For the other agent:** Preserve the accepted 32px/168px shell geometry and the
+  hibernated-tab lifecycle; native page masks remain required on Windows.
+
 ### 2026-08-23 — Claude Code — Omnibox quick-search refinement
 - **Status / Branch:** merged · `main`
 - **Touches:** `src/shared/{urls,ipc}.js`, `src/main/{index,page-preload}.js`,
