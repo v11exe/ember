@@ -1,7 +1,7 @@
 const path = require('node:path')
 const { FloatingPanel } = require('./floating-panel')
 const { placePointPanel } = require('../shared/floating-geometry')
-const { buildContextMenu } = require('./context-menu-model')
+const { buildContextMenu, buildTabContextMenu } = require('./context-menu-model')
 
 const MENU_WIDTH = 254
 const MAX_MENU_HEIGHT = 364
@@ -33,6 +33,8 @@ class ContextMenuPanel {
     this.dialog = dialog
     this.active = null
     this.openSequence = 0
+    // Set by the owner; runs a tab-strip command (sleep, never sleep, close…).
+    this.onTabCommand = null
   }
 
   async open({ tab, params }) {
@@ -47,7 +49,7 @@ class ContextMenuPanel {
       x: viewport.x + params.x,
       y: viewport.y + params.y,
     }, menuSize(items), 8)
-    this.active = { tab, params, items, openSequence: ++this.openSequence }
+    this.active = { kind: 'page', tab, params, items, openSequence: ++this.openSequence }
     const opened = await this.overlay.show({
       bounds, state: { kind: 'context-menu', items, openSequence: this.active.openSequence }, targetView: tab.view,
       captureBleed: CAPTURE_BLEED,
@@ -65,6 +67,27 @@ class ContextMenuPanel {
     }
   }
 
+  /**
+   * The tab strip lives in the chrome view, which is only 84px tall, so the menu
+   * drops into the page area below it and refracts the page instead.
+   *
+   * @param {{ tab: object, targetView: import('electron').WebContentsView, x: number, context: object }} opts
+   */
+  async openTabMenu({ tab, targetView, x, context }) {
+    if (this.active) this.hide()
+    const items = buildTabContextMenu(tab, context)
+    const viewport = targetView.getBounds()
+    const point = { x: viewport.x + Math.round(x), y: viewport.y }
+    const bounds = placePointPanel(viewport, point, menuSize(items), 8)
+    this.active = { kind: 'tab', tab, targetView, x, items, openSequence: ++this.openSequence }
+    await this.overlay.show({
+      bounds,
+      state: { kind: 'context-menu', items, openSequence: this.active.openSequence },
+      targetView,
+      captureBleed: CAPTURE_BLEED,
+    })
+  }
+
   isSender(webContents) {
     return this.overlay.isSender(webContents)
   }
@@ -77,6 +100,13 @@ class ContextMenuPanel {
 
   layout() {
     if (!this.active) return
+    if (this.active.kind === 'tab') {
+      const { targetView, x, items } = this.active
+      const viewport = targetView.getBounds()
+      const bounds = placePointPanel(viewport, { x: viewport.x + Math.round(x), y: viewport.y }, menuSize(items), 8)
+      void this.overlay.relayout?.({ bounds, targetView, captureBleed: CAPTURE_BLEED })
+      return
+    }
     const { tab, params, items } = this.active
     const viewport = tab.view.getBounds()
     const bounds = placePointPanel(viewport, {
@@ -94,6 +124,11 @@ class ContextMenuPanel {
     if (!this.isSender(sender) || !this.active) return false
     const item = this.active.items.find((candidate) => candidate.id === action)
     if (!item || item.enabled === false) return false
+    if (this.active.kind === 'tab') {
+      const { tab } = this.active
+      this.hide()
+      return !!(await this.onTabCommand?.(tab, action))
+    }
     const { tab, params } = this.active
     const wc = tab.webContents
     this.hide()

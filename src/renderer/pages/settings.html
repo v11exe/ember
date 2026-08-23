@@ -36,6 +36,31 @@
       </section>
 
       <section class="card" data-lg style="--enter: 2">
+        <div class="card-head"><span>Performance</span></div>
+        <div class="setting">
+          <div class="setting-text">
+            <div class="setting-name">Sleep inactive tabs</div>
+            <p class="setting-detail" id="hibernation-detail">Idle background tabs let go of their renderer and rebuild when you click them.</p>
+          </div>
+          <div class="segmented" id="hibernation-enabled" data-lg role="radiogroup" aria-label="Sleep inactive tabs"></div>
+        </div>
+        <div class="setting" id="hibernation-timeout-row">
+          <div class="setting-text">
+            <div class="setting-name">After</div>
+            <p class="setting-detail">How long a tab sits untouched before it goes to sleep.</p>
+          </div>
+          <div class="segmented" id="hibernation-minutes" data-lg role="radiogroup" aria-label="Sleep tabs after"></div>
+        </div>
+        <div class="setting" id="never-sleep-row" hidden>
+          <div class="setting-text">
+            <div class="setting-name">Sites that never sleep</div>
+            <p class="setting-detail">Added from a tab’s right-click menu.</p>
+          </div>
+          <div class="domain-chips" id="never-sleep-domains"></div>
+        </div>
+      </section>
+
+      <section class="card" data-lg style="--enter: 3">
         <div class="card-head"><span>Browsing data</span></div>
         <div class="setting">
           <div class="setting-text">
@@ -53,7 +78,7 @@
         </div>
       </section>
 
-      <section class="card" data-lg style="--enter: 3">
+      <section class="card" data-lg style="--enter: 4">
         <div class="card-head"><span>Extensions</span></div>
         <div class="setting">
           <div class="setting-text">
@@ -64,7 +89,7 @@
         </div>
       </section>
 
-      <section class="card" data-lg style="--enter: 4">
+      <section class="card" data-lg style="--enter: 5">
         <div class="card-head"><span>About</span></div>
         <div class="setting">
           <div class="setting-text">

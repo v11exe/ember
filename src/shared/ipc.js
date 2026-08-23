@@ -6,6 +6,7 @@ const IPC = {
   TAB_CREATE: 'tab:create',
   TAB_CLOSE: 'tab:close',
   TAB_SELECT: 'tab:select',
+  TAB_CONTEXT_MENU: 'tab:context-menu',  // right-click on a tab strip entry
   NAV_GO: 'nav:go',
   NAV_BACK: 'nav:back',
   NAV_FORWARD: 'nav:forward',

@@ -19,11 +19,16 @@ window.EmberBrand.mountIcon($('chrome-brand'))
 function renderTabs(tabs) {
   els.tabs.replaceChildren(...tabs.map((tab) => {
     const el = document.createElement('div')
-    el.className = 'tab' + (tab.active ? ' active' : '')
-    el.title = tab.title || ''
+    el.className = 'tab' + (tab.active ? ' active' : '') + (tab.asleep ? ' asleep' : '')
+    // A sleeping tab holds no renderer; say so in the tooltip, not with a badge.
+    el.title = tab.asleep ? `${tab.title || 'Tab'} — sleeping` : (tab.title || '')
     el.onmousedown = (e) => {
       if (e.button === 1) { e.preventDefault(); window.ember.closeTab(tab.id) }
       else if (e.button === 0) window.ember.selectTab(tab.id)
+    }
+    el.oncontextmenu = (e) => {
+      e.preventDefault()
+      window.ember.tabContextMenu(tab.id, e.clientX)
     }
 
     if (tab.loading) {
