@@ -284,6 +284,18 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
+### 2026-08-23 — Claude Code — Internet Archive fallback
+- **Status / Branch:** in-progress · `feat/archive-fallback`
+- **Touches:** `src/shared/{archive,ipc}.js`, `src/main/{archive,tabs,index,context-menu-model}.js`,
+  `src/renderer/pages/unreachable.{html,css,js}`, `src/renderer/chrome.{html,css,js}`,
+  `src/renderer/preload.js`, `test/archive.test.js`
+- **Summary:** Roadmap feature 4. A page that cannot be reached gets Ember's own
+  error page with Retry and View archived version; a 404 or 410 keeps the site's
+  own page and surfaces the archive as a toolbar action instead. Nothing
+  redirects on its own.
+- **For the other agent:** new channel `archive:open` and `UNREACHABLE_URL`.
+  `TabManager` tabs gain `pageStatus`, reported in `state().nav`.
+
 ### 2026-08-23 — Claude Code — Smart selection conversions
 - **Status / Branch:** merged · `main`
 - **Touches:** `src/shared/{conversions,ipc}.js`,
@@ -394,15 +406,4 @@ Newest at top. One entry per branch, updated in place. Status:
 - **For the other agent:** new channels `downloads:query|action|changed` and
   `DOWNLOADS_URL`. New ambient tokens live in `theme.css` — reuse those for any
   future full-page surface instead of new rgba values.
-
-### 2026-08-22 — Claude Code — Smoke gate timeout + flake report
-- **Status / Branch:** merged · `main`
-- **Touches:** `scripts/smoke.js`
-- **Summary:** Raised the smoke timeout 30s → 120s and made it print elapsed
-  time. A throwaway profile costs ~40s cold versus ~22s warm, so 30s sat
-  between the two and failed most runs.
-- **For the other agent:** the smoke probe still hangs intermittently — some
-  runs never reach `smoke ok` and get killed at the cap. Not isolated yet;
-  `await browser?.testExtensionsReady` (index.js) is unbounded and is the
-  prime suspect. Worth a timeout there so it fails loudly instead of hanging.
 
