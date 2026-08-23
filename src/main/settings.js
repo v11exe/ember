@@ -2,6 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const { HIBERNATION_DEFAULTS, sanitiseHibernation } = require('./hibernation')
+const { sanitiseBangs } = require('../shared/bangs')
 
 // Small preference store. Same atomic JSON pattern as bookmarks/history/downloads.
 //
@@ -20,6 +21,8 @@ function defaults() {
     window: null,
     // Idle background tabs lose their renderer; see hibernation.js.
     hibernation: { ...HIBERNATION_DEFAULTS },
+    // Omnibox quick searches the user added, overrode or removed.
+    bangs: [],
   }
 }
 
@@ -55,6 +58,7 @@ class SettingsStore {
         sessionRestore: restore,
         window: sanitiseBounds(data.window),
         hibernation: sanitiseHibernation(data.hibernation),
+        bangs: sanitiseBangs(data.bangs),
       }
     } catch (error) {
       if (error.code !== 'ENOENT') console.warn('[ember] settings could not be read:', error.message)
@@ -71,6 +75,9 @@ class SettingsStore {
     else if (key === 'hibernation') {
       // Partial updates are the norm here — the settings page sends one field.
       this.data.hibernation = sanitiseHibernation({ ...this.data.hibernation, ...(value || {}) })
+    } else if (key === 'bangs') {
+      // The page always sends the whole list, so this is a straight replace.
+      this.data.bangs = sanitiseBangs(value)
     } else if (key === 'sessionRestore') {
       if (!Object.values(SESSION_RESTORE).includes(value)) return this.snapshot()
       this.data.sessionRestore = value

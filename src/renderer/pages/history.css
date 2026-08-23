@@ -134,6 +134,10 @@ body {
 
 /* ---------- result cards ---------- */
 .results { overflow-y: auto; display: flex; flex-direction: column; gap: 18px; padding-right: 4px; }
+/* Flex items shrink by default, so a page taller than the viewport squashed
+   every card — and .card clips — instead of scrolling. Cards keep their own
+   height; .results is what scrolls. */
+.results > * { flex: none; }
 .results::-webkit-scrollbar, .sidebar::-webkit-scrollbar { width: 10px; }
 .results::-webkit-scrollbar-thumb, .sidebar::-webkit-scrollbar-thumb {
   background: var(--glass-inner); border-radius: 6px; border: 3px solid transparent; background-clip: padding-box;
