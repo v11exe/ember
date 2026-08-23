@@ -7,6 +7,7 @@ const {
   sanitiseFavorites,
   sameFavoriteSite,
   findFavoriteTab,
+  favoriteFromTab,
 } = require('../src/shared/favorites')
 
 test('the target three Favorite sites are the persisted defaults', () => {
@@ -54,4 +55,43 @@ test('opening a Favorite reuses even a sleeping matching tab', () => {
   ]
   assert.equal(findFavoriteTab(tabs, 'https://www.youtube.com/'), 4)
   assert.equal(findFavoriteTab(tabs, 'https://calendar.google.com/'), null)
+})
+
+test('a dropped tab keeps its exact URL, title, and favicon', () => {
+  const tab = {
+    id: 8,
+    title: 'Codex issue',
+    url: 'https://github.com/openai/codex/issues/1',
+    favicon: 'https://github.com/favicon.ico',
+  }
+
+  assert.deepEqual(favoriteFromTab(tab, []), {
+    status: 'added',
+    favorite: {
+      id: 'github-com',
+      name: 'Codex issue',
+      url: tab.url,
+      icon: tab.favicon,
+    },
+    favorites: [{
+      id: 'github-com',
+      name: 'Codex issue',
+      url: tab.url,
+      icon: tab.favicon,
+    }],
+  })
+})
+
+test('a dropped tab deduplicates by site and rejects invalid or full lists', () => {
+  const tab = { title: 'Watch', url: 'https://www.youtube.com/watch?v=abc' }
+  const existing = [{ id: 'youtube', name: 'YouTube', url: 'https://youtube.com/' }]
+  assert.deepEqual(favoriteFromTab(tab, existing), {
+    status: 'existing', favorite: existing[0], favorites: existing,
+  })
+
+  assert.equal(favoriteFromTab({ url: 'ember://settings' }, []).status, 'invalid')
+  const full = Array.from({ length: MAX_FAVORITES }, (_, index) => ({
+    id: `site-${index}`, name: `Site ${index}`, url: `https://site-${index}.test/`,
+  }))
+  assert.equal(favoriteFromTab({ url: 'https://another.test/' }, full).status, 'full')
 })

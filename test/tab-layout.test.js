@@ -30,7 +30,12 @@ function fixture({ width = 1270, height = 740, sidebarOpen = true } = {}) {
     setBorderRadius: (radius) => radii.push(radius),
   }
   const tabs = new TabManager(win, chrome, { sidebarOpen, sidebarView: sidebar })
-  tabs.tabs = [{ id: 1, view: page, webContents: {}, url: 'https://example.com/' }]
+  tabs.tabs = [{
+    id: 1,
+    view: page,
+    webContents: { navigationHistory: { canGoBack: () => false, canGoForward: () => false } },
+    url: 'https://example.com/',
+  }]
   tabs.activeId = 1
   return { tabs, chromeBounds, sidebarBounds, pageBounds, radii }
 }
@@ -70,4 +75,37 @@ test('an explicitly visible bookmarks bar is part of the shared viewport contrac
   const { tabs, pageBounds } = fixture({ width: 900, height: 600 })
   tabs.setBookmarksVisible(true)
   assert.deepEqual(pageBounds.at(-1).bounds, { x: 168, y: 62, width: 724, height: 530 })
+})
+
+test('moving a sleeping tab changes only physical strip order', () => {
+  const { tabs } = fixture()
+  const first = tabs.tabs[0]
+  const sleeping = {
+    id: 2,
+    asleep: true,
+    view: null,
+    webContents: null,
+    url: 'https://sleep.test/',
+    title: 'Sleeping',
+  }
+  tabs.tabs.push(sleeping)
+  tabs.activeId = first.id
+
+  assert.equal(tabs.move(2, 1), true)
+  assert.deepEqual(tabs.tabs.map((tab) => tab.id), [2, 1])
+  assert.equal(tabs.tabs[0], sleeping)
+  assert.equal(tabs.tabs[1], first)
+  assert.equal(tabs.activeId, first.id)
+  assert.equal(sleeping.asleep, true)
+  assert.equal(sleeping.view, null)
+})
+
+test('moving before the current position or an unknown tab is a no-op', () => {
+  const { tabs } = fixture()
+  const second = { id: 2, view: null, webContents: null, url: 'https://two.test/' }
+  tabs.tabs.push(second)
+
+  assert.equal(tabs.move(1, 2), false)
+  assert.equal(tabs.move(999, null), false)
+  assert.deepEqual(tabs.tabs.map((tab) => tab.id), [1, 2])
 })

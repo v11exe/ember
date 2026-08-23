@@ -80,10 +80,35 @@ function findFavoriteTab(tabs, favoriteUrl) {
   return match?.id ?? null
 }
 
+/**
+ * Turn a live tab into a persistent Favorite without trusting renderer data.
+ * The exact page is kept for opening; site identity is only for de-duplication.
+ */
+function favoriteFromTab(tab, current = []) {
+  const favorites = sanitiseFavorites(current)
+  const url = webUrl(tab?.url)
+  if (!url) return { status: 'invalid', favorite: null, favorites }
+  const existing = favorites.find((entry) => sameFavoriteSite(entry.url, url.href))
+  if (existing) return { status: 'existing', favorite: existing, favorites }
+  if (favorites.length >= MAX_FAVORITES) return { status: 'full', favorite: null, favorites }
+
+  const candidate = {
+    id: siteKey(url.href).replace(/[^a-z0-9]+/g, '-') || `favorite-${favorites.length + 1}`,
+    name: String(tab?.title || '').trim() || url.hostname.replace(/^www\./, ''),
+    url: url.href,
+    ...(sanitiseIcon(tab?.favicon) ? { icon: sanitiseIcon(tab.favicon) } : {}),
+  }
+  const next = sanitiseFavorites([...favorites, candidate])
+  const favorite = next.find((entry) => sameFavoriteSite(entry.url, url.href)) || null
+  if (!favorite || next.length === favorites.length) return { status: 'invalid', favorite: null, favorites }
+  return { status: 'added', favorite, favorites: next }
+}
+
 module.exports = {
   DEFAULT_FAVORITES,
   MAX_FAVORITES,
   sanitiseFavorites,
   sameFavoriteSite,
   findFavoriteTab,
+  favoriteFromTab,
 }

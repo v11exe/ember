@@ -592,6 +592,22 @@ class TabManager {
     if (tab) this.select(tab.id)
   }
 
+  /** Move an existing tab object in physical strip order without touching its lifecycle. */
+  move(id, beforeId = null) {
+    const from = this.tabs.findIndex((tab) => tab.id === id)
+    if (from < 0 || beforeId === id) return false
+    const before = beforeId === null
+      ? this.tabs.length
+      : this.tabs.findIndex((tab) => tab.id === beforeId)
+    if (before < 0) return false
+    const to = before > from ? before - 1 : before
+    if (to === from) return false
+    const [tab] = this.tabs.splice(from, 1)
+    this.tabs.splice(to, 0, tab)
+    this.emit()
+    return true
+  }
+
   /** Ctrl+Tab wraps around rather than stopping at the ends. */
   cycle(delta) {
     if (this.tabs.length < 2) return
