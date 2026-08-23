@@ -277,6 +277,19 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
+### 2026-08-23 — Claude Code — Smart selection conversions
+- **Status / Branch:** in-progress · `feat/smart-selection`
+- **Touches:** `src/shared/{conversions,ipc}.js`,
+  `src/main/{selection-panel,rates,page-preload,index,settings}.js`,
+  `src/renderer/pages/conversion.{html,css,js}`,
+  `src/renderer/pages/settings.{html,css,js}`, `test/conversions.test.js`
+- **Summary:** Roadmap feature 3. Selecting a price, measurement or time on a
+  page shows a compact glass popup with the value converted into the units the
+  user prefers. Currency uses ECB rates, cached in userData for a day.
+- **For the other agent:** new channels `selection:changed` and
+  `selection:action`. `page-preload.js` now reports selection rects for every
+  page, which is the first thing it does on real web pages beyond file inputs.
+
 ### 2026-08-23 — Claude Code — Omnibox bangs / quick searches
 - **Status / Branch:** merged · `main`
 - **Touches:** `src/shared/{bangs,urls}.js`, `src/main/{settings,index}.js`,
@@ -374,19 +387,6 @@ Newest at top. One entry per branch, updated in place. Status:
 - **For the other agent:** new channels `downloads:query|action|changed` and
   `DOWNLOADS_URL`. New ambient tokens live in `theme.css` — reuse those for any
   future full-page surface instead of new rgba values.
-
-### 2026-08-22 — Claude Code — History page (Ctrl+H)
-- **Status / Branch:** pushed · `feat/history-page`
-- **Touches:** `src/main/{history,index,tabs,page-preload}.js`, `src/shared/ipc.js`,
-  `src/renderer/pages/history.{html,css,js}`, `test/history.test.js`, `AGENTS.md`
-- **Summary:** Milestone 6 history. Visit log recorded from tab navigation, stored
-  as capped atomic JSON beside bookmarks.json, surfaced at `ember://history` with
-  Opera One layout (search, date filter, day-grouped cards, recently closed) in
-  Ember colours with liquid-glass surfaces. Ctrl+H opens or focuses the page.
-- **For the other agent:** new channels `history:query|delete|clear|open` and
-  `HISTORY_URL` in `src/shared/ipc.js`. `TabManager` gained optional `onVisit`,
-  `onVisitDetail` and `onTabClosed` hooks — unset by default, so nothing changes
-  if you do not use them.
 
 ### 2026-08-22 — Claude Code — Smoke gate timeout + flake report
 - **Status / Branch:** merged · `main`
