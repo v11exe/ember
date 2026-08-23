@@ -271,6 +271,16 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
+### 2026-08-23 — Claude Code — Omnibox bangs / quick searches
+- **Status / Branch:** in-progress · `feat/omnibox-bangs`
+- **Touches:** `src/shared/{bangs,urls}.js`, `src/main/{settings,index}.js`,
+  `src/renderer/pages/settings.{html,css,js}`, `test/bangs.test.js`
+- **Summary:** Roadmap feature 2. `yt liquid glass` and `!gh electron` resolve
+  in the omnibox before the default search, against a built-in table plus a
+  fully editable user list stored in settings.
+- **For the other agent:** `toNavigationUrl(input)` gains an optional second
+  argument `{ bangs }`; calling it with one argument keeps today's behaviour.
+
 ### 2026-08-23 — Claude Code — Tab hibernation + thumbnail cache
 - **Status / Branch:** merged · `main`
 - **Touches:** `src/main/{hibernation,tab-thumbnails,tabs,settings,index,context-menu-model,context-menu-panel}.js`,
@@ -346,16 +356,6 @@ Newest at top. One entry per branch, updated in place. Status:
   in userData. The prompt reuses `FloatingPanel` and the existing
   `overlay:action` channel with command `session`; no new IPC channels.
 
-### 2026-08-22 — Claude Code — New tab restyle
-- **Status / Branch:** merged · `main`
-- **Touches:** `src/renderer/pages/newtab.{html,css,js}`
-- **Summary:** New tab now matches the browser: ambient wash, refracting glass
-  search pill via `page-glass.js`, tagline line, glass quick-link tiles. Colours
-  come from theme tokens only.
-- **For the other agent:** the meteor + Necosmic masthead is untouched and its
-  contract test still passes. A proposed mockup replaces it with a sparkle plus a
-  letter-spaced sans wordmark — not done, since that is your branding call.
-
 ### 2026-08-22 — Claude Code — Downloads page + real page glass
 - **Status / Branch:** pushed · `feat/downloads-and-page-glass`
 - **Touches:** `src/main/{downloads,index}.js`, `src/shared/ipc.js`,
@@ -392,13 +392,3 @@ Newest at top. One entry per branch, updated in place. Status:
   `await browser?.testExtensionsReady` (index.js) is unbounded and is the
   prime suspect. Worth a timeout there so it fails loudly instead of hanging.
 
-### 2026-08-21 — Codex — Restore corrected context-menu glass
-- **Status / Branch:** pushed · `fix/upload-liquid-glass-optics`
-- **Touches:** `AGENTS.md`, `agent.md`, `scripts/capture-ui.js`,
-  `src/main/{context-menu-panel,protocol}.js`,
-  `src/renderer/pages/{context-menu,context-menu-lens,context-menu-optics}.*`,
-  `test/{context-menu-lens,context-menu-optics,context-menu-panel,renderer-contracts}.test.js`
-- **Summary:** Restore the newer compact, edge-only Liquid Glass context menu
-  that was absent from this upload branch without changing menu commands.
-- **For the other agent:** restoring the context-menu renderer and its captured
-  backdrop contracts; upload actions and the new upload optics stay untouched.
