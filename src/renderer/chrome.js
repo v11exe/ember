@@ -28,6 +28,9 @@ let chromeConfig = { sidebarOpen: true, favorites: [] }
 let bookmarkSnapshot = { version: 1, visible: false, items: [] }
 let bookmarkPath = []
 let metricFrame = 0
+const TAB_DRAG_TYPE = 'application/x-ember-tab'
+let draggedTabId = null
+let dragPreview = null
 
 window.EmberBrand.mountChromeIcon($('chrome-brand'))
 
@@ -98,11 +101,13 @@ function tabNode(tab) {
   const displayTitle = isNewTab(tab) ? 'New Tab' : (tab.title || 'New Tab')
   const el = document.createElement('div')
   el.className = 'tab' + (tab.active ? ' active' : '') + (tab.asleep ? ' asleep' : '')
+  el.dataset.tabId = String(tab.id)
+  el.draggable = true
   el.title = tab.asleep ? `${displayTitle} — sleeping` : displayTitle
   el.onmousedown = (event) => {
     if (event.button === 1) { event.preventDefault(); window.ember.closeTab(tab.id) }
-    else if (event.button === 0) window.ember.selectTab(tab.id)
   }
+  el.onclick = () => window.ember.selectTab(tab.id)
   el.oncontextmenu = (event) => {
     event.preventDefault()
     window.ember.tabContextMenu(tab.id, event.clientX)
@@ -143,6 +148,7 @@ function tabNode(tab) {
 
   const close = document.createElement('button')
   close.className = 'tab-close'
+  close.draggable = false
   close.textContent = '×'
   close.title = 'Close tab'
   close.setAttribute('aria-label', `Close ${displayTitle}`)
@@ -152,6 +158,25 @@ function tabNode(tab) {
 
   el.addEventListener('pointerenter', () => requestAnimationFrame(updateOverflow))
   el.addEventListener('pointerleave', () => requestAnimationFrame(updateOverflow))
+  el.addEventListener('dragstart', (event) => {
+    if (event.target.closest?.('.tab-close')) { event.preventDefault(); return }
+    draggedTabId = tab.id
+    el.classList.add('dragging')
+    event.dataTransfer.effectAllowed = 'copyMove'
+    event.dataTransfer.setData(TAB_DRAG_TYPE, String(tab.id))
+    dragPreview = el.cloneNode(true)
+    dragPreview.classList.add('tab-drag-preview')
+    dragPreview.classList.remove('dragging')
+    document.body.append(dragPreview)
+    event.dataTransfer.setDragImage(dragPreview, Math.min(event.offsetX, el.offsetWidth - 1), event.offsetY)
+  })
+  el.addEventListener('dragend', () => {
+    draggedTabId = null
+    dragPreview?.remove()
+    dragPreview = null
+    el.classList.remove('dragging')
+    setTimeout(() => renderTabs(browserState.tabs), 0)
+  })
   return el
 }
 
@@ -159,6 +184,44 @@ function renderTabs(tabs) {
   els.tabs.replaceChildren(...tabs.map(tabNode))
   updateTabMetrics()
 }
+
+function moveTabPreview(dragged, before) {
+  if (before === dragged || dragged.nextElementSibling === before) return
+  if (!before && dragged === els.tabs.lastElementChild) return
+  const nodes = [...els.tabs.children]
+  const oldLeft = new Map(nodes.map((node) => [node, node.getBoundingClientRect().left]))
+  els.tabs.insertBefore(dragged, before)
+  for (const node of nodes) {
+    const delta = oldLeft.get(node) - node.getBoundingClientRect().left
+    if (!delta) continue
+    node.animate([
+      { transform: `translateX(${delta}px)` },
+      { transform: 'translateX(0)' },
+    ], { duration: 150, easing: 'cubic-bezier(.2, .8, .2, 1)' })
+  }
+}
+
+els.tabs.addEventListener('dragover', (event) => {
+  if (draggedTabId === null || !event.dataTransfer.types.includes(TAB_DRAG_TYPE)) return
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'move'
+  const dragged = els.tabs.querySelector(`.tab[data-tab-id="${draggedTabId}"]`)
+  if (!dragged) return
+  const before = [...els.tabs.querySelectorAll('.tab:not(.dragging)')].find((node) => {
+    const rect = node.getBoundingClientRect()
+    return event.clientX < rect.left + rect.width / 2
+  }) || null
+  moveTabPreview(dragged, before)
+})
+
+els.tabs.addEventListener('drop', (event) => {
+  const id = Number(event.dataTransfer.getData(TAB_DRAG_TYPE))
+  if (!Number.isFinite(id)) return
+  event.preventDefault()
+  const dragged = els.tabs.querySelector(`.tab[data-tab-id="${id}"]`)
+  const beforeId = Number(dragged?.nextElementSibling?.dataset.tabId)
+  window.ember.reorderTab(id, Number.isFinite(beforeId) ? beforeId : null)
+})
 
 function setSidebarOpen(open, { persist = false } = {}) {
   chromeConfig.sidebarOpen = !!open

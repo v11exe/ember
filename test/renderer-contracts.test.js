@@ -137,6 +137,29 @@ test('tab lifecycle states use natural widths, measured fades, and hover-only cl
   assert.match(js, /scrollWidth > title\.clientWidth/)
 })
 
+test('tabs reorder with a custom drag image and can pin into the full Favorite grid', () => {
+  const chromeJs = read('src', 'renderer', 'chrome.js')
+  const chromeCss = read('src', 'renderer', 'chrome.css')
+  const sidebarJs = read('src', 'renderer', 'sidebar.js')
+  const sidebarCss = read('src', 'renderer', 'sidebar.css')
+
+  assert.match(chromeJs, /el\.draggable = true/)
+  assert.match(chromeJs, /application\/x-ember-tab/)
+  assert.match(chromeJs, /setDragImage/)
+  assert.match(chromeJs, /window\.ember\.reorderTab/)
+  assert.match(chromeJs, /getBoundingClientRect\(\)/)
+  assert.match(chromeCss, /\.tab\.dragging/)
+  assert.match(chromeCss, /transition:[^}]*transform[^}]*150ms/s)
+  assert.match(chromeCss, /-webkit-app-region:\s*no-drag/)
+
+  assert.match(sidebarJs, /browserState\.tabs\.some/)
+  assert.match(sidebarJs, /pinFavoriteFromTab/)
+  assert.match(sidebarJs, /favoriteContextMenu/)
+  assert.match(sidebarJs, /application\/x-ember-tab/)
+  assert.match(sidebarCss, /\.favorites\.drop-ready/)
+  assert.match(sidebarCss, /\.favorite\.is-open/)
+})
+
 test('extension icon and metadata share one keyboard-accessible launcher', () => {
   const js = read('src', 'renderer', 'pages', 'extensions.js')
   assert.match(js, /launch\.append\(icon, meta\)/)
