@@ -121,6 +121,84 @@ function renderHibernation(config) {
   renderNeverSleepDomains(settings.neverDomains)
 }
 
+// ---------- selection conversions ----------
+// Everything the popup needs to know about the reader: which currency, which
+// units, which clock, which zone.
+
+const CONVERSION_TOGGLE = [
+  { value: true, label: 'On', detail: 'Selecting a price, a measurement or a time shows what it comes to in your units.' },
+  { value: false, label: 'Off', detail: 'Ember leaves your selections alone.' },
+]
+
+const CONVERSION_GROUPS = [
+  ['temperature', 'conversion-temperature', [{ value: 'c', label: '°C' }, { value: 'f', label: '°F' }]],
+  ['distance', 'conversion-distance', [{ value: 'metric', label: 'Metric' }, { value: 'imperial', label: 'Imperial' }]],
+  ['weight', 'conversion-weight', [{ value: 'metric', label: 'Metric' }, { value: 'imperial', label: 'Imperial' }]],
+  ['volume', 'conversion-volume', [
+    { value: 'metric', label: 'Metric' }, { value: 'imperial', label: 'UK' }, { value: 'imperial-us', label: 'US' },
+  ]],
+  ['clock', 'conversion-clock', [{ value: '24', label: '24h' }, { value: '12', label: '12h' }]],
+]
+
+// The set the European Central Bank actually publishes, plus the euro itself.
+const CURRENCY_CHOICES = [
+  'GBP', 'EUR', 'USD', 'AUD', 'BGN', 'BRL', 'CAD', 'CHF', 'CNY', 'CZK', 'DKK',
+  'HKD', 'HUF', 'IDR', 'ILS', 'INR', 'ISK', 'JPY', 'KRW', 'MXN', 'MYR', 'NOK',
+  'NZD', 'PHP', 'PLN', 'RON', 'SEK', 'SGD', 'THB', 'TRY', 'ZAR',
+]
+
+function fillSelect(select, options, current) {
+  select.replaceChildren(...options.map(({ value, label }) => {
+    const option = document.createElement('option')
+    option.value = value
+    option.textContent = label
+    option.selected = value === current
+    return option
+  }))
+}
+
+function timeZoneChoices() {
+  let zones = []
+  try {
+    zones = Intl.supportedValuesOf('timeZone')
+  } catch {
+    zones = []
+  }
+  const here = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  return [{ value: 'auto', label: `Automatic (${here})` }, ...zones.map((zone) => ({ value: zone, label: zone }))]
+}
+
+function renderConversions(config) {
+  const settings = {
+    enabled: true, currency: 'GBP', temperature: 'c', distance: 'metric',
+    weight: 'metric', volume: 'metric', clock: '24', timeZone: 'auto',
+    ...(config || {}),
+  }
+  const detail = document.getElementById('conversion-detail')
+  const rows = [...document.querySelectorAll('.conversion-row')]
+  const applyEnabled = (enabled) => {
+    detail.textContent = CONVERSION_TOGGLE.find((option) => option.value === enabled).detail
+    for (const row of rows) row.hidden = !enabled
+  }
+  applyEnabled(settings.enabled)
+
+  renderSegmented(document.getElementById('conversion-enabled'), CONVERSION_TOGGLE, settings.enabled, async (option) => {
+    applyEnabled(option.value)
+    await api?.set('conversions', { enabled: option.value })
+  })
+  for (const [key, id, options] of CONVERSION_GROUPS) {
+    renderSegmented(document.getElementById(id), options, settings[key], (option) => api?.set('conversions', { [key]: option.value }))
+  }
+
+  const currency = document.getElementById('conversion-currency')
+  fillSelect(currency, CURRENCY_CHOICES.map((code) => ({ value: code, label: code })), settings.currency)
+  currency.onchange = () => api?.set('conversions', { currency: currency.value })
+
+  const zone = document.getElementById('conversion-timezone')
+  fillSelect(zone, timeZoneChoices(), settings.timeZone)
+  zone.onchange = () => api?.set('conversions', { timeZone: zone.value })
+}
+
 // ---------- search shortcuts ----------
 // The store keeps only the diff against the built-in table: additions,
 // overrides and tombstones. `bangList` arrives already merged, with
@@ -241,6 +319,7 @@ async function load() {
   const settings = await api?.get()
   renderSessionRestore(settings?.sessionRestore || 'ask')
   renderHibernation(settings?.hibernation)
+  renderConversions(settings?.conversions)
   bangDiff = settings?.bangs || []
   bangList = settings?.bangList || []
   renderBangs()

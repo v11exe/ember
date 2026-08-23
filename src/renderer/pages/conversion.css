@@ -1,0 +1,61 @@
+/* Selection conversion popup. Same captured-backdrop glass as the context menu
+   (glass.css), sized down to the two lines it actually has to say. */
+
+body { display: grid; place-items: stretch; }
+
+.shell {
+  position: relative;
+  width: 100%; height: 100%;
+  border: var(--glass-edge);
+  border-radius: 14px;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--glass-bg);
+  box-shadow: var(--glass-lift-sm), var(--glass-rim);
+  animation: pop var(--dur-2) var(--ease);
+}
+@keyframes pop {
+  from { opacity: 0; transform: translateY(-6px) scale(.96); }
+  to { opacity: 1; transform: none; }
+}
+.glass-backdrop:not([src]) { display: none; }
+
+.content {
+  position: relative; z-index: 10;
+  height: 100%;
+  display: flex; flex-direction: column;
+  padding: 14px 14px 12px;
+}
+
+.from {
+  font-size: 12px; line-height: 17px;
+  color: var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.to {
+  font-size: 18px; line-height: 26px; font-weight: 620;
+  color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .45);
+}
+.note {
+  font-size: 11.5px; line-height: 18px;
+  color: var(--text-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.note[hidden] { display: none; }
+
+.copy {
+  margin-top: auto;
+  height: 30px;
+  border: 1px solid var(--glass-divider);
+  border-radius: 9px;
+  background: var(--glass-inner);
+  color: var(--text);
+  font: 500 12px var(--font);
+  cursor: default;
+  transition: background var(--dur-1) var(--ease-soft), transform var(--dur-1) var(--ease);
+}
+.copy:hover { background: var(--glass-hover); }
+.copy:active { transform: scale(.98); }
+.copy:focus-visible { outline: none; box-shadow: var(--focus-ring); }

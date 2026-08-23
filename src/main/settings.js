@@ -3,6 +3,7 @@ const path = require('node:path')
 
 const { HIBERNATION_DEFAULTS, sanitiseHibernation } = require('./hibernation')
 const { sanitiseBangs } = require('../shared/bangs')
+const { CONVERSION_DEFAULTS, sanitiseConversions } = require('../shared/conversions')
 
 // Small preference store. Same atomic JSON pattern as bookmarks/history/downloads.
 //
@@ -23,6 +24,8 @@ function defaults() {
     hibernation: { ...HIBERNATION_DEFAULTS },
     // Omnibox quick searches the user added, overrode or removed.
     bangs: [],
+    // Units the selection conversion popup converts into.
+    conversions: { ...CONVERSION_DEFAULTS },
   }
 }
 
@@ -59,6 +62,7 @@ class SettingsStore {
         window: sanitiseBounds(data.window),
         hibernation: sanitiseHibernation(data.hibernation),
         bangs: sanitiseBangs(data.bangs),
+        conversions: sanitiseConversions(data.conversions),
       }
     } catch (error) {
       if (error.code !== 'ENOENT') console.warn('[ember] settings could not be read:', error.message)
@@ -75,6 +79,8 @@ class SettingsStore {
     else if (key === 'hibernation') {
       // Partial updates are the norm here — the settings page sends one field.
       this.data.hibernation = sanitiseHibernation({ ...this.data.hibernation, ...(value || {}) })
+    } else if (key === 'conversions') {
+      this.data.conversions = sanitiseConversions({ ...this.data.conversions, ...(value || {}) })
     } else if (key === 'bangs') {
       // The page always sends the whole list, so this is a straight replace.
       this.data.bangs = sanitiseBangs(value)

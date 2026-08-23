@@ -20,6 +20,8 @@ const { resolveShortcut, COMMANDS, nextZoom } = require('./shortcuts')
 const { RecentUploadStore } = require('./recent-uploads')
 const { UploadPanel } = require('./upload-panel')
 const { ContextMenuPanel } = require('./context-menu-panel')
+const { SelectionPanel } = require('./selection-panel')
+const { RateStore } = require('./rates')
 const { NativeBackdrop } = require('./native-backdrop')
 const { ThumbnailCache } = require('./tab-thumbnails')
 const { HibernationManager, hostnameOf, sanitiseHibernation } = require('./hibernation')
@@ -106,6 +108,12 @@ function createBrowser({ privateMode = false } = {}) {
   const contextMenu = new ContextMenuPanel(win, {
     createTab: (url) => tabs.create(url), clipboard, dialog,
   })
+  const rates = new RateStore(path.join(app.getPath('userData'), 'rates.json'))
+  const selection = new SelectionPanel(win, {
+    clipboard,
+    rates,
+    prefs: () => settings.get('conversions'),
+  })
   // A tab with a transfer running underneath it must stay awake; Electron only
   // tells us which webContents started it, so keep the count here.
   const downloadingBy = new Map()
@@ -117,7 +125,7 @@ function createBrowser({ privateMode = false } = {}) {
   const self = {
     win, chrome, tabs, panel, bookmarks, history, downloads, settings, sessionStore, thumbnails, hibernation,
     sessionPrompt: new SessionPrompt(win), closing: false, recentUploads, recentUploadsReady,
-    uploadPanel, contextMenu, smokeClipboard, smokeUploadPaths, nativeBackdrop, popupPositioner: null,
+    uploadPanel, contextMenu, selection, rates, smokeClipboard, smokeUploadPaths, nativeBackdrop, popupPositioner: null,
     privateMode, fullScreenFrom: null,
   }
   browser = self
@@ -145,16 +153,18 @@ function createBrowser({ privateMode = false } = {}) {
   tabs.onVisitDetail = (detail) => history.decorate(detail.url, detail)
   tabs.onTabClosed = (tab) => history.noteClosedTab(tab)
   tabs.onSelectionChange = (tab) => {
-    panel.hide(); uploadPanel.cancel(); contextMenu.hide()
+    panel.hide(); uploadPanel.cancel(); contextMenu.hide(); selection.hide()
     nativeBackdrop.setActiveUrl(tab.url)
   }
   tabs.onNavigationChange = (tab) => {
+    selection.hide()
     if (tabs.active?.id === tab.id) nativeBackdrop.setActiveUrl(tab.url)
   }
   tabs.onContextMenu = (tab, event, params) => {
     event.preventDefault()
     panel.hide()
     uploadPanel.cancel()
+    selection.hide()
     contextMenu.open({ tab, params }).catch((error) => {
       console.error('[ember] context menu could not open:', error.message)
     })
@@ -213,7 +223,8 @@ function createBrowser({ privateMode = false } = {}) {
   })
 
   win.on('resize', () => {
-    tabs.layout(); panel.layout(); uploadPanel.layout(); contextMenu.layout(); browser?.popupPositioner?.layout()
+    tabs.layout(); panel.layout(); uploadPanel.layout(); contextMenu.layout(); selection.layout()
+    browser?.popupPositioner?.layout()
     browser?.sessionPrompt?.layout(); rememberGeometry()
   })
   win.on('move', () => rememberGeometry())
@@ -369,11 +380,22 @@ ipcMain.on(IPC.OVERLAY_ACTION, (event, action, payload) => {
     current.contextMenu.handleAction(event.sender, command).catch((error) => {
       console.error('[ember] context menu action failed:', error.message)
     })
+    return
   }
+  if (current.selection.isSender(event.sender)) current.selection.handleAction(event.sender, command)
 })
 ipcMain.on(IPC.OVERLAY_CLOSE, (event) => {
   if (browser?.uploadPanel.isSender(event.sender)) browser.uploadPanel.cancel()
   else if (browser?.contextMenu.isSender(event.sender)) browser.contextMenu.hide()
+  else if (browser?.selection.isSender(event.sender)) browser.selection.hide()
+})
+
+ipcMain.on(IPC.SELECTION_CHANGED, (event, payload) => {
+  const current = browser
+  const tab = current?.tabs.tabs.find((candidate) => candidate.webContents === event.sender)
+  if (!current || !tab || tab.id !== current.tabs.activeId) return
+  current.selection.update({ tab, text: payload?.text, rect: payload?.rect })
+    .catch((error) => console.error('[ember] conversion popup failed:', error.message))
 })
 
 ipcMain.handle(IPC.BOOKMARKS_GET, () => browser?.bookmarks.snapshot() || { version: 1, visible: false, items: [] })
