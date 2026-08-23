@@ -2,9 +2,11 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 
 const {
-  HibernationManager, HIBERNATION_DEFAULTS, MAX_MINUTES,
+  HibernationManager, HIBERNATION_DEFAULTS, MAX_MINUTES, PROBE_CLEAR, PROBE_UNAVAILABLE,
   hostnameOf, sanitiseHibernation, isSleepableUrl, sleepBlockers, shouldHibernate,
+  scrollRestoreScript,
 } = require('../src/main/hibernation')
+const { readHistory, MAX_HISTORY_ENTRIES } = require('../src/main/tabs')
 const { buildTabContextMenu } = require('../src/main/context-menu-model')
 
 const MINUTE = 60_000
@@ -211,4 +213,83 @@ test('the tab menu drops the domain row for an internal page', () => {
   const items = buildTabContextMenu({ url: 'ember://history' }, { domain: '', canSleep: false })
   assert.ok(!items.some((item) => item.id === 'tab-never-sleep-domain' || item.id === 'tab-allow-domain'))
   assert.ok(items.some((item) => item.id === 'tab-close'))
+})
+
+// ---- what the page probe reports, and what it blocks ----
+
+test('a page that warns before unloading is treated as unsaved work', () => {
+  assert.deepEqual(sleepBlockers(idleTab({ warnsOnExit: true }), context), ['warns-on-exit'])
+})
+
+test('picture-in-picture and fullscreen keep a background tab awake', () => {
+  assert.deepEqual(sleepBlockers(idleTab({ pictureInPicture: true }), context), ['picture-in-picture'])
+  assert.deepEqual(sleepBlockers(idleTab({ fullscreen: true }), context), ['fullscreen'])
+})
+
+test('the unavailable probe blocks on every count, the clear one on none', () => {
+  assert.deepEqual(sleepBlockers({ ...idleTab(), ...PROBE_CLEAR }, context), [])
+  const blocked = sleepBlockers({ ...idleTab(), ...PROBE_UNAVAILABLE }, context)
+  for (const reason of ['media', 'picture-in-picture', 'fullscreen', 'capture', 'unsaved-form', 'warns-on-exit']) {
+    assert.ok(blocked.includes(reason), `${reason} should be assumed`)
+  }
+})
+
+test('a page that never answers the probe cannot wedge the sweep', async () => {
+  const tabs = stubTabs([{
+    id: 1,
+    url: 'https://a.test/',
+    lastActiveAt: 0,
+    webContents: {
+      isDestroyed: () => false,
+      isCurrentlyAudible: () => false,
+      executeJavaScript: () => new Promise(() => {}), // never settles
+    },
+  }])
+  const manager = new HibernationManager(tabs, { config: () => HIBERNATION_DEFAULTS, probeTimeout: 30 })
+  assert.deepEqual(await manager.sweep(NOW), [], 'the hung page is left alone')
+  assert.equal(manager.sweeping, false, 'and the sweep is free to run again')
+  // The very next sweep still works, which is the point of the timeout.
+  tabs.tabs[0].webContents.executeJavaScript = async () => CLEAN_PROBE
+  assert.deepEqual(await manager.sweep(NOW), [1])
+})
+
+// ---- putting the reader back where they were ----
+
+test('the scroll script targets the remembered offset and gives up eventually', () => {
+  const script = scrollRestoreScript(0, 1500, { timeout: 4000 })
+  assert.match(script, /targetY = 1500/)
+  assert.match(script, /window\.scrollTo\(targetX, targetY\)/)
+  assert.match(script, /performance\.now\(\) > deadline/, 'it stops rather than looping forever')
+  for (const event of ['wheel', 'touchstart', 'keydown', 'mousedown']) {
+    assert.ok(script.includes(`'${event}'`), `${event} should call the restore off`)
+  }
+})
+
+test('a zero offset produces a script that does nothing expensive', () => {
+  const script = scrollRestoreScript(0, 0)
+  assert.match(script, /targetX = 0, targetY = 0/)
+})
+
+test('history is captured whole when it is short, and windowed when it is long', () => {
+  const historyOf = (count, active) => ({
+    getAllEntries: () => Array.from({ length: count }, (_x, i) => ({ url: `https://a.test/${i}`, pageState: 'x' })),
+    getActiveIndex: () => active,
+  })
+
+  const short = readHistory({ navigationHistory: historyOf(4, 2) })
+  assert.equal(short.entries.length, 4)
+  assert.equal(short.index, 2)
+
+  const long = readHistory({ navigationHistory: historyOf(120, 100) })
+  assert.equal(long.entries.length, MAX_HISTORY_ENTRIES)
+  assert.equal(long.entries[long.index].url, 'https://a.test/100', 'the reader stays on their own entry')
+
+  const atTheEnd = readHistory({ navigationHistory: historyOf(120, 119) })
+  assert.equal(atTheEnd.entries[atTheEnd.index].url, 'https://a.test/119')
+})
+
+test('a tab with no history, or one that throws, simply has none', () => {
+  assert.equal(readHistory({ navigationHistory: { getAllEntries: () => [], getActiveIndex: () => 0 } }), null)
+  assert.equal(readHistory({ navigationHistory: { getAllEntries: () => { throw new Error('gone') } } }), null)
+  assert.equal(readHistory({}), null)
 })

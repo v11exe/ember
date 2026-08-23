@@ -12,11 +12,15 @@
 
 const MAX_ENTRIES = 60
 const THUMBNAIL_WIDTH = 480
+const RETRY_DELAY = 150
+const ATTEMPT_TIMEOUT = 1200
 
 class ThumbnailCache {
-  constructor({ max = MAX_ENTRIES, width = THUMBNAIL_WIDTH } = {}) {
+  constructor({ max = MAX_ENTRIES, width = THUMBNAIL_WIDTH, retryDelay = RETRY_DELAY, attemptTimeout = ATTEMPT_TIMEOUT } = {}) {
     this.max = max
     this.width = width
+    this.retryDelay = retryDelay
+    this.attemptTimeout = attemptTimeout
     this.entries = new Map() // id -> { dataUrl, width, height, capturedAt }
   }
 
@@ -24,10 +28,10 @@ class ThumbnailCache {
    * Screenshot a live tab. Resolves to the stored entry, or null when there was
    * nothing to capture — in which case any earlier entry is left untouched.
    */
-  async capture(id, webContents) {
+  async capture(id, webContents, { rect = null } = {}) {
     if (!webContents || webContents.isDestroyed?.() || typeof webContents.capturePage !== 'function') return null
     try {
-      const image = await webContents.capturePage()
+      const image = await this.#frame(webContents, rect)
       if (!image || image.isEmpty()) return null
       const size = image.getSize()
       const scaled = size.width > this.width ? image.resize({ width: this.width, quality: 'good' }) : image
@@ -41,6 +45,33 @@ class ThumbnailCache {
     } catch {
       return null
     }
+  }
+
+  /**
+   * Chromium stops compositing a window it believes is occluded — another app
+   * in front of Ember is enough — and capturePage() then answers with an empty
+   * image. Asking for a repaint first, and giving it one more go, turns most
+   * of those misses into real screenshots.
+   */
+  async #frame(webContents, rect) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (webContents.isDestroyed?.()) return null
+      try { webContents.invalidate?.() } catch { /* not every view can be nudged */ }
+      // Ask for an explicit rect. The whole-page form takes a different path
+      // inside Electron that answers "display surface not available" — or
+      // UnknownVizError — for a WebContentsView the compositor is not
+      // currently presenting, which is most of the time for a background tab.
+      //
+      // It can also simply never answer, and neither failure may hold up a
+      // caller waiting to hide a view or discard a renderer.
+      const image = await Promise.race([
+        webContents.capturePage(rect || undefined).catch(() => null),
+        new Promise((resolve) => { setTimeout(() => resolve(null), this.attemptTimeout).unref?.() }),
+      ])
+      if (image && !image.isEmpty()) return image
+      if (attempt === 0) await new Promise((resolve) => { setTimeout(resolve, this.retryDelay).unref?.() })
+    }
+    return null
   }
 
   /** Insert or refresh an entry, evicting the least recently written one. */
@@ -60,4 +91,4 @@ class ThumbnailCache {
   get size() { return this.entries.size }
 }
 
-module.exports = { ThumbnailCache, MAX_ENTRIES, THUMBNAIL_WIDTH }
+module.exports = { ThumbnailCache, MAX_ENTRIES, THUMBNAIL_WIDTH, RETRY_DELAY, ATTEMPT_TIMEOUT }

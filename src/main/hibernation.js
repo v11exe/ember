@@ -13,6 +13,7 @@ const HIBERNATION_DEFAULTS = { enabled: true, minutes: 30, neverDomains: [] }
 const MIN_MINUTES = 1
 const MAX_MINUTES = 720
 const SWEEP_INTERVAL = 15_000
+const PROBE_TIMEOUT = 2_000
 const MAX_NEVER_DOMAINS = 200
 
 /** eTLD-ish key for the never-sleep list: hostname without a leading www. */
@@ -70,13 +71,19 @@ function sleepBlockers(tab = {}, context = {}) {
   if (tab.loading) blockers.push('loading')
   if (tab.audible) blockers.push('audio')
   if (tab.playingMedia) blockers.push('media')
+  if (tab.pictureInPicture) blockers.push('picture-in-picture')
+  if (tab.fullscreen) blockers.push('fullscreen')
   if (tab.capturing) blockers.push('capture')
   if (tab.downloading) blockers.push('download')
   if (tab.dirtyForm) blockers.push('unsaved-form')
+  if (tab.warnsOnExit) blockers.push('warns-on-exit')
   if (neverDomains.includes(hostnameOf(tab.url))) blockers.push('never-sleep-domain')
 
-  const idle = now - (tab.lastActiveAt || now)
-  if (idle < timeoutMs) blockers.push('recent')
+  // A tab restored from a saved session carries lastActiveAt 0, meaning "never
+  // looked at". `|| now` would read that as "used a moment ago", so the check
+  // has to distinguish a real zero from a missing value.
+  const lastActive = Number.isFinite(tab.lastActiveAt) ? tab.lastActiveAt : now
+  if (now - lastActive < timeoutMs) blockers.push('recent')
 
   return blockers
 }
@@ -85,30 +92,63 @@ function shouldHibernate(tab, context) {
   return sleepBlockers(tab, context).length === 0
 }
 
-// Installed in the page's main world once per document. Counts live capture
-// streams, which is the only reliable way to see camera/microphone use from
-// outside Chromium.
+// Installed in the page's main world once per document.
+//
+// Two things Chromium knows and Electron does not expose: whether a capture
+// stream is live, and whether the page has asked to be warned before it goes
+// away. Both need a hook inside the page, so this wraps two APIs — and puts
+// the original's toString() back on the wrapper, because a patched native is
+// exactly the sort of thing fingerprinting scripts look for.
 const MEDIA_PROBE_SCRIPT = `(() => {
-  if (window.__emberMediaProbe) return true
+  if (window.__emberProbe) return true
   const streams = new Set()
-  window.__emberMediaProbe = {
-    live() {
+  let exitWarnings = 0
+  window.__emberProbe = {
+    capturing() {
       for (const stream of streams) {
         if (stream.getTracks().some((track) => track.readyState === 'live')) return true
         streams.delete(stream)
       }
       return false
     },
+    warnsOnExit() {
+      return exitWarnings > 0 || typeof window.onbeforeunload === 'function'
+    },
   }
+
+  const disguise = (wrapper, original) => {
+    try {
+      Object.defineProperty(wrapper, 'name', { value: original.name, configurable: true })
+      Object.defineProperty(wrapper, 'toString', {
+        value: original.toString.bind(original), configurable: true, writable: true,
+      })
+    } catch { /* frozen prototypes are the page's business, not ours */ }
+    return wrapper
+  }
+
   const devices = navigator.mediaDevices
-  if (!devices) return true
-  for (const name of ['getUserMedia', 'getDisplayMedia']) {
-    const original = devices[name]
-    if (typeof original !== 'function') continue
-    devices[name] = function (...args) {
-      return Promise.resolve(original.apply(this, args)).then((stream) => { streams.add(stream); return stream })
+  if (devices) {
+    for (const name of ['getUserMedia', 'getDisplayMedia']) {
+      const original = devices[name]
+      if (typeof original !== 'function') continue
+      devices[name] = disguise(function (...args) {
+        return Promise.resolve(original.apply(this, args)).then((stream) => { streams.add(stream); return stream })
+      }, original)
     }
   }
+
+  // A beforeunload listener is the web's own statement that there is unsaved
+  // work here. destroy() would skip the dialog, so the tab must not sleep.
+  const add = window.addEventListener
+  const remove = window.removeEventListener
+  window.addEventListener = disguise(function (type, ...rest) {
+    if (type === 'beforeunload') exitWarnings += 1
+    return add.call(this, type, ...rest)
+  }, add)
+  window.removeEventListener = disguise(function (type, ...rest) {
+    if (type === 'beforeunload') exitWarnings = Math.max(0, exitWarnings - 1)
+    return remove.call(this, type, ...rest)
+  }, remove)
   return true
 })()`
 
@@ -125,12 +165,59 @@ const STATE_PROBE_SCRIPT = `(() => {
   })
   const dirtyEditable = [...document.querySelectorAll('[contenteditable=""], [contenteditable="true"]')]
     .some((element) => element.textContent.trim().length > 0)
+  const probe = window.__emberProbe
   return {
     playingMedia: playing,
-    capturing: !!window.__emberMediaProbe && window.__emberMediaProbe.live(),
+    capturing: !!probe && probe.capturing(),
     dirtyForm: dirtyField || dirtyEditable,
+    warnsOnExit: !!probe && probe.warnsOnExit(),
+    // A video the reader popped out, or anything mid-fullscreen, is in use
+    // even though the tab itself is in the background.
+    pictureInPicture: !!document.pictureInPictureElement,
+    fullscreen: !!document.fullscreenElement,
   }
 })()`
+
+/** What the sweep assumes about a page it could not question. */
+const PROBE_UNAVAILABLE = {
+  playingMedia: true, capturing: true, dirtyForm: true,
+  warnsOnExit: true, pictureInPicture: true, fullscreen: true,
+}
+
+const PROBE_CLEAR = {
+  playingMedia: false, capturing: false, dirtyForm: false,
+  warnsOnExit: false, pictureInPicture: false, fullscreen: false,
+}
+
+/**
+ * Re-apply a remembered scroll offset after a tab wakes.
+ *
+ * A single scrollTo at dom-ready lands at the top of anything that is still
+ * growing, so this keeps re-applying while the document gets taller — and
+ * stops the moment the reader touches the page, because then they have said
+ * where they want to be.
+ */
+function scrollRestoreScript(x = 0, y = 0, { timeout = 4000, step = 120 } = {}) {
+  const targetX = Number(x) || 0
+  const targetY = Number(y) || 0
+  return `(() => {
+    const targetX = ${targetX}, targetY = ${targetY}
+    let stopped = false
+    const events = ['wheel', 'touchstart', 'keydown', 'mousedown']
+    const release = () => { for (const name of events) window.removeEventListener(name, stop, true) }
+    function stop() { stopped = true; release() }
+    for (const name of events) window.addEventListener(name, stop, { capture: true, once: true })
+    const deadline = performance.now() + ${timeout}
+    const apply = () => {
+      if (stopped) return
+      window.scrollTo(targetX, targetY)
+      const arrived = Math.abs(window.scrollY - targetY) <= 2 && Math.abs(window.scrollX - targetX) <= 2
+      if (arrived || performance.now() > deadline) { release(); return }
+      setTimeout(apply, ${step})
+    }
+    apply()
+  })()`
+}
 
 /**
  * Drives the sweep. Knows nothing about how a tab is discarded — it asks the
@@ -141,11 +228,14 @@ class HibernationManager {
    * @param {import('./tabs').TabManager} tabs
    * @param {{ config: () => object, isDownloading?: (tab: object) => boolean, interval?: number }} opts
    */
-  constructor(tabs, { config, isDownloading = () => false, interval = SWEEP_INTERVAL } = {}) {
+  constructor(tabs, {
+    config, isDownloading = () => false, interval = SWEEP_INTERVAL, probeTimeout = PROBE_TIMEOUT,
+  } = {}) {
     this.tabs = tabs
     this.config = config || (() => HIBERNATION_DEFAULTS)
     this.isDownloading = isDownloading
     this.interval = interval
+    this.probeTimeout = probeTimeout
     this.timer = null
     this.sweeping = false
   }
@@ -197,19 +287,34 @@ class HibernationManager {
     return slept
   }
 
+  /**
+   * A page busy in a long synchronous task never answers, and an unbounded
+   * await there would wedge the sweep for the rest of the session. Losing the
+   * race counts as "cannot be questioned", which means "do not discard".
+   */
   async #probe(tab) {
     const wc = tab.webContents
-    if (!wc || wc.isDestroyed?.()) return { playingMedia: false, capturing: false, dirtyForm: false }
+    if (!wc || wc.isDestroyed?.()) return { ...PROBE_CLEAR }
+    let timer = null
     try {
-      const result = await wc.executeJavaScript(STATE_PROBE_SCRIPT, true)
+      const answer = wc.executeJavaScript(STATE_PROBE_SCRIPT, true)
+      const expiry = new Promise((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('probe timed out')), this.probeTimeout)
+        timer.unref?.()
+      })
+      const result = await Promise.race([answer, expiry])
       return {
         playingMedia: !!result?.playingMedia,
         capturing: !!result?.capturing,
         dirtyForm: !!result?.dirtyForm,
+        warnsOnExit: !!result?.warnsOnExit,
+        pictureInPicture: !!result?.pictureInPicture,
+        fullscreen: !!result?.fullscreen,
       }
     } catch {
-      // A page that cannot be questioned is a page we do not discard.
-      return { playingMedia: true, capturing: true, dirtyForm: true }
+      return { ...PROBE_UNAVAILABLE }
+    } finally {
+      clearTimeout(timer)
     }
   }
 }
@@ -217,6 +322,10 @@ class HibernationManager {
 module.exports = {
   HibernationManager,
   HIBERNATION_DEFAULTS,
+  PROBE_TIMEOUT,
+  PROBE_CLEAR,
+  PROBE_UNAVAILABLE,
+  scrollRestoreScript,
   MIN_MINUTES,
   MAX_MINUTES,
   SWEEP_INTERVAL,
