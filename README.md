@@ -7,7 +7,7 @@ Detailed numbered specifications and compatibility notes live in [`ROADMAP.md`](
 ## Completed
 
 - **1. Aggressive automatic tab hibernation** — inactive tabs can genuinely destroy their renderer and restore later with navigation state, scroll, zoom and cached thumbnails.
-- **2. Bangs / custom Quick Searches** — fast omnibox aliases such as `yt`, `gh`, `wiki` and `!alias`, with user-editable URL templates.
+- **2. Bangs / custom Quick Searches** — fast omnibox aliases such as `yt`, `gh`, `wiki` and `!alias`, with user-editable URL templates. The omnibox names the engine as you type, and `Tab` drops the keyword so you are just typing a query.
 - **3. Smart selection conversions** — selecting currencies, measurements, temperatures or times opens a compact conversion popup using user preferences.
 - **4. Internet Archive fallback** — unreachable pages and dead HTTP responses can be opened through a user-triggered Wayback action without automatic redirects.
 - **5. Arc-style Ctrl+Tab visual switcher** — MRU tab switching with thumbnails, reverse cycling, cancel/commit behavior and sleeping-tab support.

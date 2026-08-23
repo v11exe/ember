@@ -135,12 +135,25 @@ This should become a core part of Ember's omnibox rather than a separate feature
 
 Implemented on `main` as a core omnibox path with built-in defaults, editable aliases, `%s` templates, bare aliases and `!` aliases.
 
+The omnibox recognises the alias visibly, not just internally: typing `yt liquid glass`
+raises a chip naming the engine before Enter, and `Tab` on a bare keyword commits the
+omnibox to that search, drops the keyword and leaves only the query. `Backspace` on an
+empty query steps back out, `Escape` leaves the engine. The new-tab search field shows
+the same chip. `ember://settings` lists every shortcut, built-in ones included, editable
+in place, with a restore that undoes changes to Ember's own list while keeping the
+reader's own additions.
+
 Preserve these rules:
 
 - Alias resolution must happen before the normal default search.
 - URL-like input must never be mistaken for an alias; dots, slashes, colons and spaces remain disallowed inside aliases.
 - Explicit `!alias` may outrank an internal-page keyword, while a bare keyword must not unexpectedly steal an Ember internal command.
+- A reachable host outranks an alias named after it: `localhost` and `localhost:3000` reach the dev server even when a bang is named `localhost`.
+- `resolveInput()` in `shared/urls.js` is the only place that decides what omnibox text means. Preview and navigation must keep calling it, so a chip can never promise something Enter will not do. New input kinds belong there, not in a renderer.
+- Matching must stay effectively instantaneous. The chrome preload holds the list and resolves synchronously; sandboxed `ember://` pages ask main over `omnibox:resolve` and must ignore out-of-order answers.
 - Future workspace/profile work (#12–13) must not silently change alias semantics; any per-profile/per-workspace scoping must be explicit.
+- Future omnibox work — #14 universal tab search, #25 duplicate detection ("Already open") — shares this input path. Add kinds to `resolveInput()` and decide precedence against `bang` explicitly rather than intercepting keystrokes upstream of it.
+- #21/#22 compact and edge-hover chrome must keep the chip visible whenever the omnibox itself is visible; it is part of the field, not a separate surface.
 
 ---
 
@@ -1058,6 +1071,11 @@ Must detect duplicates across:
 - Sleeping tabs
 
 while respecting separate profiles where duplicate pages may be intentional.
+
+The "Already open" hint shares the omnibox input path completed in #2. Add it as a
+kind returned by `resolveInput()` in `shared/urls.js` and decide its precedence
+against `bang` explicitly, so the chip and the navigation keep coming from one
+decision. Do not intercept omnibox keystrokes ahead of that resolver.
 
 ---
 

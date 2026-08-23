@@ -118,6 +118,19 @@ test/                          node:test contracts/integration fixtures
   dots, slashes, colons and spaces so normal URLs cannot be stolen.
 - Explicit `!alias` can outrank an Ember internal-page keyword; a bare alias must
   not silently steal an exact internal command.
+- `resolveInput()` in `shared/urls.js` is the single decision point for omnibox
+  text. The chip the omnibox shows and the navigation main performs come from
+  the same call, so a preview can never promise what Enter will not do. Add new
+  input kinds there, never in a renderer.
+- A reachable host outranks an alias named after it: `localhost` and
+  `localhost:3000` go to the dev server even if a bang is called `localhost`.
+- The chrome preload keeps its own copy of the bang list (pushed on
+  `bangs:changed`) and resolves synchronously, because the chip has to land on
+  the keystroke. Sandboxed `ember://` pages cannot load the resolver and ask
+  main over `omnibox:resolve` instead; guard those answers against arriving out
+  of order.
+- Tab-to-search removes the keyword from the omnibox and keeps it in `engaged`;
+  submit re-attaches it so there is still only one resolution path.
 - Selection conversion stays local except currency-rate lookup.
 - Archive lookup is user-triggered only. Never send failed URLs to archive.org
   in the background and never auto-redirect to an archived page.
@@ -275,6 +288,23 @@ Newest first. One entry per active/recent unit of work.
 - **Summary:** what changed and why
 - **For the other agent:** contracts/risks they must know, or `none`
 ```
+
+### 2026-08-23 — Claude Code — Omnibox quick-search refinement
+- **Status / Branch:** merged · `main`
+- **Touches:** `src/shared/{urls,ipc}.js`, `src/main/{index,page-preload}.js`,
+  `src/renderer/{preload.js,chrome.*}`, `src/renderer/pages/{newtab.*,liquid-glass-search.js,settings.*}`,
+  `scripts/capture-ui.js`, `test/{bangs,preload,renderer-contracts}.test.js`
+- **Summary:** Roadmap feature 2, second pass. The omnibox now *shows* the
+  quick search it recognised instead of only acting on it at Enter: a chip
+  names the engine as you type, Tab commits to it and drops the keyword,
+  Backspace steps back out. The new-tab search field shows the same chip.
+  Settings gained a restore for Ember's own list and a notice when a keyword
+  is overridden.
+- **For the other agent:** `toNavigationUrl()` is now a thin wrapper over
+  `resolveInput()`, which returns `{ kind, url, alias, term, name }` — use it
+  for anything that needs to know what omnibox text means. New channels
+  `bangs:get`, `bangs:changed` and `omnibox:resolve`. `capture-ui.js` gained
+  `omnibox-{hint,engaged}.png` and `newtab-chip.png`.
 
 ### 2026-08-23 — ChatGPT — Roadmap and agent workflow
 - **Status / Branch:** merged · `main`
