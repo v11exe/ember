@@ -196,6 +196,7 @@ test('tabs reorder with a custom drag image and can pin into the full Favorite g
   assert.match(sidebarJs, /node\.animate/)
   assert.match(sidebarJs, /moveFavorite/)
   assert.match(sidebarJs, /pinFavoriteFromTab\(id, index\)/)
+  assert.match(sidebarJs, /finally\s*\{[^}]*dropPending = false[^}]*resetPreview\(\)/s)
 })
 
 test('extension icon and metadata share one keyboard-accessible launcher', () => {
@@ -379,8 +380,9 @@ test('settings can add, edit, remove, and reset the ordered Favorite rail', () =
   const html = read('src', 'renderer', 'pages', 'settings.html')
   const css = read('src', 'renderer', 'pages', 'settings.css')
   const js = read('src', 'renderer', 'pages', 'settings.js')
+  const main = read('src', 'main', 'index.js')
 
-  for (const id of ['favorite-list', 'favorite-new', 'favorite-name', 'favorite-url', 'favorite-reset', 'favorite-columns', 'favorite-rows']) {
+  for (const id of ['favorite-list', 'favorite-new', 'favorite-name', 'favorite-url', 'favorite-reset', 'favorite-columns', 'favorite-rows', 'favorite-grid-apply']) {
     assert.match(html, new RegExp(`id="${id}"`), id)
   }
   assert.match(css, /\.favorite-row/)
@@ -389,6 +391,7 @@ test('settings can add, edit, remove, and reset the ordered Favorite rail', () =
   assert.match(js, /api\?\.set\('favoriteGrid'/)
   assert.match(js, /FAVORITE_COLUMN_OPTIONS = \[1, 2, 3, 4\]/)
   assert.match(js, /FAVORITE_ROW_OPTIONS = \[1, 2, 3, 4, 5, 6, 7\]/)
+  assert.match(main, /preference === 'favoriteGrid'[^\n]+sync\('favorites', snapshot\.favorites\)/)
   assert.match(js, /favorite-reset/)
   assert.match(js, /row\.contains\(event\.relatedTarget\)/, 'moving between row inputs does not rebuild the editor')
   assert.match(js, /const edited = currentFavorite\(\)/, 'reordering preserves live input values')

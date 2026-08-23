@@ -205,15 +205,18 @@ favorites.addEventListener('drop', async (event) => {
   const index = Number(slot.dataset.index)
   dropPending = true
   let result = null
-  const favoriteId = draggedFavoriteId || event.dataTransfer.getData(FAVORITE_DRAG_TYPE)
-  if (favoriteId) result = await window.ember.moveFavorite(favoriteId, index)
-  else {
-    const id = Number(event.dataTransfer.getData(TAB_DRAG_TYPE))
-    if (Number.isFinite(id)) result = await window.ember.pinFavoriteFromTab(id, index)
+  try {
+    const favoriteId = draggedFavoriteId || event.dataTransfer.getData(FAVORITE_DRAG_TYPE)
+    if (favoriteId) result = await window.ember.moveFavorite(favoriteId, index)
+    else {
+      const id = Number(event.dataTransfer.getData(TAB_DRAG_TYPE))
+      if (Number.isFinite(id)) result = await window.ember.pinFavoriteFromTab(id, index)
+    }
+  } finally {
+    dropPending = false
+    draggedFavoriteId = null
+    resetPreview()
   }
-  dropPending = false
-  draggedFavoriteId = null
-  resetPreview()
   if (result?.id && ['added', 'existing', 'moved', 'replaced'].includes(result.status)) pulseFavorite(result.id)
 })
 

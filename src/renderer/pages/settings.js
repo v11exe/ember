@@ -72,6 +72,7 @@ function renderFavoriteGrid() {
   columns.value = String(favoriteGrid.columns)
   rows.value = String(favoriteGrid.rows)
   document.getElementById('favorite-grid-detail').textContent = `${favoriteCapacity()} slots`
+  document.getElementById('favorite-grid-apply').disabled = true
 }
 
 async function saveFavoriteGrid() {
@@ -160,8 +161,15 @@ function renderFavorites() {
   document.getElementById('favorite-count').textContent = `${favoriteList.length} of ${favoriteCapacity()} sites`
 }
 
-document.getElementById('favorite-columns').onchange = () => void saveFavoriteGrid()
-document.getElementById('favorite-rows').onchange = () => void saveFavoriteGrid()
+const favoriteGridChanged = () => {
+  const columns = Number(document.getElementById('favorite-columns').value)
+  const rows = Number(document.getElementById('favorite-rows').value)
+  document.getElementById('favorite-grid-detail').textContent = `${columns * rows} slots`
+  document.getElementById('favorite-grid-apply').disabled = columns === favoriteGrid.columns && rows === favoriteGrid.rows
+}
+document.getElementById('favorite-columns').onchange = favoriteGridChanged
+document.getElementById('favorite-rows').onchange = favoriteGridChanged
+document.getElementById('favorite-grid-apply').onclick = () => void saveFavoriteGrid()
 
 document.getElementById('favorite-new').onsubmit = (event) => {
   event.preventDefault()

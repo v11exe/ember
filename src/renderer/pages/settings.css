@@ -119,6 +119,7 @@
 .favorite-grid-controls label { display: grid; gap: 5px; color: var(--text-faint); font-size: 11px; }
 .favorite-grid-controls .field { width: 76px; }
 .favorite-grid-times { align-self: end; padding-bottom: 9px; color: var(--text-faint); }
+.favorite-grid-controls .pill { align-self: end; }
 .favorite-grid-detail { align-self: end; padding-bottom: 8px; color: var(--text-faint); font-size: 12px; }
 .favorite-list { margin-top: 13px; display: grid; gap: 5px; }
 .favorite-row {

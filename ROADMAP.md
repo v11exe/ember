@@ -477,7 +477,11 @@ existing-tab reuse that also wakes hibernated Favorite tabs without making them
 permanent renderer consumers. A horizontal tab can also be reordered in place or
 dropped onto the Favorite region to persist its exact page URL and favicon; site
 identity is used for duplicate detection and open-tab reuse. Favorite tiles expose
-a restrained open-site state and a one-action right-click removal menu.
+a restrained open-site state and a one-action right-click removal menu. Settings
+control a persisted 1–4 column by 1–7 row grid, defaulting to 2×2. Tiles fill the
+available rail width; rows through four retain the original tile height, denser
+layouts compress the tile surface without shrinking the 19px site icons, and every
+resize or reorder animates into place.
 
 Preserve these rules:
 
@@ -499,6 +503,11 @@ Preserve these rules:
   shortcuts. Clicking resolves a same-site tab before creation, so a sleeping
   match wakes through normal `tabs.select()` lifecycle behavior. Removing a
   Favorite never closes a matching tab.
+- Grid dimensions and Favorite order share one persisted contract. Drops target a
+  concrete grid cell: spare-capacity drops insert and shift following Favorites;
+  a new site dropped into a full grid replaces the hovered Favorite; moving an
+  existing Favorite always reorders without replacement. Google, YouTube and
+  Calendar remain first-run defaults, while an explicit empty user list stays empty.
 - Future Workspaces (#12) may add explicit workspace-scoped Favorites, but the
   current list remains global until a real scope model exists. Profiles (#13)
   must resolve Favorite reuse inside the correct browsing session.

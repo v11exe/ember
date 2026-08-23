@@ -614,7 +614,11 @@ ipcMain.handle(IPC.SETTINGS_SET, async (event, { key, value } = {}) => {
   const preference = String(key)
   const snapshot = await source.settings.set(preference, value)
   for (const target of browsers) {
-    if (target !== source) target.settings.sync(preference, snapshot[preference])
+    if (target === source) continue
+    target.settings.sync(preference, snapshot[preference])
+    // Changing capacity can truncate the ordered list. Mirror the authoritative
+    // result as well as the dimensions so no window can retain stale shortcuts.
+    if (preference === 'favoriteGrid') target.settings.sync('favorites', snapshot.favorites)
   }
   // Every window's omnibox matches against the same list.
   if (preference === 'bangs') for (const target of browsers) broadcastBangs(target)

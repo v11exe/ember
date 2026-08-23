@@ -130,6 +130,11 @@ test/                          node:test contracts/integration fixtures
 - The Favorite rail is global and ordered today. It resolves a matching site,
   then creates a tab at the stored exact URL; selecting a sleeping match must
   wake it through the ordinary tab lifecycle rather than keeping Favorites alive.
+- Favorite grid dimensions persist from 1×1 through 4×7 (default 2×2). Capacity
+  is authoritative: reducing it truncates in reading order. Indexed drops insert
+  and shift while space remains; a new site replaces the hovered cell only when
+  full; existing Favorite drags only reorder. Keep site icons at 19px even when
+  rows 5–7 compress their tile surfaces.
 - Horizontal tab drag reorders the existing tab records without recreating their
   renderers. Dropping a tab into the Favorite region stores its exact page URL,
   de-duplicates and reuses by site, and never destroys the source tab. Favorite
@@ -322,10 +327,10 @@ Newest first. One entry per active/recent unit of work.
 ```
 
 ### 2026-08-23 — Codex — Adaptive Favorite grid
-- **Status / Branch:** in-progress · `feat/ember-shell`
+- **Status / Branch:** completed · `feat/ember-shell`
 - **Touches:** `src/shared/favorites.js`, `src/main/{settings,index}.js`,
   `src/renderer/{preload,sidebar}.*`, `src/renderer/pages/settings.*`, tests and docs
-- **Summary:** Making the persisted Favorite rail configurable from 1×1 through
+- **Summary:** Made the persisted Favorite rail configurable from 1×1 through
   4×7 with icon-preserving adaptive sizing and animated indexed insertion/replacement.
 - **For the other agent:** The default remains 2×2 with the existing three starter
   sites; configured capacity becomes authoritative for stored Favorite count.
