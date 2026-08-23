@@ -3,12 +3,18 @@ const assert = require('node:assert/strict')
 
 const { TabManager } = require('../src/main/tabs')
 const { SIDEBAR_TRANSITION_MS } = require('../src/shared/chrome-layout')
+const { IPC } = require('../src/shared/ipc')
 
 function fixture({ width = 1270, height = 740, sidebarOpen = true } = {}) {
   const chromeBounds = []
   const sidebarBounds = []
   const pageBounds = []
   const radii = []
+  const shellMetrics = { chrome: [], sidebar: [], right: [], bottom: [], masks: {} }
+  const webContents = (target) => ({
+    isDestroyed: () => false,
+    send: (channel, payload) => { if (channel === IPC.SHELL_METRICS) target.push(payload) },
+  })
   const win = {
     on: () => {},
     getContentBounds: () => ({ width, height }),
@@ -16,20 +22,40 @@ function fixture({ width = 1270, height = 740, sidebarOpen = true } = {}) {
   }
   const chrome = {
     setBounds: (bounds, options) => chromeBounds.push({ bounds, options }),
-    webContents: { isDestroyed: () => false, send: () => {} },
+    webContents: webContents(shellMetrics.chrome),
   }
   const sidebar = {
     setBounds: (bounds, options) => sidebarBounds.push({ bounds, options }),
     getBounds: () => sidebarBounds.at(-1)?.bounds || { x: 0, y: 0, width: 168, height },
     setVisible: () => {},
-    webContents: { isDestroyed: () => false, send: () => {} },
+    webContents: webContents(shellMetrics.sidebar),
   }
+  const frameView = (target) => ({
+    setBounds(bounds) { this.bounds = bounds },
+    getBounds() { return this.bounds },
+    webContents: webContents(target),
+  })
+  const frameViews = {
+    right: frameView(shellMetrics.right),
+    bottom: frameView(shellMetrics.bottom),
+  }
+  const pageCornerMasks = ['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((corner) => {
+    const target = shellMetrics.masks[corner] = []
+    return {
+      corner,
+      view: {
+        setBounds(bounds) { this.bounds = bounds },
+        setVisible: () => {},
+        webContents: webContents(target),
+      },
+    }
+  })
   const page = {
     setBounds: (bounds, options) => pageBounds.push({ bounds, options }),
     getBounds: () => pageBounds.at(-1)?.bounds || { x: 168, y: 32, width: width - 176, height: height - 40 },
     setBorderRadius: (radius) => radii.push(radius),
   }
-  const tabs = new TabManager(win, chrome, { sidebarOpen, sidebarView: sidebar })
+  const tabs = new TabManager(win, chrome, { sidebarOpen, sidebarView: sidebar, frameViews, pageCornerMasks })
   tabs.tabs = [{
     id: 1,
     view: page,
@@ -37,7 +63,7 @@ function fixture({ width = 1270, height = 740, sidebarOpen = true } = {}) {
     url: 'https://example.com/',
   }]
   tabs.activeId = 1
-  return { tabs, chromeBounds, sidebarBounds, pageBounds, radii }
+  return { tabs, chromeBounds, sidebarBounds, pageBounds, radii, frameViews, pageCornerMasks, shellMetrics }
 }
 
 test('layout keeps bounded chrome away from the translucent native page', () => {
@@ -108,4 +134,19 @@ test('moving before the current position or an unknown tab is a no-op', () => {
   assert.equal(tabs.move(1, 2), false)
   assert.equal(tabs.move(999, null), false)
   assert.deepEqual(tabs.tabs.map((tab) => tab.id), [1, 2])
+})
+
+test('every bounded shell surface receives its absolute window-coordinate material metrics', () => {
+  const { tabs, shellMetrics, frameViews } = fixture()
+  tabs.layout()
+
+  assert.deepEqual(shellMetrics.chrome.at(-1), { width: 1270, height: 740, x: 0, y: 0 })
+  assert.deepEqual(shellMetrics.sidebar.at(-1), { width: 1270, height: 740, x: 0, y: 0 })
+  assert.deepEqual(frameViews.right.getBounds(), { x: 1262, y: 32, width: 8, height: 700 })
+  assert.deepEqual(frameViews.bottom.getBounds(), { x: 168, y: 732, width: 1102, height: 8 })
+  assert.deepEqual(shellMetrics.right.at(-1), { width: 1270, height: 740, x: 1262, y: 32 })
+  assert.deepEqual(shellMetrics.bottom.at(-1), { width: 1270, height: 740, x: 168, y: 732 })
+  assert.deepEqual(shellMetrics.masks['bottom-right'].at(-1), {
+    width: 1270, height: 740, x: 1250, y: 720,
+  })
 })

@@ -493,7 +493,10 @@ class TabManager {
   }
 
   applyShellBounds({ width, height, sidebarBounds, pageBounds, radius }) {
-    if (this.sidebarView) this.sidebarView.setBounds(sidebarBounds)
+    if (this.sidebarView) {
+      this.sidebarView.setBounds(sidebarBounds)
+      this.#sendShellMetrics(this.sidebarView, sidebarBounds, width, height)
+    }
     const active = this.active
     if (active?.view) {
       active.view.setBounds(pageBounds)
@@ -502,14 +505,18 @@ class TabManager {
     if (this.frameViews) {
       const frameX = Math.max(0, width - OUTER_INSET - SHELL_INSET)
       const frameY = Math.max(0, height - OUTER_INSET - SHELL_INSET)
-      this.frameViews.right.setBounds({
+      const rightBounds = {
         x: frameX, y: TOPBAR_HEIGHT, width: SHELL_INSET,
-        height: Math.max(0, height - TOPBAR_HEIGHT - OUTER_INSET),
-      })
-      this.frameViews.bottom.setBounds({
+        height: Math.max(0, frameY - TOPBAR_HEIGHT),
+      }
+      const bottomBounds = {
         x: pageBounds.x, y: frameY,
-        width: Math.max(0, frameX - pageBounds.x), height: SHELL_INSET,
-      })
+        width: Math.max(0, width - OUTER_INSET - pageBounds.x), height: SHELL_INSET,
+      }
+      this.frameViews.right.setBounds(rightBounds)
+      this.frameViews.bottom.setBounds(bottomBounds)
+      this.#sendShellMetrics(this.frameViews.right, rightBounds, width, height)
+      this.#sendShellMetrics(this.frameViews.bottom, bottomBounds, width, height)
     }
     const maskBounds = {
       'top-left': { x: pageBounds.x, y: pageBounds.y },
@@ -522,14 +529,26 @@ class TabManager {
     }
     for (const mask of this.pageCornerMasks) {
       const point = maskBounds[mask.corner]
-      mask.view.setBounds({ ...point, width: radius, height: radius })
+      const bounds = { ...point, width: radius, height: radius }
+      mask.view.setBounds(bounds)
       mask.view.setVisible(true)
+      this.#sendShellMetrics(mask.view, bounds, width, height)
     }
+  }
+
+  #sendShellMetrics(view, bounds, width, height) {
+    const wc = view?.webContents
+    if (!wc || wc.isDestroyed?.()) return
+    wc.send(IPC.SHELL_METRICS, {
+      width, height, x: bounds.x, y: bounds.y,
+    })
   }
 
   layout({ animate = false } = {}) {
     const { width, height } = this.win.getContentBounds()
-    this.chromeView.setBounds({ x: 0, y: 0, width, height: this.chromeHeight })
+    const chromeBounds = { x: 0, y: 0, width, height: this.chromeHeight }
+    this.chromeView.setBounds(chromeBounds)
+    this.#sendShellMetrics(this.chromeView, chromeBounds, width, height)
     if (this.layoutTimer) {
       clearTimeout(this.layoutTimer)
       this.layoutTimer = null

@@ -6,15 +6,29 @@ html, body, .corner-mask {
   background: transparent;
 }
 
-body[data-corner="top-left"] .corner-mask {
-  background: radial-gradient(circle at 100% 100%, transparent 0 10.75px, rgba(92, 34, 5, .42) 11.35px, #5c2205 12px);
+.corner-mask::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--shell-material);
+  background-size: var(--shell-width) var(--shell-height);
+  background-position: calc(0px - var(--shell-x)) calc(0px - var(--shell-y));
+  background-repeat: no-repeat;
 }
-body[data-corner="top-right"] .corner-mask {
-  background: radial-gradient(circle at 0 100%, transparent 0 10.75px, rgba(21, 16, 14, .42) 11.35px, #15100e 12px);
+
+body[data-corner="top-left"] .corner-mask::before {
+  -webkit-mask-image: radial-gradient(circle at 100% 100%, transparent 0 10.7px, rgba(0, 0, 0, .55) 11.3px, #000 12px);
+  mask-image: radial-gradient(circle at 100% 100%, transparent 0 10.7px, rgba(0, 0, 0, .55) 11.3px, #000 12px);
 }
-body[data-corner="bottom-left"] .corner-mask {
-  background: radial-gradient(circle at 100% 0, transparent 0 10.75px, rgba(21, 16, 14, .42) 11.35px, #15100e 12px);
+body[data-corner="top-right"] .corner-mask::before {
+  -webkit-mask-image: radial-gradient(circle at 0 100%, transparent 0 10.7px, rgba(0, 0, 0, .55) 11.3px, #000 12px);
+  mask-image: radial-gradient(circle at 0 100%, transparent 0 10.7px, rgba(0, 0, 0, .55) 11.3px, #000 12px);
 }
-body[data-corner="bottom-right"] .corner-mask {
-  background: radial-gradient(circle at 0 0, transparent 0 10.75px, rgba(164, 60, 3, .42) 11.35px, #a43c03 12px);
+body[data-corner="bottom-left"] .corner-mask::before {
+  -webkit-mask-image: radial-gradient(circle at 100% 0, transparent 0 10.7px, rgba(0, 0, 0, .55) 11.3px, #000 12px);
+  mask-image: radial-gradient(circle at 100% 0, transparent 0 10.7px, rgba(0, 0, 0, .55) 11.3px, #000 12px);
+}
+body[data-corner="bottom-right"] .corner-mask::before {
+  -webkit-mask-image: radial-gradient(circle at 0 0, transparent 0 10.7px, rgba(0, 0, 0, .55) 11.3px, #000 12px);
+  mask-image: radial-gradient(circle at 0 0, transparent 0 10.7px, rgba(0, 0, 0, .55) 11.3px, #000 12px);
 }

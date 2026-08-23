@@ -64,6 +64,7 @@ const IPC = {
   UPLOAD_RESULT: 'upload:result',
   OVERLAY_STATE: 'overlay:state',
   DOWNLOADS_CHANGED: 'downloads:changed',
+  SHELL_METRICS: 'shell:metrics',
 }
 
 // Where the omnibox sends anything that isn't a URL.

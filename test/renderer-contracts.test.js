@@ -57,6 +57,7 @@ test('browser chrome provides a compact live bookmarks bar', () => {
 test('browser chrome is one unified Ember shell rather than the old permanent toolbar', () => {
   const html = read('src', 'renderer', 'chrome.html')
   const css = read('src', 'renderer', 'chrome.css')
+  const material = read('src', 'renderer', 'shell-material.css')
   const js = read('src', 'renderer', 'chrome.js')
   const preload = read('src', 'renderer', 'preload.js')
 
@@ -73,7 +74,7 @@ test('browser chrome is one unified Ember shell rather than the old permanent to
   for (const token of ['--sidebar-width', '--topbar-height', '--outer-radius', '--viewport-radius', '--shell-inset', '--tab-height', '--tab-max-width', '--tab-min-width', '--ember-orange']) {
     assert.match(css, new RegExp(token))
   }
-  assert.match(css, /radial-gradient[\s\S]+linear-gradient/, 'shell uses a smouldering compound gradient')
+  assert.match(material, /radial-gradient[\s\S]+linear-gradient/, 'shell uses one smouldering compound gradient')
   assert.doesNotMatch(html, /shell-outline/, 'shell has no segmented orange outline overlay')
   assert.doesNotMatch(css, /\.shell-outline/, 'shell has no segmented orange outline styling')
   assert.match(css, /-webkit-app-region:\s*no-drag/)
@@ -100,7 +101,7 @@ test('Favorite rail renders in a separate bounded view so native glass stays vis
   assert.match(html, /id="favorites"/)
   assert.match(css, /\.sidebar-surface/)
   assert.match(css, /border-radius:\s*12px\s+0\s+0\s+12px/)
-  assert.match(css, /radial-gradient[\s\S]+linear-gradient/, 'sidebar continues the same upper-left shell material')
+  assert.doesNotMatch(css, /radial-gradient[\s\S]+linear-gradient/, 'sidebar does not paint an independent shell material')
   assert.match(js, /openFavorite/)
   assert.match(js, /sameFavoriteSite/)
   assert.match(js, /onWindowState/)
@@ -109,16 +110,39 @@ test('Favorite rail renders in a separate bounded view so native glass stays vis
   assert.match(main, /sidebarView/)
   assert.match(main, /contentView\.setBorderRadius/)
   assert.match(main, /frame\.html/)
-  assert.match(frameCss, /linear-gradient/)
-  assert.match(frameCss, /border-radius:\s*0\s+0\s+8px\s+0/)
+  assert.doesNotMatch(frameCss, /#a43c03|#542006/i, 'frame does not own a competing lower-right gradient')
+  assert.match(frameCss, /border-radius:\s*0\s+0\s+12px\s+0/)
   assert.match(frameCss, /\.maximized\s+\.frame-surface/)
-  assert.match(frameCss, /#a43c03/i, 'clipped frame carries the restrained lower-right ember')
   assert.match(main, /pageCornerMasks/)
   assert.match(main, /CORNER_MASK_INPUT/)
   assert.match(main, /sendInputEvent/, 'visible page pixels beneath a mask remain interactive')
   assert.match(cornerCss, /radial-gradient/)
   assert.match(cornerCss, /transparent/)
   assert.doesNotMatch(css, /\.sidebar-surface\s*\{[^}]*border-(?:left|bottom)/s)
+})
+
+test('bounded native surfaces sample one synchronized shell material', () => {
+  const material = read('src', 'renderer', 'shell-material.css')
+  const metrics = read('src', 'renderer', 'shell-metrics.js')
+  const chromeHtml = read('src', 'renderer', 'chrome.html')
+  const sidebarHtml = read('src', 'renderer', 'sidebar.html')
+  const frameHtml = read('src', 'renderer', 'frame.html')
+  const cornerHtml = read('src', 'renderer', 'corner-mask.html')
+  const cornerCss = read('src', 'renderer', 'corner-mask.css')
+
+  assert.match(material, /--shell-material:/)
+  assert.match(material, /radial-gradient[\s\S]+radial-gradient[\s\S]+linear-gradient/)
+  assert.match(material, /background-size:\s*var\(--shell-width\) var\(--shell-height\)/)
+  assert.match(material, /calc\(0px - var\(--shell-x\)\)/)
+  for (const html of [chromeHtml, sidebarHtml, frameHtml, cornerHtml]) {
+    assert.match(html, /shell-material\.css/)
+    assert.match(html, /shell-metrics\.js/)
+  }
+  assert.match(metrics, /--shell-width/)
+  assert.match(metrics, /--shell-x/)
+  assert.match(cornerCss, /mask-image/)
+  assert.match(cornerCss, /var\(--shell-material\)/)
+  assert.doesNotMatch(cornerCss, /#a43c03|#5c2205/i)
 })
 
 test('tab lifecycle states use natural widths, measured fades, and hover-only close controls', () => {

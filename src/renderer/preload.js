@@ -61,6 +61,7 @@ contextBridge.exposeInMainWorld('ember', {
   tabMaximum: (options) => dynamicTabMax(options),
   sameFavoriteSite: (favoriteUrl, tabUrl) => sameFavoriteSite(favoriteUrl, tabUrl),
   onWindowState: (fn) => ipcRenderer.on(IPC.WIN_STATE, (_e, state) => fn(state)),
+  onShellMetrics: (fn) => ipcRenderer.on(IPC.SHELL_METRICS, (_e, metrics) => fn(metrics)),
 
   minimize: () => ipcRenderer.send(IPC.WIN_MINIMIZE),
   maximize: () => ipcRenderer.send(IPC.WIN_MAXIMIZE),

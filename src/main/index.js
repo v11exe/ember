@@ -162,7 +162,12 @@ function createBrowser({ privateMode = false } = {}) {
 
   const createFrameView = (axis) => {
     const view = new WebContentsView({
-      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+        preload: path.join(__dirname, '..', 'renderer', 'shell-metrics-preload.js'),
+      },
     })
     view.setBackgroundColor('#00000000')
     view.webContents.loadFile(path.join(__dirname, '..', 'renderer', 'frame.html'), { query: { axis } })
@@ -195,6 +200,9 @@ function createBrowser({ privateMode = false } = {}) {
     frameViews: { right: frameRight, bottom: frameBottom },
     pageCornerMasks,
   })
+  for (const view of [frameRight, frameBottom, ...pageCornerMasks.map((entry) => entry.view)]) {
+    view.webContents.once('did-finish-load', () => tabs.layout())
+  }
   const panel = new ExtensionPanel(win)
   const bookmarks = new BookmarkStore(path.join(app.getPath('userData'), 'bookmarks.json'))
   const history = new HistoryStore(path.join(app.getPath('userData'), 'history.json'))

@@ -133,6 +133,11 @@ test('chrome preload bridges live shell configuration and Favorite actions', asy
   exposed.onWindowState((state) => { windowState = state })
   listeners.get(IPC.WIN_STATE)(null, { maximized: true })
   assert.deepEqual(windowState, { maximized: true })
+
+  let shellMetrics = null
+  exposed.onShellMetrics((metrics) => { shellMetrics = metrics })
+  listeners.get(IPC.SHELL_METRICS)(null, { width: 900, height: 640, x: 0, y: 0 })
+  assert.deepEqual(shellMetrics, { width: 900, height: 640, x: 0, y: 0 })
 })
 
 test('the omnibox can ask what Enter will do without leaving the renderer', () => {

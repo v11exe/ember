@@ -1,0 +1,50 @@
+:root {
+  --shell-width: 100vw;
+  --shell-height: 100vh;
+  --shell-x: 0px;
+  --shell-y: 0px;
+  --shell-material:
+    radial-gradient(ellipse 34% 62% at 2.5% 2%, rgba(255, 90, 0, .31) 0%, rgba(165, 58, 5, .19) 21%, rgba(84, 32, 6, .075) 45%, transparent 69%),
+    radial-gradient(ellipse 48% 30% at 15% 0%, rgba(116, 45, 14, .10) 0%, transparent 64%),
+    linear-gradient(110deg, #1a100a 0%, #12100f 29%, #0e0e0e 60%, #0b0b0c 100%);
+}
+
+.shell-material {
+  background-image: var(--shell-material);
+  background-size: var(--shell-width) var(--shell-height);
+  background-position: calc(0px - var(--shell-x)) calc(0px - var(--shell-y));
+  background-repeat: no-repeat;
+}
+
+.shell-edge { position: relative; isolation: isolate; }
+.shell-edge::after {
+  content: "";
+  position: absolute;
+  z-index: 20;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+.shell-edge-top::after {
+  background:
+    linear-gradient(90deg, rgba(255, 82, 0, .25), rgba(255, 82, 0, .11) 24%, rgba(255, 82, 0, .035) 58%, transparent 88%) 0 1px / 100% 1px no-repeat,
+    linear-gradient(rgba(0, 0, 0, .84), rgba(0, 0, 0, .84)) 0 0 / 100% 1px no-repeat;
+}
+.shell-edge-sidebar::after {
+  background:
+    linear-gradient(rgba(255, 82, 0, .20), rgba(255, 82, 0, .07) 31%, transparent 72%) 1px 0 / 1px 100% no-repeat,
+    linear-gradient(90deg, rgba(255, 82, 0, .10), transparent 82%) 0 calc(100% - 1px) / 100% 1px no-repeat,
+    linear-gradient(rgba(0, 0, 0, .84), rgba(0, 0, 0, .84)) 0 0 / 1px 100% no-repeat,
+    linear-gradient(90deg, rgba(0, 0, 0, .84), rgba(0, 0, 0, .84)) 0 100% / 100% 1px no-repeat;
+}
+.shell-edge-right::after {
+  background:
+    linear-gradient(rgba(255, 82, 0, .055), rgba(255, 82, 0, .025)) calc(100% - 1px) 0 / 1px 100% no-repeat,
+    linear-gradient(rgba(0, 0, 0, .84), rgba(0, 0, 0, .84)) 100% 0 / 1px 100% no-repeat;
+}
+.shell-edge-bottom::after {
+  background:
+    linear-gradient(90deg, rgba(255, 82, 0, .035), rgba(255, 82, 0, .075) 70%, rgba(255, 82, 0, .13)) 0 calc(100% - 1px) / 100% 1px no-repeat,
+    linear-gradient(90deg, rgba(0, 0, 0, .84), rgba(0, 0, 0, .84)) 0 100% / 100% 1px no-repeat;
+}

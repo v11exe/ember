@@ -6,11 +6,12 @@
   <title>Ember</title>
   <link rel="stylesheet" href="theme.css" />
   <link rel="stylesheet" href="brand.css" />
+  <link rel="stylesheet" href="shell-material.css" />
   <link rel="stylesheet" href="chrome.css" />
 </head>
 <body>
   <div class="chrome-shell" id="chrome-shell">
-    <header class="top-chrome" id="top-chrome">
+    <header class="top-chrome shell-material shell-edge shell-edge-top" id="top-chrome">
       <div class="sidebar-header" id="sidebar-header">
         <button class="brand" id="chrome-brand" title="New tab" aria-label="Open a new tab"></button>
         <button class="sidebar-toggle icon" id="sidebar-toggle" title="Close sidebar" aria-label="Close sidebar" aria-expanded="true">
@@ -66,6 +67,7 @@
 
 
 
+  <script src="shell-metrics.js"></script>
   <script src="brand.js"></script>
   <script src="chrome.js"></script>
 </body>
