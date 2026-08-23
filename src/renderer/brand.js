@@ -1,6 +1,6 @@
 (function exposeEmberBrand(root) {
   const ICON_ASSET = '/assets/ember-icon.png'
-  const CHROME_ICON_ASSET = '/assets/icon-white-stroke.png'
+  const CHROME_ICON_ASSET = '/assets/icon-white-stroke-tight.png'
   const WORDMARK_FONT_ASSET = '/assets/Necosmic-PersonalUse.otf'
 
   function requireTarget(target) {

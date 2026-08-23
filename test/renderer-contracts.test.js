@@ -201,10 +201,14 @@ test('browser chrome mirrors authoritative extension-panel visibility', () => {
 
 test('New Tab uses the white-stroke chrome mark while pages retain their favicon', () => {
   const js = read('src', 'renderer', 'chrome.js')
+  const css = read('src', 'renderer', 'chrome.css')
+  const brandCss = read('src', 'renderer', 'brand.css')
   assert.match(js, /window\.EmberBrand\.CHROME_ICON_ASSET/)
   assert.match(js, /tab\.favicon/)
   assert.match(js, /function assetUrl/)
   assert.match(js, /img\.src = tab\.favicon \|\| assetUrl\(fallback\)/)
+  assert.match(brandCss, /\.ember-chrome-icon[^}]*object-fit:\s*contain/s)
+  assert.match(css, /\.tab-favicon\.newtab-favicon\s*\{[^}]*height:\s*auto/s)
 })
 
 test('upload picker is a real glass overlay with browse, clipboard, and recent actions', () => {

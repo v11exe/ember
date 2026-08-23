@@ -180,7 +180,7 @@ button, input, .top-navigation, .tabstrip, .top-actions,
 }
 .tab.asleep .tab-favicon { filter: grayscale(1); opacity: .5; }
 .tab-favicon { width: 16px; height: 16px; flex: none; border-radius: 4px; object-fit: contain; }
-.tab-favicon.newtab-favicon { width: 24px; height: 15px; border-radius: 0; }
+.tab-favicon.newtab-favicon { width: 24px; height: auto; max-height: 15px; border-radius: 0; }
 .tab-title {
   display: block;
   min-width: 0;

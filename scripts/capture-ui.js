@@ -115,7 +115,7 @@ async function captureChrome(size) {
 
     const tabs = [
       ['YouTube', 'https://www.youtube.com/favicon.ico', 'asleep'],
-      ['New Tab', '/assets/icon-white-stroke.png', 'active'],
+      ['New Tab', '/assets/icon-white-stroke-tight.png', 'active'],
       ['GitHub', 'https://github.com/favicon.ico', ''],
       ['Google', 'https://www.google.com/favicon.ico', ''],
       ['Google - Google Search', 'https://www.google.com/favicon.ico', ''],
