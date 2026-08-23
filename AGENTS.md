@@ -38,6 +38,7 @@ src/main/tab-thumbnails.js  cached page screenshots, keyed by tab id
 src/main/selection-panel.js  conversion popup beside a selected value
 src/main/rates.js        ECB exchange rates, fetched lazily, cached for a day
 src/main/archive.js      Wayback availability lookup, cached, click-only
+src/main/switcher-panel.js  Ctrl+Tab card switcher in most-recently-used order
 src/main/session.js      saved tab set for restore-on-launch, sync writes
 src/main/session-prompt.js  close-time "reopen tabs?" dialog on FloatingPanel
 src/main/shortcuts.js    pure key -> command table (Chrome parity) + zoom ladder
@@ -52,7 +53,7 @@ src/renderer/theme.css   palette + type stack + motion tokens, all defined once
 src/renderer/brand.*     exact supplied PNG icon/full-logo mounts
 src/renderer/panel-preload.js  panel bridge + injectBrowserAction()
 src/renderer/pages/      newtab, extensions, upload, context-menu, history, downloads,
-                         session-prompt, settings, conversion, unreachable
+                         session-prompt, settings, conversion, unreachable, switcher
 src/renderer/pages/liquid-glass-ui.{js,css}  shared page material + selector lens
 src/renderer/pages/page-glass.js  full-page refraction; reuses upload-optics maps
 src/renderer/pages/backdrop-contrast.js  flags light captures so overlays flip palette
@@ -122,6 +123,13 @@ islands, sidebar outstanding).
   causes a network request (frankfurter.app, ECB daily reference rates).
 - The conversion popup sits *above* the selection by preference, the way Opera
   does: covering lines already read beats covering the ones still ahead.
+- `before-input-event` did not reliably deliver the Ctrl *keyUp* that commits
+  the Ctrl+Tab switcher, so `switcher.js` listens for it in the DOM and sends
+  `switch-commit`. The main-process `END_SWITCH` command stays as the path for
+  the moment before the overlay exists.
+- `FloatingPanel.patchState()` sends only the changed fields; use it for any
+  overlay whose full payload is expensive (the switcher carries a screenshot
+  per tab). The page must merge `{ patch: true }` states itself.
 - A main-frame `did-fail-load` swaps in `ember://unreachable`; a 404/410 does
   not, because the site's own page is often the useful one. Statuses arrive via
   `session.webRequest.onCompleted`, whose filter needs `urls` as well as
@@ -291,7 +299,7 @@ Newest at top. One entry per branch, updated in place. Status:
 ```
 
 ### 2026-08-23 — Claude Code — Arc-style Ctrl+Tab switcher
-- **Status / Branch:** in-progress · `feat/tab-switcher`
+- **Status / Branch:** merged · `main`
 - **Touches:** `src/main/{switcher-panel,shortcuts,index,floating-panel,tabs}.js`,
   `src/renderer/pages/switcher.{html,css,js}`, `test/{switcher,shortcuts}.test.js`
 - **Summary:** Roadmap feature 5. Holding Ctrl and pressing Tab opens a floating

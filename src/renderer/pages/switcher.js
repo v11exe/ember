@@ -75,6 +75,15 @@ window.addEventListener('keydown', (event) => {
   }
 })
 
+// Letting go of Ctrl is what commits. The main process watches for it too, for
+// the moment before this view exists, but once the switcher is up the keys are
+// arriving here and this is the reliable place to notice.
+window.addEventListener('keyup', (event) => {
+  if (event.key === 'Control' || event.key === 'Meta') {
+    window.emberOverlay.action('switch-commit')
+  }
+})
+
 window.emberOverlay.onState((incoming) => {
   if (!incoming) return
   if (incoming.patch) {

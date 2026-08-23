@@ -65,6 +65,7 @@ test('the first press lands on the tab you came from', async () => {
   assert.equal(state.index, 1, 'the second entry is the previous tab')
   assert.deepEqual(state.tabs.map((tab) => tab.id), [1, 2, 3, 4], 'active first, then most recent')
   assert.equal(state.tabs[1].domain, 'beta.test')
+  assert.equal(state.tabs[3].domain, 'ember://newtab', 'internal pages read as their address')
 })
 
 test('shift walks the other way and wraps', async () => {
@@ -134,6 +135,13 @@ test('clicking a card picks it', async () => {
   switcher.step(1)
   assert.equal(switcher.handleAction(overlay.sender, 'switch-pick', { id: 4 }), true)
   assert.deepEqual(tabs.selected, [4])
+})
+
+test('the page reports the modifier coming up, which commits', () => {
+  const { switcher, overlay, tabs } = switcherWith()
+  switcher.step(1)
+  assert.equal(switcher.handleAction(overlay.sender, 'switch-commit'), true)
+  assert.deepEqual(tabs.selected, [2])
 })
 
 test('actions from anything but the switcher are ignored', () => {

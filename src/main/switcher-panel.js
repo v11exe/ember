@@ -25,12 +25,11 @@ function hostOf(url) {
   }
 }
 
-/** Ember's own pages read better by name than by an empty hostname. */
+/** Ember's own pages read as their full address; a bare "newtab" says little. */
 function describe(tab) {
-  const host = hostOf(tab.url)
-  if (host) return host
-  if (tab.url?.startsWith('ember://')) return `ember://${new URL(tab.url).host}`
-  return ''
+  const url = String(tab.url || '')
+  if (url.startsWith('ember://')) return url.replace(/\/$/, '')
+  return hostOf(url)
 }
 
 function panelWidth(count, available) {
@@ -144,6 +143,7 @@ class TabSwitcher {
       if (found >= 0) this.index = found
       return this.commit()
     }
+    if (action === 'switch-commit') return this.commit()
     if (action === 'switch-cancel') return this.cancel()
     return false
   }
