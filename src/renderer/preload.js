@@ -46,6 +46,10 @@ contextBridge.exposeInMainWorld('ember', {
   importBookmarks: () => ipcRenderer.invoke(IPC.BOOKMARKS_IMPORT),
   setBookmarksVisible: (visible) => ipcRenderer.send(IPC.BOOKMARKS_VISIBILITY, !!visible),
   onBookmarks: (fn) => ipcRenderer.on(IPC.BOOKMARKS_CHANGED, (_e, snapshot) => fn(snapshot)),
+  getChromeConfig: () => ipcRenderer.invoke(IPC.CHROME_CONFIG_GET),
+  onChromeConfig: (fn) => ipcRenderer.on(IPC.CHROME_CONFIG_CHANGED, (_e, config) => fn(config)),
+  setSidebarOpen: (open) => ipcRenderer.send(IPC.SIDEBAR_SET, !!open),
+  openFavorite: (id) => ipcRenderer.send(IPC.FAVORITE_OPEN, String(id)),
 
   minimize: () => ipcRenderer.send(IPC.WIN_MINIMIZE),
   maximize: () => ipcRenderer.send(IPC.WIN_MAXIMIZE),

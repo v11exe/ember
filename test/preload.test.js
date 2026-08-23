@@ -71,7 +71,7 @@ test('chrome preload exposes bookmark import, visibility, and live updates', asy
 })
 
 /** Boot the chrome preload against stub IPC and hand back what it exposed. */
-function bootPreload({ bangs = [] } = {}) {
+function bootPreload({ bangs = [], chromeConfig = null } = {}) {
   const sent = []
   const listeners = new Map()
   let exposed
@@ -81,7 +81,11 @@ function bootPreload({ bangs = [] } = {}) {
     ipcRenderer: {
       on: (channel, fn) => listeners.set(channel, fn),
       send: (...args) => sent.push(args),
-      invoke: async (channel) => (channel === IPC.BANGS_GET ? bangs : undefined),
+      invoke: async (channel) => {
+        if (channel === IPC.BANGS_GET) return bangs
+        if (channel === IPC.CHROME_CONFIG_GET) return chromeConfig
+        return undefined
+      },
     },
   }
   const sandboxRequire = (id) => {
@@ -94,6 +98,24 @@ function bootPreload({ bangs = [] } = {}) {
   vm.runInNewContext(`(function(require){${source}\n})`, {})(sandboxRequire)
   return { exposed, listeners, sent }
 }
+
+test('chrome preload bridges live shell configuration and Favorite actions', async () => {
+  const chromeConfig = { sidebarOpen: true, favorites: [{ id: 'youtube' }] }
+  const { exposed, listeners, sent } = bootPreload({ chromeConfig })
+
+  assert.deepEqual(await exposed.getChromeConfig(), chromeConfig)
+  exposed.setSidebarOpen(false)
+  exposed.openFavorite('youtube')
+  assert.deepEqual(sent, [
+    [IPC.SIDEBAR_SET, false],
+    [IPC.FAVORITE_OPEN, 'youtube'],
+  ])
+
+  let update = null
+  exposed.onChromeConfig((config) => { update = config })
+  listeners.get(IPC.CHROME_CONFIG_CHANGED)(null, { sidebarOpen: false, favorites: [] })
+  assert.deepEqual(update, { sidebarOpen: false, favorites: [] })
+})
 
 test('the omnibox can ask what Enter will do without leaving the renderer', () => {
   const { exposed } = bootPreload()

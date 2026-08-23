@@ -4,6 +4,7 @@ const path = require('node:path')
 const { HIBERNATION_DEFAULTS, sanitiseHibernation } = require('./hibernation')
 const { sanitiseBangs } = require('../shared/bangs')
 const { CONVERSION_DEFAULTS, sanitiseConversions } = require('../shared/conversions')
+const { sanitiseFavorites } = require('../shared/favorites')
 
 // Small preference store. Same atomic JSON pattern as bookmarks/history/downloads.
 //
@@ -26,6 +27,9 @@ function defaults() {
     bangs: [],
     // Units the selection conversion popup converts into.
     conversions: { ...CONVERSION_DEFAULTS },
+    // The feature rail is open by default and starts with the target trio.
+    sidebarOpen: true,
+    favorites: sanitiseFavorites(),
   }
 }
 
@@ -63,6 +67,8 @@ class SettingsStore {
         hibernation: sanitiseHibernation(data.hibernation),
         bangs: sanitiseBangs(data.bangs),
         conversions: sanitiseConversions(data.conversions),
+        sidebarOpen: typeof data.sidebarOpen === 'boolean' ? data.sidebarOpen : true,
+        favorites: sanitiseFavorites(data.favorites),
       }
     } catch (error) {
       if (error.code !== 'ENOENT') console.warn('[ember] settings could not be read:', error.message)
@@ -84,6 +90,11 @@ class SettingsStore {
     } else if (key === 'bangs') {
       // The page always sends the whole list, so this is a straight replace.
       this.data.bangs = sanitiseBangs(value)
+    } else if (key === 'favorites') {
+      this.data.favorites = sanitiseFavorites(value)
+    } else if (key === 'sidebarOpen') {
+      if (typeof value !== 'boolean') return this.snapshot()
+      this.data.sidebarOpen = value
     } else if (key === 'sessionRestore') {
       if (!Object.values(SESSION_RESTORE).includes(value)) return this.snapshot()
       this.data.sessionRestore = value

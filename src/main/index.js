@@ -30,6 +30,7 @@ const { ThumbnailCache } = require('./tab-thumbnails')
 const { HibernationManager, hostnameOf, sanitiseHibernation } = require('./hibernation')
 const { listBangs, DEFAULT_BANGS } = require('../shared/bangs')
 const { NATIVE_GLASS_DEFAULTS, snapshotNativeGlassSettings } = require('../shared/native-glass')
+const { findFavoriteTab } = require('../shared/favorites')
 
 if (process.env.EMBER_SMOKE_USER_DATA) app.setPath('userData', process.env.EMBER_SMOKE_USER_DATA)
 registerSchemePrivileges()
@@ -42,6 +43,18 @@ const browsers = new Set()
 function broadcastBangs(target = browser) {
   if (!target || target.chrome.webContents.isDestroyed()) return
   target.chrome.webContents.send(IPC.BANGS_CHANGED, target.settings.get('bangs') || [])
+}
+
+function chromeConfig(target = browser) {
+  return target ? {
+    sidebarOpen: target.settings.get('sidebarOpen') !== false,
+    favorites: target.settings.get('favorites') || [],
+  } : { sidebarOpen: true, favorites: [] }
+}
+
+function broadcastChromeConfig(target = browser) {
+  if (!target || target.chrome.webContents.isDestroyed()) return
+  target.chrome.webContents.send(IPC.CHROME_CONFIG_CHANGED, chromeConfig(target))
 }
 
 function broadcastBookmarks(snapshot) {
@@ -232,6 +245,7 @@ function createBrowser({ privateMode = false } = {}) {
     }
     broadcastBookmarks(bookmarks.snapshot())
     broadcastBangs(self)
+    broadcastChromeConfig(self)
     tabs.layout()
     hibernation.start()
   })
@@ -482,7 +496,32 @@ ipcMain.handle(IPC.SETTINGS_SET, async (_e, { key, value } = {}) => {
   const snapshot = await browser.settings.set(String(key), value)
   // Every window's omnibox matches against the same list.
   if (String(key) === 'bangs') for (const target of browsers) broadcastBangs(target)
+  if (String(key) === 'favorites' || String(key) === 'sidebarOpen') {
+    for (const target of browsers) {
+      if (String(key) === 'sidebarOpen') target.tabs.setSidebarOpen?.(snapshot.sidebarOpen)
+      broadcastChromeConfig(target)
+    }
+  }
   return describeSettings(snapshot)
+})
+
+ipcMain.handle(IPC.CHROME_CONFIG_GET, () => chromeConfig())
+
+ipcMain.on(IPC.SIDEBAR_SET, async (_event, open) => {
+  if (!browser) return
+  const value = !!open
+  browser.tabs.setSidebarOpen?.(value, { animate: true })
+  await browser.settings.set('sidebarOpen', value)
+  broadcastChromeConfig(browser)
+})
+
+ipcMain.on(IPC.FAVORITE_OPEN, (_event, id) => {
+  if (!browser) return
+  const favorite = (browser.settings.get('favorites') || []).find((entry) => entry.id === String(id))
+  if (!favorite) return
+  const existing = findFavoriteTab(browser.tabs.tabs, favorite.url)
+  if (existing !== null) browser.tabs.select(existing)
+  else browser.tabs.create(favorite.url)
 })
 
 ipcMain.handle(IPC.BANGS_GET, () => browser?.settings.get('bangs') || [])

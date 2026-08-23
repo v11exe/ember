@@ -27,6 +27,9 @@ const IPC = {
   BOOKMARKS_GET: 'bookmarks:get',
   BOOKMARKS_IMPORT: 'bookmarks:import',
   BOOKMARKS_VISIBILITY: 'bookmarks:visibility',
+  CHROME_CONFIG_GET: 'chrome-config:get',
+  SIDEBAR_SET: 'sidebar:set',
+  FAVORITE_OPEN: 'favorite:open',
   HISTORY_QUERY: 'history:query',
   HISTORY_DELETE: 'history:delete',
   HISTORY_CLEAR: 'history:clear',
@@ -48,6 +51,7 @@ const IPC = {
   PANEL_ORIGIN: 'panel:origin', // panel view offset, for popup anchoring
   BANGS_CHANGED: 'bangs:changed',
   BOOKMARKS_CHANGED: 'bookmarks:changed',
+  CHROME_CONFIG_CHANGED: 'chrome-config:changed',
   UPLOAD_RESULT: 'upload:result',
   OVERLAY_STATE: 'overlay:state',
   DOWNLOADS_CHANGED: 'downloads:changed',
