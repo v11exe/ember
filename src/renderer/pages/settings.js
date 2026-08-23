@@ -205,13 +205,22 @@ function renderConversions(config) {
 // `custom: false` marking the ones that came from the defaults.
 let bangDiff = []
 let bangList = []
+let bangDefaults = []
 
 const ALIAS_PATTERN = /^[a-z0-9][a-z0-9_+-]{0,23}$/
 const bangError = document.getElementById('bang-error')
 
-function showBangError(message) {
+function showBangError(message, tone = 'error') {
   bangError.textContent = message || ''
   bangError.hidden = !message
+  bangError.classList.toggle('notice', tone === 'notice')
+}
+
+/** Saving over an existing keyword is allowed, but should not be silent. */
+function overrideNotice(alias, previousAlias) {
+  if (alias === previousAlias) return ''
+  const existing = bangList.find((entry) => entry.alias === alias)
+  return existing ? `${alias} now points at your address instead of ${existing.name}.` : ''
 }
 
 function validateBang(alias, url) {
@@ -229,6 +238,7 @@ async function saveBangs(diff) {
   const settings = await api?.set('bangs', diff)
   bangDiff = settings?.bangs || []
   bangList = settings?.bangList || []
+  bangDefaults = settings?.bangDefaults || bangDefaults
   renderBangs()
 }
 
@@ -271,7 +281,7 @@ function bangRow(entry) {
     if (alias === entry.alias && url === entry.url && name === entry.name) return
     const problem = validateBang(alias, url)
     if (problem) { showBangError(problem); renderBangs(); return }
-    showBangError('')
+    showBangError(overrideNotice(alias, entry.alias), 'notice')
     upsertBang(entry.alias, { alias, name, url })
   }
   for (const input of Object.values(fields)) {
@@ -294,6 +304,25 @@ function bangRow(entry) {
 
 function renderBangs() {
   document.getElementById('bang-list').replaceChildren(...bangList.map(bangRow))
+
+  // Editing or deleting a built-in leaves a diff behind. Without a way back,
+  // deleting `yt` means retyping the YouTube URL from memory to get it again.
+  const changed = bangDiff.length
+  const custom = bangList.filter((entry) => entry.custom).length
+  const reset = document.getElementById('bang-reset')
+  reset.hidden = !changed
+  reset.title = 'Undo every change to the built-in list, and remove the ones you added'
+  document.getElementById('bang-count').textContent = changed
+    ? `${bangList.length} shortcuts · ${custom} of your own`
+    : `${bangList.length} built-in shortcuts`
+}
+
+document.getElementById('bang-reset').onclick = () => {
+  showBangError('')
+  // Undo only what was done to Ember's own list; keep anything of the
+  // reader's own, which a blanket reset would quietly throw away.
+  const builtIn = new Set(bangDefaults)
+  saveBangs(bangDiff.filter((entry) => !builtIn.has(entry.alias)))
 }
 
 document.getElementById('bang-new').onsubmit = (event) => {
@@ -305,7 +334,7 @@ document.getElementById('bang-new').onsubmit = (event) => {
   const url = urlField.value.trim()
   const problem = validateBang(alias, url)
   if (problem) { showBangError(problem); return }
-  showBangError('')
+  showBangError(overrideNotice(alias, null), 'notice')
   upsertBang(null, { alias, name: nameField.value.trim() || alias, url })
   aliasField.value = nameField.value = urlField.value = ''
   aliasField.focus()
@@ -322,6 +351,7 @@ async function load() {
   renderConversions(settings?.conversions)
   bangDiff = settings?.bangs || []
   bangList = settings?.bangList || []
+  bangDefaults = settings?.bangDefaults || []
   renderBangs()
   document.getElementById('version').textContent = settings?.appVersion ? `Version ${settings.appVersion}` : ''
   glass?.refresh()

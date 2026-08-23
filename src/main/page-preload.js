@@ -23,6 +23,7 @@ const UPLOAD_REQUEST = 'upload:request'
 const UPLOAD_RESULT = 'upload:result'
 const SELECTION_CHANGED = 'selection:changed'
 const ARCHIVE_OPEN = 'archive:open'
+const OMNIBOX_RESOLVE = 'omnibox:resolve'
 
 const uploadTargets = new Map()
 
@@ -130,6 +131,9 @@ if (location.protocol === 'ember:') {
       query: () => ipcRenderer.invoke(DOWNLOADS_QUERY),
       action: (action, id) => ipcRenderer.invoke(DOWNLOADS_ACTION, { action, id }),
       onChange: (fn) => ipcRenderer.on(DOWNLOADS_CHANGED, (_event, snapshot) => fn(snapshot)),
+    },
+    omnibox: {
+      resolve: (text) => ipcRenderer.invoke(OMNIBOX_RESOLVE, String(text)),
     },
     archive: {
       open: (url) => ipcRenderer.invoke(ARCHIVE_OPEN, String(url)),

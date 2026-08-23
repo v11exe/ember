@@ -34,6 +34,36 @@ tiles.replaceChildren(...LINKS.map(({ name, url, mark }) => {
   return el
 }))
 
+/**
+ * Name the quick search a typed keyword resolves to, the way the toolbar
+ * omnibox does. This page is sandboxed and cannot load the resolver, so it
+ * asks the main process — the same function that does the navigating, so the
+ * label can never promise something Enter will not do.
+ */
+function bindQuickSearchChip(input) {
+  const chip = document.getElementById('q-chip')
+  if (!chip || !window.ember?.omnibox) return
+  let latest = 0
+
+  input.addEventListener('input', async () => {
+    const asked = ++latest
+    const value = input.value
+    if (!value.trim()) { chip.hidden = true; return }
+    let resolved = null
+    try {
+      resolved = await window.ember.omnibox.resolve(value)
+    } catch { /* the answer is simply unavailable */ }
+    // A slower answer for older text must not overwrite a newer one.
+    if (asked !== latest) return
+    const bang = resolved?.kind === 'bang' ? resolved : null
+    chip.hidden = !bang
+    if (bang) {
+      chip.textContent = bang.name
+      chip.title = bang.term ? `Search ${bang.name} for “${bang.term}”` : `Open ${bang.name}`
+    }
+  })
+}
+
 function bindSearch() {
   const form = document.getElementById('search-form')
   if (!form || form.dataset.bound) return
@@ -43,7 +73,9 @@ function bindSearch() {
     const q = document.getElementById('q').value.trim()
     if (q) nav(q) // main resolves URL-vs-search via shared/urls.js
   })
-  document.getElementById('q').focus()
+  const input = document.getElementById('q')
+  bindQuickSearchChip(input)
+  input.focus()
 }
 document.addEventListener('native-liquid-glass-ready', bindSearch)
 bindSearch()

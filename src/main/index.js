@@ -4,7 +4,7 @@ const { pathToFileURL } = require('node:url')
 const { app, BaseWindow, WebContentsView, clipboard, dialog, ipcMain, nativeImage, screen, session, shell, webContents } = require('electron')
 
 const { IPC, NEW_TAB_URL, HISTORY_URL, DOWNLOADS_URL, SETTINGS_URL, EXTENSIONS_URL, WEB_STORE_URL } = require('../shared/ipc')
-const { toNavigationUrl } = require('../shared/urls')
+const { toNavigationUrl, resolveInput } = require('../shared/urls')
 const { TabManager, CHROME_HEIGHT } = require('./tabs')
 const { setupExtensions, applyStoreRebranding, listExtensions, removeExtension } = require('./extensions')
 const { registerSchemePrivileges, handleInternalPages } = require('./protocol')
@@ -28,7 +28,7 @@ const { isDeadStatus, isArchivable } = require('../shared/archive')
 const { NativeBackdrop } = require('./native-backdrop')
 const { ThumbnailCache } = require('./tab-thumbnails')
 const { HibernationManager, hostnameOf, sanitiseHibernation } = require('./hibernation')
-const { listBangs } = require('../shared/bangs')
+const { listBangs, DEFAULT_BANGS } = require('../shared/bangs')
 const { NATIVE_GLASS_DEFAULTS, snapshotNativeGlassSettings } = require('../shared/native-glass')
 
 if (process.env.EMBER_SMOKE_USER_DATA) app.setPath('userData', process.env.EMBER_SMOKE_USER_DATA)
@@ -37,6 +37,12 @@ registerSchemePrivileges()
 /** @type {{ win: BaseWindow, chrome: WebContentsView, tabs: TabManager, uploadPanel: UploadPanel, contextMenu: ContextMenuPanel, nativeBackdrop: NativeBackdrop }|null} */
 let browser = null
 const browsers = new Set()
+
+/** The chrome view keeps its own copy so the omnibox can match as you type. */
+function broadcastBangs(target = browser) {
+  if (!target || target.chrome.webContents.isDestroyed()) return
+  target.chrome.webContents.send(IPC.BANGS_CHANGED, target.settings.get('bangs') || [])
+}
 
 function broadcastBookmarks(snapshot) {
   if (!browser) return snapshot
@@ -225,6 +231,7 @@ function createBrowser({ privateMode = false } = {}) {
       tabs.create(NEW_TAB_URL)
     }
     broadcastBookmarks(bookmarks.snapshot())
+    broadcastBangs(self)
     tabs.layout()
     hibernation.start()
   })
@@ -460,13 +467,30 @@ ipcMain.handle(IPC.BOOKMARKS_IMPORT, async () => {
 })
 /** The settings page needs the resolved bang table, not just the stored diff. */
 function describeSettings(snapshot) {
-  return { ...snapshot, appVersion: app.getVersion(), bangList: listBangs(snapshot.bangs) }
+  return {
+    ...snapshot,
+    appVersion: app.getVersion(),
+    bangList: listBangs(snapshot.bangs),
+    // Which aliases are Ember's own, so the page can offer to restore just
+    // those without throwing away shortcuts the reader added.
+    bangDefaults: DEFAULT_BANGS.map((entry) => entry.alias),
+  }
 }
 ipcMain.handle(IPC.SETTINGS_GET, () => (browser ? describeSettings(browser.settings.snapshot()) : null))
 ipcMain.handle(IPC.SETTINGS_SET, async (_e, { key, value } = {}) => {
   if (!browser) return null
-  return describeSettings(await browser.settings.set(String(key), value))
+  const snapshot = await browser.settings.set(String(key), value)
+  // Every window's omnibox matches against the same list.
+  if (String(key) === 'bangs') for (const target of browsers) broadcastBangs(target)
+  return describeSettings(snapshot)
 })
+
+ipcMain.handle(IPC.BANGS_GET, () => browser?.settings.get('bangs') || [])
+
+// The new tab search box lives in a sandboxed page that cannot load the
+// resolver, so it asks. Same function the navigation itself uses, so the
+// preview and the outcome cannot drift apart.
+ipcMain.handle(IPC.OMNIBOX_RESOLVE, (_e, text) => resolveInput(text, { bangs: browser?.settings.get('bangs') }))
 
 const emptyDownloads = { version: 1, active: [], entries: [] }
 ipcMain.handle(IPC.DOWNLOADS_QUERY, () => browser?.downloads.snapshot() || emptyDownloads)
@@ -993,6 +1017,61 @@ app.whenReady().then(() => {
           && !kept.asleep && !!kept.webContents && !kept.webContents.isDestroyed()])
         browser.tabs.select(homeId)
         browser.tabs.close(keptId)
+
+        // ---- quick searches, from the keystroke to the navigation ----
+        const omnibox = (script) => browser.chrome.webContents.executeJavaScript(`(() => {
+          const box = document.getElementById('omnibox')
+          const chip = document.getElementById('bang-chip')
+          const tip = document.getElementById('bang-tip')
+          const read = () => ({
+            value: box.value,
+            chip: chip.hidden ? null : chip.textContent,
+            engaged: chip.classList.contains('engaged'),
+            tip: !tip.hidden,
+          })
+          const type = (text) => { box.value = text; box.dispatchEvent(new Event('input')) }
+          const press = (key) => box.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+          // The omnibox is one long-lived element, so each probe starts from
+          // a known state rather than wherever the last one left it.
+          press('Escape')
+          type('')
+          ${script}
+        })()`)
+
+        const typed = await omnibox("type('yt liquid glass'); return read()")
+        checks.push(['the omnibox names the quick search as you type',
+          typed.chip === 'YouTube' && !typed.engaged && !typed.tip])
+        const plain = await omnibox("type('example.com'); return read()")
+        checks.push(['a plain address shows no quick search', plain.chip === null])
+        const bare = await omnibox("type('gh'); return read()")
+        checks.push(['a keyword on its own offers Tab', bare.chip === 'GitHub' && bare.tip])
+
+        const engagedState = await omnibox("type('gh'); press('Tab'); return read()")
+        checks.push(['Tab commits to the engine and clears the keyword',
+          engagedState.engaged && engagedState.value === '' && engagedState.chip === 'GitHub'])
+        const backedOut = await omnibox("type('gh'); press('Tab'); press('Backspace'); return read()")
+        checks.push(['Backspace out of an empty query gives the keyword back',
+          !backedOut.engaged && backedOut.value === 'gh'])
+
+        // The renderer answers from its own copy of the list, so a change made
+        // here has to reach it before the omnibox can agree with the resolver.
+        await browser.settings.set('bangs', [{ alias: 'zz', name: 'Probe', url: 'https://smoke.invalid/?q=%s' }])
+        broadcastBangs()
+        const custom = await waitFor(async () => {
+          const state = await omnibox("type('zz cats'); return read()")
+          return state.chip === 'Probe' ? state : null
+        })
+        checks.push(['a shortcut added in settings reaches the omnibox', !!custom])
+
+        // Tab, type the query, press Enter: the address that comes out is the
+        // template with the term in it. .invalid never resolves, so the failure
+        // page records exactly where Ember tried to go.
+        await omnibox("type('zz'); press('Tab'); type('cats'); box.form.dispatchEvent(new Event('submit', { cancelable: true })); return read()")
+        const navigated = await waitFor(() => browser.tabs.active?.failedUrl, 8000)
+        checks.push(['an engaged quick search navigates to the expanded template',
+          navigated === 'https://smoke.invalid/?q=cats'])
+        await browser.settings.set('bangs', [])
+        broadcastBangs()
       } catch (error) {
         console.error('[ember] smoke probe error:', error)
         checks.push(['smoke probe completed', false])
