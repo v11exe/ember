@@ -58,6 +58,11 @@ function broadcastChromeConfig(target = browser) {
   target.chrome.webContents.send(IPC.CHROME_CONFIG_CHANGED, chromeConfig(target))
 }
 
+function broadcastWindowState(target = browser) {
+  if (!target || target.chrome.webContents.isDestroyed()) return
+  target.chrome.webContents.send(IPC.WIN_STATE, { maximized: target.win.isMaximized() })
+}
+
 function broadcastBookmarks(snapshot) {
   if (!browser) return snapshot
   browser.tabs.setBookmarksVisible(snapshot.visible)
@@ -256,6 +261,7 @@ function createBrowser({ privateMode = false } = {}) {
     broadcastBookmarks(bookmarks.snapshot())
     broadcastBangs(self)
     broadcastChromeConfig(self)
+    broadcastWindowState(self)
     tabs.layout()
     hibernation.start()
   })
@@ -266,6 +272,8 @@ function createBrowser({ privateMode = false } = {}) {
     browser?.popupPositioner?.layout()
     browser?.sessionPrompt?.layout(); rememberGeometry()
   })
+  win.on('maximize', () => broadcastWindowState(self))
+  win.on('unmaximize', () => broadcastWindowState(self))
   win.on('move', () => rememberGeometry())
 
   function rememberGeometry() {

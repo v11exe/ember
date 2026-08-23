@@ -1,5 +1,6 @@
 (function exposeEmberBrand(root) {
   const ICON_ASSET = '/assets/ember-icon.png'
+  const CHROME_ICON_ASSET = '/assets/icon-white-stroke.png'
   const WORDMARK_FONT_ASSET = '/assets/Necosmic-PersonalUse.otf'
 
   function requireTarget(target) {
@@ -23,6 +24,16 @@
     return image
   }
 
+  function mountChromeIcon(target) {
+    requireTarget(target)
+    const image = target.ownerDocument.createElement('img')
+    image.className = 'ember-chrome-icon'
+    image.src = new URL(CHROME_ICON_ASSET.slice(1), target.ownerDocument.baseURI).href
+    image.alt = 'Ember'
+    target.replaceChildren(image)
+    return image
+  }
+
   function mountBrand(target) {
     requireTarget(target)
     const masthead = target.ownerDocument.createElement('div')
@@ -38,7 +49,7 @@
     return masthead
   }
 
-  const api = { ICON_ASSET, WORDMARK_FONT_ASSET, mountIcon, mountBrand }
+  const api = { ICON_ASSET, CHROME_ICON_ASSET, WORDMARK_FONT_ASSET, mountIcon, mountChromeIcon, mountBrand }
   if (typeof module !== 'undefined' && module.exports) module.exports = api
   if (root) root.EmberBrand = api
 })(typeof window !== 'undefined' ? window : null)

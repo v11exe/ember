@@ -23,6 +23,8 @@ test('chrome preload exposes a working extensions-panel toggle', () => {
     if (id === 'electron') return electron
     if (id === '../shared/ipc') return { IPC }
     if (id === '../shared/urls') return require('../src/shared/urls')
+    if (id === '../shared/chrome-layout') return require('../src/shared/chrome-layout')
+    if (id === '../shared/favorites') return require('../src/shared/favorites')
     if (id === 'electron-chrome-extensions/browser-action') return { injectBrowserAction: () => {} }
     throw new Error(`Unexpected require: ${id}`)
   }
@@ -55,6 +57,8 @@ test('chrome preload exposes bookmark import, visibility, and live updates', asy
     if (id === 'electron') return electron
     if (id === '../shared/ipc') return { IPC }
     if (id === '../shared/urls') return require('../src/shared/urls')
+    if (id === '../shared/chrome-layout') return require('../src/shared/chrome-layout')
+    if (id === '../shared/favorites') return require('../src/shared/favorites')
     if (id === 'electron-chrome-extensions/browser-action') return { injectBrowserAction: () => {} }
     throw new Error(`Unexpected require: ${id}`)
   }
@@ -92,6 +96,8 @@ function bootPreload({ bangs = [], chromeConfig = null } = {}) {
     if (id === 'electron') return electron
     if (id === '../shared/ipc') return { IPC }
     if (id === '../shared/urls') return require('../src/shared/urls')
+    if (id === '../shared/chrome-layout') return require('../src/shared/chrome-layout')
+    if (id === '../shared/favorites') return require('../src/shared/favorites')
     if (id === 'electron-chrome-extensions/browser-action') return { injectBrowserAction: () => {} }
     throw new Error(`Unexpected require: ${id}`)
   }
@@ -106,6 +112,8 @@ test('chrome preload bridges live shell configuration and Favorite actions', asy
   assert.deepEqual(await exposed.getChromeConfig(), chromeConfig)
   exposed.setSidebarOpen(false)
   exposed.openFavorite('youtube')
+  assert.equal(exposed.tabMaximum({ availableWidth: 800, count: 5 }), 127)
+  assert.equal(exposed.sameFavoriteSite('https://www.youtube.com/', 'https://youtube.com/watch?v=x'), true)
   assert.deepEqual(sent, [
     [IPC.SIDEBAR_SET, false],
     [IPC.FAVORITE_OPEN, 'youtube'],
@@ -115,6 +123,11 @@ test('chrome preload bridges live shell configuration and Favorite actions', asy
   exposed.onChromeConfig((config) => { update = config })
   listeners.get(IPC.CHROME_CONFIG_CHANGED)(null, { sidebarOpen: false, favorites: [] })
   assert.deepEqual(update, { sidebarOpen: false, favorites: [] })
+
+  let windowState = null
+  exposed.onWindowState((state) => { windowState = state })
+  listeners.get(IPC.WIN_STATE)(null, { maximized: true })
+  assert.deepEqual(windowState, { maximized: true })
 })
 
 test('the omnibox can ask what Enter will do without leaving the renderer', () => {

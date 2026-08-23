@@ -54,6 +54,48 @@ test('browser chrome provides a compact live bookmarks bar', () => {
   assert.match(html, /id="import-bookmarks"/)
 })
 
+test('browser chrome is one unified Ember shell rather than the old permanent toolbar', () => {
+  const html = read('src', 'renderer', 'chrome.html')
+  const css = read('src', 'renderer', 'chrome.css')
+  const js = read('src', 'renderer', 'chrome.js')
+
+  for (const id of ['sidebar', 'sidebar-toggle', 'favorites', 'top-chrome', 'top-navigation', 'tabstrip', 'ext-btn']) {
+    assert.match(html, new RegExp(`id="${id}"`), id)
+  }
+  assert.doesNotMatch(html, /class="toolbar"/)
+  assert.doesNotMatch(html, /id="bookmarks-toggle"/)
+  assert.doesNotMatch(html, /id="win-(?:min|max|close)"/)
+  assert.match(html, /class="omnibox omnibox-transient"/, 'Ctrl+L survives as a transient surface')
+
+  for (const token of ['--sidebar-width', '--topbar-height', '--outer-radius', '--viewport-radius', '--shell-inset', '--tab-height', '--tab-max-width', '--tab-min-width', '--ember-orange']) {
+    assert.match(css, new RegExp(token))
+  }
+  assert.match(css, /radial-gradient[\s\S]+linear-gradient/, 'shell uses a smouldering compound gradient')
+  assert.match(css, /\.frame-right[\s\S]+\.frame-bottom/)
+  assert.match(css, /-webkit-app-region:\s*drag/)
+  assert.match(css, /-webkit-app-region:\s*no-drag/)
+  assert.match(css, /\.sidebar[\s\S]+transition:[^}]*width\s+210ms/)
+  assert.match(js, /getChromeConfig/)
+  assert.match(js, /openFavorite/)
+  assert.match(js, /setSidebarOpen/)
+})
+
+test('tab lifecycle states use natural widths, measured fades, and hover-only close controls', () => {
+  const css = read('src', 'renderer', 'chrome.css')
+  const js = read('src', 'renderer', 'chrome.js')
+
+  assert.match(css, /\.tab\s*\{[^}]*width:\s*max-content/)
+  assert.match(css, /\.tab-title\.overflowing[\s\S]+mask-image:/)
+  assert.doesNotMatch(css, /\.tab-title\s*\{[^}]*text-overflow:\s*ellipsis/)
+  assert.match(css, /\.tab-close\s*\{[^}]*opacity:\s*0/)
+  assert.match(css, /\.tab:hover\s+\.tab-close\s*\{[^}]*opacity:\s*1/)
+  assert.match(css, /\.tab\.asleep\s+\.tab-favicon\s*\{[^}]*grayscale\(1\)/)
+  assert.match(css, /\.tab\.active[\s\S]+rgba\(255,\s*91,\s*0/)
+  assert.match(js, /className = 'tab-sleep'/)
+  assert.match(js, /ResizeObserver/)
+  assert.match(js, /scrollWidth > title\.clientWidth/)
+})
+
 test('extension icon and metadata share one keyboard-accessible launcher', () => {
   const js = read('src', 'renderer', 'pages', 'extensions.js')
   assert.match(js, /launch\.append\(icon, meta\)/)
@@ -69,9 +111,10 @@ test('browser chrome mirrors authoritative extension-panel visibility', () => {
   assert.match(js, /setAttribute\('aria-expanded', String\(open\)\)/)
 })
 
-test('tabs fall back to the Ember meteor when a page has no favicon', () => {
+test('New Tab uses the white-stroke chrome mark while pages retain their favicon', () => {
   const js = read('src', 'renderer', 'chrome.js')
-  assert.match(js, /img\.src = tab\.favicon \|\| window\.EmberBrand\.ICON_ASSET/)
+  assert.match(js, /window\.EmberBrand\.CHROME_ICON_ASSET/)
+  assert.match(js, /tab\.favicon/)
 })
 
 test('upload picker is a real glass overlay with browse, clipboard, and recent actions', () => {

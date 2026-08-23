@@ -10,8 +10,18 @@ test('exports reusable transparent-meteor icon and wordmark mounts', () => {
   assert.equal(typeof brand.mountIcon, 'function')
   assert.equal(typeof brand.mountBrand, 'function')
   assert.equal(brand.ICON_ASSET, '/assets/ember-icon.png')
+  assert.equal(brand.CHROME_ICON_ASSET, '/assets/icon-white-stroke.png')
+  assert.equal(typeof brand.mountChromeIcon, 'function')
   assert.equal(brand.WORDMARK_FONT_ASSET, '/assets/Necosmic-PersonalUse.otf')
   assert.equal(Object.hasOwn(brand, 'LOGO_ASSET'), false)
+})
+
+test('ships the supplied white-stroke source for browser chrome', () => {
+  const icon = path.join(__dirname, '..', 'src', 'renderer', 'assets', 'icon-white-stroke.png')
+  assert.equal(fs.existsSync(icon), true)
+  const bytes = fs.readFileSync(icon)
+  assert.equal(bytes.readUInt32BE(16), 2175)
+  assert.equal(bytes.readUInt32BE(20), 723)
 })
 
 test('ships the supplied transparent meteor and Necosmic font byte-for-byte', () => {

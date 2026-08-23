@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron')
 const { IPC } = require('../shared/ipc')
 const { resolveInput } = require('../shared/urls')
+const { dynamicTabMax } = require('../shared/chrome-layout')
+const { sameFavoriteSite } = require('../shared/favorites')
 
 // The omnibox has to say what Enter will do while you are still typing, and it
 // has to do it on every keystroke. Keeping the quick-search list here means the
@@ -50,6 +52,9 @@ contextBridge.exposeInMainWorld('ember', {
   onChromeConfig: (fn) => ipcRenderer.on(IPC.CHROME_CONFIG_CHANGED, (_e, config) => fn(config)),
   setSidebarOpen: (open) => ipcRenderer.send(IPC.SIDEBAR_SET, !!open),
   openFavorite: (id) => ipcRenderer.send(IPC.FAVORITE_OPEN, String(id)),
+  tabMaximum: (options) => dynamicTabMax(options),
+  sameFavoriteSite: (favoriteUrl, tabUrl) => sameFavoriteSite(favoriteUrl, tabUrl),
+  onWindowState: (fn) => ipcRenderer.on(IPC.WIN_STATE, (_e, state) => fn(state)),
 
   minimize: () => ipcRenderer.send(IPC.WIN_MINIMIZE),
   maximize: () => ipcRenderer.send(IPC.WIN_MAXIMIZE),

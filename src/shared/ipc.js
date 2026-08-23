@@ -52,6 +52,7 @@ const IPC = {
   BANGS_CHANGED: 'bangs:changed',
   BOOKMARKS_CHANGED: 'bookmarks:changed',
   CHROME_CONFIG_CHANGED: 'chrome-config:changed',
+  WIN_STATE: 'win:state',
   UPLOAD_RESULT: 'upload:result',
   OVERLAY_STATE: 'overlay:state',
   DOWNLOADS_CHANGED: 'downloads:changed',

@@ -1,7 +1,10 @@
 .ember-icon,
+.ember-chrome-icon,
 .ember-meteor {
   display: block;
   width: 100%;
   height: auto;
   object-fit: contain;
 }
+
+.ember-chrome-icon { object-fit: contain; }
