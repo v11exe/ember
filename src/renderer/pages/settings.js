@@ -60,12 +60,18 @@ function favoriteRow(entry, index) {
   url.spellcheck = false
   url.setAttribute('aria-label', `Address for ${entry.name}`)
 
+  const currentFavorite = () => ({
+    ...favoriteList[index],
+    name: name.value.trim() || favoriteList[index].name,
+    url: url.value.trim(),
+  })
   const commit = async () => {
-    const problem = favoriteProblem(url.value.trim())
+    const edited = currentFavorite()
+    const problem = favoriteProblem(edited.url)
     if (problem) { showFavoriteError(problem); renderFavorites(); return }
     showFavoriteError('')
     const next = favoriteList.map((item, itemIndex) => itemIndex === index
-      ? { ...item, name: name.value.trim() || item.name, url: url.value.trim() }
+      ? edited
       : item)
     await saveFavorites(next)
   }
@@ -88,8 +94,13 @@ function favoriteRow(entry, index) {
     button.title = delta < 0 ? `Move ${entry.name} up` : `Move ${entry.name} down`
     button.onclick = () => {
       const next = [...favoriteList]
-      const [item] = next.splice(index, 1)
-      next.splice(index + delta, 0, item)
+      const edited = currentFavorite()
+      const problem = favoriteProblem(edited.url)
+      if (problem) { showFavoriteError(problem); return }
+      showFavoriteError('')
+      next[index] = edited
+      const [moved] = next.splice(index, 1)
+      next.splice(index + delta, 0, moved)
       saveFavorites(next)
     }
     return button

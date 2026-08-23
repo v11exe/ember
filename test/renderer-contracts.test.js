@@ -323,5 +323,6 @@ test('settings can add, edit, remove, and reset the ordered Favorite rail', () =
   assert.match(js, /api\?\.set\('favorites'/)
   assert.match(js, /favorite-reset/)
   assert.match(js, /row\.contains\(event\.relatedTarget\)/, 'moving between row inputs does not rebuild the editor')
+  assert.match(js, /const edited = currentFavorite\(\)/, 'reordering preserves live input values')
   assert.match(js, /favorite-remove/)
 })
