@@ -290,6 +290,18 @@ Newest at top. One entry per branch, updated in place. Status:
   implement against. `none` if none.
 ```
 
+### 2026-08-23 — Claude Code — Arc-style Ctrl+Tab switcher
+- **Status / Branch:** in-progress · `feat/tab-switcher`
+- **Touches:** `src/main/{switcher-panel,shortcuts,index,floating-panel,tabs}.js`,
+  `src/renderer/pages/switcher.{html,css,js}`, `test/{switcher,shortcuts}.test.js`
+- **Summary:** Roadmap feature 5. Holding Ctrl and pressing Tab opens a floating
+  card switcher in most-recently-used order, with the thumbnail each tab was
+  last seen at. Releasing Ctrl commits, Escape cancels. Sleeping tabs are
+  listed from their cached screenshot and only wake when chosen.
+- **For the other agent:** `Ctrl+Tab` no longer cycles the strip directly —
+  `Ctrl+PageDown/PageUp` do that. `FloatingPanel` gains `patchState()` for
+  updates that must not resend a payload full of screenshots.
+
 ### 2026-08-23 — Claude Code — Internet Archive fallback
 - **Status / Branch:** merged · `main`
 - **Touches:** `src/shared/{archive,ipc}.js`, `src/main/{archive,tabs,index,context-menu-model}.js`,
@@ -400,16 +412,3 @@ Newest at top. One entry per branch, updated in place. Status:
 - **For the other agent:** new stores write `settings.json` and `session.json`
   in userData. The prompt reuses `FloatingPanel` and the existing
   `overlay:action` channel with command `session`; no new IPC channels.
-
-### 2026-08-22 — Claude Code — Downloads page + real page glass
-- **Status / Branch:** pushed · `feat/downloads-and-page-glass`
-- **Touches:** `src/main/{downloads,index}.js`, `src/shared/ipc.js`,
-  `src/main/page-preload.js`, `src/renderer/pages/{downloads.*,page-glass.js,history.*}`,
-  `src/renderer/theme.css`, `test/downloads.test.js`, `AGENTS.md`
-- **Summary:** Milestone 6 downloads at `ember://downloads` (Ctrl+J): live progress,
-  pause/resume/cancel, open/show/remove, filters and totals. History and downloads
-  now use real refraction via `page-glass.js` rather than a plain blur.
-- **For the other agent:** new channels `downloads:query|action|changed` and
-  `DOWNLOADS_URL`. New ambient tokens live in `theme.css` — reuse those for any
-  future full-page surface instead of new rgba values.
-
