@@ -32,7 +32,9 @@ src/main/{panel,floating-panel}.js bounded dropdown/overlay WebContentsViews
 src/main/bookmarks.js    bookmark HTML parser + atomic JSON userData store
 src/main/history.js      visit log + recently-closed, atomic JSON, capped at 5000
 src/main/downloads.js    live DownloadItem mirror + finished list, atomic JSON
-src/main/settings.js     prefs (sessionRestore, window bounds), atomic JSON
+src/main/settings.js     prefs (sessionRestore, window bounds, hibernation)
+src/main/hibernation.js  idle-tab discard policy (pure) + sweep timer + probes
+src/main/tab-thumbnails.js  cached page screenshots, keyed by tab id
 src/main/session.js      saved tab set for restore-on-launch, sync writes
 src/main/session-prompt.js  close-time "reopen tabs?" dialog on FloatingPanel
 src/main/shortcuts.js    pure key -> command table (Chrome parity) + zoom ladder
@@ -59,10 +61,21 @@ test/                    node:test unit/contracts + two real popup fixtures
 **Milestones** — 1 shell ✅ · 2 tab manager ✅ · 3 chrome UI + IPC ✅ ·
 8 extensions ✅ (built early, out of order) · 4 sessions and partitions ·
 5 adblock + per-site Shields · 6 history/bookmarks/downloads ✅ · 7 GX layer
-(theming + glass menus/uploads ✅; network limiter, tab discarding, tab
+(theming + glass menus/uploads ✅, tab discarding ✅; network limiter, tab
 islands, sidebar outstanding).
 
 **Gotchas** (cost real debugging time, don't rediscover):
+- A hibernated tab keeps its record but has `view === null` and
+  `webContents === null`. Guard both; `tabs.select()` wakes first, so the
+  active tab is always live.
+- `webContents.destroy()` fires `'destroyed'` a turn late, so a stale handler
+  would forget a tab that has since been woken. `#wire` compares
+  `tab.webContents === wc` rather than reading a flag.
+- `capturePage()` on a hidden `WebContentsView` has no frame and comes back
+  empty, so `TabManager` screenshots the *outgoing* tab in `select()`.
+  `ThumbnailCache` keeps the previous entry when a capture fails.
+- `.setting` sets `display`, outranking the user agent's `[hidden]` rule; a
+  settings row that can hide needs `.setting[hidden] { display: none }`.
 - `injectBrowserAction()` must be *called* in a preload; requiring the module
   does nothing. It also exposes `window.browserAction.activate()`, which is how
   the panel opens a popup from its own row icons.
@@ -259,7 +272,7 @@ Newest at top. One entry per branch, updated in place. Status:
 ```
 
 ### 2026-08-23 — Claude Code — Tab hibernation + thumbnail cache
-- **Status / Branch:** in-progress · `feat/tab-hibernation`
+- **Status / Branch:** merged · `main`
 - **Touches:** `src/main/{hibernation,tab-thumbnails,tabs,settings,index,context-menu-model,context-menu-panel}.js`,
   `src/shared/ipc.js`, `src/renderer/{preload.js,chrome.js,chrome.css}`,
   `src/renderer/pages/settings.{html,js,css}`, `test/{hibernation,tab-thumbnails}.test.js`
