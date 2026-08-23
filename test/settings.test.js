@@ -37,3 +37,17 @@ test('non-boolean sidebar values do not change the preference', async () => {
   assert.equal(settings.get('sidebarOpen'), true)
 })
 
+test('a second window can mirror shared preferences without racing another file write', async () => {
+  const file = tmp()
+  const writer = new SettingsStore(file)
+  const peer = new SettingsStore(file)
+  const favorites = [{ id: 'mail', name: 'Mail', url: 'https://mail.example.com/' }]
+
+  const snapshot = await writer.set('favorites', favorites)
+  peer.sync('favorites', snapshot.favorites)
+  peer.rememberWindow({ x: 40, y: 50, width: 900, height: 620 })
+  await new Promise((resolve) => setTimeout(resolve, 550))
+
+  const reopened = new SettingsStore(file)
+  assert.deepEqual(reopened.get('favorites'), favorites)
+})

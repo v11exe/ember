@@ -70,9 +70,11 @@ function favoriteRow(entry, index) {
     await saveFavorites(next)
   }
   for (const input of [name, url]) {
-    input.onblur = commit
+    input.onblur = (event) => {
+      if (!row.contains(event.relatedTarget)) void commit()
+    }
     input.onkeydown = (event) => {
-      if (event.key === 'Enter') { event.preventDefault(); input.blur() }
+      if (event.key === 'Enter') { event.preventDefault(); void commit() }
       if (event.key === 'Escape') { renderFavorites(); showFavoriteError('') }
     }
   }

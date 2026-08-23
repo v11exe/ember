@@ -41,8 +41,13 @@ let browser = null
 const browsers = new Set()
 const windowDrags = new Map()
 
-function browserFromChromeSender(sender) {
-  return [...browsers].find((candidate) => candidate.chrome?.webContents === sender) || null
+function browserFromSender(sender) {
+  return [...browsers].find((candidate) => (
+    candidate.chrome?.webContents === sender
+    || candidate.sidebarView?.webContents === sender
+    || candidate.tabs?.tabs?.some((tab) => tab.webContents === sender)
+    || candidate.tabs?.pageCornerMasks?.some((mask) => mask.view.webContents === sender)
+  )) || null
 }
 
 /** The chrome view keeps its own copy so the omnibox can match as you type. */
@@ -53,7 +58,7 @@ function broadcastBangs(target = browser) {
 
 function chromeConfig(target = browser) {
   return target ? {
-    sidebarOpen: target.settings.get('sidebarOpen') !== false,
+    sidebarOpen: target.tabs ? target.tabs.sidebarOpen : target.settings.get('sidebarOpen') !== false,
     favorites: target.settings.get('favorites') || [],
   } : { sidebarOpen: true, favorites: [] }
 }
@@ -149,7 +154,12 @@ function createBrowser({ privateMode = false } = {}) {
   const frameBottom = createFrameView('bottom')
   const pageCornerMasks = ['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((corner) => {
     const view = new WebContentsView({
-      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+        preload: path.join(__dirname, '..', 'renderer', 'corner-mask-preload.js'),
+      },
     })
     view.setBackgroundColor('#00000000')
     view.webContents.loadFile(path.join(__dirname, '..', 'renderer', 'corner-mask.html'), { query: { corner } })
@@ -563,14 +573,19 @@ function describeSettings(snapshot) {
   }
 }
 ipcMain.handle(IPC.SETTINGS_GET, () => (browser ? describeSettings(browser.settings.snapshot()) : null))
-ipcMain.handle(IPC.SETTINGS_SET, async (_e, { key, value } = {}) => {
-  if (!browser) return null
-  const snapshot = await browser.settings.set(String(key), value)
+ipcMain.handle(IPC.SETTINGS_SET, async (event, { key, value } = {}) => {
+  const source = browserFromSender(event.sender) || browser
+  if (!source) return null
+  const preference = String(key)
+  const snapshot = await source.settings.set(preference, value)
+  for (const target of browsers) {
+    if (target !== source) target.settings.sync(preference, snapshot[preference])
+  }
   // Every window's omnibox matches against the same list.
-  if (String(key) === 'bangs') for (const target of browsers) broadcastBangs(target)
-  if (String(key) === 'favorites' || String(key) === 'sidebarOpen') {
+  if (preference === 'bangs') for (const target of browsers) broadcastBangs(target)
+  if (preference === 'favorites' || preference === 'sidebarOpen') {
     for (const target of browsers) {
-      if (String(key) === 'sidebarOpen') target.tabs.setSidebarOpen?.(snapshot.sidebarOpen)
+      if (preference === 'sidebarOpen') target.tabs.setSidebarOpen?.(snapshot.sidebarOpen)
       broadcastChromeConfig(target)
     }
   }
@@ -579,21 +594,28 @@ ipcMain.handle(IPC.SETTINGS_SET, async (_e, { key, value } = {}) => {
 
 ipcMain.handle(IPC.CHROME_CONFIG_GET, () => chromeConfig())
 
-ipcMain.on(IPC.SIDEBAR_SET, async (_event, open) => {
-  if (!browser) return
+ipcMain.on(IPC.SIDEBAR_SET, async (event, open) => {
+  const source = browserFromSender(event.sender) || browser
+  if (!source) return
   const value = !!open
-  browser.tabs.setSidebarOpen?.(value, { animate: true })
-  await browser.settings.set('sidebarOpen', value)
-  broadcastChromeConfig(browser)
+  for (const target of browsers) {
+    target.tabs.setSidebarOpen?.(value, { animate: true })
+    broadcastChromeConfig(target)
+  }
+  const snapshot = await source.settings.set('sidebarOpen', value)
+  for (const target of browsers) {
+    if (target !== source) target.settings.sync('sidebarOpen', snapshot.sidebarOpen)
+  }
 })
 
-ipcMain.on(IPC.FAVORITE_OPEN, (_event, id) => {
-  if (!browser) return
-  const favorite = (browser.settings.get('favorites') || []).find((entry) => entry.id === String(id))
+ipcMain.on(IPC.FAVORITE_OPEN, (event, id) => {
+  const target = browserFromSender(event.sender) || browser
+  if (!target) return
+  const favorite = (target.settings.get('favorites') || []).find((entry) => entry.id === String(id))
   if (!favorite) return
-  const existing = findFavoriteTab(browser.tabs.tabs, favorite.url)
-  if (existing !== null) browser.tabs.select(existing)
-  else browser.tabs.create(favorite.url)
+  const existing = findFavoriteTab(target.tabs.tabs, favorite.url)
+  if (existing !== null) target.tabs.select(existing)
+  else target.tabs.create(favorite.url)
 })
 
 ipcMain.handle(IPC.BANGS_GET, () => browser?.settings.get('bangs') || [])
@@ -658,15 +680,15 @@ ipcMain.on(IPC.NAV_GO, (_e, input) => {
   if (url) activeTabs()?.go(url)
 })
 
-ipcMain.on(IPC.WIN_MINIMIZE, () => browser?.win.minimize())
-ipcMain.on(IPC.WIN_MAXIMIZE, () => {
-  const win = browser?.win
+ipcMain.on(IPC.WIN_MINIMIZE, (event) => (browserFromSender(event.sender) || browser)?.win.minimize())
+ipcMain.on(IPC.WIN_MAXIMIZE, (event) => {
+  const win = (browserFromSender(event.sender) || browser)?.win
   if (!win) return
   win.isMaximized() ? win.unmaximize() : win.maximize()
 })
-ipcMain.on(IPC.WIN_CLOSE, () => browser?.win.close())
+ipcMain.on(IPC.WIN_CLOSE, (event) => (browserFromSender(event.sender) || browser)?.win.close())
 ipcMain.on(IPC.WIN_DRAG_START, (event, point = {}) => {
-  const target = browserFromChromeSender(event.sender)
+  const target = browserFromSender(event.sender)
   if (!target || target.win.isMaximized()) return
   const x = Number(point.x)
   const y = Number(point.y)
@@ -686,6 +708,32 @@ ipcMain.on(IPC.WIN_DRAG_MOVE, (event, point = {}) => {
   )
 })
 ipcMain.on(IPC.WIN_DRAG_END, (event) => windowDrags.delete(event.sender.id))
+ipcMain.on(IPC.CORNER_MASK_INPUT, (event, input = {}) => {
+  const target = browserFromSender(event.sender)
+  const mask = target?.tabs?.pageCornerMasks?.find((entry) => entry.view.webContents === event.sender)
+  const active = target?.tabs?.active
+  if (!mask || !active?.view || !active.webContents || active.webContents.isDestroyed()) return
+  const type = String(input.type)
+  if (!['mouseDown', 'mouseUp', 'mouseMove', 'mouseLeave', 'mouseWheel'].includes(type)) return
+  const localX = Number(input.x)
+  const localY = Number(input.y)
+  if (!Number.isFinite(localX) || !Number.isFinite(localY)) return
+  const maskBounds = mask.view.getBounds()
+  const pageBounds = active.view.getBounds()
+  const translated = {
+    type,
+    x: Math.round(maskBounds.x - pageBounds.x + localX),
+    y: Math.round(maskBounds.y - pageBounds.y + localY),
+  }
+  if (type === 'mouseWheel') {
+    translated.deltaX = Math.round(Number(input.deltaX) || 0)
+    translated.deltaY = Math.round(Number(input.deltaY) || 0)
+  } else {
+    translated.button = ['left', 'middle', 'right'].includes(input.button) ? input.button : 'left'
+    translated.clickCount = Math.max(1, Math.min(3, Math.round(Number(input.clickCount) || 1)))
+  }
+  active.webContents.sendInputEvent(translated)
+})
 
 // ---------------- app lifecycle ----------------
 function openInternal(url) {

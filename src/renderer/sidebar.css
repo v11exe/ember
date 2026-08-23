@@ -26,7 +26,11 @@ body.maximized .sidebar-surface { border-radius: 0; }
   grid-template-columns: repeat(2, var(--tile-width));
   grid-auto-rows: var(--tile-height);
   gap: 10px;
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 130ms ease, transform 210ms cubic-bezier(.2, .8, .2, 1);
 }
+body.sidebar-closed .favorites { opacity: 0; transform: translateX(-12px); }
 
 .favorite {
   width: var(--tile-width);
@@ -44,4 +48,6 @@ body.maximized .sidebar-surface { border-radius: 0; }
 .favorite.active { background: rgba(255, 255, 255, .18); border-color: rgba(255, 255, 255, .055); }
 .favorite img { width: 19px; height: 19px; object-fit: contain; }
 
-@media (prefers-reduced-motion: reduce) { .favorite { transition: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .favorite, .favorites { transition: none; }
+}

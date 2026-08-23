@@ -32,6 +32,12 @@ function render() {
 }
 
 window.ember.onState((state) => { browserState = state; render() })
-window.ember.getChromeConfig().then((next) => { config = next; render() })
-window.ember.onChromeConfig((next) => { config = next; render() })
+function applyConfig(next) {
+  config = next
+  document.body.classList.toggle('sidebar-closed', next?.sidebarOpen === false)
+  render()
+}
+
+window.ember.getChromeConfig().then(applyConfig)
+window.ember.onChromeConfig(applyConfig)
 window.ember.onWindowState(({ maximized } = {}) => document.body.classList.toggle('maximized', !!maximized))

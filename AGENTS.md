@@ -115,7 +115,9 @@ test/                          node:test contracts/integration fixtures
   sit underneath a transparent page, because Windows composites that path black.
   Page bounds come from `shared/chrome-layout.js`; four 12px transparent radial
   corner overlays provide reliable anti-aliased clipping because Electron's
-  native `View.setBorderRadius()` does not clip Windows WebContents pixels.
+  native `View.setBorderRadius()` does not clip Windows WebContents pixels. The
+  transparent arc forwards pointer/wheel input to the page; do not turn those
+  rectangular overlay views into dead hit targets.
 - A child `WebContentsView` does not export a reliable full-height CSS caption
   region through `BaseWindow` on Windows. Blank top-chrome dragging therefore
   uses the pointer-captured `win:drag-*` bridge; keep interactive controls out of

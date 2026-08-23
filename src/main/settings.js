@@ -80,7 +80,7 @@ class SettingsStore {
 
   snapshot() { return structuredClone(this.data) }
 
-  async set(key, value) {
+  #assign(key, value) {
     if (key === 'window') this.data.window = sanitiseBounds(value)
     else if (key === 'hibernation') {
       // Partial updates are the norm here — the settings page sends one field.
@@ -93,12 +93,23 @@ class SettingsStore {
     } else if (key === 'favorites') {
       this.data.favorites = sanitiseFavorites(value)
     } else if (key === 'sidebarOpen') {
-      if (typeof value !== 'boolean') return this.snapshot()
+      if (typeof value !== 'boolean') return false
       this.data.sidebarOpen = value
     } else if (key === 'sessionRestore') {
-      if (!Object.values(SESSION_RESTORE).includes(value)) return this.snapshot()
+      if (!Object.values(SESSION_RESTORE).includes(value)) return false
       this.data.sessionRestore = value
-    } else return this.snapshot()
+    } else return false
+    return true
+  }
+
+  /** Mirror a preference already persisted by another Ember window. */
+  sync(key, value) {
+    this.#assign(key, value)
+    return this.snapshot()
+  }
+
+  async set(key, value) {
+    if (!this.#assign(key, value)) return this.snapshot()
     await this.#persist()
     return this.snapshot()
   }

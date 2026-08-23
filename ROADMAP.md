@@ -485,7 +485,8 @@ Preserve these rules:
   Favorite rail and 8px perimeter gradients are separate bounded views; none
   sits beneath the transparent page. Four anti-aliased 12px radial overlays clip
   page corners reliably on Windows, where native View radius clipping is not
-  effective for WebContents pixels.
+  effective for WebContents pixels; their transparent page pixels forward input
+  to the underlying active renderer.
 - Collapse keeps an 8px Ember rail and interpolates sidebar, page and frame
   bounds together for 210ms. Blank top-row dragging uses a pointer-captured IPC
   bridge because CSS caption regions on child WebContentsViews expose only a

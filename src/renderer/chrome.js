@@ -31,7 +31,7 @@ let metricFrame = 0
 
 window.EmberBrand.mountChromeIcon($('chrome-brand'))
 
-const NON_DRAG_SELECTOR = 'button, input, .tab, .top-navigation, .tabstrip, .top-actions, .window-controls, .omnibox, .bookmarks-bar'
+const NON_DRAG_SELECTOR = 'button, input, .tab, .omnibox, .bookmark-item'
 let dragPointer = null
 let pendingDragPoint = null
 let dragFrame = 0

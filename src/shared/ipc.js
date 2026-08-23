@@ -18,6 +18,7 @@ const IPC = {
   WIN_DRAG_START: 'win:drag-start',
   WIN_DRAG_MOVE: 'win:drag-move',
   WIN_DRAG_END: 'win:drag-end',
+  CORNER_MASK_INPUT: 'corner-mask:input',
   EXT_OPEN_STORE: 'ext:open-store',
   EXT_LIST: 'ext:list',
   EXT_REMOVE: 'ext:remove',
