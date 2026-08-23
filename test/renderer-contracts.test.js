@@ -380,12 +380,15 @@ test('settings can add, edit, remove, and reset the ordered Favorite rail', () =
   const css = read('src', 'renderer', 'pages', 'settings.css')
   const js = read('src', 'renderer', 'pages', 'settings.js')
 
-  for (const id of ['favorite-list', 'favorite-new', 'favorite-name', 'favorite-url', 'favorite-reset']) {
+  for (const id of ['favorite-list', 'favorite-new', 'favorite-name', 'favorite-url', 'favorite-reset', 'favorite-columns', 'favorite-rows']) {
     assert.match(html, new RegExp(`id="${id}"`), id)
   }
   assert.match(css, /\.favorite-row/)
   assert.match(js, /function renderFavorites/)
   assert.match(js, /api\?\.set\('favorites'/)
+  assert.match(js, /api\?\.set\('favoriteGrid'/)
+  assert.match(js, /FAVORITE_COLUMN_OPTIONS = \[1, 2, 3, 4\]/)
+  assert.match(js, /FAVORITE_ROW_OPTIONS = \[1, 2, 3, 4, 5, 6, 7\]/)
   assert.match(js, /favorite-reset/)
   assert.match(js, /row\.contains\(event\.relatedTarget\)/, 'moving between row inputs does not rebuild the editor')
   assert.match(js, /const edited = currentFavorite\(\)/, 'reordering preserves live input values')

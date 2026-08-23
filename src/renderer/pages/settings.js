@@ -22,10 +22,18 @@ const TIMEOUT_OPTIONS = [5, 15, 30, 60, 240].map((minutes) => ({
   label: minutes < 60 ? `${minutes}m` : `${minutes / 60}h`,
 }))
 
+const FAVORITE_COLUMN_OPTIONS = [1, 2, 3, 4]
+const FAVORITE_ROW_OPTIONS = [1, 2, 3, 4, 5, 6, 7]
+
 const detail = document.getElementById('startup-detail')
 const sleepDetail = document.getElementById('hibernation-detail')
 let favoriteList = []
 let favoriteDefaults = []
+let favoriteGrid = { columns: 2, rows: 2 }
+
+function favoriteCapacity() {
+  return favoriteGrid.columns * favoriteGrid.rows
+}
 
 function favoriteProblem(value) {
   try {
@@ -44,6 +52,37 @@ function showFavoriteError(message) {
 async function saveFavorites(next) {
   const snapshot = await api?.set('favorites', next)
   favoriteList = snapshot?.favorites || next
+  renderFavorites()
+}
+
+function fillFavoriteGridSelect(select, values) {
+  select.replaceChildren(...values.map((value) => {
+    const option = document.createElement('option')
+    option.value = String(value)
+    option.textContent = String(value)
+    return option
+  }))
+}
+
+function renderFavoriteGrid() {
+  const columns = document.getElementById('favorite-columns')
+  const rows = document.getElementById('favorite-rows')
+  if (!columns.options.length) fillFavoriteGridSelect(columns, FAVORITE_COLUMN_OPTIONS)
+  if (!rows.options.length) fillFavoriteGridSelect(rows, FAVORITE_ROW_OPTIONS)
+  columns.value = String(favoriteGrid.columns)
+  rows.value = String(favoriteGrid.rows)
+  document.getElementById('favorite-grid-detail').textContent = `${favoriteCapacity()} slots`
+}
+
+async function saveFavoriteGrid() {
+  const next = {
+    columns: Number(document.getElementById('favorite-columns').value),
+    rows: Number(document.getElementById('favorite-rows').value),
+  }
+  const snapshot = await api?.set('favoriteGrid', next)
+  favoriteGrid = snapshot?.favoriteGrid || next
+  favoriteList = snapshot?.favorites || favoriteList.slice(0, favoriteCapacity())
+  renderFavoriteGrid()
   renderFavorites()
 }
 
@@ -118,8 +157,11 @@ function favoriteRow(entry, index) {
 
 function renderFavorites() {
   document.getElementById('favorite-list').replaceChildren(...favoriteList.map(favoriteRow))
-  document.getElementById('favorite-count').textContent = `${favoriteList.length} of 12 sites`
+  document.getElementById('favorite-count').textContent = `${favoriteList.length} of ${favoriteCapacity()} sites`
 }
+
+document.getElementById('favorite-columns').onchange = () => void saveFavoriteGrid()
+document.getElementById('favorite-rows').onchange = () => void saveFavoriteGrid()
 
 document.getElementById('favorite-new').onsubmit = (event) => {
   event.preventDefault()
@@ -127,7 +169,7 @@ document.getElementById('favorite-new').onsubmit = (event) => {
   const url = document.getElementById('favorite-url')
   const problem = favoriteProblem(url.value.trim())
   if (problem) { showFavoriteError(problem); return }
-  if (favoriteList.length >= 12) { showFavoriteError('The Favorite rail holds up to 12 sites.'); return }
+  if (favoriteList.length >= favoriteCapacity()) { showFavoriteError(`This grid holds up to ${favoriteCapacity()} sites.`); return }
   showFavoriteError('')
   saveFavorites([...favoriteList, {
     id: `favorite-${Date.now()}`,
@@ -473,6 +515,8 @@ async function load() {
   renderBangs()
   favoriteList = settings?.favorites || []
   favoriteDefaults = settings?.favoriteDefaults || []
+  favoriteGrid = settings?.favoriteGrid || favoriteGrid
+  renderFavoriteGrid()
   renderFavorites()
   document.getElementById('version').textContent = settings?.appVersion ? `Version ${settings.appVersion}` : ''
   glass?.refresh()

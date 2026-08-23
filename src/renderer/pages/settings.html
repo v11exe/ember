@@ -67,6 +67,18 @@
             <div class="setting-name">Favorite sites</div>
             <p class="setting-detail">Keep a small set of sites in Ember’s feature rail. Opening one reuses its existing tab when possible.</p>
           </div>
+          <div class="favorite-grid-controls">
+            <label>
+              <span>Across</span>
+              <select class="field" id="favorite-columns" aria-label="Favorite columns"></select>
+            </label>
+            <span class="favorite-grid-times" aria-hidden="true">×</span>
+            <label>
+              <span>Down</span>
+              <select class="field" id="favorite-rows" aria-label="Favorite rows"></select>
+            </label>
+            <span class="favorite-grid-detail" id="favorite-grid-detail"></span>
+          </div>
           <div class="favorite-list" id="favorite-list"></div>
           <form class="favorite-row favorite-new" id="favorite-new">
             <input class="favorite-name" id="favorite-name" placeholder="Site name" aria-label="Favorite name" autocomplete="off" />
