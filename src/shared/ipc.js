@@ -6,6 +6,7 @@ const IPC = {
   TAB_CREATE: 'tab:create',
   TAB_CLOSE: 'tab:close',
   TAB_SELECT: 'tab:select',
+  TAB_REORDER: 'tab:reorder',
   TAB_CONTEXT_MENU: 'tab:context-menu',  // right-click on a tab strip entry
   NAV_GO: 'nav:go',
   NAV_BACK: 'nav:back',
@@ -34,6 +35,9 @@ const IPC = {
   CHROME_CONFIG_GET: 'chrome-config:get',
   SIDEBAR_SET: 'sidebar:set',
   FAVORITE_OPEN: 'favorite:open',
+  FAVORITE_PIN_TAB: 'favorite:pin-tab',
+  FAVORITE_CONTEXT_MENU: 'favorite:context-menu',
+  FAVORITE_REMOVE: 'favorite:remove',
   HISTORY_QUERY: 'history:query',
   HISTORY_DELETE: 'history:delete',
   HISTORY_CLEAR: 'history:clear',

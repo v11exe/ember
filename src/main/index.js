@@ -30,7 +30,7 @@ const { ThumbnailCache } = require('./tab-thumbnails')
 const { HibernationManager, hostnameOf, sanitiseHibernation } = require('./hibernation')
 const { listBangs, DEFAULT_BANGS } = require('../shared/bangs')
 const { NATIVE_GLASS_DEFAULTS, snapshotNativeGlassSettings } = require('../shared/native-glass')
-const { DEFAULT_FAVORITES, findFavoriteTab } = require('../shared/favorites')
+const { DEFAULT_FAVORITES, findFavoriteTab, favoriteFromTab } = require('../shared/favorites')
 const { TOPBAR_HEIGHT, OUTER_RADIUS, viewportBounds } = require('../shared/chrome-layout')
 
 if (process.env.EMBER_SMOKE_USER_DATA) app.setPath('userData', process.env.EMBER_SMOKE_USER_DATA)
@@ -68,6 +68,25 @@ function broadcastChromeConfig(target = browser) {
   for (const view of [target.chrome, target.sidebarView]) {
     if (view && !view.webContents.isDestroyed()) view.webContents.send(IPC.CHROME_CONFIG_CHANGED, chromeConfig(target))
   }
+}
+
+async function persistFavorites(source, favorites) {
+  if (!source) return null
+  const snapshot = await source.settings.set('favorites', favorites)
+  for (const target of browsers) {
+    if (target !== source) target.settings.sync('favorites', snapshot.favorites)
+    broadcastChromeConfig(target)
+  }
+  return snapshot.favorites
+}
+
+async function removeFavorite(source, id) {
+  if (!source) return false
+  const current = source.settings.get('favorites') || []
+  const next = current.filter((entry) => entry.id !== String(id))
+  if (next.length === current.length) return false
+  await persistFavorites(source, next)
+  return true
 }
 
 function broadcastWindowState(target = browser) {
@@ -268,6 +287,9 @@ function createBrowser({ privateMode = false } = {}) {
     })
   }
   contextMenu.onTabCommand = (tab, action) => runTabCommand(self, tab, action)
+  contextMenu.onFavoriteCommand = (favorite, action) => (
+    action === 'favorite-remove' ? removeFavorite(self, favorite.id) : false
+  )
   contextMenu.onViewArchived = (tab, url) => openArchived(self, url)
   watchMainFrameStatus(privateMode ? session.fromPartition('persist:ember-private') : session.defaultSession, tabs)
   panel.onVisibilityChange = (open) => {
@@ -440,6 +462,10 @@ function activeTabs() { return browser?.tabs }
 ipcMain.on(IPC.TAB_CREATE, (_e, url) => activeTabs()?.create(url || NEW_TAB_URL))
 ipcMain.on(IPC.TAB_CLOSE, (_e, id) => activeTabs()?.close(id))
 ipcMain.on(IPC.TAB_SELECT, (_e, id) => activeTabs()?.select(id))
+ipcMain.on(IPC.TAB_REORDER, (event, { id, beforeId = null } = {}) => {
+  const current = browserFromSender(event.sender) || browser
+  current?.tabs.move(Number(id), beforeId === null ? null : Number(beforeId))
+})
 ipcMain.on(IPC.TAB_CONTEXT_MENU, (_e, { id, x } = {}) => {
   const current = browser
   const tab = current?.tabs.tabs.find((candidate) => candidate.id === id)
@@ -616,6 +642,33 @@ ipcMain.on(IPC.FAVORITE_OPEN, (event, id) => {
   const existing = findFavoriteTab(target.tabs.tabs, favorite.url)
   if (existing !== null) target.tabs.select(existing)
   else target.tabs.create(favorite.url)
+})
+
+ipcMain.handle(IPC.FAVORITE_PIN_TAB, async (event, id) => {
+  const source = browserFromSender(event.sender) || browser
+  const tab = source?.tabs.tabs.find((candidate) => candidate.id === Number(id))
+  if (!source || !tab) return { status: 'invalid', id: null }
+  const result = favoriteFromTab(tab, source.settings.get('favorites'))
+  if (result.status === 'added') await persistFavorites(source, result.favorites)
+  return { status: result.status, id: result.favorite?.id || null }
+})
+
+ipcMain.on(IPC.FAVORITE_CONTEXT_MENU, (event, { id, x, y } = {}) => {
+  const source = browserFromSender(event.sender) || browser
+  const favorite = (source?.settings.get('favorites') || []).find((entry) => entry.id === String(id))
+  if (!source || !favorite) return
+  source.panel.hide()
+  source.uploadPanel.cancel()
+  source.contextMenu.openFavoriteMenu({
+    favorite,
+    targetView: source.sidebarView,
+    point: { x: Number(x) || 0, y: Number(y) || 0 },
+  }).catch((error) => console.error('[ember] Favorite menu could not open:', error.message))
+})
+
+ipcMain.handle(IPC.FAVORITE_REMOVE, (event, id) => {
+  const source = browserFromSender(event.sender) || browser
+  return removeFavorite(source, id)
 })
 
 ipcMain.handle(IPC.BANGS_GET, () => browser?.settings.get('bangs') || [])

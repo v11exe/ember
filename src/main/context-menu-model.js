@@ -96,4 +96,8 @@ function buildTabContextMenu(tab = {}, context = {}) {
   return items
 }
 
-module.exports = { buildContextMenu, buildTabContextMenu }
+function buildFavoriteContextMenu() {
+  return [command('favorite-remove', 'Remove quick site')]
+}
+
+module.exports = { buildContextMenu, buildTabContextMenu, buildFavoriteContextMenu }

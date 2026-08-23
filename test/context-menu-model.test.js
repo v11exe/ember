@@ -1,7 +1,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
-const { buildContextMenu } = require('../src/main/context-menu-model')
+const { buildContextMenu, buildFavoriteContextMenu } = require('../src/main/context-menu-model')
 
 const ids = (items) => items.filter((item) => item.type !== 'separator').map((item) => item.id)
 
@@ -23,6 +23,12 @@ test('builds functional editable and spelling commands from Chromium flags', () 
     'spell:Ember', 'spell:Embryo', 'dictionary-add', 'undo', 'redo', 'cut', 'copy', 'paste', 'delete', 'select-all',
   ])
   assert.equal(items.find((item) => item.id === 'redo').enabled, false)
+})
+
+test('Favorite context menu is intentionally minimal', () => {
+  assert.deepEqual(buildFavoriteContextMenu(), [
+    { type: 'command', id: 'favorite-remove', label: 'Remove quick site', enabled: true, shortcut: '' },
+  ])
 })
 
 test('adds contextual link, image, and selection actions without duplicates', () => {

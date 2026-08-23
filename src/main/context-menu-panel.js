@@ -1,7 +1,7 @@
 const path = require('node:path')
 const { FloatingPanel } = require('./floating-panel')
 const { placePointPanel } = require('../shared/floating-geometry')
-const { buildContextMenu, buildTabContextMenu } = require('./context-menu-model')
+const { buildContextMenu, buildTabContextMenu, buildFavoriteContextMenu } = require('./context-menu-model')
 const { isArchivable } = require('../shared/archive')
 
 const MENU_WIDTH = 254
@@ -36,6 +36,7 @@ class ContextMenuPanel {
     this.openSequence = 0
     // Set by the owner; runs a tab-strip command (sleep, never sleep, close…).
     this.onTabCommand = null
+    this.onFavoriteCommand = null
   }
 
   async open({ tab, params }) {
@@ -90,6 +91,29 @@ class ContextMenuPanel {
     })
   }
 
+  async openFavoriteMenu({ favorite, targetView, point }) {
+    if (this.active) this.hide()
+    const items = buildFavoriteContextMenu()
+    const content = this.win.getContentBounds()
+    const viewport = { x: 0, y: 0, width: content.width, height: content.height }
+    const target = targetView.getBounds()
+    const anchor = {
+      x: target.x + Math.round(point?.x || 0),
+      y: target.y + Math.round(point?.y || 0),
+    }
+    const bounds = placePointPanel(viewport, anchor, menuSize(items), 8)
+    this.active = {
+      kind: 'favorite', favorite, targetView, point: { ...point }, items,
+      openSequence: ++this.openSequence,
+    }
+    await this.overlay.show({
+      bounds,
+      state: { kind: 'context-menu', items, openSequence: this.active.openSequence },
+      targetView,
+      captureBleed: CAPTURE_BLEED,
+    })
+  }
+
   isSender(webContents) {
     return this.overlay.isSender(webContents)
   }
@@ -102,6 +126,18 @@ class ContextMenuPanel {
 
   layout() {
     if (!this.active) return
+    if (this.active.kind === 'favorite') {
+      const { targetView, point, items } = this.active
+      const content = this.win.getContentBounds()
+      const viewport = { x: 0, y: 0, width: content.width, height: content.height }
+      const target = targetView.getBounds()
+      const bounds = placePointPanel(viewport, {
+        x: target.x + Math.round(point?.x || 0),
+        y: target.y + Math.round(point?.y || 0),
+      }, menuSize(items), 8)
+      void this.overlay.relayout?.({ bounds, targetView, captureBleed: CAPTURE_BLEED })
+      return
+    }
     if (this.active.kind === 'tab') {
       const { targetView, x, items } = this.active
       const viewport = targetView.getBounds()
@@ -126,6 +162,11 @@ class ContextMenuPanel {
     if (!this.isSender(sender) || !this.active) return false
     const item = this.active.items.find((candidate) => candidate.id === action)
     if (!item || item.enabled === false) return false
+    if (this.active.kind === 'favorite') {
+      const { favorite } = this.active
+      this.hide()
+      return !!(await this.onFavoriteCommand?.(favorite, action))
+    }
     if (this.active.kind === 'tab') {
       const { tab } = this.active
       this.hide()

@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('ember', {
   newTab: (url) => ipcRenderer.send(IPC.TAB_CREATE, url),
   closeTab: (id) => ipcRenderer.send(IPC.TAB_CLOSE, id),
   selectTab: (id) => ipcRenderer.send(IPC.TAB_SELECT, id),
+  reorderTab: (id, beforeId = null) => ipcRenderer.send(IPC.TAB_REORDER, { id, beforeId }),
   tabContextMenu: (id, x) => ipcRenderer.send(IPC.TAB_CONTEXT_MENU, { id, x }),
   openArchived: () => ipcRenderer.invoke(IPC.ARCHIVE_OPEN),
 
@@ -52,6 +53,11 @@ contextBridge.exposeInMainWorld('ember', {
   onChromeConfig: (fn) => ipcRenderer.on(IPC.CHROME_CONFIG_CHANGED, (_e, config) => fn(config)),
   setSidebarOpen: (open) => ipcRenderer.send(IPC.SIDEBAR_SET, !!open),
   openFavorite: (id) => ipcRenderer.send(IPC.FAVORITE_OPEN, String(id)),
+  pinFavoriteFromTab: (id) => ipcRenderer.invoke(IPC.FAVORITE_PIN_TAB, Number(id)),
+  favoriteContextMenu: (id, x, y) => ipcRenderer.send(IPC.FAVORITE_CONTEXT_MENU, {
+    id: String(id), x: Number(x) || 0, y: Number(y) || 0,
+  }),
+  removeFavorite: (id) => ipcRenderer.invoke(IPC.FAVORITE_REMOVE, String(id)),
   tabMaximum: (options) => dynamicTabMax(options),
   sameFavoriteSite: (favoriteUrl, tabUrl) => sameFavoriteSite(favoriteUrl, tabUrl),
   onWindowState: (fn) => ipcRenderer.on(IPC.WIN_STATE, (_e, state) => fn(state)),

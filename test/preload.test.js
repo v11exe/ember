@@ -88,7 +88,7 @@ function bootPreload({ bangs = [], chromeConfig = null } = {}) {
       invoke: async (channel) => {
         if (channel === IPC.BANGS_GET) return bangs
         if (channel === IPC.CHROME_CONFIG_GET) return chromeConfig
-        return undefined
+        return { channel }
       },
     },
   }
@@ -112,11 +112,16 @@ test('chrome preload bridges live shell configuration and Favorite actions', asy
   assert.deepEqual(await exposed.getChromeConfig(), chromeConfig)
   exposed.setSidebarOpen(false)
   exposed.openFavorite('youtube')
+  exposed.reorderTab(4, 2)
+  assert.deepEqual(await exposed.pinFavoriteFromTab(4), { channel: IPC.FAVORITE_PIN_TAB })
+  exposed.favoriteContextMenu('youtube', 44, 58)
   assert.equal(exposed.tabMaximum({ availableWidth: 800, count: 5 }), 127)
   assert.equal(exposed.sameFavoriteSite('https://www.youtube.com/', 'https://youtube.com/watch?v=x'), true)
-  assert.deepEqual(sent, [
+  assert.deepEqual(JSON.parse(JSON.stringify(sent)), [
     [IPC.SIDEBAR_SET, false],
     [IPC.FAVORITE_OPEN, 'youtube'],
+    [IPC.TAB_REORDER, { id: 4, beforeId: 2 }],
+    [IPC.FAVORITE_CONTEXT_MENU, { id: 'youtube', x: 44, y: 58 }],
   ])
 
   let update = null

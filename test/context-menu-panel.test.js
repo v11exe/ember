@@ -43,7 +43,8 @@ function harness() {
   const createTab = (url) => calls.push(['tab', url])
   const clipboard = { writeText: (text) => calls.push(['clipboard', text]) }
   const dialog = { showSaveDialog: async () => ({ canceled: false, filePath: 'C:\\saved\\page.html' }) }
-  const panel = new ContextMenuPanel({}, { overlay, createTab, clipboard, dialog })
+  const win = { getContentBounds: () => ({ width: 900, height: 640 }) }
+  const panel = new ContextMenuPanel(win, { overlay, createTab, clipboard, dialog })
   return { panel, sender, shown, relayouts, get hides() { return hides }, calls, tab }
 }
 
@@ -143,4 +144,22 @@ test('saves through a real save dialog and HTMLComplete', async () => {
   await h.panel.handleAction(h.sender, 'save-page')
   assert.deepEqual(h.calls, [['save', 'C:\\saved\\page.html', 'HTMLComplete']])
   assert.equal(h.hides, 1)
+})
+
+test('opens and routes the one-action Favorite removal menu', async () => {
+  const h = harness()
+  const favorite = { id: 'youtube', name: 'YouTube', url: 'https://youtube.com/' }
+  const targetView = { getBounds: () => ({ x: 0, y: 0, width: 168, height: 640 }) }
+  const commands = []
+  h.panel.onFavoriteCommand = (entry, action) => { commands.push([entry.id, action]); return true }
+
+  await h.panel.openFavoriteMenu({ favorite, targetView, point: { x: 76, y: 52 } })
+  assert.deepEqual(h.shown[0].state.items.map(({ id, label }) => ({ id, label })), [
+    { id: 'favorite-remove', label: 'Remove quick site' },
+  ])
+  assert.equal(h.shown[0].bounds.x >= 0, true)
+  assert.equal(h.shown[0].bounds.x + h.shown[0].bounds.width <= 900, true)
+
+  assert.equal(await h.panel.handleAction(h.sender, 'favorite-remove'), true)
+  assert.deepEqual(commands, [['youtube', 'favorite-remove']])
 })
