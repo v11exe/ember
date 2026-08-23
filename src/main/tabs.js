@@ -9,6 +9,8 @@ const CHROME_HEIGHT = 84 // tab strip (38) + toolbar (46)
 const BOOKMARKS_HEIGHT = 30
 // A hidden view often has no frame to screenshot; do not wait long for one.
 const CAPTURE_TIMEOUT = 600
+// The outgoing tab stays visible only this long while being photographed.
+const DESELECT_CAPTURE_BUDGET = 700
 // How long to give navigationHistory.restore() before assuming it did nothing.
 const RESTORE_FALLBACK = 1500
 // Chromium keeps 50 navigation entries per tab; matching it keeps the
@@ -247,7 +249,14 @@ class TabManager {
     if (!view) return
     const hide = () => { if (tab.view === view && tab.id !== this.activeId) view.setVisible(false) }
     if (!this.thumbnails || !tab.webContents || tab.asleep) { hide(); return }
-    this.thumbnails.capture(tab.id, tab.webContents, { rect: pageRect(view) }).catch(() => null).then(hide, hide)
+    // A machine that cannot produce frames — anything fullscreen in front of
+    // Ember will do it — makes every attempt fail slowly. Put the view away on
+    // a deadline regardless, so a dead compositor cannot leave it composited.
+    const deadline = setTimeout(hide, DESELECT_CAPTURE_BUDGET)
+    deadline.unref?.()
+    this.thumbnails.capture(tab.id, tab.webContents, { rect: pageRect(view) })
+      .catch(() => null)
+      .then(() => { clearTimeout(deadline); hide() }, () => { clearTimeout(deadline); hide() })
   }
 
   // ---- hibernation ----
