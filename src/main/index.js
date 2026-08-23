@@ -23,6 +23,7 @@ const { ContextMenuPanel } = require('./context-menu-panel')
 const { NativeBackdrop } = require('./native-backdrop')
 const { ThumbnailCache } = require('./tab-thumbnails')
 const { HibernationManager, hostnameOf, sanitiseHibernation } = require('./hibernation')
+const { listBangs } = require('../shared/bangs')
 const { NATIVE_GLASS_DEFAULTS, snapshotNativeGlassSettings } = require('../shared/native-glass')
 
 if (process.env.EMBER_SMOKE_USER_DATA) app.setPath('userData', process.env.EMBER_SMOKE_USER_DATA)
@@ -395,10 +396,14 @@ ipcMain.handle(IPC.BOOKMARKS_IMPORT, async () => {
     return { ok: false, canceled: false, error: error.message, snapshot: browser.bookmarks.snapshot() }
   }
 })
-ipcMain.handle(IPC.SETTINGS_GET, () => (browser ? { ...browser.settings.snapshot(), appVersion: app.getVersion() } : null))
+/** The settings page needs the resolved bang table, not just the stored diff. */
+function describeSettings(snapshot) {
+  return { ...snapshot, appVersion: app.getVersion(), bangList: listBangs(snapshot.bangs) }
+}
+ipcMain.handle(IPC.SETTINGS_GET, () => (browser ? describeSettings(browser.settings.snapshot()) : null))
 ipcMain.handle(IPC.SETTINGS_SET, async (_e, { key, value } = {}) => {
   if (!browser) return null
-  return browser.settings.set(String(key), value)
+  return describeSettings(await browser.settings.set(String(key), value))
 })
 
 const emptyDownloads = { version: 1, active: [], entries: [] }
@@ -433,7 +438,7 @@ ipcMain.handle(IPC.HISTORY_CLEAR, async (_e, range) => {
   return browser.history.clear(range || {})
 })
 ipcMain.on(IPC.HISTORY_OPEN, (_e, url) => {
-  const target = toNavigationUrl(url)
+  const target = toNavigationUrl(url)  // already a real URL; no bang table needed
   if (target) activeTabs()?.create(target)
 })
 
@@ -447,7 +452,7 @@ ipcMain.on(IPC.BOOKMARKS_VISIBILITY, async (_e, visible) => {
 })
 
 ipcMain.on(IPC.NAV_GO, (_e, input) => {
-  const url = toNavigationUrl(input)
+  const url = toNavigationUrl(input, { bangs: browser?.settings.get('bangs') })
   if (url) activeTabs()?.go(url)
 })
 

@@ -61,6 +61,26 @@
       </section>
 
       <section class="card" data-lg style="--enter: 3">
+        <div class="card-head"><span>Search shortcuts</span></div>
+        <div class="setting setting-stack">
+          <div class="setting-text">
+            <div class="setting-name">Quick searches</div>
+            <p class="setting-detail">Type a keyword and your search — <code>yt liquid glass</code>.
+              A leading <code>!</code> works too, and a keyword on its own opens the site.
+              Put <code>%s</code> where the search term belongs.</p>
+          </div>
+          <div class="bang-list" id="bang-list"></div>
+          <form class="bang-row bang-new" id="bang-new">
+            <input class="bang-alias" id="bang-alias" placeholder="yt" aria-label="Keyword" spellcheck="false" autocomplete="off" />
+            <input class="bang-name" id="bang-name" placeholder="YouTube" aria-label="Name" autocomplete="off" />
+            <input class="bang-url" id="bang-url" placeholder="https://example.com/search?q=%s" aria-label="Address" spellcheck="false" autocomplete="off" />
+            <button class="pill lg-button lg-sm" data-lg type="submit">Add</button>
+          </form>
+          <p class="bang-error" id="bang-error" hidden></p>
+        </div>
+      </section>
+
+      <section class="card" data-lg style="--enter: 4">
         <div class="card-head"><span>Browsing data</span></div>
         <div class="setting">
           <div class="setting-text">
@@ -78,7 +98,7 @@
         </div>
       </section>
 
-      <section class="card" data-lg style="--enter: 4">
+      <section class="card" data-lg style="--enter: 5">
         <div class="card-head"><span>Extensions</span></div>
         <div class="setting">
           <div class="setting-text">
@@ -89,7 +109,7 @@
         </div>
       </section>
 
-      <section class="card" data-lg style="--enter: 5">
+      <section class="card" data-lg style="--enter: 6">
         <div class="card-head"><span>About</span></div>
         <div class="setting">
           <div class="setting-text">

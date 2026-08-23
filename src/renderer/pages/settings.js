@@ -121,6 +121,118 @@ function renderHibernation(config) {
   renderNeverSleepDomains(settings.neverDomains)
 }
 
+// ---------- search shortcuts ----------
+// The store keeps only the diff against the built-in table: additions,
+// overrides and tombstones. `bangList` arrives already merged, with
+// `custom: false` marking the ones that came from the defaults.
+let bangDiff = []
+let bangList = []
+
+const ALIAS_PATTERN = /^[a-z0-9][a-z0-9_+-]{0,23}$/
+const bangError = document.getElementById('bang-error')
+
+function showBangError(message) {
+  bangError.textContent = message || ''
+  bangError.hidden = !message
+}
+
+function validateBang(alias, url) {
+  if (!ALIAS_PATTERN.test(alias)) return 'A keyword is a short word — letters, digits, - and _ only.'
+  if (!url.includes('%s')) return 'The address needs %s where the search term goes.'
+  if (!url.startsWith('http://') && !url.startsWith('https://')) return 'The address has to start with http:// or https://.'
+  return ''
+}
+
+function isDefaultAlias(alias) {
+  return bangList.some((entry) => entry.alias === alias && !entry.custom)
+}
+
+async function saveBangs(diff) {
+  const settings = await api?.set('bangs', diff)
+  bangDiff = settings?.bangs || []
+  bangList = settings?.bangList || []
+  renderBangs()
+}
+
+/** Replace one entry, leaving a tombstone behind if a default was renamed away. */
+function upsertBang(originalAlias, entry) {
+  const diff = bangDiff.filter((item) => item.alias !== originalAlias && item.alias !== entry.alias)
+  if (originalAlias && originalAlias !== entry.alias && isDefaultAlias(originalAlias)) {
+    diff.push({ alias: originalAlias, removed: true })
+  }
+  diff.push(entry)
+  return saveBangs(diff)
+}
+
+function removeBang(alias) {
+  const diff = bangDiff.filter((item) => item.alias !== alias)
+  if (isDefaultAlias(alias)) diff.push({ alias, removed: true })
+  return saveBangs(diff)
+}
+
+function bangRow(entry) {
+  const row = document.createElement('div')
+  row.className = 'bang-row'
+  row.dataset.custom = String(!!entry.custom)
+
+  const fields = {}
+  for (const [key, value] of [['alias', entry.alias], ['name', entry.name], ['url', entry.url]]) {
+    const input = document.createElement('input')
+    input.className = `bang-${key}`
+    input.value = value
+    input.spellcheck = false
+    input.setAttribute('aria-label', key === 'alias' ? 'Keyword' : key === 'name' ? 'Name' : 'Address')
+    fields[key] = input
+    row.append(input)
+  }
+
+  const commit = () => {
+    const alias = fields.alias.value.trim().toLowerCase().replace(/^!+/, '')
+    const url = fields.url.value.trim()
+    const name = fields.name.value.trim() || alias
+    if (alias === entry.alias && url === entry.url && name === entry.name) return
+    const problem = validateBang(alias, url)
+    if (problem) { showBangError(problem); renderBangs(); return }
+    showBangError('')
+    upsertBang(entry.alias, { alias, name, url })
+  }
+  for (const input of Object.values(fields)) {
+    input.onblur = commit
+    input.onkeydown = (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); input.blur() }
+      if (event.key === 'Escape') { renderBangs(); showBangError('') }
+    }
+  }
+
+  const remove = document.createElement('button')
+  remove.type = 'button'
+  remove.className = 'bang-remove'
+  remove.textContent = '×'
+  remove.title = entry.custom ? `Delete ${entry.alias}` : `Hide the built-in ${entry.alias}`
+  remove.onclick = () => { showBangError(''); removeBang(entry.alias) }
+  row.append(remove)
+  return row
+}
+
+function renderBangs() {
+  document.getElementById('bang-list').replaceChildren(...bangList.map(bangRow))
+}
+
+document.getElementById('bang-new').onsubmit = (event) => {
+  event.preventDefault()
+  const aliasField = document.getElementById('bang-alias')
+  const nameField = document.getElementById('bang-name')
+  const urlField = document.getElementById('bang-url')
+  const alias = aliasField.value.trim().toLowerCase().replace(/^!+/, '')
+  const url = urlField.value.trim()
+  const problem = validateBang(alias, url)
+  if (problem) { showBangError(problem); return }
+  showBangError('')
+  upsertBang(null, { alias, name: nameField.value.trim() || alias, url })
+  aliasField.value = nameField.value = urlField.value = ''
+  aliasField.focus()
+}
+
 for (const button of document.querySelectorAll('[data-open]')) {
   button.onclick = () => window.ember?.navigate(button.dataset.open)
 }
@@ -129,6 +241,9 @@ async function load() {
   const settings = await api?.get()
   renderSessionRestore(settings?.sessionRestore || 'ask')
   renderHibernation(settings?.hibernation)
+  bangDiff = settings?.bangs || []
+  bangList = settings?.bangList || []
+  renderBangs()
   document.getElementById('version').textContent = settings?.appVersion ? `Version ${settings.appVersion}` : ''
   glass?.refresh()
   // Each card is a small menu, so it gets the dropdown's sliding lens too.
