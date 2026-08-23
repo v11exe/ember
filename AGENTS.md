@@ -321,6 +321,15 @@ Newest first. One entry per active/recent unit of work.
 - **For the other agent:** contracts/risks they must know, or `none`
 ```
 
+### 2026-08-23 — Codex — Adaptive Favorite grid
+- **Status / Branch:** in-progress · `feat/ember-shell`
+- **Touches:** `src/shared/favorites.js`, `src/main/{settings,index}.js`,
+  `src/renderer/{preload,sidebar}.*`, `src/renderer/pages/settings.*`, tests and docs
+- **Summary:** Making the persisted Favorite rail configurable from 1×1 through
+  4×7 with icon-preserving adaptive sizing and animated indexed insertion/replacement.
+- **For the other agent:** The default remains 2×2 with the existing three starter
+  sites; configured capacity becomes authoritative for stored Favorite count.
+
 ### 2026-08-23 — Codex — Shell compositing and Favorite drag polish
 - **Status / Branch:** completed · `feat/ember-shell`
 - **Touches:** `docs/superpowers/{specs,plans}/*`, `src/shared/{chrome-layout,favorites,ipc}.js`,
