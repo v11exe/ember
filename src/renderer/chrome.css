@@ -65,7 +65,14 @@ body { overflow: hidden; background: transparent; user-select: none; }
   to { transform: none; opacity: 1; }
 }
 
-.tab-favicon { width: 14px; height: 14px; flex: none; border-radius: 3px; }
+/* Sleeping: no renderer behind it. Stated by weight, never by a badge. */
+.tab.asleep { color: var(--text-faint); }
+.tab.asleep .tab-favicon { filter: grayscale(1); opacity: .5; }
+.tab.asleep .tab-title { opacity: .72; }
+.tab.asleep:hover { color: var(--text-dim); }
+.tab.asleep:hover .tab-favicon { filter: none; opacity: 1; }
+
+.tab-favicon { width: 14px; height: 14px; flex: none; border-radius: 3px; transition: filter var(--dur-1) var(--ease-soft), opacity var(--dur-1) var(--ease-soft); }
 .tab-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tab-close {
   flex: none; width: 17px; height: 17px; line-height: 15px;

@@ -1,6 +1,8 @@
 const fs = require('node:fs')
 const path = require('node:path')
 
+const { HIBERNATION_DEFAULTS, sanitiseHibernation } = require('./hibernation')
+
 // Small preference store. Same atomic JSON pattern as bookmarks/history/downloads.
 //
 // Only settings that must survive a restart belong here. Anything derivable at
@@ -16,6 +18,8 @@ function defaults() {
     sessionRestore: SESSION_RESTORE.ASK,
     // Remembered window geometry, so Ember reopens where it was left.
     window: null,
+    // Idle background tabs lose their renderer; see hibernation.js.
+    hibernation: { ...HIBERNATION_DEFAULTS },
   }
 }
 
@@ -46,7 +50,12 @@ class SettingsStore {
       const restore = Object.values(SESSION_RESTORE).includes(data.sessionRestore)
         ? data.sessionRestore
         : SESSION_RESTORE.ASK
-      return { version: 1, sessionRestore: restore, window: sanitiseBounds(data.window) }
+      return {
+        version: 1,
+        sessionRestore: restore,
+        window: sanitiseBounds(data.window),
+        hibernation: sanitiseHibernation(data.hibernation),
+      }
     } catch (error) {
       if (error.code !== 'ENOENT') console.warn('[ember] settings could not be read:', error.message)
       return defaults()
@@ -59,7 +68,10 @@ class SettingsStore {
 
   async set(key, value) {
     if (key === 'window') this.data.window = sanitiseBounds(value)
-    else if (key === 'sessionRestore') {
+    else if (key === 'hibernation') {
+      // Partial updates are the norm here — the settings page sends one field.
+      this.data.hibernation = sanitiseHibernation({ ...this.data.hibernation, ...(value || {}) })
+    } else if (key === 'sessionRestore') {
       if (!Object.values(SESSION_RESTORE).includes(value)) return this.snapshot()
       this.data.sessionRestore = value
     } else return this.snapshot()

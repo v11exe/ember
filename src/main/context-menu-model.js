@@ -59,4 +59,37 @@ function buildContextMenu(params = {}, navigation = {}) {
   return items
 }
 
-module.exports = { buildContextMenu }
+/**
+ * Right-clicking a tab strip entry. Kept in the same vocabulary as the page
+ * menu so the one renderer can draw both.
+ *
+ * @param {{ asleep?: boolean, active?: boolean, neverSleep?: boolean, url?: string }} tab
+ * @param {{ domain?: string, domainNeverSleeps?: boolean, canSleep?: boolean }} [context]
+ */
+function buildTabContextMenu(tab = {}, context = {}) {
+  const items = []
+  const domain = context.domain || ''
+
+  items.push(command('tab-reload', 'Reload', !tab.asleep, 'Ctrl+R'))
+  items.push(command('tab-duplicate', 'Duplicate'))
+  separator(items)
+
+  items.push(command('tab-sleep', 'Sleep tab now', context.canSleep !== false))
+  items.push(tab.neverSleep
+    ? command('tab-allow-sleep', 'Allow this tab to sleep')
+    : command('tab-never-sleep', 'Never sleep this tab'))
+  if (domain) {
+    items.push(context.domainNeverSleeps
+      ? command('tab-allow-domain', `Allow ${domain} to sleep`)
+      : command('tab-never-sleep-domain', `Never sleep ${domain}`))
+  }
+  separator(items)
+
+  items.push(command('tab-close-others', 'Close other tabs', !!context.hasOtherTabs))
+  items.push(command('tab-close', 'Close tab', true, 'Ctrl+W'))
+
+  while (items.at(-1)?.type === 'separator') items.pop()
+  return items
+}
+
+module.exports = { buildContextMenu, buildTabContextMenu }

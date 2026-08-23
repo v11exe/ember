@@ -12,6 +12,10 @@ const glyphs = {
   'open-link': '↗', 'copy-link': '⛓', 'open-image': '▧', 'copy-image': '▣',
   'copy-image-address': '⛓', 'dictionary-add': '+', 'save-page': '⇩',
   print: '▦', 'view-source': '‹›', inspect: '⌖',
+  'tab-reload': '↻', 'tab-duplicate': '⧉', 'tab-sleep': '☾',
+  'tab-never-sleep': '☀', 'tab-allow-sleep': '☾',
+  'tab-never-sleep-domain': '☀', 'tab-allow-domain': '☾',
+  'tab-close-others': '⊗', 'tab-close': '×',
 }
 
 let buttons = []

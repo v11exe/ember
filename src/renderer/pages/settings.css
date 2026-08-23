@@ -32,6 +32,27 @@
 
 .version { color: var(--text-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
 
+/* ---------- never-sleep domains ---------- */
+.domain-chips {
+  display: flex; flex-wrap: wrap; justify-content: flex-end;
+  gap: 6px; max-width: 54%;
+}
+.domain-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 5px 4px 11px;
+  border: var(--glass-edge); border-radius: 999px;
+  background: var(--glass-hover);
+  color: var(--text-dim); font-size: 12px;
+}
+.domain-chip button {
+  width: 17px; height: 17px; line-height: 15px;
+  border: 0; border-radius: 50%;
+  background: transparent; color: var(--text-faint);
+  font-size: 13px; cursor: default;
+  transition: background var(--dur-1) var(--ease-soft), color var(--dur-1) var(--ease-soft);
+}
+.domain-chip button:hover { background: var(--ember-deep); color: #fff; }
+
 /* ---------- segmented control ---------- */
 .segmented {
   position: relative;

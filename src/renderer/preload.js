@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('ember', {
   newTab: (url) => ipcRenderer.send(IPC.TAB_CREATE, url),
   closeTab: (id) => ipcRenderer.send(IPC.TAB_CLOSE, id),
   selectTab: (id) => ipcRenderer.send(IPC.TAB_SELECT, id),
+  tabContextMenu: (id, x) => ipcRenderer.send(IPC.TAB_CONTEXT_MENU, { id, x }),
 
   go: (input) => ipcRenderer.send(IPC.NAV_GO, input),
   back: () => ipcRenderer.send(IPC.NAV_BACK),

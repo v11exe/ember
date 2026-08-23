@@ -1,7 +1,7 @@
 const path = require('node:path')
 const fs = require('node:fs/promises')
 const { pathToFileURL } = require('node:url')
-const { app, BaseWindow, WebContentsView, clipboard, dialog, ipcMain, nativeImage, screen, session, shell } = require('electron')
+const { app, BaseWindow, WebContentsView, clipboard, dialog, ipcMain, nativeImage, screen, session, shell, webContents } = require('electron')
 
 const { IPC, NEW_TAB_URL, HISTORY_URL, DOWNLOADS_URL, SETTINGS_URL, EXTENSIONS_URL, WEB_STORE_URL } = require('../shared/ipc')
 const { toNavigationUrl } = require('../shared/urls')
@@ -21,6 +21,8 @@ const { RecentUploadStore } = require('./recent-uploads')
 const { UploadPanel } = require('./upload-panel')
 const { ContextMenuPanel } = require('./context-menu-panel')
 const { NativeBackdrop } = require('./native-backdrop')
+const { ThumbnailCache } = require('./tab-thumbnails')
+const { HibernationManager, hostnameOf, sanitiseHibernation } = require('./hibernation')
 const { NATIVE_GLASS_DEFAULTS, snapshotNativeGlassSettings } = require('../shared/native-glass')
 
 if (process.env.EMBER_SMOKE_USER_DATA) app.setPath('userData', process.env.EMBER_SMOKE_USER_DATA)
@@ -70,7 +72,11 @@ function createBrowser({ privateMode = false } = {}) {
   win.contentView.addChildView(chrome)
   chrome.webContents.loadFile(path.join(__dirname, '..', 'renderer', 'chrome.html'))
 
-  const tabs = new TabManager(win, chrome, { partition: privateMode ? 'persist:ember-private' : undefined })
+  const thumbnails = new ThumbnailCache()
+  const tabs = new TabManager(win, chrome, {
+    thumbnails,
+    partition: privateMode ? 'persist:ember-private' : undefined,
+  })
   const panel = new ExtensionPanel(win)
   const bookmarks = new BookmarkStore(path.join(app.getPath('userData'), 'bookmarks.json'))
   const history = new HistoryStore(path.join(app.getPath('userData'), 'history.json'))
@@ -99,8 +105,16 @@ function createBrowser({ privateMode = false } = {}) {
   const contextMenu = new ContextMenuPanel(win, {
     createTab: (url) => tabs.create(url), clipboard, dialog,
   })
+  // A tab with a transfer running underneath it must stay awake; Electron only
+  // tells us which webContents started it, so keep the count here.
+  const downloadingBy = new Map()
+  const hibernation = new HibernationManager(tabs, {
+    config: () => settings.get('hibernation'),
+    isDownloading: (tab) => !!(tab.webContents && downloadingBy.get(tab.webContents.id) > 0),
+  })
+
   const self = {
-    win, chrome, tabs, panel, bookmarks, history, downloads, settings, sessionStore,
+    win, chrome, tabs, panel, bookmarks, history, downloads, settings, sessionStore, thumbnails, hibernation,
     sessionPrompt: new SessionPrompt(win), closing: false, recentUploads, recentUploadsReady,
     uploadPanel, contextMenu, smokeClipboard, smokeUploadPaths, nativeBackdrop, popupPositioner: null,
     privateMode, fullScreenFrom: null,
@@ -111,12 +125,22 @@ function createBrowser({ privateMode = false } = {}) {
   tabs.onVisit = (visit) => { if (!privateMode) history.record(visit) }
   downloads.onChange = (snapshot) => {
     for (const tab of tabs.tabs) {
-      if (tab.url.startsWith(DOWNLOADS_URL) && !tab.webContents.isDestroyed()) {
+      if (tab.url.startsWith(DOWNLOADS_URL) && tab.webContents && !tab.webContents.isDestroyed()) {
         tab.webContents.send(IPC.DOWNLOADS_CHANGED, snapshot)
       }
     }
   }
-  session.defaultSession.on('will-download', (_event, item) => downloads.track(item))
+  session.defaultSession.on('will-download', (_event, item, webContents) => {
+    downloads.track(item)
+    const id = webContents?.id
+    if (id == null) return
+    downloadingBy.set(id, (downloadingBy.get(id) || 0) + 1)
+    item.once('done', () => {
+      const left = (downloadingBy.get(id) || 1) - 1
+      if (left > 0) downloadingBy.set(id, left)
+      else downloadingBy.delete(id)
+    })
+  })
   tabs.onVisitDetail = (detail) => history.decorate(detail.url, detail)
   tabs.onTabClosed = (tab) => history.noteClosedTab(tab)
   tabs.onSelectionChange = (tab) => {
@@ -134,6 +158,7 @@ function createBrowser({ privateMode = false } = {}) {
       console.error('[ember] context menu could not open:', error.message)
     })
   }
+  contextMenu.onTabCommand = (tab, action) => runTabCommand(self, tab, action)
   panel.onVisibilityChange = (open) => {
     if (!chrome.webContents.isDestroyed()) chrome.webContents.send(IPC.PANEL_CHANGED, open)
   }
@@ -166,8 +191,15 @@ function createBrowser({ privateMode = false } = {}) {
     const restorable = settings.get('sessionRestore') !== SESSION_RESTORE.NEVER && sessionStore.hasSession()
     if (restorable) {
       const saved = sessionStore.snapshot().tabs
-      for (const tab of saved) tabs.create(tab.url, { active: false })
       const active = saved.findIndex((tab) => tab.active)
+      // Restored background tabs start asleep, so reopening 20 tabs costs one
+      // renderer rather than twenty.
+      saved.forEach((tab, index) => tabs.create(tab.url, {
+        active: false,
+        asleep: index !== (active >= 0 ? active : 0),
+        title: tab.title,
+        favicon: tab.favicon,
+      }))
       const target = tabs.tabs[active >= 0 ? active : 0]
       if (target) tabs.select(target.id)
       else tabs.create(NEW_TAB_URL)
@@ -176,6 +208,7 @@ function createBrowser({ privateMode = false } = {}) {
     }
     broadcastBookmarks(bookmarks.snapshot())
     tabs.layout()
+    hibernation.start()
   })
 
   win.on('resize', () => {
@@ -212,11 +245,43 @@ function createBrowser({ privateMode = false } = {}) {
   })
   win.on('focus', () => { browser = self })
   win.on('closed', () => {
+    hibernation.stop()
     nativeBackdrop.destroy()
     browsers.delete(self)
     if (browser === self) browser = [...browsers][browsers.size - 1] || null
   })
   return browser
+}
+
+// ---------------- tab strip commands ----------------
+/** Runs a tab context-menu command. Shared by the menu and any future caller. */
+async function runTabCommand(current, tab, action) {
+  const tabs = current.tabs
+  if (!tabs.tabs.includes(tab)) return false
+  const domain = hostnameOf(tab.url)
+
+  switch (action) {
+    case 'tab-reload': tab.webContents?.reload(); return true
+    case 'tab-duplicate': tabs.create(tab.url); return true
+    case 'tab-sleep': return tabs.hibernate(tab.id)
+    case 'tab-never-sleep': return tabs.setNeverSleep(tab.id, true)
+    case 'tab-allow-sleep': return tabs.setNeverSleep(tab.id, false)
+    case 'tab-never-sleep-domain':
+    case 'tab-allow-domain': {
+      if (!domain) return false
+      const config = sanitiseHibernation(current.settings.get('hibernation'))
+      const neverDomains = action === 'tab-never-sleep-domain'
+        ? [...config.neverDomains, domain]
+        : config.neverDomains.filter((entry) => entry !== domain)
+      await current.settings.set('hibernation', { neverDomains })
+      return true
+    }
+    case 'tab-close-others':
+      for (const other of [...tabs.tabs]) if (other.id !== tab.id) tabs.close(other.id)
+      return true
+    case 'tab-close': tabs.close(tab.id); return true
+    default: return false
+  }
 }
 
 // ---------------- IPC: renderer -> main ----------------
@@ -225,6 +290,28 @@ function activeTabs() { return browser?.tabs }
 ipcMain.on(IPC.TAB_CREATE, (_e, url) => activeTabs()?.create(url || NEW_TAB_URL))
 ipcMain.on(IPC.TAB_CLOSE, (_e, id) => activeTabs()?.close(id))
 ipcMain.on(IPC.TAB_SELECT, (_e, id) => activeTabs()?.select(id))
+ipcMain.on(IPC.TAB_CONTEXT_MENU, (_e, { id, x } = {}) => {
+  const current = browser
+  const tab = current?.tabs.tabs.find((candidate) => candidate.id === id)
+  // The menu refracts the page below the strip, so it needs a live page view.
+  const targetView = current?.tabs.active?.view
+  if (!current || !tab || !targetView) return
+  current.panel.hide()
+  current.uploadPanel.cancel()
+  const config = sanitiseHibernation(current.settings.get('hibernation'))
+  const domain = hostnameOf(tab.url)
+  current.contextMenu.openTabMenu({
+    tab,
+    targetView,
+    x: Number(x) || 0,
+    context: {
+      domain,
+      domainNeverSleeps: config.neverDomains.includes(domain),
+      canSleep: !tab.asleep && tab.id !== current.tabs.activeId && /^https?:/i.test(tab.url),
+      hasOtherTabs: current.tabs.tabs.length > 1,
+    },
+  }).catch((error) => console.error('[ember] tab menu could not open:', error.message))
+})
 ipcMain.on(IPC.NAV_BACK, () => activeTabs()?.back())
 ipcMain.on(IPC.NAV_FORWARD, () => activeTabs()?.forward())
 ipcMain.on(IPC.NAV_RELOAD, () => activeTabs()?.reload())
@@ -716,6 +803,45 @@ app.whenReady().then(() => {
         }
         await waitFor(() => browser.tabs.tabs.length > previousTabCount)
         checks.push(['context link command opens a real tab', linkActionVisible && browser.tabs.tabs.length === previousTabCount + 1])
+
+        // ---- hibernation: the renderer really goes away, and really comes back ----
+        const homeId = browser.tabs.activeId
+        const sleeperId = browser.tabs.create(pathToFileURL(uploadFixture).href, { active: false })
+        const sleeper = browser.tabs.tabs.find((tab) => tab.id === sleeperId)
+        await waitFor(() => !sleeper.loading && !!sleeper.webContents?.getURL())
+        // Show it once so the thumbnail cache has a frame to keep.
+        browser.tabs.select(sleeperId)
+        await new Promise((resolve) => setTimeout(resolve, 250))
+        browser.tabs.select(homeId)
+        await waitFor(() => browser.thumbnails.has(sleeperId), 2000)
+
+        const liveBefore = webContents.getAllWebContents().length
+        checks.push(['the active tab refuses to sleep', !(await browser.tabs.hibernate(homeId))])
+        const slept = await browser.tabs.hibernate(sleeperId)
+        // destroy() tears the renderer down on the next turn of the loop.
+        const dropped = await waitFor(() => webContents.getAllWebContents().length === liveBefore - 1)
+        checks.push(['sleeping a tab destroys its renderer', slept && sleeper.asleep
+          && !sleeper.webContents && !sleeper.view && !!dropped])
+        checks.push(['a sleeping tab keeps its identity', browser.tabs.tabs.some((tab) => tab.id === sleeperId)
+          && sleeper.url.endsWith('upload-page.html') && !!sleeper.title])
+        checks.push(['a sleeping tab keeps a cached screenshot', !!browser.thumbnails.get(sleeperId)?.dataUrl])
+        const sleepingState = browser.tabs.state().tabs.find((tab) => tab.id === sleeperId)
+        checks.push(['the tab strip is told the tab is asleep', sleepingState?.asleep === true])
+
+        browser.tabs.select(sleeperId)
+        const woken = await waitFor(() => !sleeper.asleep && !sleeper.loading && !!sleeper.webContents?.getURL(), 8000)
+        checks.push(['selecting a sleeping tab rebuilds it', !!woken && browser.tabs.activeId === sleeperId
+          && webContents.getAllWebContents().length === liveBefore])
+
+        // Never-sleep is honoured by the manual command too, through the menu.
+        browser.tabs.select(homeId)
+        browser.tabs.setNeverSleep(sleeperId, true)
+        checks.push(['never-sleep is reported to the tab strip',
+          browser.tabs.state().tabs.find((tab) => tab.id === sleeperId)?.neverSleep === true])
+        checks.push(['a never-sleep tab is skipped by the sweep',
+          !(await browser.hibernation.sweep(Date.now() + 86_400_000)).includes(sleeperId)])
+        browser.tabs.close(sleeperId)
+        checks.push(['closing a tab drops its thumbnail', !browser.thumbnails.has(sleeperId)])
       } catch (error) {
         console.error('[ember] smoke probe error:', error)
         checks.push(['smoke probe completed', false])
