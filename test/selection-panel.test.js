@@ -35,7 +35,7 @@ function panelWith(overrides = {}) {
   return { panel, overlay, copied }
 }
 
-test('a recognised selection opens the popup below it', async () => {
+test('a recognised selection opens the popup above it', async () => {
   const { panel, overlay } = panelWith()
   const opened = await panel.update({ tab: stubTab(), text: '15 miles', rect: { x: 120, y: 200, width: 70, height: 18 } })
 
@@ -47,15 +47,15 @@ test('a recognised selection opens the popup below it', async () => {
   assert.equal(state.to, '24.1 km')
   assert.equal(bounds.width, PANEL_WIDTH)
   assert.equal(bounds.x, 120)
-  assert.equal(bounds.y, PAGE.y + 200 + 18 + 8, 'sits just under the selection')
+  assert.equal(bounds.y + bounds.height, PAGE.y + 200 - 8, 'sits just above the selection')
 })
 
-test('a selection near the bottom flips above rather than over itself', async () => {
+test('a selection at the very top drops below rather than off the page', async () => {
   const { panel, overlay } = panelWith()
-  await panel.update({ tab: stubTab(), text: '15 miles', rect: { x: 10, y: 690, width: 70, height: 18 } })
+  await panel.update({ tab: stubTab(), text: '15 miles', rect: { x: 10, y: 2, width: 70, height: 18 } })
   const { bounds } = overlay.shown[0]
-  assert.ok(bounds.y + bounds.height <= PAGE.y + 690, 'clear of the selection, not on top of it')
-  assert.ok(bounds.y >= PAGE.y)
+  assert.ok(bounds.y >= PAGE.y + 2 + 18, 'clear of the selection, not on top of it')
+  assert.ok(bounds.y + bounds.height <= PAGE.y + PAGE.height)
 })
 
 test('the popup is clamped inside the page view', async () => {

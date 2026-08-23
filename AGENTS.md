@@ -35,6 +35,8 @@ src/main/downloads.js    live DownloadItem mirror + finished list, atomic JSON
 src/main/settings.js     prefs (sessionRestore, window bounds, hibernation)
 src/main/hibernation.js  idle-tab discard policy (pure) + sweep timer + probes
 src/main/tab-thumbnails.js  cached page screenshots, keyed by tab id
+src/main/selection-panel.js  conversion popup beside a selected value
+src/main/rates.js        ECB exchange rates, fetched lazily, cached for a day
 src/main/session.js      saved tab set for restore-on-launch, sync writes
 src/main/session-prompt.js  close-time "reopen tabs?" dialog on FloatingPanel
 src/main/shortcuts.js    pure key -> command table (Chrome parity) + zoom ladder
@@ -49,11 +51,11 @@ src/renderer/theme.css   palette + type stack + motion tokens, all defined once
 src/renderer/brand.*     exact supplied PNG icon/full-logo mounts
 src/renderer/panel-preload.js  panel bridge + injectBrowserAction()
 src/renderer/pages/      newtab, extensions, upload, context-menu, history, downloads,
-                         session-prompt, settings
+                         session-prompt, settings, conversion
 src/renderer/pages/liquid-glass-ui.{js,css}  shared page material + selector lens
 src/renderer/pages/page-glass.js  full-page refraction; reuses upload-optics maps
 src/renderer/pages/backdrop-contrast.js  flags light captures so overlays flip palette
-src/shared/              IPC/URL/bangs/file-filter/floating-geometry contracts
+src/shared/              IPC/URL/bangs/conversions/file-filter/geometry contracts
 scripts/smoke.js         boot check
 scripts/capture-ui.js    offscreen wide/medium/compact visual QA captures
 test/                    node:test unit/contracts + two real popup fixtures
@@ -114,6 +116,11 @@ islands, sidebar outstanding).
   only the diff against the defaults, removal tombstones included.
 - `.results` is a flex column, so its children need `flex: none` or a page
   taller than the viewport squashes every card instead of scrolling.
+- `page-preload.js` reports the page's selected text to main for the conversion
+  popup. The text never leaves the machine, and only a currency selection
+  causes a network request (frankfurter.app, ECB daily reference rates).
+- The conversion popup sits *above* the selection by preference, the way Opera
+  does: covering lines already read beats covering the ones still ahead.
 - `win.setFullScreen()` is a no-op on the transparent frameless window on
   Windows. F11 fills the display bounds by hand and restores them (see
   `fullScreenFrom`).
@@ -278,7 +285,7 @@ Newest at top. One entry per branch, updated in place. Status:
 ```
 
 ### 2026-08-23 — Claude Code — Smart selection conversions
-- **Status / Branch:** in-progress · `feat/smart-selection`
+- **Status / Branch:** merged · `main`
 - **Touches:** `src/shared/{conversions,ipc}.js`,
   `src/main/{selection-panel,rates,page-preload,index,settings}.js`,
   `src/renderer/pages/conversion.{html,css,js}`,

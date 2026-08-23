@@ -71,22 +71,20 @@ class SelectionPanel {
     return generation === this.generation && opened
   }
 
-  /** Below the selection when there is room, above it when there is not. */
+  /**
+   * Above the selection by preference, the way Opera does it: the lines you
+   * have already read are a better thing to cover than the ones you have not.
+   * Falls below when there is no room above.
+   */
   #place(view, rect, result) {
     const viewport = view.getBounds()
-    const point = {
-      x: viewport.x + Math.round(rect.x),
-      y: viewport.y + Math.round(rect.y + rect.height) + GAP,
-    }
     const size = panelSize(result)
-    const below = placePointPanel(viewport, point, size, GAP)
-    // placePointPanel flips upward on its own, but it flips about the point,
-    // which would sit the panel on top of the selection. Lift it clear.
-    if (below.y < point.y) {
-      const above = viewport.y + Math.round(rect.y) - size.height - GAP
-      return { ...below, y: Math.max(viewport.y + GAP, above) }
-    }
-    return below
+    const top = viewport.y + Math.round(rect.y)
+    const above = top - size.height - GAP
+    const y = above >= viewport.y + GAP
+      ? above
+      : viewport.y + Math.round(rect.y + rect.height) + GAP
+    return placePointPanel(viewport, { x: viewport.x + Math.round(rect.x), y }, size, GAP)
   }
 
   isSender(webContents) {
