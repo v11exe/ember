@@ -61,6 +61,27 @@
       </section>
 
       <section class="card" data-lg style="--enter: 3">
+        <div class="card-head"><span>Sidebar</span></div>
+        <div class="setting setting-stack">
+          <div class="setting-text">
+            <div class="setting-name">Favorite sites</div>
+            <p class="setting-detail">Keep a small set of sites in Ember’s feature rail. Opening one reuses its existing tab when possible.</p>
+          </div>
+          <div class="favorite-list" id="favorite-list"></div>
+          <form class="favorite-row favorite-new" id="favorite-new">
+            <input class="favorite-name" id="favorite-name" placeholder="Site name" aria-label="Favorite name" autocomplete="off" />
+            <input class="favorite-url" id="favorite-url" placeholder="https://example.com" aria-label="Favorite address" spellcheck="false" autocomplete="off" />
+            <button class="pill lg-button lg-sm" data-lg type="submit">Add</button>
+          </form>
+          <p class="favorite-error" id="favorite-error" hidden></p>
+          <div class="favorite-footer">
+            <span class="favorite-count" id="favorite-count"></span>
+            <button class="pill lg-button lg-sm" data-lg type="button" id="favorite-reset">Restore defaults</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" data-lg style="--enter: 3">
         <div class="card-head"><span>Search shortcuts</span></div>
         <div class="setting setting-stack">
           <div class="setting-text">

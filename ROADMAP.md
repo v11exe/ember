@@ -414,9 +414,9 @@ It should visually fit Ember's existing glass UI but remain primarily a webpage 
 ## 7. Arc-style Instant / Favorite sidebar buttons
 
 **Source:** Arc Favorites  
-**Priority:** HIGH — not yet implemented
+**Priority:** HIGH
 
-**Status:** ⬜ Planned
+**Status:** ✅ Completed
 
 The Ember sidebar is reserved for actual features and utilities rather than becoming a vertical tab strip. Compact favorite-site buttons fit that design.
 
@@ -468,6 +468,33 @@ Potential live states can later include:
 but those should remain subtle.
 
 Favorites should feel like persistent shortcuts to important browser applications rather than permanent tab entries.
+
+### Completion / compatibility guardrails
+
+Implemented with Ember's unified 52px shell, a collapsible 170px feature rail,
+ordered persistent Favorites, settings-based add/edit/reorder/remove/reset, and
+existing-tab reuse that also wakes hibernated Favorite tabs without making them
+permanent renderer consumers.
+
+Preserve these rules:
+
+- Favorites are feature shortcuts, never a second tab strip. Their selected
+  appearance derives from the active tab's site while the real tab remains in
+  Ember's horizontal tab system.
+- Shell and page geometry come from `shared/chrome-layout.js`. The chrome view
+  stays a transparent full-window underlay and the active page is a separately
+  rounded native view above it; do not restore a permanent toolbar by expanding
+  the chrome view over page content.
+- Sidebar open/closed state and Favorite order are user preferences. A Favorite
+  resolves by stored tab id first, then same-site reuse, then creation, so a
+  sleeping match wakes through normal `tabs.select()` lifecycle behavior.
+- Future Workspaces (#12) may add explicit workspace-scoped Favorites, but the
+  current list remains global until a real scope model exists. Profiles (#13)
+  must resolve Favorite reuse inside the correct browsing session.
+- Split View (#9), Follower Tabs (#10), floating pages (#11), compact chrome
+  (#21), edge-hover chrome (#22), tab search (#14), and recent files (#31) must
+  consume the shared shell geometry instead of maintaining competing insets or
+  placing ordinary tabs in the sidebar.
 
 ---
 
@@ -699,6 +726,11 @@ Each workspace maintains its own:
 - Saved layout
 
 Workspace controls can live in the sidebar because **the workspace selector itself is a feature**, but its tabs should not permanently live there.
+
+The completed global Favorite rail (#7) must remain available across workspaces
+unless the user explicitly chooses a future workspace-specific Favorite scope.
+Favorite tab reuse must stay inside the workspace/profile browsing context that
+owns the page.
 
 Switching workspace should be instantaneous.
 

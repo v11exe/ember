@@ -266,3 +266,18 @@ test('the new tab search names the quick search too', () => {
   assert.match(js, /window\.ember\.omnibox\.resolve/)
   assert.match(js, /if \(asked !== latest\) return/, 'a stale answer must not win')
 })
+
+test('settings can add, edit, remove, and reset the ordered Favorite rail', () => {
+  const html = read('src', 'renderer', 'pages', 'settings.html')
+  const css = read('src', 'renderer', 'pages', 'settings.css')
+  const js = read('src', 'renderer', 'pages', 'settings.js')
+
+  for (const id of ['favorite-list', 'favorite-new', 'favorite-name', 'favorite-url', 'favorite-reset']) {
+    assert.match(html, new RegExp(`id="${id}"`), id)
+  }
+  assert.match(css, /\.favorite-row/)
+  assert.match(js, /function renderFavorites/)
+  assert.match(js, /api\?\.set\('favorites'/)
+  assert.match(js, /favorite-reset/)
+  assert.match(js, /favorite-remove/)
+})

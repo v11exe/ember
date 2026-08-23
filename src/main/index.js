@@ -30,7 +30,7 @@ const { ThumbnailCache } = require('./tab-thumbnails')
 const { HibernationManager, hostnameOf, sanitiseHibernation } = require('./hibernation')
 const { listBangs, DEFAULT_BANGS } = require('../shared/bangs')
 const { NATIVE_GLASS_DEFAULTS, snapshotNativeGlassSettings } = require('../shared/native-glass')
-const { findFavoriteTab } = require('../shared/favorites')
+const { DEFAULT_FAVORITES, findFavoriteTab } = require('../shared/favorites')
 const { TOPBAR_HEIGHT, viewportBounds } = require('../shared/chrome-layout')
 
 if (process.env.EMBER_SMOKE_USER_DATA) app.setPath('userData', process.env.EMBER_SMOKE_USER_DATA)
@@ -506,6 +506,7 @@ function describeSettings(snapshot) {
     // Which aliases are Ember's own, so the page can offer to restore just
     // those without throwing away shortcuts the reader added.
     bangDefaults: DEFAULT_BANGS.map((entry) => entry.alias),
+    favoriteDefaults: DEFAULT_FAVORITES.map((entry) => ({ ...entry })),
   }
 }
 ipcMain.handle(IPC.SETTINGS_GET, () => (browser ? describeSettings(browser.settings.snapshot()) : null))

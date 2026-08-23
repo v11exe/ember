@@ -24,6 +24,111 @@ const TIMEOUT_OPTIONS = [5, 15, 30, 60, 240].map((minutes) => ({
 
 const detail = document.getElementById('startup-detail')
 const sleepDetail = document.getElementById('hibernation-detail')
+let favoriteList = []
+let favoriteDefaults = []
+
+function favoriteProblem(value) {
+  try {
+    const url = new URL(value)
+    if (/^https?:$/.test(url.protocol)) return ''
+  } catch { /* described below */ }
+  return 'Enter a complete http or https address.'
+}
+
+function showFavoriteError(message) {
+  const error = document.getElementById('favorite-error')
+  error.textContent = message
+  error.hidden = !message
+}
+
+async function saveFavorites(next) {
+  const snapshot = await api?.set('favorites', next)
+  favoriteList = snapshot?.favorites || next
+  renderFavorites()
+}
+
+function favoriteRow(entry, index) {
+  const row = document.createElement('div')
+  row.className = 'favorite-row'
+  const name = document.createElement('input')
+  name.className = 'favorite-name'
+  name.value = entry.name
+  name.setAttribute('aria-label', `Name for ${entry.name}`)
+  const url = document.createElement('input')
+  url.className = 'favorite-url'
+  url.value = entry.url
+  url.spellcheck = false
+  url.setAttribute('aria-label', `Address for ${entry.name}`)
+
+  const commit = async () => {
+    const problem = favoriteProblem(url.value.trim())
+    if (problem) { showFavoriteError(problem); renderFavorites(); return }
+    showFavoriteError('')
+    const next = favoriteList.map((item, itemIndex) => itemIndex === index
+      ? { ...item, name: name.value.trim() || item.name, url: url.value.trim() }
+      : item)
+    await saveFavorites(next)
+  }
+  for (const input of [name, url]) {
+    input.onblur = commit
+    input.onkeydown = (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); input.blur() }
+      if (event.key === 'Escape') { renderFavorites(); showFavoriteError('') }
+    }
+  }
+
+  const move = (label, delta) => {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'favorite-move'
+    button.textContent = label
+    button.disabled = index + delta < 0 || index + delta >= favoriteList.length
+    button.title = delta < 0 ? `Move ${entry.name} up` : `Move ${entry.name} down`
+    button.onclick = () => {
+      const next = [...favoriteList]
+      const [item] = next.splice(index, 1)
+      next.splice(index + delta, 0, item)
+      saveFavorites(next)
+    }
+    return button
+  }
+
+  const remove = document.createElement('button')
+  remove.type = 'button'
+  remove.className = 'favorite-remove'
+  remove.textContent = '×'
+  remove.title = `Remove ${entry.name}`
+  remove.onclick = () => saveFavorites(favoriteList.filter((_item, itemIndex) => itemIndex !== index))
+  row.append(name, url, move('↑', -1), move('↓', 1), remove)
+  return row
+}
+
+function renderFavorites() {
+  document.getElementById('favorite-list').replaceChildren(...favoriteList.map(favoriteRow))
+  document.getElementById('favorite-count').textContent = `${favoriteList.length} of 12 sites`
+}
+
+document.getElementById('favorite-new').onsubmit = (event) => {
+  event.preventDefault()
+  const name = document.getElementById('favorite-name')
+  const url = document.getElementById('favorite-url')
+  const problem = favoriteProblem(url.value.trim())
+  if (problem) { showFavoriteError(problem); return }
+  if (favoriteList.length >= 12) { showFavoriteError('The Favorite rail holds up to 12 sites.'); return }
+  showFavoriteError('')
+  saveFavorites([...favoriteList, {
+    id: `favorite-${Date.now()}`,
+    name: name.value.trim() || new URL(url.value.trim()).hostname.replace(/^www\./, ''),
+    url: url.value.trim(),
+  }])
+  name.value = url.value = ''
+  name.focus()
+}
+
+document.getElementById('favorite-reset').onclick = () => {
+  showFavoriteError('')
+  saveFavorites(favoriteDefaults)
+}
 
 function moveThumb(thumb, active) {
   if (!thumb || !active) return
@@ -353,6 +458,9 @@ async function load() {
   bangList = settings?.bangList || []
   bangDefaults = settings?.bangDefaults || []
   renderBangs()
+  favoriteList = settings?.favorites || []
+  favoriteDefaults = settings?.favoriteDefaults || []
+  renderFavorites()
   document.getElementById('version').textContent = settings?.appVersion ? `Version ${settings.appVersion}` : ''
   glass?.refresh()
   // Each card is a small menu, so it gets the dropdown's sliding lens too.

@@ -109,6 +109,41 @@
 .bang-count { font-size: 12px; color: var(--text-faint); }
 .bang-footer .pill[hidden] { display: none; }
 
+/* ---------- Favorite sites ---------- */
+.favorite-list { margin-top: 13px; display: grid; gap: 5px; }
+.favorite-row {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 7px;
+}
+.favorite-row input {
+  min-width: 0;
+  padding: 6px 9px;
+  border: var(--glass-edge);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: 400 12px/1.35 var(--font);
+}
+.favorite-row input:hover, .favorite-row input:focus { background: var(--glass-hover); }
+.favorite-row input:focus { outline: none; box-shadow: var(--focus-ring); }
+.favorite-url { color: var(--text-dim) !important; }
+.favorite-move, .favorite-remove {
+  width: 24px; height: 24px; padding: 0;
+  border: 0; border-radius: 6px;
+  background: transparent; color: var(--text-faint);
+  font-size: 13px;
+}
+.favorite-move:hover { background: var(--glass-hover); color: var(--text); }
+.favorite-move:disabled { opacity: .24; }
+.favorite-remove:hover { background: var(--ember-deep); color: #fff; }
+.favorite-new { margin-top: 9px; grid-template-columns: 150px minmax(0, 1fr) auto; }
+.favorite-error { margin: 9px 0 0; color: var(--error); font-size: 12px; }
+.favorite-error[hidden] { display: none; }
+.favorite-footer { margin-top: 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.favorite-count { color: var(--text-faint); font-size: 12px; }
+
 /* ---------- never-sleep domains ---------- */
 .domain-chips {
   display: flex; flex-wrap: wrap; justify-content: flex-end;

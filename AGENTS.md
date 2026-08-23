@@ -23,7 +23,7 @@ change.
 ROADMAP.md                     numbered feature source of truth + compatibility guardrails
 README.md                      product description + meaningful completed/upcoming QOL
 src/main/index.js              app bootstrap, BaseWindow, IPC handlers, lifecycle
-src/main/tabs.js               TabManager — create/close/select/layout, CHROME_HEIGHT=84
+src/main/tabs.js               TabManager — lifecycle + shared shell/page view layout
 src/main/extensions.js         Chrome Web Store install + chrome.* APIs
 src/main/{panel,floating-panel}.js
                                bounded dropdown/overlay WebContentsViews
@@ -48,7 +48,7 @@ src/main/{recent-uploads,upload-files,context-menu-model}.js
 src/main/protocol.js           ember:// protocol
 src/main/page-preload.js       sandboxed page bridge, selection + file-input interception
 src/renderer/preload.js        chrome UI contextBridge
-src/renderer/chrome.*          tab strip + toolbar + bookmarks + extension launcher
+src/renderer/chrome.*          unified top shell + Favorite feature rail + tab strip
 src/renderer/theme.css         shared palette/type/motion tokens
 src/renderer/brand.*           canonical Ember branding mounts
 src/renderer/panel-preload.js  dropdown bridge/browser-action injection
@@ -59,7 +59,9 @@ src/renderer/pages/page-glass.js
                                full-page refraction helper
 src/renderer/pages/backdrop-contrast.js
                                light/dark captured-backdrop detection
-src/shared/                    IPC, URLs, bangs, conversions, archive and geometry contracts
+src/shared/{chrome-layout,favorites}.js
+                               shell geometry + ordered Favorite contracts
+src/shared/                    IPC, URLs, bangs, conversions, archive and other contracts
 scripts/smoke.js               Electron boot/integration gate
 scripts/capture-ui.js          visual QA capture utility
 test/                          node:test contracts/integration fixtures
@@ -72,7 +74,8 @@ test/                          node:test contracts/integration fixtures
 - #3 Smart selection conversions — completed.
 - #4 Internet Archive fallback — completed.
 - #5 Arc-style Ctrl+Tab visual switcher — completed.
-- #6–#37 — planned unless `ROADMAP.md` has subsequently been updated.
+- #7 Instant / Favorite sidebar buttons — completed.
+- #6 and #8–#37 — planned unless `ROADMAP.md` has subsequently been updated.
 - #9 Split View is **not** implemented on current main despite an older roadmap
   draft saying otherwise.
 - The recent-file/clipboard upload picker exists, but it is not the full #31
@@ -106,6 +109,13 @@ test/                          node:test contracts/integration fixtures
   Clamp the resulting real popup against its parent window.
 - Dropdowns have their own `WebContentsView`. Do not grow the chrome view over
   the page; that caused the full-page black overlay regression.
+- Unified chrome is a transparent full-window underlay. The active page view is
+  stacked above it at the inset returned by `shared/chrome-layout.js` and uses
+  native `View.setBorderRadius(9)`; future visible-page features must share that
+  contract instead of inventing a second shell inset.
+- The Favorite rail is global and ordered today. It resolves a stored tab id,
+  then a matching site, then creates a tab; selecting a sleeping match must wake
+  it through the ordinary tab lifecycle rather than keeping Favorites alive.
 - Upload/context/switcher/selection overlays use bounded `FloatingPanel`
   infrastructure. Do not replace normal page bounds to fake an overlay.
 - Shortcuts that must work while a webpage owns focus go through
@@ -290,11 +300,11 @@ Newest first. One entry per active/recent unit of work.
 ```
 
 ### 2026-08-23 — Codex — Unified Ember shell and Favorites sidebar
-- **Status / Branch:** in-progress · `feat/ember-shell`
+- **Status / Branch:** in-progress · `feat/ember-unified-shell-impl`
 - **Touches:** `src/{main,renderer,shared}`, `test/`, `scripts/capture-ui.js`,
   `ROADMAP.md`, `README.md`, `AGENTS.md`, `docs/superpowers/`
-- **Summary:** Replacing the conventional two-row chrome with the supplied
-  unified Ember shell, native rounded page viewport, collapsible Favorite-site
+- **Summary:** Replaced the conventional two-row chrome with the supplied unified
+  Ember shell, native rounded page viewport, collapsible editable Favorite-site
   rail, lifecycle-aware tabs and native caption controls.
 - **For the other agent:** preserve the native-glass backdrop pipeline; shell
   geometry will become a shared contract used by every future visible page.
