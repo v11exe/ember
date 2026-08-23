@@ -53,7 +53,7 @@ src/renderer/pages/      newtab, extensions, upload, context-menu, history, down
 src/renderer/pages/liquid-glass-ui.{js,css}  shared page material + selector lens
 src/renderer/pages/page-glass.js  full-page refraction; reuses upload-optics maps
 src/renderer/pages/backdrop-contrast.js  flags light captures so overlays flip palette
-src/shared/              IPC/URL/file-filter/floating-geometry contracts
+src/shared/              IPC/URL/bangs/file-filter/floating-geometry contracts
 scripts/smoke.js         boot check
 scripts/capture-ui.js    offscreen wide/medium/compact visual QA captures
 test/                    node:test unit/contracts + two real popup fixtures
@@ -108,6 +108,12 @@ islands, sidebar outstanding).
   than literal durations, and let the global reduced-motion rule handle opt-out.
 - Omnibox keywords (settings, extensions, history, downloads) resolve in
   `shared/urls.js`, before the bare-domain check, exact single word only.
+- Bangs (`shared/bangs.js`) resolve in the same place. An alias may not contain
+  a dot, slash, colon or space — that is what keeps `yt.com` a site. An explicit
+  `!` outranks an internal page name; a bare keyword does not. The store keeps
+  only the diff against the defaults, removal tombstones included.
+- `.results` is a flex column, so its children need `flex: none` or a page
+  taller than the viewport squashes every card instead of scrolling.
 - `win.setFullScreen()` is a no-op on the transparent frameless window on
   Windows. F11 fills the display bounds by hand and restores them (see
   `fullScreenFrom`).
@@ -272,9 +278,10 @@ Newest at top. One entry per branch, updated in place. Status:
 ```
 
 ### 2026-08-23 — Claude Code — Omnibox bangs / quick searches
-- **Status / Branch:** in-progress · `feat/omnibox-bangs`
+- **Status / Branch:** merged · `main`
 - **Touches:** `src/shared/{bangs,urls}.js`, `src/main/{settings,index}.js`,
-  `src/renderer/pages/settings.{html,css,js}`, `test/bangs.test.js`
+  `src/renderer/pages/settings.{html,css,js}`, `src/renderer/pages/history.css`,
+  `src/renderer/theme.css`, `test/bangs.test.js`
 - **Summary:** Roadmap feature 2. `yt liquid glass` and `!gh electron` resolve
   in the omnibox before the default search, against a built-in table plus a
   fully editable user list stored in settings.
