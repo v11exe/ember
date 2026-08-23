@@ -10,13 +10,7 @@
 </head>
 <body>
   <div class="chrome-shell" id="chrome-shell">
-    <aside class="sidebar shell-material" id="sidebar" aria-label="Favorite sites">
-      <div class="sidebar-content">
-        <div class="favorites" id="favorites"></div>
-      </div>
-    </aside>
-
-    <header class="top-chrome shell-material" id="top-chrome">
+    <header class="top-chrome" id="top-chrome">
       <div class="sidebar-header" id="sidebar-header">
         <button class="brand" id="chrome-brand" title="New tab" aria-label="Open a new tab"></button>
         <button class="sidebar-toggle icon" id="sidebar-toggle" title="Close sidebar" aria-label="Close sidebar" aria-expanded="true">
@@ -45,7 +39,11 @@
           <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M9.5 4v12M4 8h5.5"/></svg>
         </button>
       </div>
-      <div class="caption-safe" aria-hidden="true"></div>
+      <div class="window-controls" aria-label="Window controls">
+        <button id="win-min" class="wc" title="Minimize" aria-label="Minimize"><span class="min-glyph"></span></button>
+        <button id="win-max" class="wc" title="Maximize" aria-label="Maximize"><span class="max-glyph"></span></button>
+        <button id="win-close" class="wc wc-close" title="Close" aria-label="Close"><span class="close-glyph"></span></button>
+      </div>
 
       <form class="omnibox omnibox-transient" id="omnibox-form">
         <span class="omnibox-glyph" id="omnibox-glyph"></span>
@@ -64,9 +62,6 @@
       <button class="import-bookmarks" id="import-bookmarks">Import bookmarks</button>
     </nav>
 
-    <div class="frame-right shell-material" aria-hidden="true"></div>
-    <div class="frame-bottom shell-material" aria-hidden="true"></div>
-    <div class="shell-outline" aria-hidden="true"></div>
   </div>
 
 

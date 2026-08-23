@@ -17,7 +17,7 @@ const DEFAULT_FAVORITES = Object.freeze([
     id: 'google-calendar',
     name: 'Google Calendar',
     url: 'https://calendar.google.com/',
-    icon: 'https://calendar.google.com/favicon.ico',
+    icon: 'https://calendar.google.com/googlecalendar/images/favicons_2020q4/calendar_31.ico',
   }),
 ])
 
@@ -87,4 +87,3 @@ module.exports = {
   sameFavoriteSite,
   findFavoriteTab,
 }
-

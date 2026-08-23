@@ -1,0 +1,21 @@
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.frame-surface { width: 100%; height: 100%; }
+
+body[data-axis="right"] .frame-surface {
+  border-radius: 0 0 8px 0;
+  background: linear-gradient(180deg, #15100e 0%, #15100e 70%, #21130d 84%, #542006 95%, #a43c03 100%);
+}
+
+body[data-axis="bottom"] .frame-surface {
+  border-radius: 0 0 8px 0;
+  background: linear-gradient(90deg, #15100e 0%, #15100e 70%, #21130d 84%, #542006 95%, #a43c03 100%);
+}
+
+body.maximized .frame-surface { border-radius: 0; }

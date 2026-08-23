@@ -1,115 +1,74 @@
 :root {
-  --sidebar-width: 170px;
+  --sidebar-width: 168px;
   --sidebar-collapsed-width: 8px;
-  --sidebar-header-width: 170px;
-  --topbar-height: 52px;
+  --sidebar-header-width: 168px;
+  --topbar-height: 32px;
   --outer-radius: 12px;
-  --viewport-radius: 9px;
+  --viewport-radius: 12px;
   --shell-inset: 8px;
-  --tab-height: 40px;
-  --tab-radius: 7px;
+  --tab-height: 28px;
+  --tab-radius: 6px;
   --tab-gap: 8px;
   --tab-max-width: 190px;
   --tab-min-width: 95px;
   --caption-width: 138px;
   --ember-orange: #FF6000;
   --shell-material:
-    radial-gradient(circle at 3% 2%, rgba(255, 103, 0, .82) 0%, rgba(170, 55, 0, .48) 15%, rgba(74, 28, 10, .22) 31%, transparent 49%),
-    radial-gradient(circle at 2% 66%, rgba(107, 35, 5, .24), transparent 36%),
-    linear-gradient(108deg, #3b190b 0%, #23120d 29%, #171111 61%, #101010 100%);
+    radial-gradient(ellipse 26% 500% at 0% 0%, rgba(255, 96, 0, .48) 0%, rgba(164, 60, 3, .30) 27%, rgba(84, 32, 6, .12) 56%, transparent 74%),
+    linear-gradient(100deg, #542006 0%, #3b1b08 11%, #29150d 24%, #201311 42%, #1b1210 70%, #111111 100%);
 }
 
 html, body { width: 100%; height: 100%; }
-body { overflow: hidden; background: transparent; user-select: none; }
-button, input { -webkit-app-region: no-drag; }
+body {
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+button, input, .top-navigation, .tabstrip, .top-actions,
+.window-controls, .omnibox-transient, .bookmarks-bar {
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
 
 .chrome-shell {
   position: fixed;
   inset: 0;
   overflow: hidden;
-  border-radius: var(--outer-radius);
+  border-radius: var(--outer-radius) var(--outer-radius) 0 0;
   background: transparent;
   -electron-corner-smoothing: 75%;
 }
-.chrome-shell.maximized { border-radius: 0; }
+.chrome-shell.maximized { inset: 0; border-radius: 0; }
 
-.shell-material {
-  background-image: var(--shell-material);
-  background-size: 100vw 100vh;
-  background-attachment: fixed;
-}
-
-.shell-outline {
-  position: absolute;
-  inset: 1px;
-  z-index: 20;
-  pointer-events: none;
-  border: 1px solid rgba(0, 0, 0, .72);
-  border-radius: calc(var(--outer-radius) - 1px);
-  box-shadow: inset 0 0 0 1px rgba(255, 91, 0, .14);
-}
-.shell-outline::after {
-  content: "";
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(135deg, rgba(255, 100, 0, .68), rgba(255, 91, 0, .12) 39%, rgba(255, 91, 0, .06) 70%, rgba(255, 91, 0, .42));
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-}
-.chrome-shell.maximized .shell-outline { inset: 0; border-radius: 0; }
-
-.sidebar {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: var(--sidebar-width);
-  overflow: hidden;
-  z-index: 1;
-  transition: width 210ms cubic-bezier(.2, .8, .2, 1);
-}
-.sidebar-content {
-  width: 170px;
-  padding: calc(var(--topbar-height) + 38px) 11px 16px;
-  opacity: 1;
-  transform: translateX(0);
-  transition: opacity 130ms ease, transform 210ms cubic-bezier(.2, .8, .2, 1);
-}
 .sidebar-closed {
   --sidebar-width: var(--sidebar-collapsed-width);
-  --sidebar-header-width: 78px;
+  --sidebar-header-width: 94px;
 }
-.sidebar-closed .sidebar-content { opacity: 0; transform: translateX(-12px); pointer-events: none; }
 
 .top-chrome {
   position: absolute;
-  inset: 0 0 auto 0;
+  inset: 0;
   height: var(--topbar-height);
   z-index: 4;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   padding: 0;
-  -webkit-app-region: drag;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+  isolation: isolate;
 }
-
-.frame-right {
+.top-chrome::before {
+  content: "";
   position: absolute;
-  z-index: 2;
-  top: var(--topbar-height);
-  right: 0;
-  bottom: 0;
-  width: var(--shell-inset);
-}
-.frame-bottom {
-  position: absolute;
-  z-index: 2;
-  left: var(--sidebar-width);
-  right: 0;
-  bottom: 0;
-  height: var(--shell-inset);
-  transition: left 210ms cubic-bezier(.2, .8, .2, 1);
+  z-index: -1;
+  inset: 0;
+  background-image: var(--shell-material);
+  background-size: 100vw 100vh;
+  background-attachment: fixed;
+  pointer-events: none;
 }
 
 .sidebar-header {
@@ -118,15 +77,15 @@ button, input { -webkit-app-region: no-drag; }
   flex: none;
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 0 11px;
+  gap: 2px;
+  padding: 0 14px;
   overflow: hidden;
   transition: width 210ms cubic-bezier(.2, .8, .2, 1);
   -webkit-app-region: no-drag;
 }
 .brand {
-  width: 24px;
-  height: 34px;
+  width: 34px;
+  height: 28px;
   flex: none;
   display: grid;
   place-items: center;
@@ -135,30 +94,8 @@ button, input { -webkit-app-region: no-drag; }
   background: transparent;
   border-radius: 6px;
 }
-.brand .ember-chrome-icon { width: 21px; height: 21px; opacity: .92; }
+.brand .ember-chrome-icon { width: 31px; height: auto; opacity: .92; }
 .brand:hover { background: rgba(255, 255, 255, .07); }
-
-.favorites {
-  display: grid;
-  grid-template-columns: repeat(2, 70px);
-  grid-auto-rows: 48px;
-  gap: 10px 8px;
-}
-.favorite {
-  width: 70px;
-  height: 48px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(255, 255, 255, .025);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, .075);
-  color: rgba(255, 255, 255, .84);
-  transition: background 130ms ease, transform 130ms ease, border-color 130ms ease;
-}
-.favorite:hover { background: rgba(255, 255, 255, .13); }
-.favorite:active { transform: scale(.97); }
-.favorite.active { background: rgba(255, 255, 255, .18); border-color: rgba(255, 255, 255, .055); }
-.favorite img { width: 20px; height: 20px; object-fit: contain; }
 
 .top-navigation {
   height: 100%;
@@ -169,8 +106,8 @@ button, input { -webkit-app-region: no-drag; }
   -webkit-app-region: no-drag;
 }
 .icon {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   flex: none;
   display: grid;
   place-items: center;
@@ -181,7 +118,7 @@ button, input { -webkit-app-region: no-drag; }
   color: rgba(255, 255, 255, .82);
   transition: background 120ms ease, color 120ms ease, transform 120ms ease;
 }
-.icon svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.55; stroke-linecap: round; stroke-linejoin: round; }
+.icon svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.45; stroke-linecap: round; stroke-linejoin: round; }
 .icon:hover { background: rgba(255, 255, 255, .07); color: rgba(255, 255, 255, 1); }
 .icon:active { transform: scale(.93); }
 .icon[disabled] { opacity: .34; }
@@ -216,14 +153,14 @@ button, input { -webkit-app-region: no-drag; }
   flex: 0 1 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 11px;
+  gap: 7px;
+  padding: 0 9px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, .035);
   border-radius: var(--tab-radius);
   background: rgba(255, 255, 255, .075);
   color: rgba(255, 255, 255, .70);
-  font-size: 13.5px;
+  font-size: 12.5px;
   font-weight: 400;
   cursor: default;
   -webkit-app-region: no-drag;
@@ -242,7 +179,8 @@ button, input { -webkit-app-region: no-drag; }
   color: rgba(255, 255, 255, .43);
 }
 .tab.asleep .tab-favicon { filter: grayscale(1); opacity: .5; }
-.tab-favicon { width: 19px; height: 19px; flex: none; border-radius: 4px; object-fit: contain; }
+.tab-favicon { width: 16px; height: 16px; flex: none; border-radius: 4px; object-fit: contain; }
+.tab-favicon.newtab-favicon { width: 24px; height: 15px; border-radius: 0; }
 .tab-title {
   display: block;
   min-width: 0;
@@ -306,8 +244,8 @@ button, input { -webkit-app-region: no-drag; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .tab-new {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   flex: none;
   padding: 0;
   border: 0;
@@ -320,9 +258,45 @@ button, input { -webkit-app-region: no-drag; }
 .tab-new:hover { background: rgba(255, 255, 255, .07); }
 .tab-new:active { transform: scale(.92); }
 
-.drag-fill { flex: 1 1 auto; min-width: 96px; height: 100%; -webkit-app-region: drag; }
+.drag-fill { flex: 1 1 auto; min-width: 96px; height: 100%; app-region: no-drag; -webkit-app-region: no-drag; }
 .top-actions { flex: none; display: flex; align-items: center; gap: 2px; -webkit-app-region: no-drag; }
-.caption-safe { width: var(--caption-width); height: 100%; flex: none; pointer-events: none; }
+.window-controls {
+  width: var(--caption-width);
+  height: 100%;
+  flex: none;
+  display: flex;
+  overflow: hidden;
+  border-radius: 0 var(--outer-radius) 0 0;
+  -webkit-app-region: no-drag;
+}
+.wc {
+  position: relative;
+  width: 46px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, .82);
+}
+.wc:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+.wc-close:hover { background: #c42b1c; }
+.min-glyph { width: 10px; height: 1px; background: currentColor; }
+.max-glyph { width: 10px; height: 10px; border: 1px solid currentColor; }
+.close-glyph { width: 11px; height: 11px; position: relative; }
+.close-glyph::before, .close-glyph::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 0;
+  width: 1px;
+  height: 12px;
+  background: currentColor;
+}
+.close-glyph::before { transform: rotate(45deg); }
+.close-glyph::after { transform: rotate(-45deg); }
+.chrome-shell.maximized .window-controls { border-radius: 0; }
 .app-action.open { background: rgba(255, 255, 255, .09); color: #fff; }
 .archive-btn[hidden] { display: none; }
 .archive-btn { color: rgba(255, 119, 34, .92); }
@@ -331,10 +305,10 @@ button, input { -webkit-app-region: no-drag; }
 .omnibox-transient {
   position: absolute;
   z-index: 12;
-  top: 8px;
+  top: 2px;
   left: calc(var(--sidebar-header-width) + 112px);
   right: calc(var(--caption-width) + 44px);
-  height: 36px;
+  height: 28px;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -398,5 +372,5 @@ button, input { -webkit-app-region: no-drag; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sidebar, .sidebar-content, .sidebar-header, .frame-bottom, .bookmarks-bar { transition-duration: .001ms; }
+  .sidebar-header, .bookmarks-bar { transition-duration: .001ms; }
 }

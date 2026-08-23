@@ -17,6 +17,7 @@ test('the target three Favorite sites are the persisted defaults', () => {
   ])
   assert.deepEqual(sanitiseFavorites(undefined), DEFAULT_FAVORITES)
   assert.notEqual(sanitiseFavorites(undefined), DEFAULT_FAVORITES, 'callers receive a mutable copy')
+  assert.match(DEFAULT_FAVORITES[2].icon, /googlecalendar\/images\/favicons/)
 })
 
 test('stored Favorites are validated, de-duplicated by site, and capped', () => {
@@ -54,4 +55,3 @@ test('opening a Favorite reuses even a sleeping matching tab', () => {
   assert.equal(findFavoriteTab(tabs, 'https://www.youtube.com/'), 4)
   assert.equal(findFavoriteTab(tabs, 'https://calendar.google.com/'), null)
 })
-

@@ -1,0 +1,20 @@
+html, body, .corner-mask {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+body[data-corner="top-left"] .corner-mask {
+  background: radial-gradient(circle at 100% 100%, transparent 0 10.75px, rgba(92, 34, 5, .42) 11.35px, #5c2205 12px);
+}
+body[data-corner="top-right"] .corner-mask {
+  background: radial-gradient(circle at 0 100%, transparent 0 10.75px, rgba(21, 16, 14, .42) 11.35px, #15100e 12px);
+}
+body[data-corner="bottom-left"] .corner-mask {
+  background: radial-gradient(circle at 100% 0, transparent 0 10.75px, rgba(21, 16, 14, .42) 11.35px, #15100e 12px);
+}
+body[data-corner="bottom-right"] .corner-mask {
+  background: radial-gradient(circle at 0 0, transparent 0 10.75px, rgba(164, 60, 3, .42) 11.35px, #a43c03 12px);
+}

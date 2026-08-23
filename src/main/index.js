@@ -31,7 +31,7 @@ const { HibernationManager, hostnameOf, sanitiseHibernation } = require('./hiber
 const { listBangs, DEFAULT_BANGS } = require('../shared/bangs')
 const { NATIVE_GLASS_DEFAULTS, snapshotNativeGlassSettings } = require('../shared/native-glass')
 const { DEFAULT_FAVORITES, findFavoriteTab } = require('../shared/favorites')
-const { TOPBAR_HEIGHT, viewportBounds } = require('../shared/chrome-layout')
+const { TOPBAR_HEIGHT, OUTER_RADIUS, viewportBounds } = require('../shared/chrome-layout')
 
 if (process.env.EMBER_SMOKE_USER_DATA) app.setPath('userData', process.env.EMBER_SMOKE_USER_DATA)
 registerSchemePrivileges()
@@ -39,6 +39,11 @@ registerSchemePrivileges()
 /** @type {{ win: BaseWindow, chrome: WebContentsView, tabs: TabManager, uploadPanel: UploadPanel, contextMenu: ContextMenuPanel, nativeBackdrop: NativeBackdrop }|null} */
 let browser = null
 const browsers = new Set()
+const windowDrags = new Map()
+
+function browserFromChromeSender(sender) {
+  return [...browsers].find((candidate) => candidate.chrome?.webContents === sender) || null
+}
 
 /** The chrome view keeps its own copy so the omnibox can match as you type. */
 function broadcastBangs(target = browser) {
@@ -54,13 +59,25 @@ function chromeConfig(target = browser) {
 }
 
 function broadcastChromeConfig(target = browser) {
-  if (!target || target.chrome.webContents.isDestroyed()) return
-  target.chrome.webContents.send(IPC.CHROME_CONFIG_CHANGED, chromeConfig(target))
+  if (!target) return
+  for (const view of [target.chrome, target.sidebarView]) {
+    if (view && !view.webContents.isDestroyed()) view.webContents.send(IPC.CHROME_CONFIG_CHANGED, chromeConfig(target))
+  }
 }
 
 function broadcastWindowState(target = browser) {
   if (!target || target.chrome.webContents.isDestroyed()) return
-  target.chrome.webContents.send(IPC.WIN_STATE, { maximized: target.win.isMaximized() })
+  const state = { maximized: target.win.isMaximized() }
+  for (const view of [target.chrome, target.sidebarView]) {
+    if (view && !view.webContents.isDestroyed()) view.webContents.send(IPC.WIN_STATE, state)
+  }
+  for (const view of Object.values(target.frameViews || {})) {
+    if (view?.webContents && !view.webContents.isDestroyed()) {
+      void view.webContents.executeJavaScript(
+        `document.body.classList.toggle('maximized', ${state.maximized})`,
+      ).catch(() => null)
+    }
+  }
 }
 
 function broadcastBookmarks(snapshot) {
@@ -85,18 +102,14 @@ function createBrowser({ privateMode = false } = {}) {
     minHeight: 420,
     frame: false,
     transparent: true,
-    titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: '#1A1210',
-      symbolColor: '#F2F2F2',
-      height: TOPBAR_HEIGHT,
-    },
     roundedCorners: true,
     hasShadow: true,
     icon: path.join(__dirname, '..', 'renderer', 'assets', 'ember-app-icon.png'),
     backgroundColor: '#00000000',
     title: 'Ember',
   })
+  const syncOuterRadius = () => win.contentView.setBorderRadius(win.isMaximized() ? 0 : OUTER_RADIUS)
+  syncOuterRadius()
   const nativeBackdrop = new NativeBackdrop(win, { userDataPath: app.getPath('userData') })
 
   const chrome = new WebContentsView({
@@ -111,11 +124,47 @@ function createBrowser({ privateMode = false } = {}) {
   win.contentView.addChildView(chrome)
   chrome.webContents.loadFile(path.join(__dirname, '..', 'renderer', 'chrome.html'))
 
+  const sidebarView = new WebContentsView({
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      preload: path.join(__dirname, '..', 'renderer', 'preload.js'),
+    },
+  })
+  sidebarView.setBackgroundColor('#00000000')
+  win.contentView.addChildView(sidebarView)
+  sidebarView.webContents.loadFile(path.join(__dirname, '..', 'renderer', 'sidebar.html'))
+
+  const createFrameView = (axis) => {
+    const view = new WebContentsView({
+      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    })
+    view.setBackgroundColor('#00000000')
+    view.webContents.loadFile(path.join(__dirname, '..', 'renderer', 'frame.html'), { query: { axis } })
+    win.contentView.addChildView(view)
+    return view
+  }
+  const frameRight = createFrameView('right')
+  const frameBottom = createFrameView('bottom')
+  const pageCornerMasks = ['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((corner) => {
+    const view = new WebContentsView({
+      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    })
+    view.setBackgroundColor('#00000000')
+    view.webContents.loadFile(path.join(__dirname, '..', 'renderer', 'corner-mask.html'), { query: { corner } })
+    win.contentView.addChildView(view)
+    return { corner, view }
+  })
+
   const thumbnails = new ThumbnailCache()
   const tabs = new TabManager(win, chrome, {
     thumbnails,
     partition: privateMode ? 'persist:ember-private' : undefined,
     sidebarOpen: settings.get('sidebarOpen'),
+    sidebarView,
+    frameViews: { right: frameRight, bottom: frameBottom },
+    pageCornerMasks,
   })
   const panel = new ExtensionPanel(win)
   const bookmarks = new BookmarkStore(path.join(app.getPath('userData'), 'bookmarks.json'))
@@ -162,7 +211,7 @@ function createBrowser({ privateMode = false } = {}) {
   })
 
   const self = {
-    win, chrome, tabs, panel, bookmarks, history, downloads, settings, sessionStore, thumbnails, hibernation,
+    win, chrome, sidebarView, frameViews: { right: frameRight, bottom: frameBottom }, tabs, panel, bookmarks, history, downloads, settings, sessionStore, thumbnails, hibernation,
     sessionPrompt: new SessionPrompt(win), closing: false, recentUploads, recentUploadsReady,
     uploadPanel, contextMenu, selection, rates, archive, switcher, smokeClipboard, smokeUploadPaths, nativeBackdrop, popupPositioner: null,
     privateMode, fullScreenFrom: null,
@@ -265,6 +314,10 @@ function createBrowser({ privateMode = false } = {}) {
     tabs.layout()
     hibernation.start()
   })
+  sidebarView.webContents.once('did-finish-load', () => {
+    tabs.emit()
+    broadcastChromeConfig(self)
+  })
 
   win.on('resize', () => {
     tabs.layout(); panel.layout(); uploadPanel.layout(); contextMenu.layout(); selection.layout()
@@ -272,8 +325,8 @@ function createBrowser({ privateMode = false } = {}) {
     browser?.popupPositioner?.layout()
     browser?.sessionPrompt?.layout(); rememberGeometry()
   })
-  win.on('maximize', () => broadcastWindowState(self))
-  win.on('unmaximize', () => broadcastWindowState(self))
+  win.on('maximize', () => { syncOuterRadius(); broadcastWindowState(self) })
+  win.on('unmaximize', () => { syncOuterRadius(); broadcastWindowState(self) })
   win.on('move', () => rememberGeometry())
 
   function rememberGeometry() {
@@ -612,6 +665,27 @@ ipcMain.on(IPC.WIN_MAXIMIZE, () => {
   win.isMaximized() ? win.unmaximize() : win.maximize()
 })
 ipcMain.on(IPC.WIN_CLOSE, () => browser?.win.close())
+ipcMain.on(IPC.WIN_DRAG_START, (event, point = {}) => {
+  const target = browserFromChromeSender(event.sender)
+  if (!target || target.win.isMaximized()) return
+  const x = Number(point.x)
+  const y = Number(point.y)
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return
+  const [windowX, windowY] = target.win.getPosition()
+  windowDrags.set(event.sender.id, { target, pointerX: x, pointerY: y, windowX, windowY })
+})
+ipcMain.on(IPC.WIN_DRAG_MOVE, (event, point = {}) => {
+  const drag = windowDrags.get(event.sender.id)
+  if (!drag || drag.target.win.isDestroyed()) return
+  const x = Number(point.x)
+  const y = Number(point.y)
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return
+  drag.target.win.setPosition(
+    Math.round(drag.windowX + x - drag.pointerX),
+    Math.round(drag.windowY + y - drag.pointerY),
+  )
+})
+ipcMain.on(IPC.WIN_DRAG_END, (event) => windowDrags.delete(event.sender.id))
 
 // ---------------- app lifecycle ----------------
 function openInternal(url) {

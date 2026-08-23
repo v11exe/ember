@@ -58,26 +58,60 @@ test('browser chrome is one unified Ember shell rather than the old permanent to
   const html = read('src', 'renderer', 'chrome.html')
   const css = read('src', 'renderer', 'chrome.css')
   const js = read('src', 'renderer', 'chrome.js')
+  const preload = read('src', 'renderer', 'preload.js')
 
-  for (const id of ['sidebar', 'sidebar-toggle', 'favorites', 'top-chrome', 'top-navigation', 'tabstrip', 'ext-btn']) {
+  for (const id of ['sidebar-toggle', 'top-chrome', 'top-navigation', 'tabstrip', 'ext-btn', 'win-min', 'win-max', 'win-close']) {
     assert.match(html, new RegExp(`id="${id}"`), id)
   }
   assert.doesNotMatch(html, /class="toolbar"/)
   assert.doesNotMatch(html, /id="bookmarks-toggle"/)
-  assert.doesNotMatch(html, /id="win-(?:min|max|close)"/)
+  assert.match(js, /window\.ember\.minimize\(\)/)
+  assert.match(js, /window\.ember\.maximize\(\)/)
+  assert.match(js, /window\.ember\.close\(\)/)
   assert.match(html, /class="omnibox omnibox-transient"/, 'Ctrl+L survives as a transient surface')
 
   for (const token of ['--sidebar-width', '--topbar-height', '--outer-radius', '--viewport-radius', '--shell-inset', '--tab-height', '--tab-max-width', '--tab-min-width', '--ember-orange']) {
     assert.match(css, new RegExp(token))
   }
   assert.match(css, /radial-gradient[\s\S]+linear-gradient/, 'shell uses a smouldering compound gradient')
-  assert.match(css, /\.frame-right[\s\S]+\.frame-bottom/)
-  assert.match(css, /-webkit-app-region:\s*drag/)
+  assert.doesNotMatch(html, /shell-outline/, 'shell has no segmented orange outline overlay')
+  assert.doesNotMatch(css, /\.shell-outline/, 'shell has no segmented orange outline styling')
   assert.match(css, /-webkit-app-region:\s*no-drag/)
-  assert.match(css, /\.sidebar[\s\S]+transition:[^}]*width\s+210ms/)
+  assert.match(css, /(?:^|[;{])\s*app-region:\s*no-drag/m)
+  assert.match(js, /pointerdown/)
+  assert.match(js, /beginWindowDrag/)
+  assert.match(js, /updateWindowDrag/)
+  assert.match(js, /endWindowDrag/)
+  assert.match(preload, /WIN_DRAG_START/)
   assert.match(js, /getChromeConfig/)
-  assert.match(js, /openFavorite/)
   assert.match(js, /setSidebarOpen/)
+})
+
+test('Favorite rail renders in a separate bounded view so native glass stays visible', () => {
+  const html = read('src', 'renderer', 'sidebar.html')
+  const css = read('src', 'renderer', 'sidebar.css')
+  const js = read('src', 'renderer', 'sidebar.js')
+  const main = read('src', 'main', 'index.js')
+  const frameCss = read('src', 'renderer', 'frame.css')
+  const cornerCss = read('src', 'renderer', 'corner-mask.css')
+  assert.match(html, /id="favorites"/)
+  assert.match(css, /\.sidebar-surface/)
+  assert.match(css, /border-radius:\s*12px\s+0\s+0\s+12px/)
+  assert.match(css, /radial-gradient[\s\S]+linear-gradient/, 'sidebar continues the same upper-left shell material')
+  assert.match(js, /openFavorite/)
+  assert.match(js, /sameFavoriteSite/)
+  assert.match(js, /onWindowState/)
+  assert.match(main, /sidebarView/)
+  assert.match(main, /contentView\.setBorderRadius/)
+  assert.match(main, /frame\.html/)
+  assert.match(frameCss, /linear-gradient/)
+  assert.match(frameCss, /border-radius:\s*0\s+0\s+8px\s+0/)
+  assert.match(frameCss, /\.maximized\s+\.frame-surface/)
+  assert.match(frameCss, /#a43c03/i, 'clipped frame carries the restrained lower-right ember')
+  assert.match(main, /pageCornerMasks/)
+  assert.match(cornerCss, /radial-gradient/)
+  assert.match(cornerCss, /transparent/)
+  assert.doesNotMatch(css, /\.sidebar-surface\s*\{[^}]*border-(?:left|bottom)/s)
 })
 
 test('tab lifecycle states use natural widths, measured fades, and hover-only close controls', () => {
@@ -115,6 +149,8 @@ test('New Tab uses the white-stroke chrome mark while pages retain their favicon
   const js = read('src', 'renderer', 'chrome.js')
   assert.match(js, /window\.EmberBrand\.CHROME_ICON_ASSET/)
   assert.match(js, /tab\.favicon/)
+  assert.match(js, /function assetUrl/)
+  assert.match(js, /img\.src = tab\.favicon \|\| assetUrl\(fallback\)/)
 })
 
 test('upload picker is a real glass overlay with browse, clipboard, and recent actions', () => {

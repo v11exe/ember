@@ -471,7 +471,7 @@ Favorites should feel like persistent shortcuts to important browser application
 
 ### Completion / compatibility guardrails
 
-Implemented with Ember's unified 52px shell, a collapsible 170px feature rail,
+Implemented with Ember's Arc-calibrated 32px shell, a collapsible 168px feature rail,
 ordered persistent Favorites, settings-based add/edit/reorder/remove/reset, and
 existing-tab reuse that also wakes hibernated Favorite tabs without making them
 permanent renderer consumers.
@@ -481,10 +481,15 @@ Preserve these rules:
 - Favorites are feature shortcuts, never a second tab strip. Their selected
   appearance derives from the active tab's site while the real tab remains in
   Ember's horizontal tab system.
-- Shell and page geometry come from `shared/chrome-layout.js`. The chrome view
-  stays a transparent full-window underlay and the active page is a separately
-  rounded native view above it; do not restore a permanent toolbar by expanding
-  the chrome view over page content.
+- Shell and page geometry come from `shared/chrome-layout.js`. Top chrome,
+  Favorite rail and 8px perimeter gradients are separate bounded views; none
+  sits beneath the transparent page. Four anti-aliased 12px radial overlays clip
+  page corners reliably on Windows, where native View radius clipping is not
+  effective for WebContents pixels.
+- Collapse keeps an 8px Ember rail and interpolates sidebar, page and frame
+  bounds together for 210ms. Blank top-row dragging uses a pointer-captured IPC
+  bridge because CSS caption regions on child WebContentsViews expose only a
+  narrow strip through BaseWindow on Windows.
 - Sidebar open/closed state and Favorite order are user preferences. A Favorite
   resolves by stored tab id first, then same-site reuse, then creation, so a
   sleeping match wakes through normal `tabs.select()` lifecycle behavior.

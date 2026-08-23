@@ -48,7 +48,9 @@ src/main/{recent-uploads,upload-files,context-menu-model}.js
 src/main/protocol.js           ember:// protocol
 src/main/page-preload.js       sandboxed page bridge, selection + file-input interception
 src/renderer/preload.js        chrome UI contextBridge
-src/renderer/chrome.*          unified top shell + Favorite feature rail + tab strip
+src/renderer/chrome.*          unified 32px top shell + tab strip + caption controls
+src/renderer/{sidebar,frame,corner-mask}.*
+                               bounded Favorite rail, perimeter gradients + page clipping
 src/renderer/theme.css         shared palette/type/motion tokens
 src/renderer/brand.*           canonical Ember branding mounts
 src/renderer/panel-preload.js  dropdown bridge/browser-action injection
@@ -109,10 +111,18 @@ test/                          node:test contracts/integration fixtures
   Clamp the resulting real popup against its parent window.
 - Dropdowns have their own `WebContentsView`. Do not grow the chrome view over
   the page; that caused the full-page black overlay regression.
-- Unified chrome is a transparent full-window underlay. The active page view is
-  stacked above it at the inset returned by `shared/chrome-layout.js` and uses
-  native `View.setBorderRadius(9)`; future visible-page features must share that
-  contract instead of inventing a second shell inset.
+- Unified chrome is split into bounded top, sidebar and 8px frame views; none may
+  sit underneath a transparent page, because Windows composites that path black.
+  Page bounds come from `shared/chrome-layout.js`; four 12px transparent radial
+  corner overlays provide reliable anti-aliased clipping because Electron's
+  native `View.setBorderRadius()` does not clip Windows WebContents pixels.
+- A child `WebContentsView` does not export a reliable full-height CSS caption
+  region through `BaseWindow` on Windows. Blank top-chrome dragging therefore
+  uses the pointer-captured `win:drag-*` bridge; keep interactive controls out of
+  that target set.
+- Sidebar collapse interpolates sidebar, page and bottom-frame bounds together
+  on 16ms ticks for 210ms. Do not restore Electron's platform `animate` bounds
+  option: it is not frame-synchronous on Windows and made native glass jump.
 - The Favorite rail is global and ordered today. It resolves a stored tab id,
   then a matching site, then creates a tab; selecting a sleeping match must wake
   it through the ordinary tab lifecycle rather than keeping Favorites alive.
@@ -304,10 +314,10 @@ Newest first. One entry per active/recent unit of work.
 - **Touches:** `src/{main,renderer,shared}`, `test/`, `scripts/capture-ui.js`,
   `ROADMAP.md`, `README.md`, `AGENTS.md`, `docs/superpowers/`
 - **Summary:** Replaced the conventional two-row chrome with the supplied unified
-  Ember shell, native rounded page viewport, collapsible editable Favorite-site
-  rail, lifecycle-aware tabs and native caption controls.
-- **For the other agent:** preserve the native-glass backdrop pipeline; shell
-  geometry will become a shared contract used by every future visible page.
+  Ember shell, anti-aliased rounded page viewport, smoothly collapsible editable
+  Favorite-site rail, lifecycle-aware tabs and custom caption controls.
+- **For the other agent:** preserve the native-glass backdrop pipeline and keep
+  every chrome surface bounded away from the transparent page centre.
 
 ### 2026-08-23 — Claude Code — Omnibox quick-search refinement
 - **Status / Branch:** merged · `main`

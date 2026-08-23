@@ -12,7 +12,7 @@ registerSchemePrivileges()
 
 const output = path.resolve(process.argv[2] || 'visual-qa')
 const sizes = [
-  { name: 'wide', width: 1280, height: 736 },
+  { name: 'wide', width: 1570, height: 796 },
   { name: 'medium', width: 900, height: 556 },
   { name: 'compact', width: 620, height: 336 },
 ]
@@ -71,7 +71,7 @@ async function captureChrome(size) {
   const win = new BrowserWindow({
     show: false,
     width: size.width,
-    height: 114,
+    height: size.height,
     frame: false,
     webPreferences: {
       offscreen: true,
@@ -80,34 +80,66 @@ async function captureChrome(size) {
   const renderer = path.join(__dirname, '..', 'src', 'renderer')
   const source = await fs.readFile(path.join(renderer, 'chrome.html'), 'utf8')
   const preview = source
+    .replace(/\s*<meta http-equiv="Content-Security-Policy"[^>]+>/, '')
     .replace('<head>', `<head><base href="${pathToFileURL(renderer + path.sep).href}">`)
     .replace('<script src="chrome.js"></script>', '')
   const previewFile = path.join(output, 'chrome-preview.html')
   await fs.writeFile(previewFile, preview, 'utf8')
   await win.loadFile(previewFile)
   await win.webContents.executeJavaScript(`(() => {
-    EmberBrand.mountIcon(document.getElementById('chrome-brand'))
-    const bar = document.getElementById('bookmarks-bar')
-    bar.hidden = false
-    document.getElementById('bookmarks-toggle').setAttribute('aria-pressed', 'true')
-    const items = document.getElementById('bookmarks-items')
-    const add = (title, folder = false) => {
+    EmberBrand.mountChromeIcon(document.getElementById('chrome-brand'))
+
+    const page = document.createElement('div')
+    page.className = 'qa-page'
+    page.style.cssText = 'position:fixed;left:168px;top:32px;right:8px;bottom:8px;border-radius:12px;background:radial-gradient(circle at 18% 20%,#6b1e10,transparent 29%),radial-gradient(circle at 65% 55%,#3e2630,transparent 34%),linear-gradient(135deg,#100b0b,#050506);box-shadow:inset 0 0 120px #000;'
+    document.body.prepend(page)
+
+    const sidebar = document.createElement('aside')
+    sidebar.className = 'qa-sidebar'
+    sidebar.style.cssText = 'position:fixed;z-index:1;inset:0 auto 0 0;width:168px;padding:34px 9px 8px;display:grid;grid-template-columns:repeat(2,69px);grid-auto-rows:43px;align-content:start;gap:10px;border-radius:12px 0 0 12px;background:radial-gradient(ellipse 245px 205px at 0 0,rgba(255,96,0,.4),transparent 74%),linear-gradient(180deg,transparent,rgba(10,8,8,.8)),linear-gradient(100deg,#542006,#29150d);'
+    document.body.prepend(sidebar)
+
+    const favorites = [
+      ['Google', 'https://www.google.com/favicon.ico'],
+      ['YouTube', 'https://www.youtube.com/favicon.ico'],
+      ['Calendar', 'https://calendar.google.com/favicon.ico'],
+    ]
+    for (const [title, icon] of favorites) {
       const button = document.createElement('button')
-      button.className = 'bookmark-item ' + (folder ? 'bookmark-folder' : 'bookmark-link')
-      const label = document.createElement('span')
-      label.textContent = title
-      button.append(label)
-      items.append(button)
+      button.className = 'favorite'
+      button.title = title
+      button.style.cssText = 'width:69px;height:43px;display:grid;place-items:center;padding:0;border:1px solid rgba(255,255,255,.025);border-radius:7px;background:rgba(255,255,255,.075);'
+      button.innerHTML = '<img alt="" src="' + icon + '">'
+      sidebar.append(button)
     }
-    add('Ember'); add('Documentation with a long title'); add('Reference', true)
+
+    const tabs = [
+      ['YouTube', 'https://www.youtube.com/favicon.ico', 'asleep'],
+      ['New Tab', '/assets/icon-white-stroke.png', 'active'],
+      ['GitHub', 'https://github.com/favicon.ico', ''],
+      ['Google', 'https://www.google.com/favicon.ico', ''],
+      ['Google - Google Search', 'https://www.google.com/favicon.ico', ''],
+    ]
+    for (const [title, icon, state] of tabs) {
+      const tab = document.createElement('button')
+      tab.className = 'tab ' + state
+      tab.innerHTML = '<img class="tab-favicon" alt="" src="' + icon + '">' +
+        '<span class="tab-title">' + title + '</span>' +
+        (state === 'asleep' ? '<span class="tab-sleep"></span>' : '') +
+        '<span class="tab-close">×</span>'
+      document.getElementById('tabs').append(tab)
+    }
   })()`)
   const metrics = await win.webContents.executeJavaScript(`(() => {
-    const toolbar = document.querySelector('.toolbar').getBoundingClientRect()
+    const sidebar = document.querySelector('.qa-sidebar').getBoundingClientRect()
+    const top = document.getElementById('top-chrome').getBoundingClientRect()
+    const page = document.querySelector('.qa-page').getBoundingClientRect()
     return {
       viewport: [innerWidth, innerHeight],
       scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
-      toolbar: [toolbar.left, toolbar.top, toolbar.right, toolbar.bottom],
-      bookmarksWidth: document.querySelector('#bookmarks-items').scrollWidth,
+      sidebar: [sidebar.left, sidebar.top, sidebar.right, sidebar.bottom],
+      top: [top.left, top.top, top.right, top.bottom],
+      page: [page.left, page.top, page.right, page.bottom],
     }
   })()`)
   await screenshot(win, `chrome-${size.name}.png`)
@@ -148,13 +180,13 @@ async function captureOmnibox(size, { engaged }) {
   const win = new BrowserWindow({
     show: false,
     width: size.width,
-    height: 92,
+    height: size.height,
     frame: false,
     webPreferences: { offscreen: true },
   })
   await win.loadFile(path.join(output, 'chrome-preview.html'))
   await win.webContents.executeJavaScript(`(() => {
-    EmberBrand.mountIcon(document.getElementById('chrome-brand'))
+    EmberBrand.mountChromeIcon(document.getElementById('chrome-brand'))
     const box = document.getElementById('omnibox')
     const chip = document.getElementById('bang-chip')
     const tip = document.getElementById('bang-tip')

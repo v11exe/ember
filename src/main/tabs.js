@@ -6,6 +6,7 @@ const { MEDIA_PROBE_SCRIPT, scrollRestoreScript } = require('./hibernation')
 const { isNetworkFailure, describeFailure, isDeadStatus } = require('../shared/archive')
 const {
   TOPBAR_HEIGHT, BOOKMARKS_HEIGHT, VIEWPORT_RADIUS, SIDEBAR_TRANSITION_MS,
+  SIDEBAR_WIDTH, COLLAPSED_RAIL_WIDTH, OUTER_INSET, SHELL_INSET,
   viewportBounds,
 } = require('../shared/chrome-layout')
 
@@ -58,6 +59,9 @@ class TabManager {
   constructor(win, chromeView, opts = {}) {
     this.win = win
     this.chromeView = chromeView
+    this.sidebarView = opts.sidebarView || null
+    this.frameViews = opts.frameViews || null
+    this.pageCornerMasks = opts.pageCornerMasks || []
     this.extensions = opts.extensions || null
     // Screenshots survive a discarded renderer; see tab-thumbnails.js.
     this.thumbnails = opts.thumbnails || null
@@ -69,6 +73,7 @@ class TabManager {
     this.chromeHeight = CHROME_HEIGHT
     this.bookmarksVisible = false
     this.sidebarOpen = opts.sidebarOpen !== false
+    this.layoutTimer = null
     win.on('resize', () => this.layout())
   }
 
@@ -237,8 +242,10 @@ class TabManager {
     }
     // The chrome renderer paints only the exposed shell. Keeping it underneath
     // the page preserves page input and the live native backdrop in the centre.
+    if (this.sidebarView) this.win.contentView.addChildView(this.sidebarView)
     this.win.contentView.addChildView(this.chromeView)
     this.win.contentView.addChildView(tab.view)
+    for (const mask of this.pageCornerMasks) this.win.contentView.addChildView(mask.view)
     if (this.extensions) {
       try { this.extensions.selectTab(tab.webContents) } catch { /* non-fatal */ }
     }
@@ -485,19 +492,92 @@ class TabManager {
     this.layout({ animate })
   }
 
-  layout({ animate = false } = {}) {
-    const { width, height } = this.win.getContentBounds()
-    this.chromeView.setBounds({ x: 0, y: 0, width, height })
+  applyShellBounds({ width, height, sidebarBounds, pageBounds, radius }) {
+    if (this.sidebarView) this.sidebarView.setBounds(sidebarBounds)
     const active = this.active
     if (active?.view) {
-      const { radius, ...bounds } = viewportBounds({
-        width, height, sidebarOpen: this.sidebarOpen, bookmarksVisible: this.bookmarksVisible,
-      })
+      active.view.setBounds(pageBounds)
       active.view.setBorderRadius?.(radius)
-      active.view.setBounds(bounds, animate ? {
-        animate: { duration: SIDEBAR_TRANSITION_MS, easing: 'ease-in-out' },
-      } : undefined)
     }
+    if (this.frameViews) {
+      const frameX = Math.max(0, width - OUTER_INSET - SHELL_INSET)
+      const frameY = Math.max(0, height - OUTER_INSET - SHELL_INSET)
+      this.frameViews.right.setBounds({
+        x: frameX, y: TOPBAR_HEIGHT, width: SHELL_INSET,
+        height: Math.max(0, height - TOPBAR_HEIGHT - OUTER_INSET),
+      })
+      this.frameViews.bottom.setBounds({
+        x: pageBounds.x, y: frameY,
+        width: Math.max(0, frameX - pageBounds.x), height: SHELL_INSET,
+      })
+    }
+    const maskBounds = {
+      'top-left': { x: pageBounds.x, y: pageBounds.y },
+      'top-right': { x: pageBounds.x + pageBounds.width - radius, y: pageBounds.y },
+      'bottom-left': { x: pageBounds.x, y: pageBounds.y + pageBounds.height - radius },
+      'bottom-right': {
+        x: pageBounds.x + pageBounds.width - radius,
+        y: pageBounds.y + pageBounds.height - radius,
+      },
+    }
+    for (const mask of this.pageCornerMasks) {
+      const point = maskBounds[mask.corner]
+      mask.view.setBounds({ ...point, width: radius, height: radius })
+      mask.view.setVisible(true)
+    }
+  }
+
+  layout({ animate = false } = {}) {
+    const { width, height } = this.win.getContentBounds()
+    this.chromeView.setBounds({ x: 0, y: 0, width, height: this.chromeHeight })
+    if (this.layoutTimer) {
+      clearTimeout(this.layoutTimer)
+      this.layoutTimer = null
+    }
+    const sidebarBounds = {
+      x: OUTER_INSET,
+      y: 0,
+      width: this.sidebarOpen ? SIDEBAR_WIDTH : COLLAPSED_RAIL_WIDTH,
+      height: Math.max(0, height - OUTER_INSET),
+    }
+    if (this.sidebarView) {
+      this.sidebarView.setVisible(true)
+    }
+    const { radius, ...pageBounds } = viewportBounds({
+      width, height, sidebarOpen: this.sidebarOpen, bookmarksVisible: this.bookmarksVisible,
+    })
+    const active = this.active
+    if (!animate || !active?.view || typeof active.view.getBounds !== 'function') {
+      this.applyShellBounds({ width, height, sidebarBounds, pageBounds, radius })
+      return
+    }
+
+    const fromPage = active.view.getBounds()
+    const fromSidebar = this.sidebarView?.getBounds?.() || sidebarBounds
+    const startedAt = Date.now()
+    const interpolate = (from, to, progress) => Math.round(from + (to - from) * progress)
+    const interpolateBounds = (from, to, progress) => ({
+      x: interpolate(from.x, to.x, progress),
+      y: interpolate(from.y, to.y, progress),
+      width: interpolate(from.width, to.width, progress),
+      height: interpolate(from.height, to.height, progress),
+    })
+    const tick = () => {
+      if (this.active?.view !== active.view) return
+      const elapsed = Date.now() - startedAt
+      const linear = Math.min(1, elapsed / SIDEBAR_TRANSITION_MS)
+      const eased = 1 - Math.pow(1 - linear, 3)
+      this.applyShellBounds({
+        width,
+        height,
+        sidebarBounds: interpolateBounds(fromSidebar, sidebarBounds, eased),
+        pageBounds: interpolateBounds(fromPage, pageBounds, eased),
+        radius,
+      })
+      if (linear < 1) this.layoutTimer = setTimeout(tick, 16)
+      else this.layoutTimer = null
+    }
+    tick()
   }
 
   // ---- navigation, applied to the active tab ----
@@ -554,8 +634,10 @@ class TabManager {
   }
 
   emit() {
-    if (this.chromeView.webContents.isDestroyed()) return
-    this.chromeView.webContents.send(IPC.STATE, this.state())
+    const state = this.state()
+    for (const view of [this.chromeView, this.sidebarView]) {
+      if (view && !view.webContents.isDestroyed()) view.webContents.send(IPC.STATE, state)
+    }
   }
 }
 

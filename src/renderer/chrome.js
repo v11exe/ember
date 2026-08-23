@@ -2,14 +2,14 @@ const $ = (id) => document.getElementById(id)
 
 const els = {
   shell: $('chrome-shell'),
+  topChrome: $('top-chrome'),
   sidebarToggle: $('sidebar-toggle'),
-  favorites: $('favorites'),
   tabs: $('tabs'),
   tabstrip: $('tabstrip'),
   sidebarHeader: $('sidebar-header'),
   navigation: $('top-navigation'),
   actions: document.querySelector('.top-actions'),
-  caption: document.querySelector('.caption-safe'),
+  caption: document.querySelector('.window-controls'),
   omnibox: $('omnibox'),
   form: $('omnibox-form'),
   back: $('back'),
@@ -31,8 +31,48 @@ let metricFrame = 0
 
 window.EmberBrand.mountChromeIcon($('chrome-brand'))
 
+const NON_DRAG_SELECTOR = 'button, input, .tab, .top-navigation, .tabstrip, .top-actions, .window-controls, .omnibox, .bookmarks-bar'
+let dragPointer = null
+let pendingDragPoint = null
+let dragFrame = 0
+
+function flushWindowDrag() {
+  dragFrame = 0
+  if (!pendingDragPoint) return
+  window.ember.updateWindowDrag(pendingDragPoint.x, pendingDragPoint.y)
+  pendingDragPoint = null
+}
+
+els.topChrome.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0 || event.target.closest(NON_DRAG_SELECTOR)) return
+  dragPointer = event.pointerId
+  els.topChrome.setPointerCapture(event.pointerId)
+  window.ember.beginWindowDrag(event.screenX, event.screenY)
+  event.preventDefault()
+})
+els.topChrome.addEventListener('pointermove', (event) => {
+  if (event.pointerId !== dragPointer) return
+  pendingDragPoint = { x: event.screenX, y: event.screenY }
+  if (!dragFrame) dragFrame = requestAnimationFrame(flushWindowDrag)
+})
+function finishWindowDrag(event) {
+  if (event.pointerId !== dragPointer) return
+  if (dragFrame) cancelAnimationFrame(dragFrame)
+  dragFrame = 0
+  pendingDragPoint = null
+  dragPointer = null
+  window.ember.endWindowDrag()
+}
+els.topChrome.addEventListener('pointerup', finishWindowDrag)
+els.topChrome.addEventListener('pointercancel', finishWindowDrag)
+
 function isNewTab(tab) {
   return String(tab?.url || '').startsWith('ember://newtab')
+}
+
+function assetUrl(asset) {
+  const relative = String(asset || '').replace(/^\//, '')
+  return new URL(relative, document.baseURI).href
 }
 
 function updateOverflow() {
@@ -55,9 +95,10 @@ function updateTabMetrics() {
 }
 
 function tabNode(tab) {
+  const displayTitle = isNewTab(tab) ? 'New Tab' : (tab.title || 'New Tab')
   const el = document.createElement('div')
   el.className = 'tab' + (tab.active ? ' active' : '') + (tab.asleep ? ' asleep' : '')
-  el.title = tab.asleep ? `${tab.title || 'Tab'} — sleeping` : (tab.title || '')
+  el.title = tab.asleep ? `${displayTitle} — sleeping` : displayTitle
   el.onmousedown = (event) => {
     if (event.button === 1) { event.preventDefault(); window.ember.closeTab(tab.id) }
     else if (event.button === 0) window.ember.selectTab(tab.id)
@@ -76,11 +117,12 @@ function tabNode(tab) {
     const fallback = isNewTab(tab)
       ? window.EmberBrand.CHROME_ICON_ASSET
       : window.EmberBrand.ICON_ASSET
-    img.className = 'tab-favicon'
-    img.src = tab.favicon || fallback
+    img.className = 'tab-favicon' + (isNewTab(tab) ? ' newtab-favicon' : '')
+    const fallbackUrl = assetUrl(fallback)
+    img.src = tab.favicon || assetUrl(fallback)
     img.alt = ''
     img.onerror = () => {
-      if (img.src !== new URL(fallback.slice(1), document.baseURI).href) img.src = fallback
+      if (img.src !== fallbackUrl) img.src = fallbackUrl
       else img.remove()
     }
     el.append(img)
@@ -88,7 +130,7 @@ function tabNode(tab) {
 
   const title = document.createElement('span')
   title.className = 'tab-title'
-  title.textContent = tab.title || 'New Tab'
+  title.textContent = displayTitle
   el.append(title)
 
   if (tab.asleep) {
@@ -103,7 +145,7 @@ function tabNode(tab) {
   close.className = 'tab-close'
   close.textContent = '×'
   close.title = 'Close tab'
-  close.setAttribute('aria-label', `Close ${tab.title || 'tab'}`)
+  close.setAttribute('aria-label', `Close ${displayTitle}`)
   close.onmousedown = (event) => { event.stopPropagation(); event.preventDefault() }
   close.onclick = (event) => { event.stopPropagation(); window.ember.closeTab(tab.id) }
   el.append(close)
@@ -116,38 +158,6 @@ function tabNode(tab) {
 function renderTabs(tabs) {
   els.tabs.replaceChildren(...tabs.map(tabNode))
   updateTabMetrics()
-}
-
-function faviconForFavorite(favorite) {
-  if (favorite.icon) return favorite.icon
-  try { return new URL('/favicon.ico', favorite.url).href } catch { return window.EmberBrand.CHROME_ICON_ASSET }
-}
-
-function favoriteNode(favorite, activeUrl) {
-  const button = document.createElement('button')
-  button.className = 'favorite'
-  button.title = favorite.name
-  button.setAttribute('aria-label', `Open ${favorite.name}`)
-  button.classList.toggle('active', window.ember.sameFavoriteSite(favorite.url, activeUrl))
-  button.onclick = () => window.ember.openFavorite(favorite.id)
-
-  const image = document.createElement('img')
-  image.src = faviconForFavorite(favorite)
-  image.alt = ''
-  image.onerror = () => {
-    let fallback = ''
-    try { fallback = new URL('/favicon.ico', favorite.url).href } catch { /* use Ember below */ }
-    if (fallback && image.src !== fallback) image.src = fallback
-    else if (!image.src.endsWith(window.EmberBrand.CHROME_ICON_ASSET.slice(1))) image.src = window.EmberBrand.CHROME_ICON_ASSET
-    else image.remove()
-  }
-  button.append(image)
-  return button
-}
-
-function renderFavorites() {
-  const active = browserState.tabs.find((tab) => tab.active)
-  els.favorites.replaceChildren(...(chromeConfig.favorites || []).map((favorite) => favoriteNode(favorite, active?.url)))
 }
 
 function setSidebarOpen(open, { persist = false } = {}) {
@@ -166,7 +176,6 @@ function applyChromeConfig(config) {
     favorites: Array.isArray(config?.favorites) ? config.favorites : [],
   }
   setSidebarOpen(chromeConfig.sidebarOpen)
-  renderFavorites()
 }
 
 function renderNav(nav) {
@@ -185,7 +194,6 @@ window.ember.onState((state) => {
   browserState = state
   renderTabs(state.tabs)
   renderNav(state.nav)
-  renderFavorites()
 })
 
 window.ember.getChromeConfig().then(applyChromeConfig)
@@ -290,6 +298,9 @@ els.archive.onclick = async () => {
 $('new-tab').onclick = () => window.ember.newTab()
 $('chrome-brand').onclick = () => window.ember.newTab()
 els.sidebarToggle.onclick = () => setSidebarOpen(!chromeConfig.sidebarOpen, { persist: true })
+$('win-min').onclick = () => window.ember.minimize()
+$('win-max').onclick = () => window.ember.maximize()
+$('win-close').onclick = () => window.ember.close()
 
 // ---------- extensions ----------
 const extensionButton = $('ext-btn')

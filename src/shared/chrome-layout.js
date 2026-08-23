@@ -1,8 +1,10 @@
-const TOPBAR_HEIGHT = 52
-const SIDEBAR_WIDTH = 170
+const TOPBAR_HEIGHT = 32
+const SIDEBAR_WIDTH = 168
+const OUTER_INSET = 0
 const COLLAPSED_RAIL_WIDTH = 8
+const OUTER_RADIUS = 12
 const SHELL_INSET = 8
-const VIEWPORT_RADIUS = 9
+const VIEWPORT_RADIUS = 12
 const BOOKMARKS_HEIGHT = 30
 const SIDEBAR_TRANSITION_MS = 210
 
@@ -20,15 +22,15 @@ function clamp(value, minimum, maximum) {
 function viewportBounds({ width, height, sidebarOpen = true, bookmarksVisible = false } = {}) {
   const outerWidth = Math.max(0, Math.round(Number(width) || 0))
   const outerHeight = Math.max(0, Math.round(Number(height) || 0))
-  const wantedX = sidebarOpen ? SIDEBAR_WIDTH : COLLAPSED_RAIL_WIDTH
+  const wantedX = sidebarOpen ? OUTER_INSET + SIDEBAR_WIDTH : COLLAPSED_RAIL_WIDTH
   const wantedY = TOPBAR_HEIGHT + (bookmarksVisible ? BOOKMARKS_HEIGHT : 0)
   const x = Math.min(outerWidth, wantedX)
   const y = Math.min(outerHeight, wantedY)
   return {
     x,
     y,
-    width: Math.max(0, outerWidth - x - SHELL_INSET),
-    height: Math.max(0, outerHeight - y - SHELL_INSET),
+    width: Math.max(0, outerWidth - x - OUTER_INSET - SHELL_INSET),
+    height: Math.max(0, outerHeight - y - OUTER_INSET - SHELL_INSET),
     radius: VIEWPORT_RADIUS,
   }
 }
@@ -54,7 +56,9 @@ function dynamicTabMax({
 module.exports = {
   TOPBAR_HEIGHT,
   SIDEBAR_WIDTH,
+  OUTER_INSET,
   COLLAPSED_RAIL_WIDTH,
+  OUTER_RADIUS,
   SHELL_INSET,
   VIEWPORT_RADIUS,
   BOOKMARKS_HEIGHT,
@@ -67,4 +71,3 @@ module.exports = {
   viewportBounds,
   dynamicTabMax,
 }
-

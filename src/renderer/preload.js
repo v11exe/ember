@@ -59,4 +59,7 @@ contextBridge.exposeInMainWorld('ember', {
   minimize: () => ipcRenderer.send(IPC.WIN_MINIMIZE),
   maximize: () => ipcRenderer.send(IPC.WIN_MAXIMIZE),
   close: () => ipcRenderer.send(IPC.WIN_CLOSE),
+  beginWindowDrag: (x, y) => ipcRenderer.send(IPC.WIN_DRAG_START, { x, y }),
+  updateWindowDrag: (x, y) => ipcRenderer.send(IPC.WIN_DRAG_MOVE, { x, y }),
+  endWindowDrag: () => ipcRenderer.send(IPC.WIN_DRAG_END),
 })
