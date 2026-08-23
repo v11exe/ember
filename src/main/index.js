@@ -23,6 +23,7 @@ const { ContextMenuPanel } = require('./context-menu-panel')
 const { SelectionPanel } = require('./selection-panel')
 const { RateStore } = require('./rates')
 const { ArchiveLookup } = require('./archive')
+const { TabSwitcher } = require('./switcher-panel')
 const { isDeadStatus, isArchivable } = require('../shared/archive')
 const { NativeBackdrop } = require('./native-backdrop')
 const { ThumbnailCache } = require('./tab-thumbnails')
@@ -112,6 +113,7 @@ function createBrowser({ privateMode = false } = {}) {
   })
   const rates = new RateStore(path.join(app.getPath('userData'), 'rates.json'))
   const archive = new ArchiveLookup()
+  const switcher = new TabSwitcher(win, { tabs, thumbnails })
   const selection = new SelectionPanel(win, {
     clipboard,
     rates,
@@ -128,12 +130,12 @@ function createBrowser({ privateMode = false } = {}) {
   const self = {
     win, chrome, tabs, panel, bookmarks, history, downloads, settings, sessionStore, thumbnails, hibernation,
     sessionPrompt: new SessionPrompt(win), closing: false, recentUploads, recentUploadsReady,
-    uploadPanel, contextMenu, selection, rates, archive, smokeClipboard, smokeUploadPaths, nativeBackdrop, popupPositioner: null,
+    uploadPanel, contextMenu, selection, rates, archive, switcher, smokeClipboard, smokeUploadPaths, nativeBackdrop, popupPositioner: null,
     privateMode, fullScreenFrom: null,
   }
   browser = self
   browsers.add(self)
-  tabs.onPageFocus = () => { panel.hide(); uploadPanel.cancel(); contextMenu.hide() }
+  tabs.onPageFocus = () => { panel.hide(); uploadPanel.cancel(); contextMenu.hide(); switcher.hide() }
   tabs.onVisit = (visit) => { if (!privateMode) history.record(visit) }
   downloads.onChange = (snapshot) => {
     for (const tab of tabs.tabs) {
@@ -229,6 +231,7 @@ function createBrowser({ privateMode = false } = {}) {
 
   win.on('resize', () => {
     tabs.layout(); panel.layout(); uploadPanel.layout(); contextMenu.layout(); selection.layout()
+    switcher.layout()
     browser?.popupPositioner?.layout()
     browser?.sessionPrompt?.layout(); rememberGeometry()
   })
@@ -415,7 +418,11 @@ ipcMain.on(IPC.OVERLAY_ACTION, (event, action, payload) => {
     })
     return
   }
-  if (current.selection.isSender(event.sender)) current.selection.handleAction(event.sender, command)
+  if (current.selection.isSender(event.sender)) {
+    current.selection.handleAction(event.sender, command)
+    return
+  }
+  if (current.switcher.isSender(event.sender)) current.switcher.handleAction(event.sender, command, payload)
 })
 ipcMain.on(IPC.OVERLAY_CLOSE, (event) => {
   if (browser?.uploadPanel.isSender(event.sender)) browser.uploadPanel.cancel()
@@ -549,8 +556,12 @@ function runCommand({ command, index }) {
       if (closed) tabs?.create(closed.url)
       return true
     }
-    case COMMANDS.NEXT_TAB: tabs?.cycle(1); return true
-    case COMMANDS.PREVIOUS_TAB: tabs?.cycle(-1); return true
+    // Ctrl+Tab walks the visual switcher; Ctrl+PageDown still cycles the strip.
+    case COMMANDS.NEXT_TAB: return !!current?.switcher.step(1)
+    case COMMANDS.PREVIOUS_TAB: return !!current?.switcher.step(-1)
+    case COMMANDS.NEXT_TAB_STRIP: tabs?.cycle(1); return true
+    case COMMANDS.PREVIOUS_TAB_STRIP: tabs?.cycle(-1); return true
+    case COMMANDS.END_SWITCH: return !!current?.switcher.commit()
     case COMMANDS.SELECT_TAB: tabs?.selectIndex(index); return true
     case COMMANDS.LAST_TAB: tabs?.selectLast(); return true
     case COMMANDS.NEW_WINDOW: createBrowser(); return true
@@ -560,7 +571,11 @@ function runCommand({ command, index }) {
     case COMMANDS.FORWARD: tabs?.forward(); return true
     case COMMANDS.RELOAD: tabs?.reload(); return true
     case COMMANDS.HARD_RELOAD: tabs?.hardReload(); return true
-    case COMMANDS.STOP: tabs?.stop(); return true
+    case COMMANDS.STOP:
+      // Escape backs out of the switcher before it reaches the page.
+      if (current?.switcher.cancel()) return true
+      tabs?.stop()
+      return true
     case COMMANDS.HISTORY: openHistory(); return true
     case COMMANDS.DOWNLOADS: openInternal(DOWNLOADS_URL); return true
     case COMMANDS.SETTINGS: openInternal(SETTINGS_URL); return true

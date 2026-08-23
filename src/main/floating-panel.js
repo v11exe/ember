@@ -84,6 +84,17 @@ class FloatingPanel {
     this.#sendState()
   }
 
+  /**
+   * Merge locally but send only what changed. The switcher's payload carries a
+   * screenshot per tab, and a keypress must not put all of them on the wire
+   * again just to move a highlight.
+   */
+  patchState(partial) {
+    this.state = { ...this.state, ...partial }
+    if (!this.loaded || this.view.webContents.isDestroyed()) return
+    this.view.webContents.send(IPC.OVERLAY_STATE, { ...partial, patch: true })
+  }
+
   hide() {
     this.generation += 1
     if (!this.open) return
