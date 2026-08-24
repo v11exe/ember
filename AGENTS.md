@@ -118,6 +118,13 @@ test/                          node:test contracts/integration fixtures
   window is excluded from Snap, Snap Layouts and the minimise/restore
   animations, and has to draw its own corner. `OUTER_RADIUS` is 0 so DWM owns
   the outer curve and nothing rounds it twice.
+- Windows draws Ember's caption buttons, not Ember. `titleBarStyle: 'hidden'`
+  with a **transparent** `titleBarOverlay` is what makes the window an ordinary
+  application to the shell: the Snap Layouts flyout appears for a real maximise
+  button — one that answers `WM_NCHITTEST` with `HTMAXBUTTON` — and nothing
+  else. An opaque overlay colour hides Ember's own bar and gives two stacked
+  bars. `.window-controls` stays in the document to reserve `--caption-width`
+  but is `visibility: hidden`; never re-show it over the system's buttons.
 - `-webkit-app-region: drag` does not work on a `WebContentsView`. Ember moves
   its own window, so Windows never runs a move loop — edge snapping is
   implemented in `WIN_DRAG_END` and resolved from the live cursor, because the
