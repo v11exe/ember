@@ -25,6 +25,7 @@ test('chrome preload exposes a working extensions-panel toggle', () => {
     if (id === '../shared/urls') return require('../src/shared/urls')
     if (id === '../shared/chrome-layout') return require('../src/shared/chrome-layout')
     if (id === '../shared/favorites') return require('../src/shared/favorites')
+    if (id === '../shared/tab-scroll') return require('../src/shared/tab-scroll')
     if (id === 'electron-chrome-extensions/browser-action') return { injectBrowserAction: () => {} }
     throw new Error(`Unexpected require: ${id}`)
   }
@@ -59,6 +60,7 @@ test('chrome preload exposes bookmark import, visibility, and live updates', asy
     if (id === '../shared/urls') return require('../src/shared/urls')
     if (id === '../shared/chrome-layout') return require('../src/shared/chrome-layout')
     if (id === '../shared/favorites') return require('../src/shared/favorites')
+    if (id === '../shared/tab-scroll') return require('../src/shared/tab-scroll')
     if (id === 'electron-chrome-extensions/browser-action') return { injectBrowserAction: () => {} }
     throw new Error(`Unexpected require: ${id}`)
   }
@@ -100,6 +102,7 @@ function bootPreload({ bangs = [], chromeConfig = null } = {}) {
     if (id === '../shared/urls') return require('../src/shared/urls')
     if (id === '../shared/chrome-layout') return require('../src/shared/chrome-layout')
     if (id === '../shared/favorites') return require('../src/shared/favorites')
+    if (id === '../shared/tab-scroll') return require('../src/shared/tab-scroll')
     if (id === 'electron-chrome-extensions/browser-action') return { injectBrowserAction: () => {} }
     throw new Error(`Unexpected require: ${id}`)
   }

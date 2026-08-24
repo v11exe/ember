@@ -130,6 +130,10 @@ function updateTabMetrics(settled = null) {
     els.tabstrip.style.setProperty('--tabstrip-max', `${Math.max(95, availableWidth - 96)}px`)
     requestAnimationFrame(() => {
       updateOverflow()
+      // The strip's scrollable width is measured here, once the widths above
+      // have been laid out, so nothing has to force a layout mid-animation.
+      measureStrip()
+      updateTabScrollFades()
       // Also wired straight to resize and ResizeObserver, which hand it an
       // event rather than a callback.
       if (typeof settled === 'function') settled()
@@ -228,6 +232,9 @@ const TAB_MOTION_EASING = 'cubic-bezier(.2, .8, .2, 1)'
 const TAB_FADE_WIDTH = 22
 // The tab whose selection the strip last travelled for.
 let lastActiveTabId = null
+// The tab a render asked the strip to travel to, kept by id so a superseded
+// metrics pass does not take the request with it.
+let pendingFocusTabId = null
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 /** Movement is the point of these; with motion turned down they just end. */
 const motionMs = () => (reducedMotion.matches ? 1 : TAB_MOTION_MS)
@@ -268,13 +275,19 @@ function closeTabNode(node) {
 }
 
 /** Fade an edge only while there is something past it to scroll to. */
+let paintedFades = ''
 function updateTabScrollFades() {
   const strip = els.tabs
-  const overflow = strip.scrollWidth - strip.clientWidth
+  const overflow = stripMax
   const left = overflow > 1 ? Math.min(TAB_FADE_WIDTH, strip.scrollLeft) : 0
   const right = overflow > 1 ? Math.min(TAB_FADE_WIDTH, overflow - strip.scrollLeft) : 0
-  strip.style.setProperty('--tabs-fade-left', `${Math.max(0, left)}px`)
-  strip.style.setProperty('--tabs-fade-right', `${Math.max(0, right)}px`)
+  // Rewriting these on every animation frame is a style invalidation the strip
+  // does not need; a whole pixel is as fine as the eye resolves here.
+  const painted = `${Math.max(0, left) | 0}|${Math.max(0, right) | 0}`
+  if (painted === paintedFades) return
+  paintedFades = painted
+  strip.style.setProperty('--tabs-fade-left', `${Math.max(0, left) | 0}px`)
+  strip.style.setProperty('--tabs-fade-right', `${Math.max(0, right) | 0}px`)
 }
 
 /**
@@ -282,11 +295,12 @@ function updateTabScrollFades() {
  * dissolved. A new tab on a full bar pushes the left-hand ones behind rather
  * than opening out of sight.
  */
+/** Returns true while the tab is still not fully in view. */
 function keepTabVisible(node, { smooth = true } = {}) {
-  if (!node) return
+  if (!node) return false
   const strip = els.tabs
-  const overflow = strip.scrollWidth - strip.clientWidth
-  if (overflow <= 1) return
+  const overflow = measureStrip()
+  if (overflow <= 1) return false
   const left = node.offsetLeft
   const right = left + node.offsetWidth
   const viewLeft = strip.scrollLeft
@@ -294,10 +308,11 @@ function keepTabVisible(node, { smooth = true } = {}) {
   let target = null
   if (right + TAB_FADE_WIDTH > viewRight) target = right + TAB_FADE_WIDTH - strip.clientWidth
   else if (left - TAB_FADE_WIDTH < viewLeft) target = left - TAB_FADE_WIDTH
-  if (target === null) return
+  if (target === null) return false
   // Through the same animation the wheel drives, so the two cannot fight over
   // scrollLeft and leave the strip stuttering.
   glideStripTo(target, { immediate: !smooth })
+  return true
 }
 
 function renderTabs(tabs) {
@@ -342,9 +357,21 @@ function renderTabs(tabs) {
   const selectionMoved = active?.dataset.tabId !== lastActiveTabId
   lastActiveTabId = active?.dataset.tabId || null
   const focus = opened || (selectionMoved ? active : null)
+  // Remembered by id rather than captured in the callback. Opening a tab is
+  // followed immediately by a run of state emits — loading, title, favicon —
+  // and each one re-renders and supersedes the pending metrics pass. The
+  // request has to survive that, or the tab that was just opened is left off
+  // the end of the strip because the render that knew about it was cancelled.
+  if (focus) pendingFocusTabId = focus.dataset.tabId
   updateTabMetrics(() => {
     updateTabScrollFades()
-    if (focus) keepTabVisible(focus, { smooth: !firstPaint })
+    if (!pendingFocusTabId) return
+    const wanted = els.tabs.querySelector(`.tab[data-tab-id="${pendingFocusTabId}"]`)
+    if (!wanted) { pendingFocusTabId = null; return }
+    // Held until the tab is actually in view. The scrollable width can still
+    // grow by a few pixels after this pass — the widths settle a frame later —
+    // and a one-shot request left the newest tab a sliver short of the end.
+    if (!keepTabVisible(wanted, { smooth: !firstPaint })) pendingFocusTabId = null
   })
 }
 
@@ -354,10 +381,6 @@ function renderTabs(tabs) {
 // series of jumps; this keeps a target and eases towards it, so one notch is a
 // glide of about a tab and a fast run of notches is one longer glide. Pushing
 // against an end that has nowhere to go stretches the strip and springs back.
-const WHEEL_STEP = 132
-const WHEEL_STEP_MAX = 430
-const WHEEL_URGENT_MS = 230
-const OVERSCROLL_LIMIT = 44
 const GLIDE = 0.24
 const SPRING = 0.82
 
@@ -365,86 +388,120 @@ let scrollTarget = null
 let scrollFrame = 0
 let overscroll = 0
 let lastWheelAt = 0
+let lastStepAt = 0
+let paintedOverscroll = 0
 
-function stripMaxScroll() {
-  return Math.max(0, els.tabs.scrollWidth - els.tabs.clientWidth)
+// The scrollable width changes only when tabs are added, removed, resized or
+// the window is. Measuring it inside the animation — or on every notch —
+// forced a layout each time, which is most of what made the strip feel like it
+// was catching rather than moving.
+let stripMax = 0
+function measureStrip() {
+  stripMax = Math.max(0, els.tabs.scrollWidth - els.tabs.clientWidth)
+  return stripMax
 }
 
-function stepStrip() {
+function stepStrip(now) {
   scrollFrame = 0
   const strip = els.tabs
+  const elapsed = Math.min(64, now - (lastStepAt || now))
+  lastStepAt = now
+  // Frame-rate independent easing: the same fraction of the remaining distance
+  // per millisecond, not per frame, so a slow frame does not shorten the glide.
+  const ease = window.ember.scrollEase(elapsed, GLIDE)
   let running = false
 
   if (scrollTarget !== null) {
-    const wanted = Math.min(stripMaxScroll(), Math.max(0, scrollTarget))
-    const distance = wanted - strip.scrollLeft
+    let wanted = Math.min(stripMax, Math.max(0, scrollTarget))
+    let distance = wanted - strip.scrollLeft
+    if (Math.abs(distance) < 0.5) {
+      // Arrived — but the strip may have grown while it was travelling, and a
+      // target that was clamped to the old end is then short of the new one.
+      // `scrollTarget` is kept unclamped so this can notice and carry on.
+      measureStrip()
+      wanted = Math.min(stripMax, Math.max(0, scrollTarget))
+      distance = wanted - strip.scrollLeft
+    }
     if (Math.abs(distance) < 0.5) {
       strip.scrollLeft = wanted
       scrollTarget = null
     } else {
-      strip.scrollLeft += distance * GLIDE
+      strip.scrollLeft += distance * ease
       running = true
     }
   }
 
-  if (Math.abs(overscroll) >= 0.4) {
-    overscroll *= SPRING
+  if (overscroll !== 0) {
+    overscroll = window.ember.scrollRelax(overscroll, elapsed, SPRING)
     running = true
-  } else if (overscroll !== 0) {
-    overscroll = 0
   }
-  strip.style.setProperty('--tabs-overscroll', `${overscroll.toFixed(2)}px`)
+  if (overscroll !== paintedOverscroll) {
+    paintedOverscroll = overscroll
+    // Translated *and* stretched: the strip leans past the end and the tabs
+    // spread with it, which is what reads as give rather than a slipped panel.
+    const stretch = window.ember.scrollStretch(overscroll)
+    strip.style.setProperty('--tabs-overscroll', `${overscroll.toFixed(2)}px`)
+    strip.style.setProperty('--tabs-stretch', stretch.toFixed(4))
+    strip.style.setProperty('--tabs-stretch-origin', overscroll > 0 ? 'left' : 'right')
+  }
 
   updateTabScrollFades()
   if (running) scrollFrame = requestAnimationFrame(stepStrip)
+  else lastStepAt = 0
 }
 
 function driveStrip() {
-  if (!scrollFrame) scrollFrame = requestAnimationFrame(stepStrip)
+  if (!scrollFrame) {
+    lastStepAt = 0
+    scrollFrame = requestAnimationFrame(stepStrip)
+  }
 }
 
-/** Ask the strip to travel somewhere; the animation gets it there. */
+/**
+ * Ask the strip to travel somewhere; the animation gets it there.
+ *
+ * The target is stored unclamped on purpose. A request made while the tab
+ * widths are still settling can be for a position past the end as it stands at
+ * that moment, and clamping it here would freeze it at the old end.
+ */
 function glideStripTo(left, { immediate = false } = {}) {
-  const wanted = Math.min(stripMaxScroll(), Math.max(0, left))
+  const max = measureStrip()
   if (immediate) {
     scrollTarget = null
-    els.tabs.scrollLeft = wanted
+    els.tabs.scrollLeft = Math.min(max, Math.max(0, left))
     updateTabScrollFades()
     return
   }
-  scrollTarget = wanted
+  scrollTarget = left
   driveStrip()
 }
 
+/**
+ * A wheel anywhere over the tab bar moves the strip sideways.
+ *
+ * One notch is a stride of about a tab; notches arriving quickly lengthen the
+ * stride, so a flick crosses the strip and a single click nudges it. The
+ * gesture is always claimed, even at the ends, so the page underneath never
+ * scrolls and the strip can show that it has run out instead.
+ */
 els.tabstrip.addEventListener('wheel', (event) => {
   const raw = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
   if (!raw) return
-  const max = stripMaxScroll()
-  // Claim the gesture even at the ends, so the page underneath never scrolls
-  // and the strip can show that it has run out instead.
   event.preventDefault()
+  const max = stripMax || measureStrip()
   if (max <= 1) return
 
-  const now = performance.now()
+  const now = event.timeStamp || performance.now()
   const sinceLast = now - lastWheelAt
   lastWheelAt = now
-  // Notches arriving quickly mean a longer stride: a single click nudges the
-  // strip by about one tab, a fast flick crosses several.
-  const urgency = sinceLast < WHEEL_URGENT_MS
-    ? Math.min(2.8, 1 + (WHEEL_URGENT_MS - sinceLast) / 150)
-    : 1
-  const step = Math.sign(raw) * Math.min(WHEEL_STEP_MAX, WHEEL_STEP * urgency)
   const from = scrollTarget === null ? els.tabs.scrollLeft : scrollTarget
-  const next = from + step
-
-  if ((next < 0 && from <= 0.5) || (next > max && from >= max - 0.5)) {
-    // Already at the end and still being pushed: the strip gives a little.
-    const give = Math.sign(step) * -10
-    overscroll = Math.max(-OVERSCROLL_LIMIT, Math.min(OVERSCROLL_LIMIT, overscroll + give))
+  const outcome = window.ember.wheelStep({ from, max, delta: raw, sinceLast, overscroll })
+  if (outcome.atEnd) {
+    overscroll = outcome.overscroll
     driveStrip()
     return
   }
-  glideStripTo(next)
+  glideStripTo(outcome.target)
 }, { passive: false })
 
 els.tabs.addEventListener('scroll', () => requestAnimationFrame(updateTabScrollFades))

@@ -185,7 +185,14 @@ button, input, .top-navigation, .tabstrip, .top-actions,
 }
 .tabs::-webkit-scrollbar { width: 0; height: 0; }
 /* Scrolling against an end that has run out gives, then springs back. */
-.tabs { transform: translateX(var(--tabs-overscroll, 0px)); }
+/* Scrolling against an end that has run out: the strip leans past it and
+   stretches slightly with the lean, then springs back. It is set on the
+   container, not on each tab — `.tab` carries its own transform transition for
+   the reorder shuffle, and a transition on this would fight the spring. */
+.tabs {
+  transform: translateX(var(--tabs-overscroll, 0px)) scaleX(var(--tabs-stretch, 1));
+  transform-origin: var(--tabs-stretch-origin, left) center;
+}
 /* A tab on its way out keeps its slot while it collapses, so its neighbours
    slide across instead of snapping. */
 .tab-closing { pointer-events: none; }

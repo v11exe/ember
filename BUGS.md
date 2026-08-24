@@ -87,7 +87,7 @@ Its hover box is centred but the glyph inside is not.
 **Status:** ✅ Fixed · **Owner:** Claude Code
 
 ### B10 — Overflowed tabs are unreachable
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/tabs.js`, `src/renderer/chrome.*`
+**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/tabs.js`, `src/renderer/chrome.*`
 
 Tabs that overflow slide behind the rest of the tab bar (the untouched empty
 space is intentional) but there is no way to get them back. Scrolling the wheel
@@ -376,3 +376,28 @@ from wherever it had just been scrolled, which is why scrolling often seemed
 not to work at all. It now travels only for a tab opening or the selection
 actually moving. **Not yet confirmed against the running app**: synthetic
 input stopped reaching the window part-way through this pass.
+
+### B10 — fixed, and how it was finally seen
+
+Three causes, two of them invisible from the code alone:
+
+1. The wheel set `scrollLeft` per notch — a series of jumps, not a movement.
+2. `renderTabs()` chased the active tab on *every* state emit, so a title or
+   favicon update dragged the strip back from wherever it had been scrolled.
+   This is what made the wheel look like it did not work at all.
+3. Opening a tab schedules a metrics pass, and the run of state emits that
+   follows (loading, title, favicon) **cancelled that pass along with its
+   scroll request** — so a new tab was left off the end of the strip. The
+   request is now held by tab id until it is satisfied rather than captured in
+   a callback that a later render throws away.
+
+The arithmetic lives in `src/shared/tab-scroll.js` and is unit-tested, so the
+stride, the velocity response and the bounce can be checked without a window.
+
+Verified against the running browser through Electron's remote-debugging port
+rather than synthetic keyboard and mouse — see the note in `AGENTS.md`. One
+notch glides 3 → 85 → 125px and settles; four fast notches travel further than
+four slow ones; pushing past an end leans the strip and stretches it
+(`matrix(1.0086, 0, 0, 1, -7.76, 0)`) and it springs back to rest; a new tab
+pushes the left-hand tabs behind and lands fully visible; the wheel brings them
+back.

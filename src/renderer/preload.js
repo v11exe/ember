@@ -3,6 +3,7 @@ const { IPC } = require('../shared/ipc')
 const { resolveInput } = require('../shared/urls')
 const { dynamicTabMax } = require('../shared/chrome-layout')
 const { sameFavoriteSite, placeFavorite } = require('../shared/favorites')
+const tabScroll = require('../shared/tab-scroll')
 
 // The omnibox has to say what Enter will do while you are still typing, and it
 // has to do it on every keystroke. Keeping the quick-search list here means the
@@ -66,6 +67,11 @@ contextBridge.exposeInMainWorld('ember', {
   }),
   removeFavorite: (id) => ipcRenderer.invoke(IPC.FAVORITE_REMOVE, String(id)),
   tabMaximum: (options) => dynamicTabMax(options),
+  /** The tab strip's wheel arithmetic, so the renderer runs the tested one. */
+  wheelStep: (options) => tabScroll.wheelStep(options),
+  scrollEase: (elapsed, perFrame) => tabScroll.easeFraction(elapsed, perFrame),
+  scrollRelax: (lean, elapsed, spring) => tabScroll.relax(lean, elapsed, spring),
+  scrollStretch: (lean) => tabScroll.stretchFor(lean),
   sameFavoriteSite: (favoriteUrl, tabUrl) => sameFavoriteSite(favoriteUrl, tabUrl),
   previewFavoritePlacement: (candidate, current, grid, index) => placeFavorite(candidate, current, grid, index),
   onNavPulse: (fn) => ipcRenderer.on(IPC.NAV_PULSE, (_e, command) => fn(command)),

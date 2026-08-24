@@ -70,6 +70,7 @@ src/renderer/pages/backdrop-contrast.js
 src/renderer/pages/overlay-liquid-glass.{js,css}
                                upstream-standard overlay optics + capture alignment
 src/shared/snap-layouts.js     snap arrangement geometry, shared by main and the picker page
+src/shared/tab-scroll.js       tab-strip wheel stride, glide and overscroll arithmetic
 src/shared/{chrome-layout,favorites}.js
                                shell geometry + ordered Favorite contracts
 src/shared/                    IPC, URLs, bangs, conversions, archive and other contracts
@@ -149,6 +150,17 @@ test/                          node:test contracts/integration fixtures
   Always route their captured screenshot through `EmberOverlayGlass.setBackdrop()`
   so FloatingPanel bleed stays aligned and capture failure gets the non-plastic
   cool gray-blue fallback.
+- **Testing a running Ember: drive it through `--remote-debugging-port`, not
+  synthetic input.** `npx electron . --remote-debugging-port=9222`, then
+  `http://127.0.0.1:9222/json/list` names one target per `WebContentsView`.
+  `Runtime.evaluate` against a target runs code inside that view and
+  `Page.captureScreenshot` photographs it alone. SendKeys/`keybd_event` go to
+  whatever window has focus — they steal the developer's keyboard, and they
+  stop arriving at all once anything else takes foreground.
+- `updateTabMetrics()` cancels the pending pass when it is called again, and a
+  new tab is followed by a run of state emits. Anything that must happen after
+  the widths settle has to survive being superseded — keep it as state (an id,
+  a flag), not as a closure handed to that one pass.
 - A held-modifier chord cannot be ended by listening for its key-up. A
   `BaseWindow` does not route keys to whichever `WebContentsView` reports
   itself focused, and a sandboxed page view never surfaces a modifier key-up
@@ -461,6 +473,23 @@ Newest first. One entry per active/recent unit of work.
   tab reorder plus tab-to-Favorite pinning, open-state and removal.
 - **For the other agent:** Preserve the accepted 32px/168px shell geometry and the
   hibernated-tab lifecycle; native page masks remain required on Windows.
+
+### 2026-08-24 — Claude Code — Tab strip scrolling (B10)
+
+- **Status / Branch:** pushed · `main`
+- **Touches:** `src/shared/tab-scroll.js`, `test/tab-scroll.test.js`,
+  `src/renderer/{chrome.js,chrome.css,preload.js}`, `test/preload.test.js`,
+  `BUGS.md`, `sync.bat`
+- **Summary:** The wheel now glides a tab per notch, strides further when
+  notches arrive quickly, and leans and stretches at the ends. The two causes
+  that made it look broken were elsewhere: the strip chased the active tab on
+  every state emit, and the scroll request for a newly opened tab was thrown
+  away with the metrics pass that a following emit cancelled.
+- **For the other agent:** the stride/overscroll arithmetic is in
+  `shared/tab-scroll.js` and unit-tested — change the feel there, not in the
+  renderer. Test a running Ember through the remote-debugging port; synthetic
+  keyboard and mouse steal the developer's focus and are unreliable. `sync.bat`
+  is a safe fast-forward-only pull for humans.
 
 ### 2026-08-24 — Claude Code — Bug pass 2: B1, B2/B13/B15, B17, B19, B10
 
