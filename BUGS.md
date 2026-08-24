@@ -145,12 +145,12 @@ this material.
 ## Omnibox / new tab
 
 ### B18 — Typing any single key on the new tab page should focus the search bar
-**Status:** 🔴 Open · **Owner:** Claude Code · **Area:** `src/renderer/pages/newtab.*`
+**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/renderer/pages/newtab.*`
 
 Any non-combo keypress should start typing into the search field.
 
 ### B19 — Bang keyword stays in the query after the space
-**Status:** 🔴 Open · **Owner:** Claude Code · **Area:** `src/shared/urls.js`, `src/renderer/chrome.*`
+**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/shared/urls.js`, `src/renderer/chrome.*`
 
 Typing `gh` shows the GitHub indicator but leaves `gh` in the box. Pressing
 space should move the keyword into the left-hand chip and leave the query empty;
@@ -158,20 +158,20 @@ backspace on an empty query should remove the bang. *Nice to have:* favicons for
 the default bangs in place of the text chip.
 
 ### B20 — New tab page carries unwanted copy and shortcut buttons
-**Status:** 🔴 Open · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 Remove "private by default", the "search runs on Google" text (both the inline
 one and the one at the bottom), "get extensions", and the row of buttons below
 the search bar linking to arbitrary sites.
 
 ### B21 — Search bar icons are not clickable
-**Status:** 🔴 Open · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 The search button on the right and the search icon on the left should show the
 pointer cursor and act as an alternative to pressing Enter.
 
 ### B22 — New tab favicon should be the coloured app icon
-**Status:** 🔴 Open · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 New tab, settings and history should all use the square coloured `app-icon`
 artwork used for the Windows app icon, not the longer lockup.
@@ -181,57 +181,57 @@ artwork used for the Windows app icon, not the longer lockup.
 ## Internal pages
 
 ### B23 — Extensions page is completely blank
-**Status:** 🔴 Open · **Owner:** Claude Code · **Area:** `ember://extensions`
+**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `ember://extensions`
 
 Nothing is planned for it yet, so at minimum show a work-in-progress state.
 
 ### B24 — Selection indicator artifacting in settings and history
-**Status:** 🔴 Open · **Owner:** Claude Code
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 The indicator is too bright, drowning parts of the boxes to invisibility —
 especially the arrows in the favourite sites section — and its corners do not
 align to the full size of the box.
 
 ### B25 — Grey text in the settings glass panels is unreadable
-**Status:** 🔴 Open · **Owner:** Claude Code
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 Any text sharing the colour of the search-shortcut names and links should be
 white or carry the same shadow the section descriptions use.
 
 ### B26 — No back button on settings, downloads and history
-**Status:** 🔴 Open · **Owner:** Claude Code
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 Add a top-left back button returning to the new tab page.
 
 ### B27 — Recently closed only stores the last closed site
-**Status:** 🔴 Open · **Owner:** Claude Code · **Area:** `src/main/history.js`
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/history.js`
 
 It should hold every tab closed in the last 5 minutes, each with a reopen button
 on the right.
 
 ### B28 — History hover text outruns the hover indicator
-**Status:** 🔴 Open · **Owner:** Claude Code
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 Moving the cursor quickly across the site-name text turns it white instantly
 while the liquid-glass hover indicator lags behind. The text should follow the
 cursor at the same speed and in the same way as the indicator.
 
 ### B29 — History section jumps land at the wrong scroll position
-**Status:** 🔴 Open · **Owner:** Claude Code
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 Pressing Older, then Yesterday or Today, does not scroll to the top of those
 sections; it lands somewhere arbitrary.
 
 ### B30 — No scroll animation for history section navigation
-**Status:** 🔴 Open · **Owner:** Claude Code
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 The left-hand navigate-to buttons should animate the scroll.
 
 ### B31 — Filter by date does not work on the history page
-**Status:** 🔴 Open · **Owner:** Claude Code
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 ### B32 — History search field has stray orange lines and tint
-**Status:** 🔴 Open · **Owner:** Claude Code
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 Orange lines on either side and an orange tint while typing. The orange lines
 must go entirely; either restyle the field to fit or remove it. The search icon
@@ -242,7 +242,7 @@ turning orange is fine.
 ## Copy
 
 ### B33 — "Add to ember" is not capitalised in the Chrome Web Store
-**Status:** 🔴 Open · **Owner:** Claude Code · **Area:** `src/main/extensions.js`
+**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/extensions.js`
 
 Should read "Add to Ember".
 

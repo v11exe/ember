@@ -22,10 +22,7 @@ body {
 
 .hero > * { animation: hero-in var(--dur-3) var(--ease) backwards; }
 .logo { animation-delay: 40ms }
-.tagline { animation-delay: 110ms }
 #native-liquid-glass { animation-delay: 170ms }
-.tiles { animation-delay: 230ms }
-.foot { animation-delay: 290ms }
 @keyframes hero-in {
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: none; }
@@ -54,13 +51,6 @@ body {
   letter-spacing: .015em;
 }
 
-.tagline {
-  margin: 0 0 30px;
-  color: var(--text-dim);
-  font-size: 13.5px;
-  letter-spacing: .01em;
-}
-
 /* ---------- LiquidGlass search: the glass owns every optical layer ---------- */
 #native-liquid-glass { height: 58px; }
 .liquid-glass-root { position: relative; width: 100%; height: 58px; transition: transform .2s ease-out; will-change: transform; }
@@ -71,7 +61,7 @@ body {
 .liquid-glass-highlight { position: absolute; inset: 0; padding: 1.5px; pointer-events: none; border-radius: var(--glass-radius); mix-blend-mode: screen; opacity: .2; background: linear-gradient(var(--glass-angle, 135deg), transparent 0%, rgba(255,255,255,var(--glass-highlight,.12)) 36%, rgba(255,255,255,.45) 66%, transparent 100%); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; box-shadow: 0 0 0 .5px rgba(255,255,255,.5) inset, 0 1px 3px rgba(255,255,255,.25) inset, 0 1px 4px rgba(0,0,0,.35); }
 .liquid-glass-highlight-overlay { mix-blend-mode: overlay; }
 .liquid-glass-search { display: flex; align-items: center; gap: 13px; width: 100%; height: 100%; min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; color: #fff; }
-.liquid-glass-search-icon { width: 21px; height: 21px; flex: none; color: #fff; opacity: .98; }
+.liquid-glass-search-icon { display: block; width: 21px; height: 21px; flex: none; color: #fff; opacity: .98; pointer-events: none; }
 /* Names the quick search the typed keyword resolves to, the same as the
    toolbar omnibox does, so the two entry points behave alike. */
 .liquid-glass-search-chip {
@@ -91,52 +81,12 @@ body {
 .liquid-glass-search input:focus, .liquid-glass-search input:focus-visible { outline: 0 !important; border: 0 !important; box-shadow: none !important; }
 .liquid-glass-search input::placeholder { color: rgba(255,255,255,.92); opacity: 1; }
 .liquid-glass-search input::-webkit-search-cancel-button { display: none; }
-.liquid-glass-search > button { flex: none; padding: 0; border: 0; outline: none; background: transparent; color: #fff; font: 600 13px/1 var(--font); cursor: default; }
-
-/* ---------- quick links ---------- */
-.tiles {
-  margin-top: 28px;
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px;
-}
-.tile {
-  display: flex; flex-direction: column; align-items: center; gap: 9px;
-  padding: 15px 8px 12px;
-  border: 1px solid var(--glass-divider); border-radius: 14px;
-  background: var(--glass-inner);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  color: var(--text-dim);
-  font: 500 12px/1 var(--font);
-  cursor: default;
-  transition: transform var(--dur-2) var(--ease), border-color var(--dur-1) var(--ease-soft), color var(--dur-1) var(--ease-soft), background var(--dur-1) var(--ease-soft);
-}
-.tile:active { transform: translateY(0) scale(.97); }
-.tile:hover {
-  transform: translateY(-3px);
-  border-color: var(--glass-border);
-  background: var(--glass-hover);
-  color: var(--text);
-}
-.tile-mark {
-  width: 30px; height: 30px; border-radius: 10px;
-  display: grid; place-items: center;
-  background: linear-gradient(140deg, var(--ambient-deep), var(--ambient-hot));
-  color: var(--accent-text);
-  font: 700 14px/1 var(--font);
-}
-
-/* ---------- footer ---------- */
-.foot {
-  margin-top: 30px;
-  display: flex; align-items: center; justify-content: center; gap: 10px;
-  color: var(--text-faint); font-size: 12px;
-}
-.foot button {
-  border: 0; background: none; padding: 0;
-  color: var(--ember-warm); font: inherit; cursor: default;
-}
-.foot button:hover { text-decoration: underline; }
-.dot { opacity: .5; }
+/* Both the glyph and the word run the search, so both say so with the
+   pointer and lift a little under it. */
+.liquid-glass-search > button { flex: none; padding: 0; border: 0; outline: none; background: transparent; color: #fff; font: 600 13px/1 var(--font); cursor: pointer; transition: opacity 120ms ease, transform 120ms ease; }
+.liquid-glass-search > button:hover { opacity: .78; }
+.liquid-glass-search > button:active { transform: scale(.94); }
+.liquid-glass-search-glyph { display: grid; place-items: center; }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }

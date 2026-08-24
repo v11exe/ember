@@ -505,7 +505,11 @@ els.omnibox.addEventListener('input', () => { omniboxDirty = true; renderBang() 
 els.omnibox.addEventListener('focus', () => els.omnibox.select())
 els.omnibox.addEventListener('blur', () => { omniboxDirty = false })
 els.omnibox.addEventListener('keydown', (e) => {
-  if (e.key === 'Tab' && !e.shiftKey && !engaged) {
+  // Space is the natural end of a keyword — you type `gh` and keep going — so
+  // it commits to the quick search the same way Tab does, leaving the engine
+  // named on the left and the query empty. Without it the keyword sat in the
+  // box and became part of what you searched for.
+  if ((e.key === 'Tab' || e.key === ' ') && !e.shiftKey && !engaged) {
     const ready = readyToEngage(els.omnibox.value)
     if (ready) { e.preventDefault(); engage(ready) }
     return

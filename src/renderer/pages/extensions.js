@@ -1,15 +1,22 @@
 const list = document.getElementById('ext-list')
 const panel = document.getElementById('panel')
 
+// This document is the toolbar dropdown, where the preload provides
+// window.emberPanel. Opened as an ordinary tab — Ctrl+Shift+E, or the address
+// bar — there is no bridge, and reaching for it threw before anything was
+// drawn, which is why the tab came up blank. Standing on its own it says what
+// it is instead.
+const panelApi = window.emberPanel || null
+
 // Window-relative offset of this view, needed because popup anchoring is
 // measured from the window origin, not from this page.
 let origin = { x: 0, y: 0 }
-window.emberPanel.onOrigin((next) => { origin = next })
+panelApi?.onOrigin((next) => { origin = next })
 
 /** Ask main to resize the view to whatever the content actually needs. */
 function fit() {
   const height = Math.ceil(panel.scrollHeight) + 2
-  window.emberPanel.resize(Math.min(height, 520))
+  panelApi?.resize(Math.min(height, 520))
 }
 
 /**
@@ -27,7 +34,7 @@ function activate(extensionId, iconEl) {
     width: rect.width,
     height: rect.height,
   }
-  window.emberPanel.setAnchor(anchorRect)
+  panelApi?.setAnchor(anchorRect)
   window.browserAction.activate('_self', {
     eventType: 'click',
     extensionId,
@@ -90,7 +97,7 @@ function render(extensions) {
     remove.onclick = async () => {
       remove.disabled = true
       remove.textContent = '…'
-      const { extensions: next } = await window.emberPanel.remove(ext.id)
+      const { extensions: next } = await panelApi.remove(ext.id)
       render(next)
     }
 
@@ -100,8 +107,28 @@ function render(extensions) {
   fit()
 }
 
-document.getElementById('panel-store').onclick = () => window.emberPanel.openStore()
-window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.emberPanel.close() })
+document.getElementById('panel-store').onclick = () => {
+  if (panelApi) panelApi.openStore()
+  else if (window.ember?.openStore) window.ember.openStore()
+}
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') panelApi?.close() })
 
-async function refresh() { render(await window.emberPanel.list()) }
+function renderStandalone() {
+  document.body.classList.add('standalone')
+  const note = document.createElement('div')
+  note.className = 'ext-wip'
+  const title = document.createElement('strong')
+  title.textContent = 'Extensions are a work in progress'
+  const body = document.createElement('p')
+  body.textContent = 'Managing them here is not built yet. For now the toolbar '
+    + 'button lists what is installed and can remove them, and the Chrome Web '
+    + 'Store installs new ones.'
+  note.append(title, body)
+  list.replaceChildren(note)
+}
+
+async function refresh() {
+  if (!panelApi) { renderStandalone(); return }
+  render(await panelApi.list())
+}
 refresh()

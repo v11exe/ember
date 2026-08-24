@@ -74,12 +74,17 @@ function setupExtensions(session, hooks) {
 const REBRAND = `(() => {
   if (window.__emberRebrand) return
   window.__emberRebrand = true
+  // Case-insensitive, because the store writes these in sentence case on some
+  // surfaces and a missed match left "Add to chrome" standing next to the
+  // replacements that had worked. The product name is spelled the one way
+  // whatever case the source used. "Added to" is tested before "Add to" so
+  // the longer phrase wins.
   const MAP = [
-    [/\bAdd to Chrome\b/g, 'Add to Ember'],
-    [/\bAdded to Chrome\b/g, 'Added to Ember'],
-    [/\bRemove from Chrome\b/g, 'Remove from Ember'],
-    [/\bAvailable on Chrome\b/g, 'Available on Ember'],
-    [/\bYou're signed in to Chrome\b/g, "You're signed in to Ember"],
+    [/\bAdded to Chrome\b/gi, 'Added to Ember'],
+    [/\bAdd to Chrome\b/gi, 'Add to Ember'],
+    [/\bRemove from Chrome\b/gi, 'Remove from Ember'],
+    [/\bAvailable on Chrome\b/gi, 'Available on Ember'],
+    [/\byou're signed in to Chrome\b/gi, "You're signed in to Ember"],
   ]
   const swap = (text) => MAP.reduce((acc, [re, to]) => acc.replace(re, to), text)
   const walk = (root) => {

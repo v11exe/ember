@@ -79,3 +79,13 @@ body { font-family: var(--font); color: var(--text); user-select: none; overflow
 
 .ext-empty { padding: 20px 16px; text-align: center; color: var(--text-faint); font-size: 12px; line-height: 1.55; }
 .ext-empty strong { display: block; color: var(--text-dim); font-size: 13px; margin-bottom: 5px; }
+
+/* Standing on its own as a tab rather than hanging off the toolbar button:
+   the panel is a dropdown-sized card, so give it room and say plainly that
+   there is not much here yet. */
+body.standalone { display: grid; place-items: center; min-height: 100vh; padding: 40px 20px; }
+body.standalone .panel { width: min(560px, 100%); }
+body.standalone .panel-store { display: none; }
+.ext-wip { padding: 22px 20px 24px; display: grid; gap: 10px; }
+.ext-wip strong { font-size: 14px; font-weight: 620; }
+.ext-wip p { margin: 0; color: var(--text-dim); font-size: 12.5px; line-height: 1.55; }
