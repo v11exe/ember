@@ -116,6 +116,13 @@ test/                          node:test contracts/integration fixtures
   its own window, so Windows never runs a move loop — edge snapping is
   implemented in `WIN_DRAG_END` and resolved from the live cursor, because the
   renderer coalesces drag moves and drops the pending one on pointer-up.
+- Windows will not leave the maximised state while a mouse button is held, so
+  `unmaximize()`/`restore()` called during a caption drag return with the window
+  still zoomed and no event. Dragging a maximised window off the top therefore
+  restores on pointer-up; `restoreUnderCursor()` computes the landing rectangle
+  when the restore actually fires, from the live cursor, not from the grab.
+  `WIN_DRAG_START` is an `invoke` so the renderer waits before taking pointer
+  capture.
 - Electron's default application menu binds Ctrl+W to Close Window.
   `Menu.setApplicationMenu(null)` at startup is what keeps Ctrl+W a tab close;
   `shortcuts.js` is the only owner of accelerators.

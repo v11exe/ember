@@ -36,6 +36,7 @@ window.EmberBrand.mountChromeIcon($('chrome-brand'))
 
 const NON_DRAG_SELECTOR = 'button, input, .tab, .omnibox, .bookmark-item'
 let dragPointer = null
+let dragArmed = false
 let pendingDragPoint = null
 let dragFrame = 0
 
@@ -49,14 +50,22 @@ function flushWindowDrag() {
 els.topChrome.addEventListener('pointerdown', (event) => {
   if (event.button !== 0 || event.target.closest(NON_DRAG_SELECTOR)) return
   dragPointer = event.pointerId
-  els.topChrome.setPointerCapture(event.pointerId)
-  window.ember.beginWindowDrag(event.screenX, event.screenY)
+  dragArmed = false
   event.preventDefault()
+  // Capture is taken only once main has answered. Windows refuses to change a
+  // window's show state while that window's thread holds the mouse, so taking
+  // it first is what stopped a maximised window from ever coming loose.
+  window.ember.beginWindowDrag(event.screenX, event.screenY).then(() => {
+    if (dragPointer !== event.pointerId) return
+    dragArmed = true
+    try { els.topChrome.setPointerCapture(event.pointerId) } catch { /* already up */ }
+    if (pendingDragPoint && !dragFrame) dragFrame = requestAnimationFrame(flushWindowDrag)
+  }, () => { dragPointer = null })
 })
 els.topChrome.addEventListener('pointermove', (event) => {
   if (event.pointerId !== dragPointer) return
   pendingDragPoint = { x: event.screenX, y: event.screenY }
-  if (!dragFrame) dragFrame = requestAnimationFrame(flushWindowDrag)
+  if (dragArmed && !dragFrame) dragFrame = requestAnimationFrame(flushWindowDrag)
 })
 function finishWindowDrag(event) {
   if (event.pointerId !== dragPointer) return
@@ -64,6 +73,7 @@ function finishWindowDrag(event) {
   dragFrame = 0
   pendingDragPoint = null
   dragPointer = null
+  dragArmed = false
   window.ember.endWindowDrag()
 }
 els.topChrome.addEventListener('pointerup', finishWindowDrag)

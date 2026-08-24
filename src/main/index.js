@@ -878,25 +878,68 @@ function restoreUnderCursor(target, x, y) {
     width: size.width,
     height: size.height,
   }
-  // unmaximize() does not settle before it returns on Windows, so the bounds
-  // are applied again once the restore has actually landed. Applying them
-  // immediately as well keeps the very first drag frame from lagging.
-  win.once('unmaximize', () => { if (!win.isDestroyed()) win.setBounds(placed) })
-  win.unmaximize()
-  try { win.setBounds(placed) } catch { /* the event handler above still will */ }
+  // Windows will not leave the maximised state while a mouse button is down,
+  // so this usually lands when the drag ends rather than when it starts. By
+  // then the cursor has moved, and the window belongs under it — so the
+  // placement is computed when the restore actually happens, not now.
+  const place = () => {
+    if (win.isDestroyed()) return
+    let at = { x, y }
+    try { at = screen.getCursorScreenPoint() } catch { /* keep the grab point */ }
+    win.setBounds({
+      x: Math.round(at.x - size.width * ratio),
+      y: Math.round(at.y - grabY),
+      width: size.width,
+      height: size.height,
+    })
+  }
+  win.once('unmaximize', place)
+  unmaximizeNow(win)
+  try { win.setBounds(placed) } catch { /* `place` still will */ }
   return placed
 }
 
-ipcMain.on(IPC.WIN_DRAG_START, (event, point = {}) => {
+/**
+ * Actually un-maximise, whoever maximised it.
+ *
+ * `unmaximize()` only undoes a maximise Electron performed itself; against a
+ * window put up by anything else — Windows' own Snap, or Ember writing the
+ * work-area bounds directly — it returns having done nothing and never emits
+ * its event. Windows then ignores every geometry call, because a zoomed window
+ * does not take one, and the drag goes nowhere. `restore()` goes through the
+ * widget instead and clears the state either way.
+ *
+ * @returns {boolean} whether the window is free of the maximised state now.
+ */
+function unmaximizeNow(win) {
+  if (!win || win.isDestroyed() || !win.isMaximized()) return true
+  win.unmaximize()
+  if (win.isMaximized()) win.restore()
+  // Neither call lands while the window is still inside the input handling
+  // that asked for it — both return with the window reporting itself maximised
+  // and no `unmaximize` event ever arrives. The one that actually clears the
+  // state is the one made on the next turn of the loop.
+  if (win.isMaximized()) {
+    setImmediate(() => {
+      if (win.isDestroyed() || !win.isMaximized()) return
+      win.unmaximize()
+      if (win.isMaximized()) win.restore()
+    })
+  }
+  return !win.isMaximized()
+}
+
+ipcMain.handle(IPC.WIN_DRAG_START, async (event, point = {}) => {
   const target = browserFromSender(event.sender)
-  if (!target) return
+  if (!target) return false
   const x = Number(point.x)
   const y = Number(point.y)
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return false
   const win = target.win
   // A maximised window used to refuse the drag outright, which left the only
   // way out of full screen being the restore button.
   const wasMaximized = win.isMaximized()
+  const before = win.getBounds()
   const placed = wasMaximized ? restoreUnderCursor(target, x, y) : null
   // The window's own position is not trustworthy for a frame or two after a
   // restore, so the drag starts from where it was actually put.
@@ -909,9 +952,32 @@ ipcMain.on(IPC.WIN_DRAG_START, (event, point = {}) => {
     // zone it is trying to escape; re-snapping there until it has actually
     // left would make the window impossible to pull down.
     escaping: wasMaximized,
+    // Where on the caption the drag took hold, so the window can be put back
+    // under the cursor whenever the restore is finally allowed to land.
+    grabRatio: before.width ? Math.min(1, Math.max(0, (x - before.x) / before.width)) : 0.5,
+    grabOffsetY: Math.max(0, y - before.y),
     zone: null,
   })
+  // Windows will not change a window's show state while that window's own
+  // thread has the mouse captured, and the renderer takes the capture the
+  // moment this resolves. So the restore is given the gap before that: the
+  // caller waits here until the window is genuinely out of the maximised
+  // state, and only then starts sending moves.
+  if (wasMaximized) await settled(() => !win.isDestroyed() && !win.isMaximized())
+  return true
 })
+
+/** Poll a condition on the loop's own turns, up to a short deadline. */
+function settled(done, timeout = 250) {
+  return new Promise((resolve) => {
+    const started = Date.now()
+    const tick = () => {
+      if (done() || Date.now() - started > timeout) { resolve(done()); return }
+      setTimeout(tick, 8)
+    }
+    tick()
+  })
+}
 ipcMain.on(IPC.WIN_DRAG_MOVE, (event, point = {}) => {
   const drag = windowDrags.get(event.sender.id)
   if (!drag || drag.target.win.isDestroyed()) return
@@ -928,7 +994,15 @@ ipcMain.on(IPC.WIN_DRAG_MOVE, (event, point = {}) => {
   if (!drag.escaping && drag.zone?.kind === 'maximize') snapPicker.show({ x, y })
   else if (!snapPicker.contains({ x, y })) snapPicker.hide()
   if (snapPicker.open) snapPicker.track({ x, y })
-  drag.target.win.setPosition(
+  // Until the restore has landed the window is still zoomed, and moving a
+  // zoomed window is not something Windows will do — every SetWindowPos while
+  // one is pending puts the maximised state back, so the restore never
+  // arrives and the drag goes nowhere. Ask again and leave the position
+  // alone; `restoreUnderCursor`'s `unmaximize` handler places it, and the very
+  // next move picks the drag up from there.
+  const win = drag.target.win
+  if (win.isMaximized()) { unmaximizeNow(win); return }
+  win.setPosition(
     Math.round(drag.windowX + x - drag.pointerX),
     Math.round(drag.windowY + y - drag.pointerY),
   )
@@ -958,6 +1032,9 @@ ipcMain.on(IPC.WIN_DRAG_END, (event) => {
   // Let go without ever leaving the edge it was pulled off and the window
   // simply goes back; that is a cancelled escape, not a request to re-snap.
   if (drag.escaping && drag.zone?.kind === 'maximize') { win.maximize(); return }
+  // Pulled out of full screen: the restore lands as the button comes up, and
+  // restoreUnderCursor places the window under the cursor when it does.
+  if (drag.escaping) { unmaximizeNow(win); return }
   if (!drag.zone) return
   // Remember the size to come back to, the way Windows restores a snapped
   // window to what it was before.
