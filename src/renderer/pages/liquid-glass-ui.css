@@ -32,6 +32,14 @@
   --lg-shadow-sm: 0 6px 18px rgba(0, 0, 0, .22);
   --lg-motion: 170ms cubic-bezier(.5, 0, .1, 1);
   /* The rim the dropdown's selector lens wears, reused by every hover state. */
+  /* The hover pill on an internal page sits under live controls, so its
+     brightest inset is pulled back from the dropdown's. */
+  --lg-lens-rim-soft:
+    inset 0 0 0 1px rgba(255, 255, 255, .09),
+    inset 2px 1px 0 -1px rgba(255, 255, 255, .30),
+    inset -1.5px -1px 0 -1px rgba(255, 255, 255, .20),
+    inset -1px 2px 3px -1px rgba(0, 0, 0, .12),
+    0 2px 5px rgba(0, 0, 0, .10);
   --lg-lens-rim:
     inset 0 0 0 1px rgba(255, 255, 255, .11),
     inset 2px 1px 0 -1px rgba(255, 255, 255, .52),
@@ -56,6 +64,11 @@ body.native-glass-page {
   /* Text sits on whatever is behind the window, so it carries its own contrast,
      exactly like the dropdown menu's labels do. */
   text-shadow: 0 1px 2px rgba(0, 0, 0, .82), 0 0 4px rgba(0, 0, 0, .3);
+  /* The palette's greys were picked against a solid panel. Over live glass the
+     faintest of them came out unreadable, so both quiet tones are lifted here
+     while keeping one lighter than the other. */
+  --text-dim: rgba(255, 255, 255, .82);
+  --text-faint: rgba(255, 255, 255, .64);
 }
 .native-glass-page .ambient { display: none; }
 
@@ -173,8 +186,11 @@ body.native-glass-page {
   content: '';
   position: absolute; inset: 0;
   border-radius: inherit;
-  background-color: rgba(255, 255, 255, .095);
-  box-shadow: var(--lg-lens-rim);
+  /* Dimmer than the dropdown's, because these rows carry controls of their
+     own: at .095 the Favourite grid's stepper arrows were washed out to
+     nothing under it. The rim still describes the shape. */
+  background-color: rgba(255, 255, 255, .055);
+  box-shadow: var(--lg-lens-rim-soft, var(--lg-lens-rim));
 }
 .lg-lens[data-visible="true"] {
   opacity: 1;
@@ -186,3 +202,22 @@ body.native-glass-page {
   :root { --lg-motion: 1ms linear; }
   .lg-button:active { transform: none; }
 }
+
+/* Back to the new tab page, top-left of every internal page. These open as
+   ordinary tabs, so there is otherwise nothing on the page itself that leads
+   back out of them. */
+.back-home {
+  flex: none;
+  display: grid; place-items: center;
+  width: 30px; height: 30px;
+  margin-left: -4px;
+  padding: 0;
+  border: 0; border-radius: 9px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: default;
+  transition: background var(--lg-motion), color var(--lg-motion);
+}
+.back-home svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.back-home:hover { background: var(--glass-hover); color: var(--text); }
+.back-home:active { transform: scale(.93); }

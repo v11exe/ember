@@ -60,7 +60,10 @@ body {
   transition: box-shadow var(--dur-2) var(--ease);
 }
 .search:focus-within {
-  box-shadow: 0 0 0 3px var(--accent-halo), var(--lg-shadow), var(--lg-lens-rim);
+  /* Neutral: a 3px orange halo here read as orange bars down either side of
+     the field and tinted it while typing. The icon still warms up, which is
+     the part that was worth keeping. */
+  box-shadow: 0 0 0 1px var(--glass-border), var(--lg-shadow), var(--lg-lens-rim);
 }
 .search-icon { width: 17px; height: 17px; flex: none; fill: none; stroke: var(--text-faint); stroke-width: 1.7; stroke-linecap: round; }
 .search:focus-within .search-icon { stroke: var(--ember-warm); }
@@ -195,7 +198,14 @@ body {
   color: var(--ember-warm); font: 700 9px var(--font);
 }
 .row .host { color: var(--text); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row .title { color: var(--text-dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .title {
+  color: var(--text-dim); font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  /* The hover lens slides between rows on --lg-motion. The label lightens on
+     exactly that curve so the two arrive together instead of the text
+     flipping the moment the pointer crosses the row. */
+  transition: color var(--lg-motion);
+}
 .row:hover .title { color: var(--text); }
 
 .empty { padding: 40px 20px; text-align: center; color: var(--text-faint); font-size: 13px; }
@@ -231,3 +241,30 @@ body {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* Recently closed rows carry a way straight back to the tab. */
+/* The row is a five-column grid, so the button needs a column of its own or
+   it wraps onto a second line. Only rows that carry one get the extra track. */
+.row:has(.reopen) { grid-template-columns: auto 74px 18px minmax(120px, 210px) minmax(0, 1fr) auto; }
+.reopen {
+  flex: none;
+  justify-self: end;
+  padding: 5px 12px;
+  border: 1px solid var(--glass-divider);
+  border-radius: 999px;
+  background: var(--glass-inner);
+  color: var(--text);
+  font: 600 11.5px var(--font);
+  opacity: 0;
+  transition: opacity var(--lg-motion), background var(--lg-motion);
+}
+.row:hover .reopen, .reopen:focus-visible { opacity: 1; }
+.reopen:hover { background: var(--glass-hover); }
+
+/* B32: the global :focus-visible ring in theme.css is a 2px orange box-shadow.
+   On this input it is clipped by the pill's rounded overflow, so all that
+   showed was two orange bars down either side. The pill already says it has
+   focus — with its own outline and by warming the magnifier — so the input
+   inside it does not need a second ring. */
+.search input:focus,
+.search input:focus-visible { box-shadow: none; outline: none; }

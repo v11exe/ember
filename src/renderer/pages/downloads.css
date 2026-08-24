@@ -87,3 +87,11 @@
   .dl-actions { grid-column: 1 / -1; justify-content: flex-end; }
   .dl-icon { width: 32px; height: 32px; }
 }
+
+/* B32: the global :focus-visible ring in theme.css is a 2px orange box-shadow.
+   On this input it is clipped by the pill's rounded overflow, so all that
+   showed was two orange bars down either side. The pill already says it has
+   focus — with its own outline and by warming the magnifier — so the input
+   inside it does not need a second ring. */
+.search input:focus,
+.search input:focus-visible { box-shadow: none; outline: none; }

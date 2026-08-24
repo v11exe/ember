@@ -27,6 +27,9 @@ let showAllClosed = false
 const selected = new Set()
 
 const DAY = 86_400_000
+// "Recently" closed means the last five minutes. Showing one entry meant the
+// tab you actually wanted was usually the one hidden.
+const RECENTLY_CLOSED_WINDOW = 5 * 60_000
 const time = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
 const heading = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
 
@@ -75,7 +78,7 @@ function faviconFallback(entry) {
   return span
 }
 
-function row(entry, { stamp = entry.visitedAt } = {}) {
+function row(entry, { stamp = entry.visitedAt, reopen = false } = {}) {
   const el = document.createElement('div')
   el.className = 'row' + (selected.has(entry.id) ? ' selected' : '')
   el.title = entry.url
@@ -104,14 +107,24 @@ function row(entry, { stamp = entry.visitedAt } = {}) {
   title.textContent = entry.title
 
   el.append(box, when, favicon(entry), host, title)
+  if (reopen) {
+    const again = document.createElement('button')
+    again.className = 'reopen'
+    again.type = 'button'
+    again.textContent = 'Reopen'
+    again.title = `Reopen ${entry.title}`
+    again.onclick = (event) => { event.stopPropagation(); api?.open(entry.url) }
+    el.append(again)
+  }
   el.onclick = () => api?.open(entry.url)
   return el
 }
 
-function card(title, rows, extra) {
+function card(title, rows, extra, section = null) {
   const el = document.createElement('section')
   el.className = 'card'
   el.dataset.lg = ''
+  if (section) el.dataset.section = section
 
   const head = document.createElement('div')
   head.className = 'card-head'
@@ -137,20 +150,32 @@ function render() {
   const sections = []
 
   if (!query && dayFilter === null && snapshot.recentlyClosed.length) {
-    const closed = showAllClosed ? snapshot.recentlyClosed : snapshot.recentlyClosed.slice(0, 1)
+    const cutoff = Date.now() - RECENTLY_CLOSED_WINDOW
+    const recent = snapshot.recentlyClosed.filter((item) => item.closedAt >= cutoff)
+    // Nothing in the window yet: the most recent one is still the useful
+    // answer, so the section never goes empty just because five minutes passed.
+    const within = recent.length ? recent : snapshot.recentlyClosed.slice(0, 1)
+    const closed = showAllClosed ? snapshot.recentlyClosed : within
     const more = document.createElement('button')
     more.className = 'more'
     more.textContent = showAllClosed ? 'Show less' : 'Show more'
     more.onclick = (event) => { event.stopPropagation(); showAllClosed = !showAllClosed; render() }
     sections.push(card(
       'Recently closed',
-      closed.map((item) => row(item, { stamp: item.closedAt })),
-      snapshot.recentlyClosed.length > 1 ? more : null,
+      closed.map((item) => row(item, { stamp: item.closedAt, reopen: true })),
+      snapshot.recentlyClosed.length > closed.length || showAllClosed ? more : null,
+      'closed',
     ))
   }
 
+  const today = startOfDay(Date.now())
+  let taggedOlder = false
   for (const [day, entries] of groupByDay(visible)) {
-    sections.push(card(dayLabel(day), entries.map((entry) => row(entry))))
+    let section = null
+    if (day === today) section = 'today'
+    else if (day === today - DAY) section = 'yesterday'
+    else if (!taggedOlder) { section = 'older'; taggedOlder = true }
+    sections.push(card(dayLabel(day), entries.map((entry) => row(entry)), null, section))
   }
 
   if (!sections.length) {
@@ -206,19 +231,27 @@ function renderSideNav(visible) {
   void visible
 }
 
+/**
+ * Go to a section of the list.
+ *
+ * These used to narrow the list to that day instead, which is why pressing
+ * Older and then Today landed somewhere arbitrary: the page it scrolled was
+ * not the page it had just rebuilt. Nothing is filtered now — the whole list
+ * stays put and the view travels to the heading, which is what "navigate to"
+ * says it does.
+ */
 function jumpTo(id) {
-  const today = startOfDay(Date.now())
-  if (id === 'closed') { dayFilter = null; setDateLabel(null); render(); els.results.scrollTo({ top: 0 }); return }
-  if (id === 'today') dayFilter = today
-  else if (id === 'yesterday') dayFilter = today - DAY
-  else if (id === 'older') dayFilter = null
-  setDateLabel(dayFilter)
-  render()
-  if (id === 'older') {
-    const cards = els.results.querySelectorAll('.card')
-    cards[cards.length - 1]?.scrollIntoView({ block: 'start' })
-  }
+  if (dayFilter !== null) { dayFilter = null; setDateLabel(null); render() }
+  const target = els.results.querySelector(`[data-section="${id}"]`)
+  if (!target) return
+  const top = target.offsetTop - els.results.offsetTop
+  els.results.scrollTo({
+    top: Math.max(0, top),
+    behavior: prefersReducedMotion.matches ? 'auto' : 'smooth',
+  })
 }
+
+const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 
 function setDateLabel(day) {
   els.dateLabel.textContent = day === null ? 'Pick the date' : heading.format(new Date(day))
@@ -251,7 +284,15 @@ els.deleteData.onclick = async () => {
   render()
 }
 els.fullView.onclick = () => window.scrollTo({ top: 0 })
-els.dateFilter.onclick = () => els.dateInput.showPicker?.()
+const openDatePicker = (event) => {
+  // The input is a transparent overlay, and Chromium does not open a date
+  // picker from a click on one — only from the calendar indicator it hides, or
+  // from an explicit request like this. Without it the control did nothing.
+  event?.preventDefault()
+  try { els.dateInput.showPicker() } catch { els.dateInput.focus() }
+}
+els.dateFilter.onclick = openDatePicker
+document.querySelector('.side-item')?.addEventListener('click', openDatePicker)
 
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && query) { els.clearSearch.click(); return }
@@ -268,3 +309,10 @@ async function load() {
 }
 
 load()
+
+// B26: back to the new tab page. These pages open as ordinary tabs, so without
+// this the only way out is the omnibox or the tab strip.
+document.getElementById('back-home')?.addEventListener('click', () => {
+  if (window.ember?.navigate) window.ember.navigate('ember://newtab')
+  else location.href = 'ember://newtab'
+})

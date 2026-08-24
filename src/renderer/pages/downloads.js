@@ -248,3 +248,10 @@ async function load() {
 }
 
 load()
+
+// B26: back to the new tab page. These pages open as ordinary tabs, so without
+// this the only way out is the omnibox or the tab strip.
+document.getElementById('back-home')?.addEventListener('click', () => {
+  if (window.ember?.navigate) window.ember.navigate('ember://newtab')
+  else location.href = 'ember://newtab'
+})

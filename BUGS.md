@@ -186,52 +186,52 @@ artwork used for the Windows app icon, not the longer lockup.
 Nothing is planned for it yet, so at minimum show a work-in-progress state.
 
 ### B24 — Selection indicator artifacting in settings and history
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 The indicator is too bright, drowning parts of the boxes to invisibility —
 especially the arrows in the favourite sites section — and its corners do not
 align to the full size of the box.
 
 ### B25 — Grey text in the settings glass panels is unreadable
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 Any text sharing the colour of the search-shortcut names and links should be
 white or carry the same shadow the section descriptions use.
 
 ### B26 — No back button on settings, downloads and history
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 Add a top-left back button returning to the new tab page.
 
 ### B27 — Recently closed only stores the last closed site
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/history.js`
+**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/history.js`
 
 It should hold every tab closed in the last 5 minutes, each with a reopen button
 on the right.
 
 ### B28 — History hover text outruns the hover indicator
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 Moving the cursor quickly across the site-name text turns it white instantly
 while the liquid-glass hover indicator lags behind. The text should follow the
 cursor at the same speed and in the same way as the indicator.
 
 ### B29 — History section jumps land at the wrong scroll position
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 Pressing Older, then Yesterday or Today, does not scroll to the top of those
 sections; it lands somewhere arbitrary.
 
 ### B30 — No scroll animation for history section navigation
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 The left-hand navigate-to buttons should animate the scroll.
 
 ### B31 — Filter by date does not work on the history page
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 ### B32 — History search field has stray orange lines and tint
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 Orange lines on either side and an orange tint while typing. The orange lines
 must go entirely; either restyle the field to fit or remove it. The search icon
@@ -284,3 +284,23 @@ cause is named so nobody re-derives it.
   `getAnimations()`, so rewinding what it returned did nothing after the first
   open. Overlay views are reused; entrances must be a class removed and
   re-added with a reflow between.
+
+### B34 — Recently closed does not repopulate after a restart
+**Status:** 🔴 Open · **Owner:** _unclaimed_ · **Area:** `src/main/history.js`, `src/main/index.js`
+
+Found while verifying B27. The renderer now lists every tab closed in the last
+five minutes and B27's display fix was confirmed on screen, but in a fresh
+session closing a tab and reloading `ember://history` leaves the section
+absent: `snapshot.recentlyClosed` comes back empty. `noteClosedTab()` keeps 25
+entries and `tabs.onTabClosed` is wired to it, so the break is somewhere
+between the tab close and the snapshot — persistence across a restart is the
+first thing to check, since `recentlyClosed` is initialised to `[]` in the
+constructor and may never be read back from `history.json`.
+
+### B35 — Opening an internal page reuses its tab without refreshing it
+**Status:** 🔴 Open · **Owner:** _unclaimed_ · **Area:** `src/main/index.js`
+
+`openInternal()` selects an existing tab for the same page rather than
+reloading it, so Ctrl+H on an already-open History tab shows the snapshot from
+whenever it was first opened. Visits and closed tabs made since are missing
+until the tab is reloaded by hand.
