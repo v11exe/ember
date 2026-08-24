@@ -34,7 +34,7 @@ ships.
 ## Chrome / window shell
 
 ### B1 — Ctrl+Tab switcher does not commit on Ctrl release
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/switcher-panel.js`, `src/main/shortcuts.js`, switcher page
+**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/switcher-panel.js`, `src/main/shortcuts.js`, switcher page
 
 Releasing Ctrl does not switch to the highlighted tab; the overlay stays up
 until it is clicked with the mouse. Pressing Tab alone while the overlay is open
@@ -42,7 +42,7 @@ causes artifacting and should not be possible at all. After the overlay closes,
 Ctrl+Tab does nothing for several seconds.
 
 ### B2 — Switcher uses the purple plastic backdrop
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 Replace with the frosted, heavily blurred liquid-glass material (see
 cross-cutting decisions).
@@ -112,7 +112,7 @@ Animate them, including when triggered by Alt+Left, Alt+Right and Ctrl+R.
 ## Overlays, menus and panels
 
 ### B13 — Selection conversion popup uses the purple plastic box
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/selection-panel.js`
+**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/selection-panel.js`
 
 Should be the liquid-glass material, non-elastic, frosted and blurred enough
 that its own text stays readable.
@@ -121,7 +121,7 @@ that its own text stays readable.
 **Status:** ✅ Fixed · **Owner:** Claude Code
 
 ### B15 — File upload menu opens in the centre of the screen
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/upload-panel.js`, `src/main/popup-positioner.js`
+**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/upload-panel.js`, `src/main/popup-positioner.js`
 
 It should anchor a corner to the cursor, picking the corner that keeps the panel
 inside the window, preferring top-left (opening down and to the right) when no
@@ -134,7 +134,7 @@ Text underneath shows through. Increase blur/frost substantially or move it to
 the search-bar liquid-glass material with tuned values.
 
 ### B17 — Hover pill corners break in right-click style menus
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/context-menu-panel.js`, `src/renderer/pages/liquid-glass-ui.*`
+**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/context-menu-panel.js`, `src/renderer/pages/liquid-glass-ui.*`
 
 The hover indicator's corners are not cleanly rounded into the pill; randomly
 coloured 90° angles protrude from all four corners. Affects every menu using
@@ -150,7 +150,7 @@ this material.
 Any non-combo keypress should start typing into the search field.
 
 ### B19 — Bang keyword stays in the query after the space
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/shared/urls.js`, `src/renderer/chrome.*`
+**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/shared/urls.js`, `src/renderer/chrome.*`
 
 Typing `gh` shows the GitHub indicator but leaves `gh` in the box. Pressing
 space should move the keyword into the left-hand chip and leave the query empty;
@@ -325,3 +325,54 @@ tile instead of insertion, making duplicate Quick Sites appear to be replaced.
 Root Quick Sites now match their direct host and child subdomains after `www.`
 normalisation, while page targets remain exact-host/path. Tab drags always use a
 fresh preview candidate, so their insertion preview matches the persisted result.
+---
+
+## Second pass — B1, B2/B13/B15, B5, B10, B17, B19
+
+### B1 — why three attempts failed before this one
+
+Nothing inside Ember hears the modifier come back up dependably. Traced with
+per-`webContents` input logging: a long hold with several taps produces
+keydowns and **no key-up anywhere**. A `BaseWindow` does not route keys to
+whichever `WebContentsView` reports itself focused — `webContents.isFocused()`
+returned `true` for the overlay while the next Tab still arrived at the page —
+and a sandboxed page view never surfaces a modifier key-up through
+`before-input-event` at all.
+
+Five in-page signals (window/document key-up, a key-down without the modifier,
+`blur`, `pointermove`) did not close the gap, because in the failing case no
+event of any kind is delivered. The keyboard state itself is never ambiguous,
+so `key-release.js` asks the OS: a small `GetAsyncKeyState` watcher runs while
+the switcher is open and exits the moment Ctrl is up. **Any future feature
+driven by a held chord should use it rather than listening for a key-up.**
+
+The dead period after closing was a separate cause: nothing took keyboard
+focus after a tab switch, so the next shortcut went nowhere. `tabs.select()`
+now focuses the page it selected.
+
+### B2 / B13 / B15 — an opaque fill is not glass
+
+The first fix pushed `--frost-fill` to .78 alpha, which is a painted panel, not
+frosted glass — the "black plastic". Readability has to come from the blur:
+the capture is taken to 56px and keeps its colour and light, the tint is a
+scrim under half alpha, and the surface wears the search pill's own specular
+rim. **Do not raise the fill to solve contrast; raise the blur.**
+
+### B5 — does not reproduce (still open)
+
+Tested and ruled out, so nobody repeats them: repeated resizes, three
+maximise/restore cycles, a window sized to exactly the work area, and a window
+larger than the display. Corners stayed rounded in all four. Note that
+`OUTER_RADIUS` is 0, so Ember paints no corner at all — the curve is entirely
+DWM's, which rules out any stuck `.maximized` class as the cause. Remaining
+suspects: the manual F11 full-screen path, and display/DPI changes.
+
+### B10 — two causes, one of them invisible
+
+The wheel set `scrollLeft` per notch, which is a series of jumps rather than a
+movement. The bigger one: `renderTabs()` chased the active tab on *every*
+state emit — a title or favicon update was enough — dragging the strip back
+from wherever it had just been scrolled, which is why scrolling often seemed
+not to work at all. It now travels only for a tab opening or the selection
+actually moving. **Not yet confirmed against the running app**: synthetic
+input stopped reaching the window part-way through this pass.

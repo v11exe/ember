@@ -39,6 +39,8 @@ src/main/rates.js              cached exchange-rate provider
 src/main/archive.js            click-only Wayback availability lookup
 src/main/switcher-panel.js     MRU Ctrl+Tab visual switcher
 src/main/snap-picker.js        screen-anchored Snap-layouts picker window
+src/main/key-release.js        OS-level modifier-release watch (the switcher chord)
+src/native/                    small C# bridges compiled on demand (accent blur, key watch)
 src/main/session.js            launch/session restore state
 src/main/session-prompt.js     close-time restore prompt
 src/main/shortcuts.js          browser keyboard command table
@@ -139,6 +141,17 @@ test/                          node:test contracts/integration fixtures
   shared `--frost-capture` / `--frost-fill` tokens). Any lens sampling the
   capture needs the same frost *and* the same fill, or the hovered row shows
   raw page colour.
+- A held-modifier chord cannot be ended by listening for its key-up. A
+  `BaseWindow` does not route keys to whichever `WebContentsView` reports
+  itself focused, and a sandboxed page view never surfaces a modifier key-up
+  through `before-input-event`; a long hold can be released with nothing in
+  Ember hearing it. `key-release.js` asks the OS instead. Any future feature
+  driven by a held chord must use it.
+- `tabs.select()` focuses the page it selected. Without that nothing in the
+  window owns the keyboard after a switch and the next shortcut is swallowed.
+- Frosted glass gets its readability from blur, never from opacity. Pushing
+  `--frost-fill` towards opaque turns every overlay into a painted panel; the
+  capture blur and the specular rim are what make it a surface.
 - Windows' own Snap Layouts flyout is unreachable: it belongs to the shell and
   appears only for a window the OS is moving, or one answering WM_NCHITTEST
   with HTMAXBUTTON — the first needs a native drag region a `WebContentsView`
@@ -428,6 +441,24 @@ Newest first. One entry per active/recent unit of work.
   tab reorder plus tab-to-Favorite pinning, open-state and removal.
 - **For the other agent:** Preserve the accepted 32px/168px shell geometry and the
   hibernated-tab lifecycle; native page masks remain required on Windows.
+
+### 2026-08-24 — Claude Code — Bug pass 2: B1, B2/B13/B15, B17, B19, B10
+
+- **Status / Branch:** pushed · `main`
+- **Touches:** `src/main/{key-release,switcher-panel,floating-panel,tabs,index}.js`,
+  `src/native/ember-key-watch.cs`, `src/renderer/{theme,glass,chrome}.css`,
+  `src/renderer/chrome.js`, `src/renderer/pages/{newtab,switcher,conversion,upload,context-menu,snap}.*`,
+  `test/key-release.test.js`, `BUGS.md`
+- **Summary:** The switcher chord now ends when the OS says the modifier is up,
+  because nothing inside Ember hears it. Overlay glass went back to being glass
+  — blur, not opacity. The new tab search commits to a quick search on space.
+  The tab strip eases instead of jumping and no longer drags itself back to the
+  active tab on every state emit.
+- **For the other agent:** `key-release.js` is the way to end a held chord; do
+  not add another key-up listener. `tabs.select()` now focuses the selected
+  page — if you need it not to, make it an option rather than removing it.
+  B5 could not be reproduced; the paths already ruled out are listed in
+  `BUGS.md` so they need not be retried.
 
 ### 2026-08-24 — Claude Code — Snap layouts picker
 
