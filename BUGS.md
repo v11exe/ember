@@ -592,3 +592,24 @@ page to refract rather than an empty layer.
 That exhausts what can be established without looking at it. Every value is
 glass; if it still reads as a solid panel on screen, the cause is in how these
 layers composite on that machine, not in what they are set to.
+
+### B2 / B13 / B15 — the material was glass; it had no light of its own
+
+Every measurement said glass, and every measurement was right — which is why
+looking at it was the only thing left. Composited over a real page, the cause
+is obvious: **both rim layers blend with `screen` and `overlay` at low
+opacity.** Against a photograph that is exactly right. Against black it
+produces almost nothing — and Ember's own pages are very nearly black. On those
+the panel lost its edge completely and rendered as a flat grey slab. That is
+what "black plastic" describes, and no computed style could have shown it,
+because every value was correct.
+
+The fix is light that does not depend on the backdrop: a normally-blended
+hairline ring and top highlight on `.overlay-liquid-glass`, and the same on
+`.menu-shell` merged into its existing corner catches rather than replacing
+them. Over a bright page they are lost in the rims' own light, which is where
+they belong.
+
+**The lesson worth keeping: computed styles cannot tell you what a blend mode
+resolves to.** A surface built from `screen` and `overlay` has to be looked at
+over a dark backdrop, not measured.

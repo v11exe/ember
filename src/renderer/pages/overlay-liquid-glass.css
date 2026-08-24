@@ -16,7 +16,20 @@ html, body {
   border-radius: var(--liquid-glass-radius);
   clip-path: inset(0 round var(--liquid-glass-radius));
   background: transparent;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+  /* Light that does not depend on what is behind the panel.
+   *
+   * Both rims below blend with `screen` and `overlay` at low opacity, which is
+   * exactly right over a photograph and produces almost nothing over black —
+   * and Ember's own pages are very nearly black. On those the surface lost its
+   * edge entirely and read as a flat panel rather than as glass. A hairline
+   * ring and a top highlight, blended normally, give it an edge on any
+   * backdrop; over a bright page they are lost in the rims' own light, which
+   * is where they should be lost. */
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, .25),
+    inset 0 0 0 1px rgba(255, 255, 255, .14),
+    inset 0 1px 0 rgba(255, 255, 255, .24),
+    inset 0 -1px 0 rgba(0, 0, 0, .28);
 }
 
 .overlay-liquid-glass__filter {
