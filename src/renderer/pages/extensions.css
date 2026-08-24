@@ -84,7 +84,7 @@ body { font-family: var(--font); color: var(--text); user-select: none; overflow
    the panel is a dropdown-sized card, so give it room and say plainly that
    there is not much here yet. */
 body.standalone { display: grid; place-items: center; min-height: 100vh; padding: 40px 20px; }
-body.standalone .panel { width: min(560px, 100%); }
+body.standalone .panel { width: min(560px, 100%); height: auto; max-height: none; align-self: start; }
 body.standalone .panel-store { display: none; }
 .ext-wip { padding: 22px 20px 24px; display: grid; gap: 10px; }
 .ext-wip strong { font-size: 14px; font-weight: 620; }
