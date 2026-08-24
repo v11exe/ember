@@ -363,6 +363,35 @@ test('context menu opens as a reduced-motion-safe popover and does not replay on
   assert.match(js, /shell\.animate\(/)
 })
 
+test('the conversion popup is frosted and replays its entrance on every open', () => {
+  const html = read('src', 'renderer', 'pages', 'conversion.html')
+  const css = read('src', 'renderer', 'pages', 'conversion.css')
+  const js = read('src', 'renderer', 'pages', 'conversion.js')
+  assert.match(html, /class="shell glass-frosted"/)
+  assert.doesNotMatch(css, /\.shell\s*\{[^}]*background:\s*var\(--glass-bg\)/s, 'no violet tint')
+  // The overlay view is reused, so the entrance has to be a class the page
+  // re-adds. A finished CSS animation is no longer in getAnimations(), which
+  // is why rewinding what it returned did nothing after the first open.
+  assert.match(css, /\.shell\.opening\s*\{[^}]*animation:/s)
+  assert.match(js, /classList\.remove\('opening'\)/)
+  assert.match(js, /classList\.add\('opening'\)/)
+  assert.match(js, /els\.shell\.offsetWidth/, 'a reflow between, or the class swap is coalesced away')
+})
+
+test('every frosted surface takes its blur from one shared filter', () => {
+  const theme = read('src', 'renderer', 'theme.css')
+  assert.match(theme, /--frost-capture:\s*blur\(\d+px\)/)
+  assert.match(theme, /--frost-fill:/)
+  const glass = read('src', 'renderer', 'glass.css')
+  // The light palette lifts the capture rather than dimming it, or a frosted
+  // panel over a bright page reads as a dark smear.
+  assert.match(glass, /\[data-backdrop="light"\][\s\S]*?--frost-capture:[^;]*brightness\(1\./)
+  for (const file of [['upload'], ['context-menu']]) {
+    const css = read('src', 'renderer', 'pages', `${file[0]}.css`)
+    assert.match(css, /filter:\s*var\(--frost-capture\)/, `${file[0]} uses the shared frost`)
+  }
+})
+
 test('the omnibox names the quick search before you commit to it', () => {
   const html = read('src', 'renderer', 'chrome.html')
   const css = read('src', 'renderer', 'chrome.css')

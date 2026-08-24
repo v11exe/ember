@@ -105,6 +105,34 @@ test/                          node:test contracts/integration fixtures
   fullscreen, capture, download, unsaved forms/beforeunload, protected tabs and
   user/domain opt-outs. Future Split/Follower/Floating features must set/retain
   the appropriate visible/in-use state rather than bypassing this protection.
+- The browser window is opaque with `backgroundMaterial: 'acrylic'` and
+  `roundedCorners: true`. It is deliberately **not** transparent: a layered
+  window is excluded from Snap, Snap Layouts and the minimise/restore
+  animations, and has to draw its own corner. `OUTER_RADIUS` is 0 so DWM owns
+  the outer curve and nothing rounds it twice.
+- `-webkit-app-region: drag` does not work on a `WebContentsView`. Ember moves
+  its own window, so Windows never runs a move loop — edge snapping is
+  implemented in `WIN_DRAG_END` and resolved from the live cursor, because the
+  renderer coalesces drag moves and drops the pending one on pointer-up.
+- Electron's default application menu binds Ctrl+W to Close Window.
+  `Menu.setApplicationMenu(null)` at startup is what keeps Ctrl+W a tab close;
+  `shortcuts.js` is the only owner of accelerators.
+- A view that takes focus while a modifier is held is never sent that
+  modifier's key-up. `FloatingPanel.show({ focus: false })` exists for overlays
+  driven by a held chord; the switcher uses it and must keep using it.
+- `backdrop-filter` samples an element's rectangle, not its rounded box, and a
+  composited child is clipped to its ancestor's rectangle. Rounded surfaces
+  carrying one need `clip-path`, not just `overflow: hidden`.
+- Overlay views are reused, so an entrance animation must be a class removed
+  and re-added with a reflow between. A finished CSS animation is no longer in
+  `getAnimations()`.
+- Overlay surfaces whose own text must be read wear `.glass-frosted` (or the
+  shared `--frost-capture` / `--frost-fill` tokens). Any lens sampling the
+  capture needs the same frost *and* the same fill, or the hovered row shows
+  raw page colour.
+- `NativeBackdrop` de-duplicates by material and runs one bridge process at a
+  time; concurrent `SetWindowCompositionAttribute` calls on one handle are not
+  safe.
 - `.setting` can outrank the UA `[hidden]` rule; hideable rows need an explicit
   `.setting[hidden] { display: none }`.
 - `injectBrowserAction()` must actually be called from the panel preload.
@@ -350,6 +378,23 @@ Newest first. One entry per active/recent unit of work.
   tab reorder plus tab-to-Favorite pinning, open-state and removal.
 - **For the other agent:** Preserve the accepted 32px/168px shell geometry and the
   hibernated-tab lifecycle; native page masks remain required on Windows.
+
+### 2026-08-24 — Claude Code — Bug pass: B1–B17
+
+- **Status / Branch:** pushed · `main`
+- **Touches:** `BUGS.md`, `src/main/{index,tabs,native-backdrop,floating-panel,switcher-panel,upload-panel}.js`,
+  `src/shared/{chrome-layout,ipc}.js`, `src/renderer/{chrome.*,preload.js,brand.js,glass.css,theme.css}`,
+  `src/renderer/pages/{switcher,conversion,upload,context-menu,liquid-glass-ui}.*`,
+  `scripts/capture-ui.js`, `test/*`
+- **Summary:** First half of the bug tracker. The window stopped being
+  transparent, which is what was costing it Windows' corners, Snap and its
+  minimise animation; Electron's default menu stopped stealing Ctrl+W; the
+  Ctrl+Tab switcher commits on Ctrl release again; the tab strip scrolls and
+  animates; and every overlay is frosted enough to read.
+- **For the other agent:** the window options, the drag-snap path, the
+  `focus: false` overlay contract, the `clip-path` rule for backdrop-filtered
+  surfaces and the shared frost tokens are all recorded in §0. `capture-ui.js`
+  gained `conversion-{dark,light}.png`. B18–B33 are still open and unclaimed.
 
 ### 2026-08-23 — Claude Code — Omnibox quick-search refinement
 - **Status / Branch:** merged · `main`

@@ -145,12 +145,12 @@ this material.
 ## Omnibox / new tab
 
 ### B18 — Typing any single key on the new tab page should focus the search bar
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/renderer/pages/newtab.*`
+**Status:** 🔴 Open · **Owner:** Claude Code · **Area:** `src/renderer/pages/newtab.*`
 
 Any non-combo keypress should start typing into the search field.
 
 ### B19 — Bang keyword stays in the query after the space
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/shared/urls.js`, `src/renderer/chrome.*`
+**Status:** 🔴 Open · **Owner:** Claude Code · **Area:** `src/shared/urls.js`, `src/renderer/chrome.*`
 
 Typing `gh` shows the GitHub indicator but leaves `gh` in the box. Pressing
 space should move the keyword into the left-hand chip and leave the query empty;
@@ -158,20 +158,20 @@ backspace on an empty query should remove the bang. *Nice to have:* favicons for
 the default bangs in place of the text chip.
 
 ### B20 — New tab page carries unwanted copy and shortcut buttons
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** 🔴 Open · **Owner:** Claude Code
 
 Remove "private by default", the "search runs on Google" text (both the inline
 one and the one at the bottom), "get extensions", and the row of buttons below
 the search bar linking to arbitrary sites.
 
 ### B21 — Search bar icons are not clickable
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** 🔴 Open · **Owner:** Claude Code
 
 The search button on the right and the search icon on the left should show the
 pointer cursor and act as an alternative to pressing Enter.
 
 ### B22 — New tab favicon should be the coloured app icon
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** 🔴 Open · **Owner:** Claude Code
 
 New tab, settings and history should all use the square coloured `app-icon`
 artwork used for the Windows app icon, not the longer lockup.
@@ -181,57 +181,57 @@ artwork used for the Windows app icon, not the longer lockup.
 ## Internal pages
 
 ### B23 — Extensions page is completely blank
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `ember://extensions`
+**Status:** 🔴 Open · **Owner:** Claude Code · **Area:** `ember://extensions`
 
 Nothing is planned for it yet, so at minimum show a work-in-progress state.
 
 ### B24 — Selection indicator artifacting in settings and history
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** 🔴 Open · **Owner:** Claude Code
 
 The indicator is too bright, drowning parts of the boxes to invisibility —
 especially the arrows in the favourite sites section — and its corners do not
 align to the full size of the box.
 
 ### B25 — Grey text in the settings glass panels is unreadable
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** 🔴 Open · **Owner:** Claude Code
 
 Any text sharing the colour of the search-shortcut names and links should be
 white or carry the same shadow the section descriptions use.
 
 ### B26 — No back button on settings, downloads and history
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** 🔴 Open · **Owner:** Claude Code
 
 Add a top-left back button returning to the new tab page.
 
 ### B27 — Recently closed only stores the last closed site
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/history.js`
+**Status:** 🔴 Open · **Owner:** Claude Code · **Area:** `src/main/history.js`
 
 It should hold every tab closed in the last 5 minutes, each with a reopen button
 on the right.
 
 ### B28 — History hover text outruns the hover indicator
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** 🔴 Open · **Owner:** Claude Code
 
 Moving the cursor quickly across the site-name text turns it white instantly
 while the liquid-glass hover indicator lags behind. The text should follow the
 cursor at the same speed and in the same way as the indicator.
 
 ### B29 — History section jumps land at the wrong scroll position
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** 🔴 Open · **Owner:** Claude Code
 
 Pressing Older, then Yesterday or Today, does not scroll to the top of those
 sections; it lands somewhere arbitrary.
 
 ### B30 — No scroll animation for history section navigation
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** 🔴 Open · **Owner:** Claude Code
 
 The left-hand navigate-to buttons should animate the scroll.
 
 ### B31 — Filter by date does not work on the history page
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** 🔴 Open · **Owner:** Claude Code
 
 ### B32 — History search field has stray orange lines and tint
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** 🔴 Open · **Owner:** Claude Code
 
 Orange lines on either side and an orange tint while typing. The orange lines
 must go entirely; either restyle the field to fit or remove it. The search icon
@@ -242,6 +242,45 @@ turning orange is fine.
 ## Copy
 
 ### B33 — "Add to ember" is not capitalised in the Chrome Web Store
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/extensions.js`
+**Status:** 🔴 Open · **Owner:** Claude Code · **Area:** `src/main/extensions.js`
 
 Should read "Add to Ember".
+
+---
+
+## Verification notes — B1–B17
+
+Every fix below was confirmed against the running browser on real hardware,
+not only by its tests. Where a bug was a *cause* rather than a symptom, the
+cause is named so nobody re-derives it.
+
+- **B3 was never a crash.** Electron installs a default application menu whose
+  File ▸ Close Window is bound to Ctrl+W. Every Ctrl+W raced a tab close
+  against a window close, and the process exited cleanly with code 0 — which
+  is why there was no crash dump to find. `Menu.setApplicationMenu(null)`
+  removes it; 50 rapid presses now leave the window intact.
+- **B4/B5 share a cause: the window was transparent.** A layered window on
+  Windows is excluded from Snap, from Snap Layouts and from the minimise and
+  restore animations, and it has to draw its own corner — the gap between
+  Ember's rounded shell and the square window is where the black 90° corner
+  came from. The window is now opaque with `backgroundMaterial: 'acrylic'`
+  and `roundedCorners: true`, and `OUTER_RADIUS` is 0 so nothing in Ember
+  rounds it a second time.
+- **Snap is Ember's own.** `-webkit-app-region: drag` is not supported on a
+  `WebContentsView`, so Ember moves its own window and Windows never sees a
+  drag to snap. Ember implements the bargain itself in `WIN_DRAG_END`, and
+  resolves the zone from `screen.getCursorScreenPoint()` because the renderer
+  coalesces moves into an animation frame and discards whichever one is still
+  pending when the pointer goes up.
+- **B1 was a focus race.** A view that takes focus while a modifier is held is
+  never told that modifier came back up. The switcher therefore opens with
+  `focus: false`. Page focus no longer hides it either — the load of the tab
+  it just switched to was closing the next one the reader opened.
+- **B17 is a compositing rule, and it recurs.** A `backdrop-filter` samples an
+  element's rectangle, not its rounded box, and a composited child is clipped
+  to its ancestor's rectangle. Any new rounded surface carrying a
+  backdrop-filter needs `clip-path`, not just `overflow: hidden`.
+- **B14 was a no-op.** A finished CSS animation is no longer in
+  `getAnimations()`, so rewinding what it returned did nothing after the first
+  open. Overlay views are reused; entrances must be a class removed and
+  re-added with a reflow between.

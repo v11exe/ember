@@ -359,6 +359,24 @@ app.whenReady().then(async () => {
   results['upload-contrast'] = await captureOverlay('upload-contrast', 'upload', { width: 650, height: 430 }, uploadState(contrastBackdrop('light', 730, 510)))
   results['upload-colour'] = await captureOverlay('upload-colour', 'upload', { width: 650, height: 430 }, uploadState(colourBackdrop(730, 510)))
   results['upload-hover'] = await captureOverlay('upload-hover', 'upload', { width: 650, height: 430 }, uploadState(colourBackdrop(730, 510)), null, '#clipboard-slot')
+
+  // The selection conversion popup, over a dark page and a bright one. It has
+  // to stay readable on both, because it lands wherever the reader selected.
+  const conversionState = (page) => ({
+    kind: 'conversion',
+    from: '$249.99',
+    to: '£196.24',
+    note: 'Rate from 24 Aug 2026',
+    approximate: true,
+    openSequence: 1,
+    backdrop: page,
+  })
+  results['conversion-dark'] = await captureOverlay(
+    'conversion-dark', 'conversion', { width: 268, height: 118 }, conversionState(saturatedBackdrop(348, 198)),
+  )
+  results['conversion-light'] = await captureOverlay(
+    'conversion-light', 'conversion', { width: 268, height: 118 }, conversionState(contrastBackdrop('light', 348, 198)),
+  )
   const contextItems = buildContextMenu({
     isEditable: true, selectionText: 'Ember', misspelledWord: 'Embr', dictionarySuggestions: ['Ember'],
     editFlags: { canUndo: true, canRedo: false, canCut: true, canCopy: true, canPaste: true, canDelete: true, canSelectAll: true },
