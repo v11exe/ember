@@ -10,12 +10,14 @@ tab when each shortcut is opened.
 
 Each valid HTTP(S) Quick Site is classified from its normalized URL:
 
-- **Origin target:** pathname is `/`. It matches every HTTP(S) tab sharing the
-  normalized origin. Search and fragment are ignored.
+- **Origin target:** pathname is `/`. It matches every HTTP(S) tab at its
+  normalized host (including child subdomains). Search and fragment are ignored.
 - **Page target:** pathname is not `/`. It matches only tabs with the same
   normalized origin and pathname. Search and fragment are ignored.
 
-Existing `www.` hostname normalization remains in place. A page target such as
+Existing `www.` hostname normalization remains in place. This lets a broad
+`https://www.wikipedia.org/` Quick Site recognise an open
+`https://en.wikipedia.org/wiki/Ember` tab. A page target such as
 `https://en.wikipedia.org/wiki/Ember?oldformat=true#History` therefore matches
 any `https://en.wikipedia.org/wiki/Ember` tab, regardless of query or fragment.
 
@@ -23,11 +25,11 @@ any `https://en.wikipedia.org/wiki/Ember` tab, regardless of query or fragment.
 
 - A page Quick Site selects an existing exact page target. If none exists, it
   opens its saved URL in a new tab. It never selects an origin-only tab.
-- An origin Quick Site first selects a tab at that origin's root pathname. If
-  none exists, it may select any tab at the origin. If none exists, it opens
+- An origin Quick Site first selects a tab at its direct host's root pathname. If
+  none exists, it may select any matching direct-host or child-subdomain tab. If none exists, it opens
   the saved origin URL.
 - The Favorite rail uses the same target matcher for its open highlight:
-  origin entries highlight for every page at their origin; page entries highlight
+  origin entries highlight for every page at their host or child subdomains; page entries highlight
   only on their matching pathname.
 
 ## Persistence and duplicates
@@ -39,7 +41,7 @@ its own clickable, draggable and removable tile.
 
 `placeFavorite()` and `favoriteFromTab()` insert a new entry rather than
 reordering an equal existing entry. Reordering is only initiated by dragging a
-Quick Site that already has an ID.
+Quick Site that already has an ID; a tab drag always previews a new tile.
 
 ## Scope and verification
 

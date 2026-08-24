@@ -35,7 +35,7 @@ test('the target three Favorite sites are the persisted defaults', () => {
   assert.match(DEFAULT_FAVORITES[2].icon, /googlecalendar\/images\/favicons/)
 })
 
-test('stored Favorites are validated, de-duplicated by site, and capped', () => {
+test('stored Favorites are validated, retain duplicate targets, and remain capped', () => {
   const entries = [
     { id: ' One ', name: '  Example  ', url: 'https://www.example.com/path', icon: 'https://cdn.example/icon.png' },
     { id: 'duplicate', name: 'Duplicate', url: 'http://example.com/elsewhere' },
@@ -47,7 +47,7 @@ test('stored Favorites are validated, de-duplicated by site, and capped', () => 
   assert.deepEqual(result[0], {
     id: 'one', name: 'Example', url: 'https://www.example.com/path', icon: 'https://cdn.example/icon.png',
   })
-  assert.equal(result.filter((entry) => entry.url.includes('example.com')).length, 1)
+  assert.equal(result.filter((entry) => entry.url.includes('example.com')).length, 2)
   assert.equal(result.some((entry) => entry.url.startsWith('javascript:')), false)
 })
 
@@ -55,19 +55,25 @@ test('an empty list intentionally leaves the Favorite rail empty', () => {
   assert.deepEqual(sanitiseFavorites([]), [])
 })
 
-test('Favorite activity follows the selected site rather than an exact page', () => {
+test('origin Favorites are broad while page Favorites ignore query and fragment only', () => {
   assert.equal(sameFavoriteSite('https://www.youtube.com/', 'https://youtube.com/watch?v=abc'), true)
   assert.equal(sameFavoriteSite('http://youtube.com/', 'https://www.youtube.com/shorts/abc'), true)
+  assert.equal(sameFavoriteSite('https://www.wikipedia.org/', 'https://en.wikipedia.org/wiki/Chromium'), true)
   assert.equal(sameFavoriteSite('https://calendar.google.com/', 'https://www.google.com/search?q=calendar'), false)
+  assert.equal(sameFavoriteSite('https://en.wikipedia.org/wiki/Ember', 'https://en.wikipedia.org/wiki/Ember?oldformat=true#History'), true)
+  assert.equal(sameFavoriteSite('https://en.wikipedia.org/wiki/Ember', 'https://en.wikipedia.org/wiki/JavaScript'), false)
   assert.equal(sameFavoriteSite('nonsense', 'https://example.com/'), false)
 })
 
-test('opening a Favorite reuses even a sleeping matching tab', () => {
+test('origin Favorites prefer a root tab while page Favorites reuse only their exact path', () => {
   const tabs = [
-    { id: 2, url: 'https://github.com/openai', asleep: false },
-    { id: 4, url: 'https://youtube.com/watch?v=x', asleep: true },
+    { id: 2, url: 'https://en.wikipedia.org/wiki/Ember', asleep: false },
+    { id: 4, url: 'https://en.wikipedia.org/', asleep: true },
   ]
-  assert.equal(findFavoriteTab(tabs, 'https://www.youtube.com/'), 4)
+  assert.equal(findFavoriteTab(tabs, 'https://en.wikipedia.org/'), 4)
+  assert.equal(findFavoriteTab(tabs, 'https://en.wikipedia.org/wiki/Ember?oldformat=true'), 2)
+  assert.equal(findFavoriteTab([{ id: 4, url: 'https://en.wikipedia.org/' }], 'https://en.wikipedia.org/wiki/Ember'), null)
+  assert.equal(findFavoriteTab([{ id: 5, url: 'https://en.wikipedia.org/wiki/Chromium' }], 'https://www.wikipedia.org/'), 5)
   assert.equal(findFavoriteTab(tabs, 'https://calendar.google.com/'), null)
 })
 
@@ -96,12 +102,13 @@ test('a dropped tab keeps its exact URL, title, and favicon', () => {
   })
 })
 
-test('a dropped tab deduplicates by site and rejects invalid or full lists', () => {
+test('a dropped tab adds a duplicate target and rejects invalid or full lists', () => {
   const tab = { title: 'Watch', url: 'https://www.youtube.com/watch?v=abc' }
   const existing = [{ id: 'youtube', name: 'YouTube', url: 'https://youtube.com/' }]
-  assert.deepEqual(favoriteFromTab(tab, existing), {
-    status: 'existing', favorite: existing[0], favorites: existing,
-  })
+  const duplicate = favoriteFromTab(tab, existing)
+  assert.equal(duplicate.status, 'added')
+  assert.equal(duplicate.favorites.length, 2)
+  assert.notEqual(duplicate.favorites[0].id, duplicate.favorites[1].id)
 
   assert.equal(favoriteFromTab({ url: 'ember://settings' }, []).status, 'invalid')
   const full = Array.from({ length: MAX_FAVORITES }, (_, index) => ({
@@ -143,7 +150,7 @@ test('placing an existing site reorders it without replacing another Favorite', 
   assert.equal(placeFavorite(current[1], current, { columns: 2, rows: 2 }, -20).favorites[0].id, 'b')
 })
 
-test('a dropped matching tab moves its existing quick site to the requested cell', () => {
+test('a dropped matching tab creates another Quick Site at the requested cell', () => {
   const current = [
     { id: 'youtube', name: 'YouTube', url: 'https://youtube.com/' },
     { id: 'a', name: 'A', url: 'https://a.test/' },
@@ -155,6 +162,8 @@ test('a dropped matching tab moves its existing quick site to the requested cell
     { columns: 2, rows: 2 },
     2,
   )
-  assert.equal(result.status, 'moved')
-  assert.deepEqual(result.favorites.map(({ id }) => id), ['a', 'b', 'youtube'])
+  assert.equal(result.status, 'added')
+  assert.equal(result.favorites.length, 4)
+  assert.deepEqual(result.favorites.slice(0, 3).map(({ id }) => id), ['youtube', 'a', 'youtube-com'])
+  assert.notEqual(result.favorites[0].id, result.favorites[2].id)
 })

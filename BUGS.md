@@ -313,3 +313,15 @@ constructor and may never be read back from `history.json`.
 reloading it, so Ctrl+H on an already-open History tab shows the snapshot from
 whenever it was first opened. Visits and closed tabs made since are missing
 until the tab is reloaded by hand.
+
+### B36 — Broad Quick Sites miss redirected subdomains and tab drops preview as moves
+**Status:** ✅ Fixed · **Owner:** Codex · **Area:** `src/shared/favorites.js`, `src/renderer/sidebar.js`
+
+A root Quick Site such as `www.wikipedia.org` does not recognise an open
+`en.wikipedia.org/wiki/...` tab, so opening it creates a redundant home tab.
+Dropping a matching tab into the Quick Site rail previews a move of the current
+tile instead of insertion, making duplicate Quick Sites appear to be replaced.
+
+Root Quick Sites now match their direct host and child subdomains after `www.`
+normalisation, while page targets remain exact-host/path. Tab drags always use a
+fresh preview candidate, so their insertion preview matches the persisted result.

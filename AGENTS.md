@@ -174,9 +174,11 @@ test/                          node:test contracts/integration fixtures
 - Sidebar collapse interpolates sidebar, page and bottom-frame bounds together
   on 16ms ticks for 210ms. Do not restore Electron's platform `animate` bounds
   option: it is not frame-synchronous on Windows and made native glass jump.
-- The Favorite rail is global and ordered today. It resolves a matching site,
-  then creates a tab at the stored exact URL; selecting a sleeping match must
-  wake it through the ordinary tab lifecycle rather than keeping Favorites alive.
+- The Favorite rail is global and ordered today. An origin-root Favorite matches
+  its host (ignoring `www`) plus its subdomains, and prefers an already-open root
+  tab on its direct host; a non-root pathname matches only that path on the same
+  host and ignores query/fragment. Selecting a sleeping match
+  must wake it through the ordinary tab lifecycle rather than keeping Favorites alive.
 - Favorite grid dimensions persist from 1×1 through 4×7 (default 2×2). Capacity
   is authoritative: reducing it truncates in reading order. Indexed drops insert
   and shift while space remains; a new site replaces the hovered cell only when
@@ -184,9 +186,9 @@ test/                          node:test contracts/integration fixtures
   rows 5–7 compress their tile surfaces.
 - Horizontal tab drag reorders the existing tab records without recreating their
   renderers. Dropping a tab into the Favorite region stores its exact page URL,
-  de-duplicates and reuses by site, and never destroys the source tab. Favorite
-  open state includes matching background and sleeping tabs; removal does not
-  close them.
+  permits same-site and exact duplicates with distinct tile IDs, and never
+  destroys the source tab. Favorite open state includes matching background and
+  sleeping tabs; removal does not close them.
 - Top, sidebar, frame and corner-mask views receive window-relative shell metrics
   and sample `shell-material.css`. Keep that single material synchronized on every
   resize/collapse frame rather than restoring independent regional gradients.
@@ -377,10 +379,10 @@ Newest first. One entry per active/recent unit of work.
 ```
 
 ### 2026-08-24 — Codex — Favorite target matching
-- **Status / Branch:** in-progress · `main`
+- **Status / Branch:** completed · `main`
 - **Touches:** `AGENTS.md`, `docs/superpowers/{specs,plans}/*`, `src/shared/favorites.js`, focused Favorite tests
-- **Summary:** Extending Quick Sites from host-only identity to broad origin shortcuts and specific origin/path shortcuts. Specific paths ignore query and fragment when highlighting or reopening; duplicate Quick Sites are intentionally permitted.
-- **For the other agent:** A broad origin should prefer an already-open origin-root tab, then may reuse any same-origin tab. A specific page must never fall back to a broad origin tab.
+- **Summary:** Quick Sites now retain same-site and exact duplicates, distinguish broad origin-root entries from specific origin/path entries, and choose the correct already-open tab without UI changes.
+- **For the other agent:** A broad origin prefers an already-open direct-host root tab, then may reuse a child-subdomain tab. A specific page never falls back to a broad origin tab, and query/fragment do not distinguish it. Existing Quick Site drags reorder; tab drags add duplicates.
 
 ### 2026-08-24 — Codex — BaseWindow resource teardown
 - **Status / Branch:** in-progress · `main`

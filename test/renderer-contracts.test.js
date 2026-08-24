@@ -113,6 +113,8 @@ test('Favorite rail renders in a separate bounded view so native glass stays vis
   assert.doesNotMatch(css, /radial-gradient[\s\S]+linear-gradient/, 'sidebar does not paint an independent shell material')
   assert.match(js, /openFavorite/)
   assert.match(js, /sameFavoriteSite/)
+  assert.doesNotMatch(js, /const existing = config\.favorites\.find\(\(entry\) => window\.ember\.sameFavoriteSite/, 'a tab drop previews a new tile instead of moving a matching one')
+  assert.match(js, /if \(!tab \|\| !\/\^https\?:\/i\.test\(tab\.url \|\| ''\)\) return null\s+return \{\s+id: 'drop-preview'/s)
   assert.match(js, /onWindowState/)
   assert.match(js, /classList\.toggle\('sidebar-closed'/)
   assert.match(css, /body\.sidebar-closed\s+\.favorites\s*\{[^}]*opacity:\s*0/s)

@@ -179,8 +179,7 @@ function candidateForDrag(event) {
   const tabId = Number(event.dataTransfer?.getData(TAB_DRAG_TYPE))
   const tab = browserState.tabs.find((entry) => entry.id === tabId)
   if (!tab || !/^https?:/i.test(tab.url || '')) return null
-  const existing = config.favorites.find((entry) => window.ember.sameFavoriteSite(entry.url, tab.url))
-  return existing || {
+  return {
     id: 'drop-preview', name: tab.title || 'New quick site', url: tab.url, ...(tab.favicon ? { icon: tab.favicon } : {}),
   }
 }
