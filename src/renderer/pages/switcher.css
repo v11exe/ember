@@ -10,7 +10,8 @@ body { display: grid; place-items: stretch; }
   border-radius: 20px;
   overflow: hidden;
   isolation: isolate;
-  background: var(--glass-bg);
+  /* Frosted, not tinted: .glass-frosted owns the fill so the cards and their
+     labels are read against a surface rather than against a photograph. */
   box-shadow: var(--glass-lift), var(--glass-rim);
   animation: rise var(--dur-2) var(--ease);
 }

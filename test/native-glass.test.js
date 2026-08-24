@@ -45,9 +45,40 @@ test('native backdrop applies the live DWM material to internal pages only', asy
     run: async (args) => calls.push(args),
   })
   await backdrop.setActiveUrl('ember://newtab')
+  // Two internal pages in a row want the same material, so the second one is
+  // not a change and must not reach the native bridge at all.
   await backdrop.setActiveUrl('ember://history')
   await backdrop.setActiveUrl('https://example.com')
-  assert.deepEqual(calls.map((args) => args[1]), ['accent', 'accent', 'none'])
+  assert.deepEqual(calls.map((args) => args[1]), ['accent', 'none'])
+})
+
+test('native backdrop never runs two bridge processes against one window', async () => {
+  const calls = []
+  let running = 0
+  let peak = 0
+  const backdrop = new NativeBackdrop({ getNativeWindowHandle: () => Buffer.alloc(8) }, {
+    platform: 'win32',
+    run: async (args) => {
+      running += 1
+      peak = Math.max(peak, running)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      calls.push(args[1])
+      running -= 1
+    },
+  })
+
+  // Closing tabs quickly used to fire one of these per keystroke, and racing
+  // composition-attribute calls on one handle took the whole window down.
+  await Promise.all([
+    backdrop.setActiveUrl('ember://newtab'),
+    backdrop.setActiveUrl('https://example.com'),
+    backdrop.setActiveUrl('ember://history'),
+    backdrop.setActiveUrl('https://example.org'),
+  ])
+
+  assert.equal(peak, 1)
+  assert.equal(calls.at(-1), 'none')
+  assert.ok(calls.length <= 2, `expected the queue to coalesce, ran ${calls.length}`)
 })
 
 test('native backdrop teardown is safe after the window is destroyed', () => {

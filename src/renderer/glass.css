@@ -104,3 +104,46 @@ body { color: var(--text); font-family: var(--font); -webkit-font-smoothing: ant
 :root[data-backdrop="light"] .glass-backdrop { filter: blur(22px) saturate(1.1) brightness(.94); }
 :root[data-backdrop="light"] .glass-light { opacity: .45; }
 :root[data-backdrop="light"] .glass-grain { opacity: .08; }
+
+/* ---------------------------------------------------------------------------
+   Frosted overlays.
+
+   The default surface tints the captured page with --glass-bg, which is a dark
+   violet. On a panel that is mostly its own content — the switcher's cards, a
+   conversion result, the upload picker's list — that tint plus a 22px blur
+   reads as a flat plastic sheet, and text sitting on top of a still-legible
+   photograph of a webpage is hard to read.
+
+   `.glass-frosted` is the same material taken further: the capture is blurred
+   past the point of being a picture and desaturated so it stops colouring the
+   panel, and the fill above it is achromatic. It follows the new tab search
+   pill in staying neutral and letting light, not colour, describe the surface.
+   Add it to a glass shell whose own content has to be read.
+   --------------------------------------------------------------------------- */
+:root {
+  --frost-fill:  rgba(17, 15, 19, .78);
+  --frost-sheen: rgba(255, 255, 255, .07);
+}
+:root[data-backdrop="light"] {
+  --frost-fill:  rgba(252, 250, 248, .84);
+  --frost-sheen: rgba(255, 255, 255, .60);
+}
+
+.glass-frosted { background: var(--frost-fill); }
+.glass-frosted .glass-backdrop {
+  /* Blurred well past legibility, and desaturated so the page behind stops
+     deciding what colour the panel is. */
+  filter: blur(46px) saturate(.55) brightness(.60);
+  opacity: .95;
+  transform: scale(1.14);
+}
+.glass-frosted .glass-wash {
+  background:
+    linear-gradient(152deg, var(--frost-sheen), transparent 46%),
+    var(--frost-fill);
+}
+.glass-frosted .glass-grain { opacity: .10; }
+
+:root[data-backdrop="light"] .glass-frosted .glass-backdrop {
+  filter: blur(46px) saturate(.6) brightness(1.06);
+}

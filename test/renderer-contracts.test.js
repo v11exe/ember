@@ -214,16 +214,17 @@ test('browser chrome mirrors authoritative extension-panel visibility', () => {
   assert.match(js, /setAttribute\('aria-expanded', String\(open\)\)/)
 })
 
-test('New Tab uses the white-stroke chrome mark while pages retain their favicon', () => {
+test('New Tab uses the square meteor crop while pages retain their favicon', () => {
   const js = read('src', 'renderer', 'chrome.js')
   const css = read('src', 'renderer', 'chrome.css')
   const brandCss = read('src', 'renderer', 'brand.css')
-  assert.match(js, /window\.EmberBrand\.CHROME_ICON_ASSET/)
+  assert.match(js, /window\.EmberBrand\.APP_ICON_ASSET/)
   assert.match(js, /tab\.favicon/)
   assert.match(js, /function assetUrl/)
   assert.match(js, /img\.src = tab\.favicon \|\| assetUrl\(fallback\)/)
   assert.match(brandCss, /\.ember-chrome-icon[^}]*object-fit:\s*contain/s)
-  assert.match(css, /\.tab-favicon\.newtab-favicon\s*\{[^}]*height:\s*auto/s)
+  // A favicon box is square, so the long chrome mark must not be used here.
+  assert.match(css, /\.tab-favicon\.newtab-favicon\s*\{[^}]*width:\s*16px[^}]*height:\s*16px/s)
 })
 
 test('upload picker is a real glass overlay with browse, clipboard, and recent actions', () => {

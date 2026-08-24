@@ -10,6 +10,9 @@
   --tab-min-width: 95px;
   --caption-width: 138px;
   --ember-orange: #FF6000;
+  /* The top-left meteor stands exactly as tall as the sidebar toggle beside
+     it; everything that has to make room for it is derived from this. */
+  --chrome-mark-height: 18px;
 }
 
 html, body { width: 100%; height: 100%; }
@@ -38,7 +41,9 @@ button, input, .top-navigation, .tabstrip, .top-actions,
 
 .sidebar-closed {
   --sidebar-width: var(--sidebar-collapsed-width);
-  --sidebar-header-width: 94px;
+  /* The collapsed header still has to hold the full-width mark, so the toggle
+     moves right rather than the mark being clipped. */
+  --sidebar-header-width: 140px;
 }
 
 .top-chrome {
@@ -71,17 +76,23 @@ button, input, .top-navigation, .tabstrip, .top-actions,
   -webkit-app-region: no-drag;
 }
 .brand {
-  width: 34px;
+  /* The meteor is 4.09:1, so the button is sized from the icon rather than the
+     other way round: its height matches the sidebar toggle's glyph exactly. */
+  width: auto;
   height: 28px;
   flex: none;
   display: grid;
   place-items: center;
-  padding: 0;
+  padding: 0 5px;
   border: 0;
   background: transparent;
   border-radius: 6px;
 }
-.brand .ember-chrome-icon { width: 31px; height: auto; opacity: .92; }
+.brand .ember-chrome-icon {
+  width: calc(var(--chrome-mark-height) * 4.086);
+  height: var(--chrome-mark-height);
+  opacity: .96;
+}
 .brand:hover { background: rgba(255, 255, 255, .07); }
 
 .top-navigation {
@@ -112,6 +123,29 @@ button, input, .top-navigation, .tabstrip, .top-actions,
 .icon[disabled]:hover { background: transparent; color: rgba(255, 255, 255, .82); }
 .sidebar-toggle svg { width: 18px; height: 18px; stroke-width: 1.35; }
 
+/* Navigation feedback. Back and forward throw the glyph the way the page is
+   about to move and let it settle back; reload turns once. Driven from main so
+   the keyboard shortcuts animate identically. */
+#back.pulsing svg { animation: nav-throw-back 340ms cubic-bezier(.3, .1, .2, 1); }
+#forward.pulsing svg { animation: nav-throw-forward 340ms cubic-bezier(.3, .1, .2, 1); }
+#reload.pulsing svg { animation: nav-spin 520ms cubic-bezier(.35, .05, .2, 1); }
+@keyframes nav-throw-back {
+  0% { transform: translateX(0); opacity: 1; }
+  38% { transform: translateX(-7px); opacity: .15; }
+  39% { transform: translateX(7px); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+@keyframes nav-throw-forward {
+  0% { transform: translateX(0); opacity: 1; }
+  38% { transform: translateX(7px); opacity: .15; }
+  39% { transform: translateX(-7px); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+@keyframes nav-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .tabstrip {
   height: 100%;
   min-width: 0;
@@ -129,8 +163,32 @@ button, input, .top-navigation, .tabstrip, .top-actions,
   display: flex;
   align-items: center;
   gap: var(--tab-gap);
-  overflow: hidden;
+  /* Tabs past the end of the strip are reachable by wheel rather than lost
+     behind it. The scrollbar itself would eat a row of an already short bar,
+     so it is hidden and the fades below say where there is more. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--tabs-fade-left, 0px),
+    #000 calc(100% - var(--tabs-fade-right, 0px)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--tabs-fade-left, 0px),
+    #000 calc(100% - var(--tabs-fade-right, 0px)),
+    transparent 100%
+  );
 }
+.tabs::-webkit-scrollbar { width: 0; height: 0; }
+/* A tab on its way out keeps its slot while it collapses, so its neighbours
+   slide across instead of snapping. */
+.tab-closing { pointer-events: none; }
 .tab {
   position: relative;
   width: max-content;
@@ -177,7 +235,7 @@ button, input, .top-navigation, .tabstrip, .top-actions,
 }
 .tab.asleep .tab-favicon { filter: grayscale(1); opacity: .5; }
 .tab-favicon { width: 16px; height: 16px; flex: none; border-radius: 4px; object-fit: contain; }
-.tab-favicon.newtab-favicon { width: 24px; height: auto; max-height: 15px; border-radius: 0; }
+.tab-favicon.newtab-favicon { width: 16px; height: 16px; border-radius: 0; }
 .tab-title {
   display: block;
   min-width: 0;
@@ -222,9 +280,16 @@ button, input, .top-navigation, .tabstrip, .top-actions,
   border-radius: 6px;
   background: rgba(35, 29, 27, .96);
   color: rgba(255, 255, 255, .76);
-  font-size: 17px;
-  line-height: 1;
   transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+.tab-close svg {
+  display: block;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
 }
 .tab:hover .tab-close { opacity: 1; pointer-events: auto; }
 .tab-close:hover { background: rgba(255, 255, 255, .10); color: #fff; }
@@ -244,13 +309,25 @@ button, input, .top-navigation, .tabstrip, .top-actions,
   width: 30px;
   height: 30px;
   flex: none;
+  /* A glyph sits on its font's baseline, not in the middle of its box; the
+     stroked path is centred on geometry instead. */
+  display: grid;
+  place-items: center;
   padding: 0;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: rgba(255, 255, 255, .84);
-  font: 300 21px/1 var(--font);
   transition: background 120ms ease, transform 120ms ease;
+}
+.tab-new svg {
+  display: block;
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.45;
+  stroke-linecap: round;
 }
 .tab-new:hover { background: rgba(255, 255, 255, .07); }
 .tab-new:active { transform: scale(.92); }
@@ -281,6 +358,36 @@ button, input, .top-navigation, .tabstrip, .top-actions,
 .wc-close:hover { background: #c42b1c; }
 .min-glyph { width: 10px; height: 1px; background: currentColor; }
 .max-glyph { width: 10px; height: 10px; border: 1px solid currentColor; }
+/* Maximised, Windows shows restore: a front square with the back one peeking
+   out of its top-right corner as two edges. */
+.chrome-shell.maximized .max-glyph {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  border: 0;
+}
+.chrome-shell.maximized .max-glyph::before,
+.chrome-shell.maximized .max-glyph::after {
+  content: "";
+  position: absolute;
+  box-sizing: border-box;
+}
+.chrome-shell.maximized .max-glyph::before {
+  right: 0;
+  top: 0;
+  width: 8px;
+  height: 8px;
+  border: 1px solid currentColor;
+  border-bottom: 0;
+  border-left: 0;
+}
+.chrome-shell.maximized .max-glyph::after {
+  left: 0;
+  bottom: 0;
+  width: 8px;
+  height: 8px;
+  border: 1px solid currentColor;
+}
 .close-glyph { width: 11px; height: 11px; position: relative; }
 .close-glyph::before, .close-glyph::after {
   content: "";
@@ -370,4 +477,5 @@ button, input, .top-navigation, .tabstrip, .top-actions,
 
 @media (prefers-reduced-motion: reduce) {
   .sidebar-header, .bookmarks-bar { transition-duration: .001ms; }
+  #back.pulsing svg, #forward.pulsing svg, #reload.pulsing svg { animation-duration: .001ms; }
 }

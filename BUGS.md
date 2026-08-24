@@ -34,7 +34,7 @@ ships.
 ## Chrome / window shell
 
 ### B1 — Ctrl+Tab switcher does not commit on Ctrl release
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/switcher-panel.js`, `src/main/shortcuts.js`, switcher page
+**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/switcher-panel.js`, `src/main/shortcuts.js`, switcher page
 
 Releasing Ctrl does not switch to the highlighted tab; the overlay stays up
 until it is clicked with the mouse. Pressing Tab alone while the overlay is open
@@ -42,13 +42,13 @@ causes artifacting and should not be possible at all. After the overlay closes,
 Ctrl+Tab does nothing for several seconds.
 
 ### B2 — Switcher uses the purple plastic backdrop
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 Replace with the frosted, heavily blurred liquid-glass material (see
 cross-cutting decisions).
 
 ### B3 — Application crashes on rapid Ctrl+W
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/tabs.js`
+**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/tabs.js`
 
 Pressing Ctrl+W several times in quick succession crashes the whole app. Likely
 a close/destroy race against a tab record whose renderer is already gone.
@@ -67,27 +67,27 @@ corners sometimes lose their curve entirely — reproducible after maximising an
 then restoring to a window.
 
 ### B6 — Maximise icon does not change when maximised
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 It stays a single square; when maximised it should become the two overlapping
 squares Windows uses for restore.
 
 ### B7 — White-stroke logo in the top left looks smushed
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/renderer/brand.*`
+**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/renderer/brand.*`
 
 Replace it outright with the coloured icon, sized so its height matches the
 sidebar icon beside it; move the sidebar icon to compensate for the wider mark.
 
 ### B8 — New-tab `+` icon is not vertically centred
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 Its hover box is centred but the glyph inside is not.
 
 ### B9 — Close-tab `x` icon is not vertically centred
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 ### B10 — Overflowed tabs are unreachable
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/tabs.js`, `src/renderer/chrome.*`
+**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/tabs.js`, `src/renderer/chrome.*`
 
 Tabs that overflow slide behind the rest of the tab bar (the untouched empty
 space is intentional) but there is no way to get them back. Scrolling the wheel
@@ -96,14 +96,14 @@ on a full bar must push the *left* side behind so the new tab is always fully
 visible.
 
 ### B11 — No open/close tab animation
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 New tabs should pop up from the bottom edge and closed tabs pop down, matching
 the speed and easing of neighbour tabs shuffling during reorder — and accounting
 for the leftward shift from B10 when space has run out.
 
 ### B12 — Back / forward / reload are not animated
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 Animate them, including when triggered by Alt+Left, Alt+Right and Ctrl+R.
 
@@ -145,12 +145,12 @@ this material.
 ## Omnibox / new tab
 
 ### B18 — Typing any single key on the new tab page should focus the search bar
-**Status:** 🔴 Open · **Owner:** _unclaimed_ · **Area:** `src/renderer/pages/newtab.*`
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/renderer/pages/newtab.*`
 
 Any non-combo keypress should start typing into the search field.
 
 ### B19 — Bang keyword stays in the query after the space
-**Status:** 🔴 Open · **Owner:** _unclaimed_ · **Area:** `src/shared/urls.js`, `src/renderer/chrome.*`
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/shared/urls.js`, `src/renderer/chrome.*`
 
 Typing `gh` shows the GitHub indicator but leaves `gh` in the box. Pressing
 space should move the keyword into the left-hand chip and leave the query empty;
@@ -158,20 +158,20 @@ backspace on an empty query should remove the bang. *Nice to have:* favicons for
 the default bangs in place of the text chip.
 
 ### B20 — New tab page carries unwanted copy and shortcut buttons
-**Status:** 🔴 Open · **Owner:** _unclaimed_
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 Remove "private by default", the "search runs on Google" text (both the inline
 one and the one at the bottom), "get extensions", and the row of buttons below
 the search bar linking to arbitrary sites.
 
 ### B21 — Search bar icons are not clickable
-**Status:** 🔴 Open · **Owner:** _unclaimed_
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 The search button on the right and the search icon on the left should show the
 pointer cursor and act as an alternative to pressing Enter.
 
 ### B22 — New tab favicon should be the coloured app icon
-**Status:** 🔴 Open · **Owner:** _unclaimed_
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 New tab, settings and history should all use the square coloured `app-icon`
 artwork used for the Windows app icon, not the longer lockup.
@@ -181,57 +181,57 @@ artwork used for the Windows app icon, not the longer lockup.
 ## Internal pages
 
 ### B23 — Extensions page is completely blank
-**Status:** 🔴 Open · **Owner:** _unclaimed_ · **Area:** `ember://extensions`
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `ember://extensions`
 
 Nothing is planned for it yet, so at minimum show a work-in-progress state.
 
 ### B24 — Selection indicator artifacting in settings and history
-**Status:** 🔴 Open · **Owner:** _unclaimed_
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 The indicator is too bright, drowning parts of the boxes to invisibility —
 especially the arrows in the favourite sites section — and its corners do not
 align to the full size of the box.
 
 ### B25 — Grey text in the settings glass panels is unreadable
-**Status:** 🔴 Open · **Owner:** _unclaimed_
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 Any text sharing the colour of the search-shortcut names and links should be
 white or carry the same shadow the section descriptions use.
 
 ### B26 — No back button on settings, downloads and history
-**Status:** 🔴 Open · **Owner:** _unclaimed_
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 Add a top-left back button returning to the new tab page.
 
 ### B27 — Recently closed only stores the last closed site
-**Status:** 🔴 Open · **Owner:** _unclaimed_ · **Area:** `src/main/history.js`
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/history.js`
 
 It should hold every tab closed in the last 5 minutes, each with a reopen button
 on the right.
 
 ### B28 — History hover text outruns the hover indicator
-**Status:** 🔴 Open · **Owner:** _unclaimed_
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 Moving the cursor quickly across the site-name text turns it white instantly
 while the liquid-glass hover indicator lags behind. The text should follow the
 cursor at the same speed and in the same way as the indicator.
 
 ### B29 — History section jumps land at the wrong scroll position
-**Status:** 🔴 Open · **Owner:** _unclaimed_
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 Pressing Older, then Yesterday or Today, does not scroll to the top of those
 sections; it lands somewhere arbitrary.
 
 ### B30 — No scroll animation for history section navigation
-**Status:** 🔴 Open · **Owner:** _unclaimed_
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 The left-hand navigate-to buttons should animate the scroll.
 
 ### B31 — Filter by date does not work on the history page
-**Status:** 🔴 Open · **Owner:** _unclaimed_
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 ### B32 — History search field has stray orange lines and tint
-**Status:** 🔴 Open · **Owner:** _unclaimed_
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 Orange lines on either side and an orange tint while typing. The orange lines
 must go entirely; either restyle the field to fit or remove it. The search icon
@@ -242,6 +242,6 @@ turning orange is fine.
 ## Copy
 
 ### B33 — "Add to ember" is not capitalised in the Chrome Web Store
-**Status:** 🔴 Open · **Owner:** _unclaimed_ · **Area:** `src/main/extensions.js`
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/extensions.js`
 
 Should read "Add to Ember".

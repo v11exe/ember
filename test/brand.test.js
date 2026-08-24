@@ -10,7 +10,10 @@ test('exports reusable transparent-meteor icon and wordmark mounts', () => {
   assert.equal(typeof brand.mountIcon, 'function')
   assert.equal(typeof brand.mountBrand, 'function')
   assert.equal(brand.ICON_ASSET, '/assets/ember-icon.png')
-  assert.equal(brand.CHROME_ICON_ASSET, '/assets/icon-white-stroke-tight.png')
+  // The chrome mark is the coloured meteor; the white-stroke trace it replaced
+  // was a hairline outline that read as mush at chrome size.
+  assert.equal(brand.CHROME_ICON_ASSET, '/assets/ember-icon.png')
+  assert.equal(brand.APP_ICON_ASSET, '/assets/ember-app-icon.png')
   assert.equal(typeof brand.mountChromeIcon, 'function')
   assert.equal(brand.WORDMARK_FONT_ASSET, '/assets/Necosmic-PersonalUse.otf')
   assert.equal(Object.hasOwn(brand, 'LOGO_ASSET'), false)

@@ -66,6 +66,9 @@ const IPC = {
   OVERLAY_STATE: 'overlay:state',
   DOWNLOADS_CHANGED: 'downloads:changed',
   SHELL_METRICS: 'shell:metrics',
+  // A navigation command ran; the toolbar button for it animates whether the
+  // reader clicked it or used the keyboard.
+  NAV_PULSE: 'nav:pulse',
 }
 
 // Where the omnibox sends anything that isn't a URL.

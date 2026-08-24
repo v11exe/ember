@@ -104,6 +104,11 @@ class TabSwitcher {
       state: { kind: 'switcher', tabs: cards, index: this.index, openSequence: Date.now() },
       targetView: this.tabs.active?.view || null,
       captureBleed: 40,
+      // Ctrl is still held while this opens, and a view that takes focus
+      // mid-chord is never told the modifier came back up — the switcher would
+      // then sit there until it was clicked. Leaving focus alone keeps the
+      // key-up arriving at a view whose before-input-event does report it.
+      focus: false,
     })
   }
 

@@ -66,6 +66,7 @@ contextBridge.exposeInMainWorld('ember', {
   tabMaximum: (options) => dynamicTabMax(options),
   sameFavoriteSite: (favoriteUrl, tabUrl) => sameFavoriteSite(favoriteUrl, tabUrl),
   previewFavoritePlacement: (candidate, current, grid, index) => placeFavorite(candidate, current, grid, index),
+  onNavPulse: (fn) => ipcRenderer.on(IPC.NAV_PULSE, (_e, command) => fn(command)),
   onWindowState: (fn) => ipcRenderer.on(IPC.WIN_STATE, (_e, state) => fn(state)),
   onShellMetrics: (fn) => ipcRenderer.on(IPC.SHELL_METRICS, (_e, metrics) => fn(metrics)),
 

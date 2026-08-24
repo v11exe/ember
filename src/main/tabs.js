@@ -261,7 +261,13 @@ class TabManager {
   #photographAndHide(tab) {
     const view = tab.view
     if (!view) return
-    const hide = () => { if (tab.view === view && tab.id !== this.activeId) view.setVisible(false) }
+    // The tab can be closed or hibernated while the shutter is open, and both
+    // of those clear `tab.view`. Only put away a view the record still owns.
+    const hide = () => {
+      if (tab.view !== view || tab.id === this.activeId) return
+      if (!this.tabs.includes(tab)) return
+      try { view.setVisible(false) } catch { /* the view went with the tab */ }
+    }
     if (!this.thumbnails || !tab.webContents || tab.asleep) { hide(); return }
     // A machine that cannot produce frames — anything fullscreen in front of
     // Ember will do it — makes every attempt fail slowly. Put the view away on
@@ -455,9 +461,18 @@ class TabManager {
     this.#forget(id)
     this.thumbnails?.forget(id)
     if (tab.view) {
+      const view = tab.view
+      const wc = tab.webContents
+      // Clear the record's handles *before* the renderer goes. A screenshot
+      // started when this tab was last left can still be in flight, and its
+      // completion callback checks `tab.view` before touching the view — it
+      // has to see that this one is gone rather than a destroyed object.
+      tab.view = null
+      tab.webContents = null
+      tab.asleep = false
       try {
-        this.win.contentView.removeChildView(tab.view)
-        tab.webContents.destroy()
+        this.win.contentView.removeChildView(view)
+        if (wc && !wc.isDestroyed()) wc.destroy()
       } catch { /* already gone */ }
     }
 

@@ -73,6 +73,20 @@ function isNewTab(tab) {
   return String(tab?.url || '').startsWith('ember://newtab')
 }
 
+/**
+ * A stroked path in a 16-unit box. Text glyphs sit on a baseline and never
+ * land in the optical centre of a square button; a path does.
+ */
+function strokeGlyph(d) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('viewBox', '0 0 16 16')
+  svg.setAttribute('aria-hidden', 'true')
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  path.setAttribute('d', d)
+  svg.append(path)
+  return svg
+}
+
 function assetUrl(asset) {
   const relative = String(asset || '').replace(/^\//, '')
   return new URL(relative, document.baseURI).href
@@ -84,7 +98,12 @@ function updateOverflow() {
   }
 }
 
-function updateTabMetrics() {
+/**
+ * `settled` runs once the widths this sets have actually been laid out.
+ * Anything that measures the strip has to wait for that or it reads the
+ * geometry from before the new tab widths applied.
+ */
+function updateTabMetrics(settled = null) {
   cancelAnimationFrame(metricFrame)
   metricFrame = requestAnimationFrame(() => {
     const fixed = els.sidebarHeader.offsetWidth + els.navigation.offsetWidth
@@ -93,7 +112,12 @@ function updateTabMetrics() {
     const maximum = window.ember.tabMaximum({ availableWidth, count: browserState.tabs.length })
     els.tabs.style.setProperty('--tab-max-width', `${maximum}px`)
     els.tabstrip.style.setProperty('--tabstrip-max', `${Math.max(95, availableWidth - 96)}px`)
-    requestAnimationFrame(updateOverflow)
+    requestAnimationFrame(() => {
+      updateOverflow()
+      // Also wired straight to resize and ResizeObserver, which hand it an
+      // event rather than a callback.
+      if (typeof settled === 'function') settled()
+    })
   })
 }
 
@@ -119,9 +143,10 @@ function tabNode(tab) {
     el.append(spinner)
   } else {
     const img = document.createElement('img')
-    const fallback = isNewTab(tab)
-      ? window.EmberBrand.CHROME_ICON_ASSET
-      : window.EmberBrand.ICON_ASSET
+    // A favicon slot is square. The long meteor letterboxes down to a sliver
+    // in one, so both the New Tab mark and the stand-in for a site whose own
+    // icon did not load use the square crop.
+    const fallback = window.EmberBrand.APP_ICON_ASSET
     img.className = 'tab-favicon' + (isNewTab(tab) ? ' newtab-favicon' : '')
     const fallbackUrl = assetUrl(fallback)
     img.src = tab.favicon || assetUrl(fallback)
@@ -149,7 +174,7 @@ function tabNode(tab) {
   const close = document.createElement('button')
   close.className = 'tab-close'
   close.draggable = false
-  close.textContent = '×'
+  close.append(strokeGlyph('M5 5l6 6M11 5l-6 6'))
   close.title = 'Close tab'
   close.setAttribute('aria-label', `Close ${displayTitle}`)
   close.onmousedown = (event) => { event.stopPropagation(); event.preventDefault() }
@@ -180,10 +205,138 @@ function tabNode(tab) {
   return el
 }
 
-function renderTabs(tabs) {
-  els.tabs.replaceChildren(...tabs.map(tabNode))
-  updateTabMetrics()
+// One duration and one curve for every movement in the strip: reordering,
+// opening, closing and the shuffle each of those causes in its neighbours.
+const TAB_MOTION_MS = 150
+const TAB_MOTION_EASING = 'cubic-bezier(.2, .8, .2, 1)'
+const TAB_FADE_WIDTH = 22
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+/** Movement is the point of these; with motion turned down they just end. */
+const motionMs = () => (reducedMotion.matches ? 1 : TAB_MOTION_MS)
+
+/** How far a tab travels through the bottom edge of the strip. */
+function tabLift() {
+  const height = parseFloat(getComputedStyle(els.shell).getPropertyValue('--tab-height'))
+  return Number.isFinite(height) ? height : 28
 }
+
+function tabGap() {
+  const gap = parseFloat(getComputedStyle(els.shell).getPropertyValue('--tab-gap'))
+  return Number.isFinite(gap) ? gap : 8
+}
+
+function openTabNode(node) {
+  node.animate([
+    { transform: `translateY(${tabLift()}px)`, opacity: 0 },
+    { transform: 'translateY(0)', opacity: 1 },
+  ], { duration: motionMs(), easing: TAB_MOTION_EASING })
+}
+
+/**
+ * Play a closed tab out of the strip. Collapsing its width rather than pulling
+ * it straight from the DOM is what makes the tabs beside it slide at the same
+ * speed they do when one is dragged past another.
+ */
+function closeTabNode(node) {
+  node.classList.add('tab-closing')
+  const width = node.getBoundingClientRect().width
+  node.style.minWidth = '0px'
+  const animation = node.animate([
+    { maxWidth: `${width}px`, marginRight: '0px', opacity: 1, transform: 'translateY(0)' },
+    { maxWidth: '0px', marginRight: `${-tabGap()}px`, opacity: 0, transform: `translateY(${tabLift()}px)` },
+  ], { duration: motionMs(), easing: TAB_MOTION_EASING, fill: 'forwards' })
+  const drop = () => node.remove()
+  animation.finished.then(drop, drop)
+}
+
+/** Fade an edge only while there is something past it to scroll to. */
+function updateTabScrollFades() {
+  const strip = els.tabs
+  const overflow = strip.scrollWidth - strip.clientWidth
+  const left = overflow > 1 ? Math.min(TAB_FADE_WIDTH, strip.scrollLeft) : 0
+  const right = overflow > 1 ? Math.min(TAB_FADE_WIDTH, overflow - strip.scrollLeft) : 0
+  strip.style.setProperty('--tabs-fade-left', `${Math.max(0, left)}px`)
+  strip.style.setProperty('--tabs-fade-right', `${Math.max(0, right)}px`)
+}
+
+/**
+ * Bring a tab fully into the strip, clearing the edge fade so it is never half
+ * dissolved. A new tab on a full bar pushes the left-hand ones behind rather
+ * than opening out of sight.
+ */
+function keepTabVisible(node, { smooth = true } = {}) {
+  if (!node) return
+  const strip = els.tabs
+  const overflow = strip.scrollWidth - strip.clientWidth
+  if (overflow <= 1) return
+  const left = node.offsetLeft
+  const right = left + node.offsetWidth
+  const viewLeft = strip.scrollLeft
+  const viewRight = viewLeft + strip.clientWidth
+  let target = null
+  if (right + TAB_FADE_WIDTH > viewRight) target = right + TAB_FADE_WIDTH - strip.clientWidth
+  else if (left - TAB_FADE_WIDTH < viewLeft) target = left - TAB_FADE_WIDTH
+  if (target === null) return
+  strip.scrollTo({
+    left: Math.max(0, Math.min(overflow, target)),
+    behavior: smooth ? 'smooth' : 'auto',
+  })
+}
+
+function renderTabs(tabs) {
+  const strip = els.tabs
+  const settled = [...strip.children].filter((node) => !node.classList.contains('tab-closing'))
+  const firstPaint = settled.length === 0
+  const previousLeft = new Map(settled.map((node) => [node.dataset.tabId, node.getBoundingClientRect().left]))
+  const wanted = new Set(tabs.map((tab) => String(tab.id)))
+  const departing = settled.filter((node) => !wanted.has(node.dataset.tabId))
+
+  const nodes = tabs.map(tabNode)
+  const order = nodes.slice()
+  // Put each closing tab back where it was so the collapse happens in place.
+  for (const node of departing) {
+    const index = Math.min(settled.indexOf(node), order.length)
+    order.splice(index, 0, node)
+  }
+  strip.replaceChildren(...order)
+
+  for (const node of departing) closeTabNode(node)
+  for (const node of nodes) {
+    const id = node.dataset.tabId
+    if (!previousLeft.has(id)) {
+      // A session being restored is not a sequence of tabs being opened.
+      if (!firstPaint) openTabNode(node)
+      continue
+    }
+    const delta = previousLeft.get(id) - node.getBoundingClientRect().left
+    if (!delta) continue
+    node.animate([
+      { transform: `translateX(${delta}px)` },
+      { transform: 'translateX(0)' },
+    ], { duration: motionMs(), easing: TAB_MOTION_EASING })
+  }
+
+  const opened = nodes.find((node) => !previousLeft.has(node.dataset.tabId))
+  const focus = opened || nodes.find((node) => node.classList.contains('active'))
+  updateTabMetrics(() => {
+    updateTabScrollFades()
+    keepTabVisible(focus, { smooth: !firstPaint })
+  })
+}
+
+// The wheel is the only way back to a tab that has scrolled behind the strip,
+// so a vertical wheel over the bar moves it sideways.
+els.tabstrip.addEventListener('wheel', (event) => {
+  const strip = els.tabs
+  if (strip.scrollWidth - strip.clientWidth <= 1) return
+  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+  if (!delta) return
+  event.preventDefault()
+  strip.scrollLeft += delta
+  updateTabScrollFades()
+}, { passive: false })
+els.tabs.addEventListener('scroll', () => requestAnimationFrame(updateTabScrollFades))
+window.addEventListener('resize', () => requestAnimationFrame(updateTabScrollFades))
 
 function moveTabPreview(dragged, before) {
   if (before === dragged || dragged.nextElementSibling === before) return
@@ -261,7 +414,14 @@ window.ember.onState((state) => {
 
 window.ember.getChromeConfig().then(applyChromeConfig)
 window.ember.onChromeConfig(applyChromeConfig)
-window.ember.onWindowState(({ maximized } = {}) => els.shell.classList.toggle('maximized', !!maximized))
+window.ember.onWindowState(({ maximized } = {}) => {
+  els.shell.classList.toggle('maximized', !!maximized)
+  // The glyph changes to Windows' restore pair, so the label has to follow it.
+  const button = $('win-max')
+  const label = maximized ? 'Restore' : 'Maximize'
+  button.title = label
+  button.setAttribute('aria-label', label)
+})
 
 // ---------- quick searches ----------
 function bangFor(value) {
@@ -352,6 +512,22 @@ window.ember.onBangsChanged(renderBang)
 els.back.onclick = () => window.ember.back()
 els.forward.onclick = () => window.ember.forward()
 els.reload.onclick = () => window.ember.reload()
+
+// Main tells us which navigation command ran, so Alt+Left, Alt+Right and
+// Ctrl+R animate the same button a click would have.
+const NAV_BUTTONS = { back: els.back, forward: els.forward, reload: els.reload }
+window.ember.onNavPulse((command) => {
+  const button = NAV_BUTTONS[command]
+  if (!button) return
+  // Restarting mid-flight matters: holding Ctrl+R should keep spinning rather
+  // than stall on the first animation's leftovers.
+  button.classList.remove('pulsing')
+  void button.offsetWidth
+  button.classList.add('pulsing')
+})
+for (const button of Object.values(NAV_BUTTONS)) {
+  button.addEventListener('animationend', () => button.classList.remove('pulsing'))
+}
 els.archive.onclick = async () => {
   els.archive.classList.add('busy')
   const result = await window.ember.openArchived()

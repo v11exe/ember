@@ -1,7 +1,7 @@
 const path = require('node:path')
 const fs = require('node:fs/promises')
 const { pathToFileURL } = require('node:url')
-const { app, BaseWindow, WebContentsView, clipboard, dialog, ipcMain, nativeImage, screen, session, shell, webContents } = require('electron')
+const { app, BaseWindow, Menu, WebContentsView, clipboard, dialog, ipcMain, nativeImage, screen, session, shell, webContents } = require('electron')
 
 const { IPC, NEW_TAB_URL, HISTORY_URL, DOWNLOADS_URL, SETTINGS_URL, EXTENSIONS_URL, WEB_STORE_URL } = require('../shared/ipc')
 const { toNavigationUrl, resolveInput } = require('../shared/urls')
@@ -256,7 +256,12 @@ function createBrowser({ privateMode = false } = {}) {
   }
   browser = self
   browsers.add(self)
-  tabs.onPageFocus = () => { panel.hide(); uploadPanel.cancel(); contextMenu.hide(); switcher.hide() }
+  // Clicking back into the page dismisses the chrome dropdowns. The switcher
+  // is not one of them: it deliberately leaves focus on the page so the Ctrl
+  // key-up still reaches us, so the focus event that arrives when the tab it
+  // just switched to finishes loading would close the next one the reader
+  // opened. It ends on Ctrl coming up, on Escape, or on a card being clicked.
+  tabs.onPageFocus = () => { panel.hide(); uploadPanel.cancel(); contextMenu.hide() }
   tabs.onVisit = (visit) => { if (!privateMode) history.record(visit) }
   downloads.onChange = (snapshot) => {
     for (const tab of tabs.tabs) {
@@ -497,9 +502,19 @@ ipcMain.on(IPC.TAB_CONTEXT_MENU, (_e, { id, x } = {}) => {
     },
   }).catch((error) => console.error('[ember] tab menu could not open:', error.message))
 })
-ipcMain.on(IPC.NAV_BACK, () => activeTabs()?.back())
-ipcMain.on(IPC.NAV_FORWARD, () => activeTabs()?.forward())
-ipcMain.on(IPC.NAV_RELOAD, () => activeTabs()?.reload())
+/**
+ * Tell the toolbar a navigation command ran, so its button animates. Both the
+ * click and the keyboard shortcut arrive here, which is why the animation is
+ * driven from main rather than from whichever control was used.
+ */
+function pulseNav(command) {
+  const wc = browser?.chrome?.webContents
+  if (wc && !wc.isDestroyed()) wc.send(IPC.NAV_PULSE, command)
+}
+
+ipcMain.on(IPC.NAV_BACK, () => { pulseNav('back'); activeTabs()?.back() })
+ipcMain.on(IPC.NAV_FORWARD, () => { pulseNav('forward'); activeTabs()?.forward() })
+ipcMain.on(IPC.NAV_RELOAD, () => { pulseNav('reload'); activeTabs()?.reload() })
 ipcMain.on(IPC.NAV_STOP, () => activeTabs()?.stop())
 ipcMain.on(IPC.EXT_OPEN_STORE, () => { browser?.panel.hide(); activeTabs()?.create(WEB_STORE_URL) })
 ipcMain.handle(IPC.EXT_LIST, () => listExtensions(session.defaultSession))
@@ -854,10 +869,10 @@ function runCommand({ command, index }) {
     case COMMANDS.NEW_WINDOW: createBrowser(); return true
     case COMMANDS.NEW_PRIVATE_WINDOW: createBrowser({ privateMode: true }); return true
     case COMMANDS.CLOSE_WINDOW: current?.win.close(); return true
-    case COMMANDS.BACK: tabs?.back(); return true
-    case COMMANDS.FORWARD: tabs?.forward(); return true
-    case COMMANDS.RELOAD: tabs?.reload(); return true
-    case COMMANDS.HARD_RELOAD: tabs?.hardReload(); return true
+    case COMMANDS.BACK: pulseNav('back'); tabs?.back(); return true
+    case COMMANDS.FORWARD: pulseNav('forward'); tabs?.forward(); return true
+    case COMMANDS.RELOAD: pulseNav('reload'); tabs?.reload(); return true
+    case COMMANDS.HARD_RELOAD: pulseNav('reload'); tabs?.hardReload(); return true
     case COMMANDS.STOP:
       // Escape backs out of the switcher before it reaches the page.
       if (current?.switcher.cancel()) return true
@@ -904,6 +919,16 @@ function runCommand({ command, index }) {
 
 app.on('web-contents-created', (_e, wc) => {
   wc.on('before-input-event', (event, input) => {
+    // While the switcher is up it owns Tab. A Tab that arrives without the
+    // modifier is a half-finished chord, not a request to walk anything's
+    // focus order, and letting it through is what smeared the overlay.
+    if (input.type === 'keyDown'
+      && String(input.key || '').toLowerCase() === 'tab'
+      && !(input.control || input.meta)
+      && browser?.switcher?.open) {
+      event.preventDefault()
+      return
+    }
     const shortcut = resolveShortcut(input)
     if (!shortcut) return
     if (runCommand(shortcut)) event.preventDefault()
@@ -915,6 +940,13 @@ app.on('web-contents-created', (_e, wc) => {
     return { action: 'allow' }
   })
 })
+
+// Ember draws its own chrome and has no menu bar, but Electron installs a
+// default application menu anyway — and its File ▸ Close Window is bound to
+// Ctrl+W. Every Ctrl+W was therefore racing a tab close against a window
+// close, which is why holding it down took the whole browser with it. The
+// shortcut table in shortcuts.js is the only owner of Ember's accelerators.
+Menu.setApplicationMenu(null)
 
 app.whenReady().then(() => {
   handleInternalPages()

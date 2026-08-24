@@ -1,6 +1,11 @@
 const path = require('node:path')
 const { IPC } = require('../shared/ipc')
 
+// A view that has stopped presenting frames never answers capturePage(). An
+// overlay that waits for one is an overlay that does not open, so the backdrop
+// is given a deadline and the panel goes up without it.
+const BACKDROP_TIMEOUT = 350
+
 class FloatingPanel {
   constructor(win, { url, createView } = {}) {
     this.win = win
@@ -37,7 +42,12 @@ class FloatingPanel {
     return view
   }
 
-  async show({ bounds, state, targetView = null, captureBleed = 0 }) {
+  /**
+   * `focus: false` leaves keyboard focus where it was. An overlay driven by a
+   * held modifier has to, because a view that has just taken focus is not sent
+   * the modifier's key-up — see switcher-panel.js.
+   */
+  async show({ bounds, state, targetView = null, captureBleed = 0, focus = true }) {
     const generation = ++this.generation
     const capture = await this.#captureBackdrop(targetView, bounds, captureBleed)
     if (generation !== this.generation) return false
@@ -53,7 +63,7 @@ class FloatingPanel {
     this.open = true
     view.setVisible(true)
     if (this.loaded) this.#sendState()
-    view.webContents.focus()
+    if (focus) view.webContents.focus()
     return true
   }
 
@@ -126,8 +136,14 @@ class FloatingPanel {
       height: Math.max(0, bottom - y),
     }
     try {
-      const image = await targetView.webContents.capturePage(rect)
-      if (image.isEmpty()) return null
+      const image = await Promise.race([
+        targetView.webContents.capturePage(rect),
+        new Promise((resolve) => {
+          const timer = setTimeout(() => resolve(null), BACKDROP_TIMEOUT)
+          timer.unref?.()
+        }),
+      ])
+      if (!image || image.isEmpty()) return null
       const size = image.getSize?.()
       return {
         dataUrl: image.toDataURL(),

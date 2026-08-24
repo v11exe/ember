@@ -1,6 +1,12 @@
 (function exposeEmberBrand(root) {
   const ICON_ASSET = '/assets/ember-icon.png'
-  const CHROME_ICON_ASSET = '/assets/icon-white-stroke-tight.png'
+  // The chrome mark is the coloured meteor at the height of the icons beside
+  // it. The white-stroke trace it replaced was a hairline outline that turned
+  // to mush next to a 1.35px-stroked SVG at the same size.
+  const CHROME_ICON_ASSET = '/assets/ember-icon.png'
+  // The square crop the Windows app icon uses. Anywhere the meteor has to sit
+  // in a favicon-sized box, the long version would render as a sliver.
+  const APP_ICON_ASSET = '/assets/ember-app-icon.png'
   const WORDMARK_FONT_ASSET = '/assets/Necosmic-PersonalUse.otf'
 
   function requireTarget(target) {
@@ -49,7 +55,10 @@
     return masthead
   }
 
-  const api = { ICON_ASSET, CHROME_ICON_ASSET, WORDMARK_FONT_ASSET, mountIcon, mountChromeIcon, mountBrand }
+  const api = {
+    ICON_ASSET, CHROME_ICON_ASSET, APP_ICON_ASSET, WORDMARK_FONT_ASSET,
+    mountIcon, mountChromeIcon, mountBrand,
+  }
   if (typeof module !== 'undefined' && module.exports) module.exports = api
   if (root) root.EmberBrand = api
 })(typeof window !== 'undefined' ? window : null)
