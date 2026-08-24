@@ -246,6 +246,15 @@ turning orange is fine.
 
 Should read "Add to Ember".
 
+### B34 — Closing a BaseWindow leaks its child WebContents processes
+**Status:** 🟡 In progress · **Owner:** Codex · **Area:** `src/main/index.js`, window-owned view/panel managers
+
+`BaseWindow` does not automatically destroy `WebContentsView.webContents`. Closing
+Ember therefore leaves page, shell and lazy overlay renderers alive; the shared
+Snap picker can also keep a BrowserWindow alive after the final Ember window.
+Teardown must be idempotent, per-window, and occur only after the session-close
+decision has been accepted.
+
 ---
 
 ## Verification notes — B1–B17

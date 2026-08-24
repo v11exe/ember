@@ -376,6 +376,12 @@ Newest first. One entry per active/recent unit of work.
 - **For the other agent:** contracts/risks they must know, or `none`
 ```
 
+### 2026-08-24 — Codex — BaseWindow resource teardown
+- **Status / Branch:** in-progress · `main`
+- **Touches:** `BUGS.md`, `AGENTS.md`, `docs/superpowers/plans/*`, lifecycle/panel/tab modules and focused tests
+- **Summary:** Auditing B34: `BaseWindow` leaves child `WebContentsView` renderers alive unless Ember explicitly closes them. The implementation will add one idempotent per-browser teardown path while preserving the session-close prompt.
+- **For the other agent:** Do not add a view or per-window listener without registering it in the teardown owner contract; the shared Snap picker dies only after the final browser window closes.
+
 ### 2026-08-24 — Codex — HTML media fullscreen
 - **Status / Branch:** completed · `codex/url-bar`
 - **Touches:** `src/main/{tabs,index}.js`, `test/tab-layout.test.js`
