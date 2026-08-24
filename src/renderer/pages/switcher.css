@@ -7,6 +7,7 @@ body { display: grid; place-items: stretch; }
   position: relative;
   width: 100%; height: 100%;
   border: var(--glass-edge);
+  --shell-radius: 20px;
   border-radius: 20px;
   overflow: hidden;
   isolation: isolate;

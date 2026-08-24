@@ -184,6 +184,8 @@ button, input, .top-navigation, .tabstrip, .top-actions,
   );
 }
 .tabs::-webkit-scrollbar { width: 0; height: 0; }
+/* Scrolling against an end that has run out gives, then springs back. */
+.tabs { transform: translateX(var(--tabs-overscroll, 0px)); }
 /* A tab on its way out keeps its slot while it collapses, so its neighbours
    slide across instead of snapping. */
 .tab-closing { pointer-events: none; }

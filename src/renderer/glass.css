@@ -114,32 +114,53 @@ body { color: var(--text); font-family: var(--font); -webkit-font-smoothing: ant
    reads as a flat plastic sheet, and text sitting on top of a still-legible
    photograph of a webpage is hard to read.
 
-   `.glass-frosted` is the same material taken further: the capture is blurred
-   past the point of being a picture and desaturated so it stops colouring the
-   panel, and the fill above it is achromatic. It follows the new tab search
-   pill in staying neutral and letting light, not colour, describe the surface.
-   Add it to a glass shell whose own content has to be read.
+   `.glass-frosted` is the new tab search pill's material, taken further. It is
+   *glass*, not a panel: readability comes from blurring the capture far past
+   legibility, not from covering it up. An opaque fill was the first attempt and
+   it read as black plastic — the tint here is a scrim at roughly a third alpha,
+   the capture keeps its colour and luminance, and the rim below is the same
+   specular the search pill and the dropdown lens wear.
    --------------------------------------------------------------------------- */
 :root[data-backdrop="light"] {
-  --frost-fill:  rgba(252, 250, 248, .84);
+  --frost-fill:  rgba(251, 249, 247, .58);
   --frost-sheen: rgba(255, 255, 255, .60);
   /* Over a bright page the surface lifts rather than darkens, so the frost
      brightens the capture instead of dimming it. */
-  --frost-capture: blur(26px) saturate(.6) brightness(1.08);
+  --frost-capture: blur(56px) saturate(.95) brightness(1.10);
 }
 
-.glass-frosted { background: var(--frost-fill); }
+.glass-frosted {
+  background: var(--frost-fill);
+  /* Its tint and capture layers are composited, and a composited child is
+     clipped to its ancestor's rectangle rather than its rounded box — the
+     same rule that put square tabs on the hover pill, here on the panel edge.
+     Each shell declares its own radius so this can clip to it. */
+  clip-path: inset(0 round var(--shell-radius, 16px));
+  /* The search pill's rim, so a frosted panel is the same material and not a
+     differently-shaded box. */
+  box-shadow: var(--lg-shadow-sm, 0 6px 18px rgba(0, 0, 0, .22)), var(--lg-lens-rim);
+}
+/* Glass carries its own contrast the way the internal pages do, so that the
+   blur can stay honest instead of being pushed towards opaque. */
+.glass-frosted, .glass-frosted .content, .glass-frosted .cards {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .7), 0 0 4px rgba(0, 0, 0, .28);
+}
+:root[data-backdrop="light"] .glass-frosted,
+:root[data-backdrop="light"] .glass-frosted .content,
+:root[data-backdrop="light"] .glass-frosted .cards {
+  text-shadow: 0 1px 2px rgba(255, 255, 255, .8);
+}
 .glass-frosted .glass-backdrop {
-  /* Blurred well past legibility, and desaturated so the page behind stops
-     deciding what colour the panel is. */
+  /* Far past the point of being a picture, but still coloured and still lit —
+     that is what separates frosted glass from a painted panel. */
   filter: var(--frost-capture);
-  opacity: .95;
-  transform: scale(1.14);
+  opacity: 1;
+  transform: scale(1.18);
 }
 .glass-frosted .glass-wash {
   background:
-    linear-gradient(152deg, var(--frost-sheen), transparent 46%),
+    linear-gradient(152deg, var(--frost-sheen), transparent 52%),
     var(--frost-fill);
 }
-.glass-frosted .glass-grain { opacity: .10; }
+.glass-frosted .glass-grain { opacity: .07; }
 

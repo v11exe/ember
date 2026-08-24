@@ -29,6 +29,17 @@ class FloatingPanel {
     this.generation = 0
   }
 
+  /**
+   * Create and load the view before it is shown. An overlay driven by a held
+   * chord cannot afford to be loading its document while the chord is being
+   * released — nothing would be listening for the release.
+   */
+  warm() {
+    const view = this.#ensureView()
+    view.setVisible(false)
+    return view
+  }
+
   #ensureView() {
     if (this.view) return this.view
     const view = this.createView()

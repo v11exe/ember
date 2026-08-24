@@ -34,7 +34,7 @@ ships.
 ## Chrome / window shell
 
 ### B1 — Ctrl+Tab switcher does not commit on Ctrl release
-**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/switcher-panel.js`, `src/main/shortcuts.js`, switcher page
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/switcher-panel.js`, `src/main/shortcuts.js`, switcher page
 
 Releasing Ctrl does not switch to the highlighted tab; the overlay stays up
 until it is clicked with the mouse. Pressing Tab alone while the overlay is open
@@ -42,7 +42,7 @@ causes artifacting and should not be possible at all. After the overlay closes,
 Ctrl+Tab does nothing for several seconds.
 
 ### B2 — Switcher uses the purple plastic backdrop
-**Status:** ✅ Fixed · **Owner:** Claude Code
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 Replace with the frosted, heavily blurred liquid-glass material (see
 cross-cutting decisions).
@@ -54,13 +54,13 @@ Pressing Ctrl+W several times in quick succession crashes the whole app. Likely
 a close/destroy race against a tab record whose renderer is already gone.
 
 ### B4 — Windows does not treat Ember as a normal application window
-**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/index.js`
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/index.js`
 
 Dragging to the top of the screen does not trigger the Snap bar, and
 minimise/restore from the taskbar plays no standard Windows animation.
 
 ### B5 — Top corner artifacting
-**Status:** ✅ Fixed · **Owner:** Claude Code
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 Black 90° corners subtly stick out behind the rounded top corners, and the
 corners sometimes lose their curve entirely — reproducible after maximising and
@@ -87,7 +87,7 @@ Its hover box is centred but the glyph inside is not.
 **Status:** ✅ Fixed · **Owner:** Claude Code
 
 ### B10 — Overflowed tabs are unreachable
-**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/tabs.js`, `src/renderer/chrome.*`
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/tabs.js`, `src/renderer/chrome.*`
 
 Tabs that overflow slide behind the rest of the tab bar (the untouched empty
 space is intentional) but there is no way to get them back. Scrolling the wheel
@@ -112,7 +112,7 @@ Animate them, including when triggered by Alt+Left, Alt+Right and Ctrl+R.
 ## Overlays, menus and panels
 
 ### B13 — Selection conversion popup uses the purple plastic box
-**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/selection-panel.js`
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/selection-panel.js`
 
 Should be the liquid-glass material, non-elastic, frosted and blurred enough
 that its own text stays readable.
@@ -121,7 +121,7 @@ that its own text stays readable.
 **Status:** ✅ Fixed · **Owner:** Claude Code
 
 ### B15 — File upload menu opens in the centre of the screen
-**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/upload-panel.js`, `src/main/popup-positioner.js`
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/upload-panel.js`, `src/main/popup-positioner.js`
 
 It should anchor a corner to the cursor, picking the corner that keeps the panel
 inside the window, preferring top-left (opening down and to the right) when no
@@ -134,7 +134,7 @@ Text underneath shows through. Increase blur/frost substantially or move it to
 the search-bar liquid-glass material with tuned values.
 
 ### B17 — Hover pill corners break in right-click style menus
-**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/context-menu-panel.js`, `src/renderer/pages/liquid-glass-ui.*`
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/context-menu-panel.js`, `src/renderer/pages/liquid-glass-ui.*`
 
 The hover indicator's corners are not cleanly rounded into the pill; randomly
 coloured 90° angles protrude from all four corners. Affects every menu using
@@ -150,7 +150,7 @@ this material.
 Any non-combo keypress should start typing into the search field.
 
 ### B19 — Bang keyword stays in the query after the space
-**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/shared/urls.js`, `src/renderer/chrome.*`
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/shared/urls.js`, `src/renderer/chrome.*`
 
 Typing `gh` shows the GitHub indicator but leaves `gh` in the box. Pressing
 space should move the keyword into the left-hand chip and leave the query empty;

@@ -257,6 +257,10 @@ class TabManager {
       try { this.extensions.selectTab(tab.webContents) } catch { /* non-fatal */ }
     }
     this.layout()
+    // Give the page keyboard focus straight away. Without it nothing in the
+    // window owns the keyboard for a moment after a switch, and every shortcut
+    // — Ctrl+Tab most visibly — went nowhere until something was clicked.
+    try { tab.webContents?.focus() } catch { /* the renderer may be going */ }
     if (previous && previous.id !== id) this.#photographAndHide(previous)
     this.emit()
   }

@@ -9,6 +9,7 @@ body { display: grid; place-items: stretch; }
   width: 100%; height: 100%;
   padding: var(--snap-padding, 12px);
   border: var(--glass-edge);
+  --shell-radius: 14px;
   border-radius: 14px;
   overflow: hidden;
   isolation: isolate;

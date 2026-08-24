@@ -42,7 +42,7 @@ class TabSwitcher {
    * @param {import('electron').BaseWindow} win
    * @param {{ tabs: import('./tabs').TabManager, thumbnails?: object, overlay?: FloatingPanel }} opts
    */
-  constructor(win, { tabs, thumbnails = null, overlay } = {}) {
+  constructor(win, { tabs, thumbnails = null, overlay, modifierWatch = null } = {}) {
     this.win = win
     this.tabs = tabs
     this.thumbnails = thumbnails
@@ -50,6 +50,9 @@ class TabSwitcher {
     this.order = []
     this.index = 0
     this.open = false
+    // Nothing inside Ember reports the modifier coming back up dependably, so
+    // the OS is asked instead. See key-release.js.
+    this.modifierWatch = modifierWatch
   }
 
   /** Most recently used first, with the active tab at the front. */
@@ -84,6 +87,9 @@ class TabSwitcher {
       this.index = ((delta % this.order.length) + this.order.length) % this.order.length
       this.open = true
       void this.#show()
+      // The modifier's release is what commits, and nothing inside Ember hears
+      // it dependably; the OS does. See key-release.js.
+      void this.modifierWatch?.start(() => this.commit())
       return true
     }
     this.index = (this.index + delta + this.order.length) % this.order.length
@@ -104,13 +110,21 @@ class TabSwitcher {
       state: { kind: 'switcher', tabs: cards, index: this.index, openSequence: Date.now() },
       targetView: this.tabs.active?.view || null,
       captureBleed: 40,
-      // Ctrl is still held while this opens, and a view that takes focus
-      // mid-chord is never told the modifier came back up — the switcher would
-      // then sit there until it was clicked. Leaving focus alone keeps the
-      // key-up arriving at a view whose before-input-event does report it.
-      focus: false,
+      // The overlay takes focus so there is one definite place the release can
+      // be noticed. switcher.js recognises the release from several signals and
+      // main watches for it too, so a focused view is the predictable choice.
+      focus: true,
     })
   }
+
+  /**
+   * Build and load the overlay before it is ever needed. The first Ctrl+Tab
+   * used to create the view and load its document while the chord was already
+   * being held: if the reader let go before that document ran, nothing was
+   * listening for the release and the switcher stayed up. It also made the
+   * first open visibly slower than the rest.
+   */
+  warm() { this.overlay.warm?.() }
 
   /** Ctrl came back up: go to whatever is selected. */
   commit() {
@@ -128,6 +142,7 @@ class TabSwitcher {
   }
 
   hide() {
+    this.modifierWatch?.stop()
     if (!this.open) return
     this.open = false
     this.order = []

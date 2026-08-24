@@ -28,6 +28,7 @@ const { TabSwitcher } = require('./switcher-panel')
 const { isDeadStatus, isArchivable } = require('../shared/archive')
 const { NativeBackdrop } = require('./native-backdrop')
 const { SnapPicker } = require('./snap-picker')
+const { ModifierWatch } = require('./key-release')
 const { ThumbnailCache } = require('./tab-thumbnails')
 const { HibernationManager, hostnameOf, sanitiseHibernation } = require('./hibernation')
 const { listBangs, DEFAULT_BANGS } = require('../shared/bangs')
@@ -250,7 +251,13 @@ function createBrowser({ privateMode = false } = {}) {
   })
   const rates = new RateStore(path.join(app.getPath('userData'), 'rates.json'))
   const archive = new ArchiveLookup()
-  const switcher = new TabSwitcher(win, { tabs, thumbnails })
+  const switcher = new TabSwitcher(win, {
+    tabs, thumbnails,
+    modifierWatch: new ModifierWatch({ userDataPath: app.getPath('userData') }),
+  })
+  // Ready before the first Ctrl+Tab, so the release is never missed while the
+  // overlay is still loading.
+  switcher.warm()
   const selection = new SelectionPanel(win, {
     clipboard,
     rates,
@@ -1187,6 +1194,12 @@ app.on('web-contents-created', (_e, wc) => {
       && browser?.switcher?.open) {
       event.preventDefault()
       return
+    }
+    // The chord is over the moment anything arrives without the modifier,
+    // whichever surface it arrives at. Relying only on the modifier's own
+    // key-up left the switcher up when that event went astray.
+    if (browser?.switcher?.open && input.type === 'keyDown' && !input.control && !input.meta) {
+      runCommand({ command: COMMANDS.END_SWITCH })
     }
     const shortcut = resolveShortcut(input)
     if (!shortcut) return

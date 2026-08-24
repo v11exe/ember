@@ -76,6 +76,12 @@ body {
   text-shadow: 0 1px 6px rgba(0,0,0,.35);
 }
 .liquid-glass-search-chip[hidden] { display: none; }
+/* Committed to, rather than merely recognised: the chip stops being a preview
+   and becomes the engine the empty box is now searching. */
+.liquid-glass-search-chip[data-engaged="true"] {
+  background: rgba(255, 108, 24, .82);
+  box-shadow: 0 0 0 1px rgba(255, 178, 122, .5), 0 2px 8px rgba(255, 92, 0, .28);
+}
 
 .liquid-glass-search input { flex: 1; min-width: 0; height: 100%; margin: 0; padding: 0; border: 0; outline: none; appearance: none; background: transparent; color: #fff; caret-color: #fff; font: 600 15.5px/1 var(--font); text-shadow: 0 2px 12px rgba(0,0,0,.4); }
 .liquid-glass-search input:focus, .liquid-glass-search input:focus-visible { outline: 0 !important; border: 0 !important; box-shadow: none !important; }

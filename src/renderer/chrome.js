@@ -226,6 +226,8 @@ function tabNode(tab) {
 const TAB_MOTION_MS = 150
 const TAB_MOTION_EASING = 'cubic-bezier(.2, .8, .2, 1)'
 const TAB_FADE_WIDTH = 22
+// The tab whose selection the strip last travelled for.
+let lastActiveTabId = null
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 /** Movement is the point of these; with motion turned down they just end. */
 const motionMs = () => (reducedMotion.matches ? 1 : TAB_MOTION_MS)
@@ -293,10 +295,9 @@ function keepTabVisible(node, { smooth = true } = {}) {
   if (right + TAB_FADE_WIDTH > viewRight) target = right + TAB_FADE_WIDTH - strip.clientWidth
   else if (left - TAB_FADE_WIDTH < viewLeft) target = left - TAB_FADE_WIDTH
   if (target === null) return
-  strip.scrollTo({
-    left: Math.max(0, Math.min(overflow, target)),
-    behavior: smooth ? 'smooth' : 'auto',
-  })
+  // Through the same animation the wheel drives, so the two cannot fight over
+  // scrollLeft and leave the strip stuttering.
+  glideStripTo(target, { immediate: !smooth })
 }
 
 function renderTabs(tabs) {
@@ -333,24 +334,119 @@ function renderTabs(tabs) {
   }
 
   const opened = nodes.find((node) => !previousLeft.has(node.dataset.tabId))
-  const focus = opened || nodes.find((node) => node.classList.contains('active'))
+  const active = nodes.find((node) => node.classList.contains('active'))
+  // Only a tab opening or the selection actually moving is a reason to travel.
+  // Every title, favicon and loading flip re-renders the strip, and chasing the
+  // active tab on each of those was what dragged the strip back from wherever
+  // the reader had just scrolled it — the wheel appearing not to work at all.
+  const selectionMoved = active?.dataset.tabId !== lastActiveTabId
+  lastActiveTabId = active?.dataset.tabId || null
+  const focus = opened || (selectionMoved ? active : null)
   updateTabMetrics(() => {
     updateTabScrollFades()
-    keepTabVisible(focus, { smooth: !firstPaint })
+    if (focus) keepTabVisible(focus, { smooth: !firstPaint })
   })
 }
 
-// The wheel is the only way back to a tab that has scrolled behind the strip,
-// so a vertical wheel over the bar moves it sideways.
-els.tabstrip.addEventListener('wheel', (event) => {
+// ---------- the strip's own scrolling ----------
+// The wheel is the only way back to a tab that has slid behind the strip, so a
+// wheel over the bar moves it sideways. Setting scrollLeft per notch was a
+// series of jumps; this keeps a target and eases towards it, so one notch is a
+// glide of about a tab and a fast run of notches is one longer glide. Pushing
+// against an end that has nowhere to go stretches the strip and springs back.
+const WHEEL_STEP = 132
+const WHEEL_STEP_MAX = 430
+const WHEEL_URGENT_MS = 230
+const OVERSCROLL_LIMIT = 44
+const GLIDE = 0.24
+const SPRING = 0.82
+
+let scrollTarget = null
+let scrollFrame = 0
+let overscroll = 0
+let lastWheelAt = 0
+
+function stripMaxScroll() {
+  return Math.max(0, els.tabs.scrollWidth - els.tabs.clientWidth)
+}
+
+function stepStrip() {
+  scrollFrame = 0
   const strip = els.tabs
-  if (strip.scrollWidth - strip.clientWidth <= 1) return
-  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
-  if (!delta) return
-  event.preventDefault()
-  strip.scrollLeft += delta
+  let running = false
+
+  if (scrollTarget !== null) {
+    const wanted = Math.min(stripMaxScroll(), Math.max(0, scrollTarget))
+    const distance = wanted - strip.scrollLeft
+    if (Math.abs(distance) < 0.5) {
+      strip.scrollLeft = wanted
+      scrollTarget = null
+    } else {
+      strip.scrollLeft += distance * GLIDE
+      running = true
+    }
+  }
+
+  if (Math.abs(overscroll) >= 0.4) {
+    overscroll *= SPRING
+    running = true
+  } else if (overscroll !== 0) {
+    overscroll = 0
+  }
+  strip.style.setProperty('--tabs-overscroll', `${overscroll.toFixed(2)}px`)
+
   updateTabScrollFades()
+  if (running) scrollFrame = requestAnimationFrame(stepStrip)
+}
+
+function driveStrip() {
+  if (!scrollFrame) scrollFrame = requestAnimationFrame(stepStrip)
+}
+
+/** Ask the strip to travel somewhere; the animation gets it there. */
+function glideStripTo(left, { immediate = false } = {}) {
+  const wanted = Math.min(stripMaxScroll(), Math.max(0, left))
+  if (immediate) {
+    scrollTarget = null
+    els.tabs.scrollLeft = wanted
+    updateTabScrollFades()
+    return
+  }
+  scrollTarget = wanted
+  driveStrip()
+}
+
+els.tabstrip.addEventListener('wheel', (event) => {
+  const raw = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+  if (!raw) return
+  const max = stripMaxScroll()
+  // Claim the gesture even at the ends, so the page underneath never scrolls
+  // and the strip can show that it has run out instead.
+  event.preventDefault()
+  if (max <= 1) return
+
+  const now = performance.now()
+  const sinceLast = now - lastWheelAt
+  lastWheelAt = now
+  // Notches arriving quickly mean a longer stride: a single click nudges the
+  // strip by about one tab, a fast flick crosses several.
+  const urgency = sinceLast < WHEEL_URGENT_MS
+    ? Math.min(2.8, 1 + (WHEEL_URGENT_MS - sinceLast) / 150)
+    : 1
+  const step = Math.sign(raw) * Math.min(WHEEL_STEP_MAX, WHEEL_STEP * urgency)
+  const from = scrollTarget === null ? els.tabs.scrollLeft : scrollTarget
+  const next = from + step
+
+  if ((next < 0 && from <= 0.5) || (next > max && from >= max - 0.5)) {
+    // Already at the end and still being pushed: the strip gives a little.
+    const give = Math.sign(step) * -10
+    overscroll = Math.max(-OVERSCROLL_LIMIT, Math.min(OVERSCROLL_LIMIT, overscroll + give))
+    driveStrip()
+    return
+  }
+  glideStripTo(next)
 }, { passive: false })
+
 els.tabs.addEventListener('scroll', () => requestAnimationFrame(updateTabScrollFades))
 window.addEventListener('resize', () => requestAnimationFrame(updateTabScrollFades))
 
