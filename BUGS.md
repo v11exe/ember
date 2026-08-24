@@ -519,3 +519,24 @@ switcher and the context menu, both measured the same way.
 Every fix in this file was checked to be present in `HEAD` after the rebases
 onto the other agent's work, because a commit was dropped during one of them
 and it would be easy to lose another silently. All present.
+
+### B10 — a regression I introduced, and how it was caught
+
+Making the scroll request "self-correcting" so a newly opened tab could not be
+left a sliver short of the end had a far worse consequence: `keepTabVisible()`
+returns true whenever the tab is out of view, so once the reader scrolled away
+the request was *never* satisfied and every later render — a title, a favicon,
+a loading flip, a resize — dragged the strip straight back to the active tab.
+The strip could not be scrolled away from at all. That is exactly the original
+complaint, reintroduced by the fix for it.
+
+It hid from testing because every check dispatched the wheel and then measured
+immediately; the snap-back needs a *subsequent* render to happen. It surfaced
+only when a test could not reset `scrollLeft` to 0 — five attempts, five snaps
+back to 597.
+
+The request is now bounded three ways: a 900ms grace, long enough for the tab
+widths to settle after an open and far too short to fight anyone; the reader's
+own wheel clears it outright, because their intent wins; and it is dropped once
+the tab it names is gone. Verified: wheeled back from 600 to 5, still 5 two
+seconds later, and still 5 after six forced re-renders.

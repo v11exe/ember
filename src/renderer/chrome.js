@@ -235,6 +235,10 @@ let lastActiveTabId = null
 // The tab a render asked the strip to travel to, kept by id so a superseded
 // metrics pass does not take the request with it.
 let pendingFocusTabId = null
+// …and only until this moment. Long enough for the tab widths to settle after
+// an open, far too short to fight the reader for the scroll position.
+let pendingFocusUntil = 0
+const FOCUS_GRACE_MS = 900
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 /** Movement is the point of these; with motion turned down they just end. */
 const motionMs = () => (reducedMotion.matches ? 1 : TAB_MOTION_MS)
@@ -362,15 +366,21 @@ function renderTabs(tabs) {
   // and each one re-renders and supersedes the pending metrics pass. The
   // request has to survive that, or the tab that was just opened is left off
   // the end of the strip because the render that knew about it was cancelled.
-  if (focus) pendingFocusTabId = focus.dataset.tabId
+  // The request is held only long enough for the widths to settle — a run of
+  // state emits follows a tab opening and each supersedes the pending metrics
+  // pass, so a request captured in one callback is simply lost. Holding it
+  // *indefinitely* is far worse: every later render then drags the strip back
+  // to the active tab, which is the wheel appearing not to work at all.
+  if (focus) {
+    pendingFocusTabId = focus.dataset.tabId
+    pendingFocusUntil = performance.now() + FOCUS_GRACE_MS
+  }
   updateTabMetrics(() => {
     updateTabScrollFades()
     if (!pendingFocusTabId) return
+    if (performance.now() > pendingFocusUntil) { pendingFocusTabId = null; return }
     const wanted = els.tabs.querySelector(`.tab[data-tab-id="${pendingFocusTabId}"]`)
     if (!wanted) { pendingFocusTabId = null; return }
-    // Held until the tab is actually in view. The scrollable width can still
-    // grow by a few pixels after this pass — the widths settle a frame later —
-    // and a one-shot request left the newest tab a sliver short of the end.
     if (!keepTabVisible(wanted, { smooth: !firstPaint })) pendingFocusTabId = null
   })
 }
@@ -485,6 +495,8 @@ function glideStripTo(left, { immediate = false } = {}) {
  * scrolls and the strip can show that it has run out instead.
  */
 els.tabstrip.addEventListener('wheel', (event) => {
+  // Whatever the strip was travelling towards, the reader has taken over.
+  pendingFocusTabId = null
   const raw = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
   if (!raw) return
   event.preventDefault()
