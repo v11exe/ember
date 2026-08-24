@@ -39,6 +39,10 @@ valid saved entry remains in its configured reading-order position, including
 exact duplicate entries. IDs continue to be made unique so each duplicate has
 its own clickable, draggable and removable tile.
 
+Every tab drop allocates the next unused tile ID before placement. This is
+separate from an existing Quick Site drag, whose existing ID intentionally
+means a reorder.
+
 `placeFavorite()` and `favoriteFromTab()` insert a new entry rather than
 reordering an equal existing entry. Reordering is only initiated by dragging a
 Quick Site that already has an ID; a tab drag always previews a new tile.

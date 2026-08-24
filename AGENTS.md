@@ -394,7 +394,7 @@ Newest first. One entry per active/recent unit of work.
 ### 2026-08-24 — Codex — Favorite target matching
 - **Status / Branch:** completed · `main`
 - **Touches:** `AGENTS.md`, `docs/superpowers/{specs,plans}/*`, `src/shared/favorites.js`, focused Favorite tests
-- **Summary:** Quick Sites now retain same-site and exact duplicates, distinguish broad origin-root entries from specific origin/path entries, and choose the correct already-open tab without UI changes.
+- **Summary:** Quick Sites now retain same-site and exact duplicates, distinguish broad origin-root entries from specific origin/path entries, allocate an unused ID for every tab drop, and choose the correct already-open tab without UI changes.
 - **For the other agent:** A broad origin prefers an already-open direct-host root tab, then may reuse a child-subdomain tab. A specific page never falls back to a broad origin tab, and query/fragment do not distinguish it. Existing Quick Site drags reorder; tab drags add duplicates.
 
 ### 2026-08-24 — Codex — BaseWindow resource teardown

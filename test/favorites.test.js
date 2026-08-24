@@ -117,6 +117,15 @@ test('a dropped tab adds a duplicate target and rejects invalid or full lists', 
   assert.equal(favoriteFromTab({ url: 'https://another.test/' }, full).status, 'full')
 })
 
+test('repeated drops of the same live tab each create a separate Quick Site', () => {
+  const tab = { title: 'YouTube', url: 'https://www.youtube.com/' }
+  const first = favoriteFromTab(tab, [{ id: 'youtube', name: 'YouTube', url: tab.url }])
+  const second = favoriteFromTab(tab, first.favorites)
+  assert.equal(first.status, 'added')
+  assert.equal(second.status, 'added')
+  assert.deepEqual(second.favorites.map(({ id }) => id), ['youtube', 'youtube-com', 'youtube-com-2'])
+})
+
 test('placement inserts at a configured cell and clamps empty cells to the list end', () => {
   const current = [
     { id: 'a', name: 'A', url: 'https://a.test/' },

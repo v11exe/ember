@@ -94,6 +94,18 @@ function placementIndex(index, maximum, fallback) {
   return Math.min(maximum, Math.max(0, Math.round(Number(index))))
 }
 
+function nextFavoriteId(value, favorites) {
+  const base = (String(value || 'favorite').slice(0, 42) || 'favorite')
+  const ids = new Set(favorites.map((favorite) => favorite.id))
+  let id = base
+  let suffix = 2
+  while (ids.has(id)) {
+    id = `${base}-${suffix}`
+    suffix += 1
+  }
+  return id
+}
+
 /** Ordered insert/reorder/replace used by both live tab drops and Favorite drags. */
 function placeFavorite(candidate, current = [], gridValue, index = null) {
   const capacity = favoriteCapacity(gridValue)
@@ -158,7 +170,7 @@ function findFavoriteTab(tabs, favoriteUrl) {
 
 /**
  * Turn a live tab into a persistent Favorite without trusting renderer data.
- * The exact page is kept for opening; site identity is only for de-duplication.
+ * The exact page is kept for opening; every tab drop receives an unused tile ID.
  */
 function favoriteFromTab(tab, current = [], gridValue = FAVORITE_GRID_DEFAULTS, index = null) {
   const favorites = sanitiseFavorites(current, favoriteCapacity(gridValue))
@@ -166,7 +178,7 @@ function favoriteFromTab(tab, current = [], gridValue = FAVORITE_GRID_DEFAULTS, 
   if (!url) return { status: 'invalid', favorite: null, favorites }
 
   const candidate = {
-    id: siteKey(url.href).replace(/[^a-z0-9]+/g, '-') || `favorite-${favorites.length + 1}`,
+    id: nextFavoriteId(siteKey(url.href).replace(/[^a-z0-9]+/g, '-') || 'favorite', favorites),
     name: String(tab?.title || '').trim() || url.hostname.replace(/^www\./, ''),
     url: url.href,
     ...(sanitiseIcon(tab?.favicon) ? { icon: sanitiseIcon(tab.favicon) } : {}),
