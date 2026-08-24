@@ -493,3 +493,29 @@ candidate** and the cause is elsewhere: the likeliest remaining one is the page
 viewport's own corners, which are clipped by the four `corner-mask` views
 rather than by DWM, and would look square if a mask failed to load or was
 mispositioned after a resize.
+
+### B13 / B15 — measured, not inferred
+
+Earlier these were taken on trust from `conversion.html` and `upload.html`
+loading the same module as the switcher. Both shells were then opened and their
+computed style read directly:
+
+| | conversion | upload |
+|---|---|---|
+| shell background | `rgba(0, 0, 0, 0)` | `rgba(0, 0, 0, 0)` |
+| warp `backdrop-filter` | `blur(20px) saturate(1.4)` | `blur(20px) saturate(1.4)` |
+| warp `filter` | `url(#ember-overlay-glass-1)` | `url(#ember-overlay-glass-1)` |
+| warp background | `rgba(0, 0, 0, 0)` | `rgba(0, 0, 0, 0)` |
+| `clip-path` | `inset(0 round 32px)` | `inset(0 round 32px)` |
+| specular rims | 4 | 8 |
+
+There is no filled surface at any level of either panel, so there is nothing
+that could read as an opaque box: the only thing between the reader and the
+captured page is a 20px blur and a refraction filter. The same holds for the
+switcher and the context menu, both measured the same way.
+
+### Fix audit
+
+Every fix in this file was checked to be present in `HEAD` after the rebases
+onto the other agent's work, because a commit was dropped during one of them
+and it would be easy to lose another silently. All present.
