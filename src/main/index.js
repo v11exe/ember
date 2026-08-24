@@ -1608,13 +1608,17 @@ app.whenReady().then(() => {
           ${script}
         })()`)
 
+        // Typing a keyword shows nothing: the chip is what committing to a
+        // quick search looks like, not a preview of what one would do.
         const typed = await omnibox("type('yt liquid glass'); return read()")
-        checks.push(['the omnibox names the quick search as you type',
-          typed.chip === 'YouTube' && !typed.engaged && !typed.tip])
+        checks.push(['typing a keyword does not name the quick search yet',
+          typed.chip === null && !typed.engaged && !typed.tip])
         const plain = await omnibox("type('example.com'); return read()")
         checks.push(['a plain address shows no quick search', plain.chip === null])
+        // The Tab hint is the exception — without it nothing tells the reader
+        // the shortcut exists.
         const bare = await omnibox("type('gh'); return read()")
-        checks.push(['a keyword on its own offers Tab', bare.chip === 'GitHub' && bare.tip])
+        checks.push(['a keyword on its own offers Tab', bare.chip === null && bare.tip])
 
         const engagedState = await omnibox("type('gh'); press('Tab'); return read()")
         checks.push(['Tab commits to the engine and clears the keyword',
@@ -1628,8 +1632,10 @@ app.whenReady().then(() => {
         await browser.settings.set('bangs', [{ alias: 'zz', name: 'Probe', url: 'https://smoke.invalid/?q=%s' }])
         broadcastBangs()
         const custom = await waitFor(async () => {
-          const state = await omnibox("type('zz cats'); return read()")
-          return state.chip === 'Probe' ? state : null
+          // Committed to, not previewed: the chip names the engine once the
+          // keyword has been taken.
+          const state = await omnibox("type('zz'); press('Tab'); type('cats'); return read()")
+          return state.chip === 'Probe' && state.engaged ? state : null
         })
         checks.push(['a shortcut added in settings reaches the omnibox', !!custom])
 

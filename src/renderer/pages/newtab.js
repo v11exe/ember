@@ -87,16 +87,11 @@ function bindQuickSearchChip(input) {
       if (asked !== latest) return
       if (ready?.kind === 'bang' && !ready.term) { engage(ready); return }
     }
-    if (!trimmed) { chip.hidden = true; return }
-    const resolved = await resolve(raw)
-    // A slower answer for older text must not overwrite a newer one.
-    if (asked !== latest || engaged) return
-    const bang = resolved?.kind === 'bang' ? resolved : null
-    chip.hidden = !bang
-    if (bang) {
-      chip.textContent = bang.name
-      chip.title = bang.term ? `Search ${bang.name} for “${bang.term}”` : `Open ${bang.name}`
-    }
+    // Nothing shows before the keyword is committed to. Typing `y`, then `yt`,
+    // is still just text being typed; the chip is what committing to a quick
+    // search looks like, so it appears when the space takes the keyword and
+    // not one keystroke earlier.
+    chip.hidden = true
   })
 
   return { get engaged() { return engaged }, disengage }

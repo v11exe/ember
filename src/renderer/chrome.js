@@ -616,13 +616,12 @@ function renderBang() {
   }
   els.chip.classList.remove('engaged')
   els.omnibox.placeholder = DEFAULT_PLACEHOLDER
-  const bang = bangFor(value)
-  els.chip.hidden = !bang
+  // Nothing shows before the keyword is committed to. Typing `y`, then `yt`,
+  // is still just text being typed; the chip is what committing to a quick
+  // search looks like. The Tab hint is the exception — it is the only way to
+  // discover that the shortcut is there at all.
+  els.chip.hidden = true
   els.tip.hidden = !readyToEngage(value)
-  if (bang) {
-    els.chip.textContent = bang.name
-    els.chip.title = bang.term ? `Search ${bang.name} for “${bang.term}”` : `Open ${bang.name}`
-  }
 }
 
 function engage(bang) {

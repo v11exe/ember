@@ -401,3 +401,17 @@ four slow ones; pushing past an end leans the strip and stretches it
 (`matrix(1.0086, 0, 0, 1, -7.76, 0)`) and it springs back to rest; a new tab
 pushes the left-hand tabs behind and lands fully visible; the wheel brings them
 back.
+
+### B19 — the chip is a commit, not a preview
+
+The space-commit landed in an earlier pass but the chip still appeared while
+the keyword was being typed, which is not what was asked for. Nothing shows now
+until the keyword is taken:
+
+    y            nothing
+    yt           nothing
+    yt<space>    chip reads YouTube, the box is empty, placeholder Search YouTube
+
+The Tab hint is the one exception, because without it nothing tells the reader
+the shortcut exists. This supersedes the preview behaviour roadmap #2 added,
+and the smoke gate asserts the new contract.
