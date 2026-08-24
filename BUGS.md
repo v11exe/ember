@@ -438,3 +438,32 @@ this bug was.
 The remaining half of the original report — drag-to-top offering arrangements —
 is still Ember's own picker, because a `WebContentsView` cannot carry a native
 drag region and so Windows never runs a move loop for it.
+
+---
+
+## Re-examination on current main — B1, B2, B13, B15, B17
+
+Checked against the running browser rather than taken on trust, driven through
+Electron's remote-debugging port so nothing touched the developer's keyboard.
+
+- **B1 — commits.** Ctrl+Tab dispatched into the chrome view opened the
+  switcher with five cards, and the active tab moved from 5 to 4 when the
+  modifier came up. The OS-level watch in `key-release.js` is what makes that
+  reliable; nothing inside Ember hears the key-up.
+- **B2 — liquid glass, not plastic.** The switcher shell is
+  `shell overlay-liquid-glass`: background `rgba(0,0,0,0)`, a
+  `overlay-liquid-glass__warp` layer carrying
+  `backdrop-filter: blur(20px) saturate(1.4)` **and**
+  `filter: url(#ember-overlay-glass-1)` — the refraction — plus two
+  `__rim` specular layers and `clip-path: inset(0 round 32px)`. There is no
+  opaque fill anywhere in it.
+- **B13 / B15 — the same material.** `conversion.html` and `upload.html` both
+  load `overlay-liquid-glass.{css,js}` and use `overlay-liquid-glass__backdrop`
+  for the capture. Rendered over a photographic page they are transparent and
+  refractive: the page's colour comes through, the rims read, the text stays
+  legible. B15's position was already correct.
+- **B17 — corners clean.** The live tab context menu photographed on its own
+  shows four smoothly rounded corners with nothing protruding.
+  `clip-path: inset(0px round 16px)` is on `.menu-shell`, its `.outer-texture`
+  carries `blur(56px) saturate(1.05) brightness(0.72)` and `.material-tint`
+  carries `backdrop-filter: url(#switcher) …` over a 46% scrim.
