@@ -40,6 +40,7 @@ src/main/archive.js            click-only Wayback availability lookup
 src/main/switcher-panel.js     MRU Ctrl+Tab visual switcher
 src/main/snap-picker.js        screen-anchored Snap-layouts picker window
 src/main/key-release.js        OS-level modifier-release watch (the switcher chord)
+src/main/window-corners.js     re-asserts DWM rounded corners after events that clear them
 src/native/                    small C# bridges compiled on demand (accent blur, key watch)
 src/main/session.js            launch/session restore state
 src/main/session-prompt.js     close-time restore prompt
@@ -118,6 +119,10 @@ test/                          node:test contracts/integration fixtures
   window is excluded from Snap, Snap Layouts and the minimise/restore
   animations, and has to draw its own corner. `OUTER_RADIUS` is 0 so DWM owns
   the outer curve and nothing rounds it twice.
+- Ember paints no window corner: the curve is entirely DWM's. If anything
+  clears `DWMWA_WINDOW_CORNER_PREFERENCE` the window goes square and nothing in
+  Ember can tell it went square, so `window-corners.js` re-asserts it after the
+  events that could — coalesced, and never for a maximised window.
 - Windows draws Ember's caption buttons, not Ember. `titleBarStyle: 'hidden'`
   with a **transparent** `titleBarOverlay` is what makes the window an ordinary
   application to the shell: the Snap Layouts flyout appears for a real maximise

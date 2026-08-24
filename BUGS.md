@@ -60,7 +60,7 @@ Dragging to the top of the screen does not trigger the Snap bar, and
 minimise/restore from the taskbar plays no standard Windows animation.
 
 ### B5 — Top corner artifacting
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 Black 90° corners subtly stick out behind the rounded top corners, and the
 corners sometimes lose their curve entirely — reproducible after maximising and
@@ -467,3 +467,29 @@ Electron's remote-debugging port so nothing touched the developer's keyboard.
   `clip-path: inset(0px round 16px)` is on `.menu-shell`, its `.outer-texture`
   carries `blur(56px) saturate(1.05) brightness(0.72)` and `.material-tint`
   carries `backdrop-filter: url(#switcher) …` over a 46% scrim.
+
+### B5 — never reproduced, so the state was made self-correcting
+
+Twelve scenarios, none of which squared the corners: repeated resizes; three
+maximise/restore cycles; a window sized to exactly the work area; one larger
+than the display; a move from the portrait second display to the primary and
+back, which crosses a DPI change; and switching between an internal `ember://`
+page and a website, which is when `NativeBackdrop` runs
+`SetWindowCompositionAttribute` and `DwmExtendFrameIntoClientArea` on the
+window. The corner was photographed rounded in every one.
+
+Rather than keep guessing at the trigger, the cause is now ruled out instead.
+Ember paints no corner of its own — `OUTER_RADIUS` is 0 and the curve is
+entirely DWM's — so a square window means one thing: something cleared
+`DWMWA_WINDOW_CORNER_PREFERENCE`. Electron sets it once at construction and
+offers no setter, so `window-corners.js` re-asserts it after every event that
+could plausibly disturb it (restore, unmaximize, leaving full screen, show,
+move, resize, and a display-metrics change), coalesced so a restore — which is
+a move and a resize as well — is one call rather than four. A maximised window
+is deliberately left square.
+
+**If square corners are seen again, the corner preference is no longer a
+candidate** and the cause is elsewhere: the likeliest remaining one is the page
+viewport's own corners, which are clipped by the four `corner-mask` views
+rather than by DWM, and would look square if a mask failed to load or was
+mispositioned after a resize.

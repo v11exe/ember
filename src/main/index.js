@@ -29,6 +29,7 @@ const { isDeadStatus, isArchivable } = require('../shared/archive')
 const { NativeBackdrop } = require('./native-backdrop')
 const { SnapPicker } = require('./snap-picker')
 const { ModifierWatch } = require('./key-release')
+const { WindowCorners } = require('./window-corners')
 const { ThumbnailCache } = require('./tab-thumbnails')
 const { HibernationManager, hostnameOf, sanitiseHibernation } = require('./hibernation')
 const { listBangs, DEFAULT_BANGS } = require('../shared/bangs')
@@ -154,6 +155,9 @@ function createBrowser({ privateMode = false } = {}) {
   const syncOuterRadius = () => win.contentView.setBorderRadius(OUTER_RADIUS)
   syncOuterRadius()
   const nativeBackdrop = new NativeBackdrop(win, { userDataPath: app.getPath('userData') })
+  // Ember draws no corner of its own, so if anything clears DWM's preference
+  // the window simply goes square. Put it back after the moments that could.
+  const windowCorners = new WindowCorners(win, { userDataPath: app.getPath('userData') }).watch(screen)
 
   const chrome = new WebContentsView({
     webPreferences: {
@@ -444,6 +448,7 @@ function createBrowser({ privateMode = false } = {}) {
   win.on('closed', () => {
     hibernation.stop()
     nativeBackdrop.destroy()
+    windowCorners.destroy()
     browsers.delete(self)
     if (browser === self) browser = [...browsers][browsers.size - 1] || null
   })
