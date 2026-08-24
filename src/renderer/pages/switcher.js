@@ -12,6 +12,8 @@ let state = { tabs: [], index: 0 }
 let buttons = []
 
 function card(tab, position) {
+  const host = document.createElement('div')
+  host.className = 'card-depth'
   const button = document.createElement('button')
   button.type = 'button'
   button.className = 'card'
@@ -52,6 +54,8 @@ function card(tab, position) {
   button.append(shot, meta)
   button.onclick = () => window.emberOverlay.action('switch-pick', { id: tab.id })
   button.dataset.position = String(position)
+  host.append(button)
+  button.depthHost = host
   return button
 }
 
@@ -59,13 +63,14 @@ function renderSelection() {
   buttons.forEach((button, position) => {
     const selected = position === state.index
     button.setAttribute('aria-selected', String(selected))
+    button.depthHost.classList.toggle('selected', selected)
     if (selected) button.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   })
 }
 
 function renderAll() {
   buttons = state.tabs.map(card)
-  els.cards.replaceChildren(...buttons)
+  els.cards.replaceChildren(...buttons.map((button) => button.depthHost))
   renderSelection()
 }
 

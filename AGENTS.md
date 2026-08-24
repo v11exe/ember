@@ -393,7 +393,7 @@ Newest first. One entry per active/recent unit of work.
 ### 2026-08-24 — Codex — Liquid-glass overlay restoration
 - **Status / Branch:** completed · `glass-fixing`
 - **Touches:** `AGENTS.md`, `THIRD_PARTY_NOTICES.md`, `src/main/protocol.js`, shared overlay liquid-glass material/asset, conversion/upload/switcher pages, renderer contracts and visual QA
-- **Summary:** Replaced opaque black-plastic selection conversion, recent upload and Ctrl+Tab treatments with a faithful vanilla port of liquid-glass-react's standard filter and exact displacement map.
+- **Summary:** Replaced opaque black-plastic selection conversion, recent upload and Ctrl+Tab treatments with a faithful vanilla port of liquid-glass-react's standard filter and exact displacement map; follow-up QA removed the document-background corner artifacts and made nested Copy glass visibly react to hover and press.
 - **For the other agent:** The base contract is 100/.5/140/2/0/32; nested controls/cards are 0/1.0/140/2/0. Use the shared capture-aligning helper, and retain its non-black missing-capture fallback.
 
 ```markdown

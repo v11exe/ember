@@ -1,5 +1,12 @@
 /* rdev/liquid-glass-react's standard material, adapted to Ember's captured
    page backdrop. Page-specific styles own only geometry and content layout. */
+html, body {
+  width: 100%; height: 100%;
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
 .overlay-liquid-glass {
   --liquid-glass-radius: 32px;
   position: relative;
@@ -94,16 +101,42 @@
 
 [data-liquid-glass="control"] {
   --liquid-glass-radius: var(--control-radius, 12px);
-  box-shadow: 0 5px 14px rgba(0, 0, 0, .2);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .34);
   transition: box-shadow 180ms cubic-bezier(.2, .8, .2, 1), transform 110ms cubic-bezier(.22, 1, .36, 1);
 }
 
-[data-liquid-glass="control"]:hover {
-  box-shadow: 0 7px 18px rgba(0, 0, 0, .25);
+[data-liquid-glass="control"] > .overlay-liquid-glass__warp {
+  background: rgba(255, 255, 255, .14);
+  transition: background 150ms ease-out;
 }
 
-[data-liquid-glass="control"]:active { transform: scale(.985); }
-[data-liquid-glass="control"]:focus-visible { box-shadow: var(--focus-ring), 0 7px 18px rgba(0, 0, 0, .25); }
+[data-liquid-glass="control"] > .overlay-liquid-glass__rim:not(.overlay-liquid-glass__rim--overlay) {
+  opacity: .55;
+}
+
+[data-liquid-glass="control"]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(circle at 50% 0%, rgba(255, 255, 255, .8), transparent 72%);
+  mix-blend-mode: overlay;
+  transition: opacity 150ms ease-out;
+}
+
+[data-liquid-glass="control"]:hover {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .5);
+}
+[data-liquid-glass="control"]:hover::before { opacity: .4; }
+[data-liquid-glass="control"]:hover > .overlay-liquid-glass__warp { background: rgba(255, 255, 255, .18); }
+
+[data-liquid-glass="control"]:active { transform: scale(.96); }
+[data-liquid-glass="control"]:active::before { opacity: .8; }
+[data-liquid-glass="control"]:active > .overlay-liquid-glass__warp { background: rgba(255, 255, 255, .24); }
+[data-liquid-glass="control"]:focus-visible { box-shadow: inset 0 0 0 2px var(--accent-glow); }
 
 @media (prefers-reduced-motion: reduce) {
   [data-liquid-glass="control"] { transition-duration: 1ms; }

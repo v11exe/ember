@@ -295,7 +295,7 @@ async function captureOmnibox(size, { engaged }) {
   win.destroy()
 }
 
-async function captureOverlay(name, page, size, state, activePosition = null, hoverSelector = null) {
+async function captureOverlay(name, page, size, state, activePosition = null, hoverSelector = null, pressSelector = null) {
   console.log(`[capture] overlay ${name}`)
   const win = new BrowserWindow({
     show: false,
@@ -333,8 +333,23 @@ async function captureOverlay(name, page, size, state, activePosition = null, ho
     await new Promise((resolve) => setTimeout(resolve, 220))
   }
   if (hoverSelector) {
-    await win.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(hoverSelector)})?.dispatchEvent(new PointerEvent('pointerenter'))`)
+    const point = await win.webContents.executeJavaScript(`(() => {
+      const rect = document.querySelector(${JSON.stringify(hoverSelector)})?.getBoundingClientRect()
+      return rect ? { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) } : null
+    })()`)
+    if (point) win.webContents.sendInputEvent({ type: 'mouseMove', ...point })
     await new Promise((resolve) => setTimeout(resolve, 220))
+  }
+  if (pressSelector) {
+    const point = await win.webContents.executeJavaScript(`(() => {
+      const rect = document.querySelector(${JSON.stringify(pressSelector)})?.getBoundingClientRect()
+      return rect ? { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) } : null
+    })()`)
+    if (point) {
+      win.webContents.sendInputEvent({ type: 'mouseMove', ...point })
+      win.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point })
+    }
+    await new Promise((resolve) => setTimeout(resolve, 120))
   }
   const metrics = await win.webContents.executeJavaScript(`({
     viewport: [innerWidth, innerHeight],
@@ -345,6 +360,7 @@ async function captureOverlay(name, page, size, state, activePosition = null, ho
     lensVisible: document.getElementById('selector-lens')?.dataset.visible || null,
   })`)
   await screenshot(win, `${name}.png`)
+  if (pressSelector) win.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, x: 0, y: 0 })
   win.destroy()
   return metrics
 }
@@ -473,6 +489,12 @@ app.whenReady().then(async () => {
   )
   results['conversion-photo'] = await captureOverlay(
     'conversion-photo', 'conversion', { width: 268, height: 118 }, conversionState(photoBackdrop),
+  )
+  results['conversion-copy-hover'] = await captureOverlay(
+    'conversion-copy-hover', 'conversion', { width: 268, height: 118 }, conversionState(photoBackdrop), null, '#copy',
+  )
+  results['conversion-copy-pressed'] = await captureOverlay(
+    'conversion-copy-pressed', 'conversion', { width: 268, height: 118 }, conversionState(photoBackdrop), null, null, '#copy',
   )
 
   results['switcher-glass'] = await captureOverlay(

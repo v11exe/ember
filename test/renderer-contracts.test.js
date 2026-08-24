@@ -461,6 +461,43 @@ test('conversion, upload and switcher use the requested liquid-glass hierarchy',
   assert.doesNotMatch(uploadCss, /var\(--text-(?:dim|faint)\)/)
 })
 
+test('liquid-glass overlays leave only the rounded surface visible', () => {
+  const css = read('src', 'renderer', 'pages', 'overlay-liquid-glass.css')
+  assert.match(css, /html,\s*body\s*\{[^}]*width:\s*100%[^}]*height:\s*100%[^}]*background:\s*transparent[^}]*overflow:\s*hidden/s)
+  assert.doesNotMatch(css, /html,\s*body\s*\{[^}]*background:\s*(?:#000|black|var\(--bg\))/s)
+})
+
+test('nested liquid-glass controls stay visible and react physically to clicks', () => {
+  const css = read('src', 'renderer', 'pages', 'overlay-liquid-glass.css')
+  assert.match(css, /\[data-liquid-glass="control"\]\s*\{[^}]*box-shadow:\s*inset\s+0\s+0\s+0\s+1px\s+rgba\(255,\s*255,\s*255,\s*\.34\)/s)
+  assert.match(css, /\[data-liquid-glass="control"\]\s*>\s*\.overlay-liquid-glass__warp\s*\{[^}]*background:\s*rgba\(255,\s*255,\s*255,\s*\.14\)/s)
+  assert.match(css, /\[data-liquid-glass="control"\]\s*>\s*\.overlay-liquid-glass__rim:not\(\.overlay-liquid-glass__rim--overlay\)\s*\{[^}]*opacity:\s*\.55/s)
+  assert.match(css, /\[data-liquid-glass="control"\]::before\s*\{[^}]*opacity:\s*0[^}]*radial-gradient/s)
+  assert.match(css, /\[data-liquid-glass="control"\]:hover::before\s*\{[^}]*opacity:\s*\.4/s)
+  assert.match(css, /\[data-liquid-glass="control"\]:active::before\s*\{[^}]*opacity:\s*\.8/s)
+  assert.match(css, /\[data-liquid-glass="control"\]:active\s*\{[^}]*scale\(\.96\)/s)
+  assert.match(css, /\[data-liquid-glass="control"\]:focus-visible\s*\{[^}]*box-shadow:\s*inset\s+0\s+0\s+0\s+2px\s+var\(--accent-glow\)/s)
+
+  const conversionHtml = read('src', 'renderer', 'pages', 'conversion.html')
+  const conversionCss = read('src', 'renderer', 'pages', 'conversion.css')
+  assert.match(conversionHtml, /class="copy-depth"[^>]*>\s*<button[^>]+data-liquid-glass="control"/s)
+  assert.match(conversionCss, /\.copy-depth\s*\{[^}]*box-shadow:/s)
+  assert.match(conversionCss, /\.copy-depth:has\(\.copy:focus-visible\)\s*\{[^}]*var\(--focus-ring\)/s)
+
+  const switcherJs = read('src', 'renderer', 'pages', 'switcher.js')
+  const switcherCss = read('src', 'renderer', 'pages', 'switcher.css')
+  assert.match(switcherJs, /host\.className\s*=\s*'card-depth'/)
+  assert.match(switcherCss, /\.card-depth\s*\{[^}]*box-shadow:/s)
+  assert.match(switcherCss, /\.card-depth:has\(\.card:focus-visible\)\s*\{[^}]*var\(--focus-ring\)/s)
+})
+
+test('visual QA drives a real pointer over the conversion copy glass', () => {
+  const capture = read('scripts', 'capture-ui.js')
+  assert.match(capture, /sendInputEvent\(\{\s*type:\s*'mouseMove'/s)
+  assert.match(capture, /conversion-copy-hover/)
+  assert.match(capture, /conversion-copy-pressed/)
+})
+
 test('legacy frosted context surfaces still take their blur from one shared filter', () => {
   const theme = read('src', 'renderer', 'theme.css')
   assert.match(theme, /--frost-capture:\s*blur\(\d+px\)/)

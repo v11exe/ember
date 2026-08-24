@@ -41,9 +41,20 @@ body { display: grid; place-items: stretch; }
 }
 .note[hidden] { display: none; }
 
+.copy-depth {
+  margin-top: auto;
+  height: 30px;
+  border-radius: 9px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .36);
+  transition: box-shadow var(--dur-1) var(--ease-soft);
+}
+.copy-depth:has(.copy:hover) { box-shadow: 0 8px 22px rgba(0, 0, 0, .42); }
+.copy-depth:has(.copy:active) { box-shadow: 0 3px 10px rgba(0, 0, 0, .28); }
+.copy-depth:has(.copy:focus-visible) { box-shadow: var(--focus-ring), 0 8px 22px rgba(0, 0, 0, .42); }
+
 .copy {
   --control-radius: 9px;
-  margin-top: auto;
+  width: 100%;
   height: 30px;
   border: 0;
   background: transparent;
