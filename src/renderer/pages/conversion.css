@@ -10,10 +10,13 @@ body { display: grid; place-items: stretch; }
   border-radius: 14px;
   overflow: hidden;
   isolation: isolate;
-  background: var(--glass-bg);
+  /* .glass-frosted owns the fill: the reader has to be able to read the
+     converted figure, not the page behind it. */
   box-shadow: var(--glass-lift-sm), var(--glass-rim);
-  animation: pop var(--dur-2) var(--ease);
 }
+/* The overlay view is reused, so the entrance is a class the page re-adds
+   rather than an animation that only ever ran once at document load. */
+.shell.opening { animation: pop var(--dur-2) var(--ease); }
 @keyframes pop {
   from { opacity: 0; transform: translateY(-6px) scale(.96); }
   to { opacity: 1; transform: none; }

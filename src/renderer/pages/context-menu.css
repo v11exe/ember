@@ -39,11 +39,16 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: transparen
 }
 .outer-texture {
   position: absolute; z-index: -3; max-width: none; pointer-events: none; opacity: 1;
+  /* A menu is a list of words. At 1.4px of blur the page underneath stayed
+     sharp enough to read through the labels and their shortcuts, so the
+     capture is taken past being a picture and desaturated so it stops
+     colouring the surface — the same bargain glass.css's .glass-frosted makes. */
+  filter: var(--frost-capture);
 }
 .material-tint {
   position: absolute; inset: 0; z-index: -2; pointer-events: none;
-  backdrop-filter: blur(1.4px) saturate(1.04);
-  background-color: rgba(255, 255, 255, .055);
+  backdrop-filter: blur(10px) saturate(.95);
+  background-color: var(--frost-fill, rgba(17, 15, 19, .78));
   box-shadow:
     inset 0 2px 2px -2px rgba(255, 255, 255, .28),
     inset 0 -2px 2px -2px rgba(0, 0, 0, .2);
@@ -54,6 +59,11 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: transparen
 #selector-lens {
   position: absolute; z-index: 0; left: 0; top: 0; overflow: hidden; pointer-events: none;
   width: var(--lens-width); height: var(--lens-height); border-radius: 999px;
+  /* The sample inside carries a backdrop-filter, which puts it on its own
+     compositing layer — and a composited child is clipped to its ancestor's
+     rectangle, not to its rounded corner. That is where the four coloured 90°
+     tabs came from. clip-path clips the composited layer too. */
+  clip-path: inset(0 round 999px);
   transform: translate3d(var(--lens-x), var(--lens-y), 0);
   transition:
     --lens-x var(--motion), --lens-y var(--motion),
@@ -83,8 +93,17 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: transparen
   position: absolute; inset: 0;
 }
 #selector-source {
+  /* Same frost as .outer-texture: the lens samples its own copy of the
+     capture, and without it the hovered row shows a bar of the raw page. */
+  filter: var(--frost-capture);
   background-repeat: no-repeat;
   background-position: var(--sample-x) var(--sample-y);
+}
+/* Same fill the surface wears, so the hovered row is the same material and
+   not a window onto the raw capture. */
+#selector-source::after {
+  content: ''; position: absolute; inset: 0;
+  background: var(--frost-fill, rgba(17, 15, 19, .78));
 }
 #selector-sample {
   backdrop-filter: url(#toggler) saturate(1.06);

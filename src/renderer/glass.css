@@ -120,20 +120,19 @@ body { color: var(--text); font-family: var(--font); -webkit-font-smoothing: ant
    pill in staying neutral and letting light, not colour, describe the surface.
    Add it to a glass shell whose own content has to be read.
    --------------------------------------------------------------------------- */
-:root {
-  --frost-fill:  rgba(17, 15, 19, .78);
-  --frost-sheen: rgba(255, 255, 255, .07);
-}
 :root[data-backdrop="light"] {
   --frost-fill:  rgba(252, 250, 248, .84);
   --frost-sheen: rgba(255, 255, 255, .60);
+  /* Over a bright page the surface lifts rather than darkens, so the frost
+     brightens the capture instead of dimming it. */
+  --frost-capture: blur(26px) saturate(.6) brightness(1.08);
 }
 
 .glass-frosted { background: var(--frost-fill); }
 .glass-frosted .glass-backdrop {
   /* Blurred well past legibility, and desaturated so the page behind stops
      deciding what colour the panel is. */
-  filter: blur(46px) saturate(.55) brightness(.60);
+  filter: var(--frost-capture);
   opacity: .95;
   transform: scale(1.14);
 }
@@ -144,6 +143,3 @@ body { color: var(--text); font-family: var(--font); -webkit-font-smoothing: ant
 }
 .glass-frosted .glass-grain { opacity: .10; }
 
-:root[data-backdrop="light"] .glass-frosted .glass-backdrop {
-  filter: blur(46px) saturate(.6) brightness(1.06);
-}

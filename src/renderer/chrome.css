@@ -55,8 +55,6 @@ button, input, .top-navigation, .tabstrip, .top-actions,
   align-items: center;
   gap: 5px;
   padding: 0;
-  app-region: no-drag;
-  -webkit-app-region: no-drag;
   isolation: isolate;
   overflow: hidden;
   border-radius: var(--outer-radius) var(--outer-radius) 0 0;

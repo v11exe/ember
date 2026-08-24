@@ -1,7 +1,7 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const { FloatingPanel } = require('./floating-panel')
-const { centerPanel } = require('../shared/floating-geometry')
+const { centerPanel, placePointPanel } = require('../shared/floating-geometry')
 const { dialogFiltersForAccept, matchesAccept, mimeForPath } = require('../shared/file-selection')
 const { payloadFromPath, payloadFromClipboardImage } = require('./upload-files')
 const { IPC } = require('../shared/ipc')
@@ -32,6 +32,26 @@ class UploadPanel {
     this.clipboardPayload = null
     this.openGeneration = 0
     this.openSequence = 0
+    // Where the picker was asked for, in window coordinates. The panel hangs a
+    // corner off this point rather than appearing in the middle of the page,
+    // which is nowhere near the control that was clicked.
+    this.anchor = null
+  }
+
+  /**
+   * Anchor the next opening to a point. `null` falls back to the centre, which
+   * is all a picker opened without a click has to go on.
+   */
+  setAnchor(point) {
+    const x = Number(point?.x)
+    const y = Number(point?.y)
+    this.anchor = Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null
+  }
+
+  /** Corner-on-cursor when we know where the click was, centred when we do not. */
+  #boundsFor(viewport) {
+    if (!this.anchor) return centerPanel(viewport, DESIRED_SIZE, 12)
+    return placePointPanel(viewport, this.anchor, DESIRED_SIZE, 12)
   }
 
   async openRequest({ tab, frame, request }) {
@@ -42,7 +62,7 @@ class UploadPanel {
       const state = await this.#stateFor(request, tab)
       if (generation !== this.openGeneration || this.active?.request !== request) return
       state.openSequence = ++this.openSequence
-      const bounds = centerPanel(tab.view.getBounds(), DESIRED_SIZE, 12)
+      const bounds = this.#boundsFor(tab.view.getBounds())
       await this.overlay.show({ bounds, state, targetView: tab.view, captureBleed: CAPTURE_BLEED })
     } catch (error) {
       if (generation === this.openGeneration && this.active?.request === request) {
@@ -81,7 +101,7 @@ class UploadPanel {
 
   layout() {
     if (!this.active) return
-    const bounds = centerPanel(this.active.tab.view.getBounds(), DESIRED_SIZE, 12)
+    const bounds = this.#boundsFor(this.active.tab.view.getBounds())
     if (this.overlay.relayout) {
       void this.overlay.relayout({
         bounds,

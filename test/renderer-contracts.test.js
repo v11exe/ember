@@ -43,7 +43,13 @@ test('new tab keeps Ember content above configurable native double-blur layers',
   assert.match(css, /\.liquid-glass-search[\s\S]+border:\s*0/)
   assert.match(css, /\.liquid-glass-search input:focus[\s\S]+outline:\s*0\s*!important/)
   assert.match(css, /\.liquid-glass-search input:focus[\s\S]+box-shadow:\s*none\s*!important/)
-  assert.match(main, /transparent:\s*true/)
+  // The window is opaque with a system backdrop rather than layered. A
+  // transparent window is excluded from Snap, Snap Layouts and the minimise
+  // and restore animations, and has to draw its own corner — which is what
+  // left a square black one behind Ember's rounded one.
+  assert.match(main, /transparent:\s*false/)
+  assert.match(main, /backgroundMaterial:\s*'acrylic'/)
+  assert.match(main, /roundedCorners:\s*true/)
   assert.match(main, /backgroundColor:\s*'#00000000'/)
 })
 
@@ -326,13 +332,22 @@ test('visual QA exercises upload optics on high-contrast and colourful page capt
   assert.match(capture, /uploadBackdropRect/)
 })
 
-test('context glass stays neutral so captured page color drives the surface', () => {
+test('context glass stays neutral and frosts enough to read its own labels', () => {
   const css = read('src', 'renderer', 'pages', 'context-menu.css')
   assert.match(css, /\.menu-shell[\s\S]+background:\s*transparent/)
-  assert.match(css, /background-color:\s*rgba\(255,\s*255,\s*255,\s*\.055\)/)
-  assert.doesNotMatch(css, /rgba\(12,\s*12,\s*14,\s*\.26\)/)
-  assert.doesNotMatch(css, /rgba\(25,\s*18,\s*26,\s*\.52\)/)
-  assert.doesNotMatch(css, /rgba\(15,\s*10,\s*17,\s*\.72\)/)
+  // Achromatic, so the captured page still drives the hue — but opaque and
+  // blurred enough that a menu label is not competing with the page's own
+  // text showing through it.
+  assert.match(css, /background-color:\s*var\(--frost-fill/)
+  // Both the surface and the hover lens sample the capture, so both wear the
+  // one shared frost filter rather than each inventing a blur radius.
+  assert.match(css, /\.outer-texture[\s\S]+?filter:\s*var\(--frost-capture\)/)
+  assert.match(css, /#selector-source[\s\S]+?filter:\s*var\(--frost-capture\)/)
+  const theme = read('src', 'renderer', 'theme.css')
+  const blur = Number(theme.match(/--frost-capture:\s*blur\((\d+)px\)/)[1])
+  assert.ok(blur >= 16, `capture must be blurred past legibility, got ${blur}px`)
+  assert.doesNotMatch(css, /rgba\(25,\s*18,\s*26,\s*\.52\)/, 'no violet tint')
+  assert.doesNotMatch(css, /rgba\(15,\s*10,\s*17,\s*\.72\)/, 'no violet tint')
 })
 
 test('context menu opens as a reduced-motion-safe popover and does not replay on relayout', () => {

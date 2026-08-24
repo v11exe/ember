@@ -126,14 +126,26 @@ function createBrowser({ privateMode = false } = {}) {
     minWidth: 620,
     minHeight: 420,
     frame: false,
-    transparent: true,
+    // Not a transparent window. A layered window is excluded from everything
+    // Windows does for an ordinary one — no Snap when it is dragged to an
+    // edge, no Snap Layouts flyout, no minimise or restore animation — and its
+    // corners are the app's to draw, which is what left a square black corner
+    // behind Ember's rounded one. An opaque window with a system backdrop gets
+    // all of that from the compositor: DWM rounds the corners itself, so no
+    // part of Ember has to, and acrylic gives the blurred desktop the design
+    // wanted without per-pixel alpha. `backgroundColor` keeps its zero alpha
+    // because the material only shows through a transparent page background.
+    transparent: false,
+    backgroundMaterial: 'acrylic',
     roundedCorners: true,
     hasShadow: true,
     icon: path.join(__dirname, '..', 'renderer', 'assets', 'ember-app-icon.png'),
     backgroundColor: '#00000000',
     title: 'Ember',
   })
-  const syncOuterRadius = () => win.contentView.setBorderRadius(win.isMaximized() ? 0 : OUTER_RADIUS)
+  // DWM owns the outer corner now; rounding the content view on top of it is
+  // what produced the gap. OUTER_RADIUS is 0 for the same reason.
+  const syncOuterRadius = () => win.contentView.setBorderRadius(OUTER_RADIUS)
   syncOuterRadius()
   const nativeBackdrop = new NativeBackdrop(win, { userDataPath: app.getPath('userData') })
 
@@ -533,11 +545,31 @@ ipcMain.on(IPC.PANEL_ANCHOR, (_e, rect) => {
   if (browser?.panel) browser.panel.popupAnchor = rect
 })
 
+/** The cursor, in the window's own coordinates, or null if it is elsewhere. */
+function windowPointFromCursor(win) {
+  try {
+    if (!win || win.isDestroyed()) return null
+    const cursor = screen.getCursorScreenPoint()
+    const bounds = win.getContentBounds()
+    const x = cursor.x - bounds.x
+    const y = cursor.y - bounds.y
+    if (x < 0 || y < 0 || x > bounds.width || y > bounds.height) return null
+    return { x, y }
+  } catch {
+    return null
+  }
+}
+
 ipcMain.on(IPC.UPLOAD_REQUEST, async (event, request) => {
   const current = browser
   const tab = current?.tabs.tabs.find((candidate) => candidate.webContents === event.sender)
   if (!current || !tab || !request?.requestId) return
   current.panel.hide()
+  // The picker hangs a corner off the cursor rather than opening in the middle
+  // of the page. The click that asked for it is the cursor's position now, and
+  // the panel's bounds are window-relative, so the screen point is translated
+  // into the window before it is handed over.
+  current.uploadPanel.setAnchor(windowPointFromCursor(current.win))
   await current.recentUploadsReady
   try {
     await current.uploadPanel.openRequest({ tab, frame: event.senderFrame, request: {
@@ -785,6 +817,32 @@ ipcMain.on(IPC.WIN_MAXIMIZE, (event) => {
   win.isMaximized() ? win.unmaximize() : win.maximize()
 })
 ipcMain.on(IPC.WIN_CLOSE, (event) => (browserFromSender(event.sender) || browser)?.win.close())
+// How close to a display edge the pointer has to get before the drop snaps.
+const SNAP_EDGE = 12
+
+/**
+ * Which half — or whole — of a display the pointer is asking for.
+ *
+ * Windows normally does this itself, but only for a window it is moving. A
+ * `BaseWindow` cannot hand Electron a native drag region (`-webkit-app-region`
+ * is not supported on a `WebContentsView`), so Ember moves its own window and
+ * therefore has to offer the same bargain: the top edge maximises, the side
+ * edges take half the display.
+ */
+function snapZoneAt(x, y) {
+  const display = screen.getDisplayNearestPoint({ x, y })
+  const area = display.workArea
+  if (y <= area.y + SNAP_EDGE) return { kind: 'maximize', display }
+  if (x <= area.x + SNAP_EDGE) {
+    return { kind: 'half', bounds: { ...area, width: Math.round(area.width / 2) } }
+  }
+  if (x >= area.x + area.width - SNAP_EDGE - 1) {
+    const width = Math.round(area.width / 2)
+    return { kind: 'half', bounds: { ...area, x: area.x + area.width - width, width } }
+  }
+  return null
+}
+
 ipcMain.on(IPC.WIN_DRAG_START, (event, point = {}) => {
   const target = browserFromSender(event.sender)
   if (!target || target.win.isMaximized()) return
@@ -792,7 +850,12 @@ ipcMain.on(IPC.WIN_DRAG_START, (event, point = {}) => {
   const y = Number(point.y)
   if (!Number.isFinite(x) || !Number.isFinite(y)) return
   const [windowX, windowY] = target.win.getPosition()
-  windowDrags.set(event.sender.id, { target, pointerX: x, pointerY: y, windowX, windowY })
+  windowDrags.set(event.sender.id, {
+    target, pointerX: x, pointerY: y, windowX, windowY,
+    // What the window should go back to if it is dragged off a snap again.
+    restore: target.win.getBounds(),
+    zone: null,
+  })
 })
 ipcMain.on(IPC.WIN_DRAG_MOVE, (event, point = {}) => {
   const drag = windowDrags.get(event.sender.id)
@@ -800,12 +863,31 @@ ipcMain.on(IPC.WIN_DRAG_MOVE, (event, point = {}) => {
   const x = Number(point.x)
   const y = Number(point.y)
   if (!Number.isFinite(x) || !Number.isFinite(y)) return
+  drag.zone = snapZoneAt(x, y)
   drag.target.win.setPosition(
     Math.round(drag.windowX + x - drag.pointerX),
     Math.round(drag.windowY + y - drag.pointerY),
   )
 })
-ipcMain.on(IPC.WIN_DRAG_END, (event) => windowDrags.delete(event.sender.id))
+ipcMain.on(IPC.WIN_DRAG_END, (event) => {
+  const drag = windowDrags.get(event.sender.id)
+  windowDrags.delete(event.sender.id)
+  const win = drag?.target?.win
+  if (!drag || !win || win.isDestroyed()) return
+  // The renderer coalesces moves into an animation frame and drops whatever is
+  // still pending when the pointer goes up, so the last position — the one at
+  // the edge — never arrives. The cursor itself is the authority at this point.
+  try {
+    const cursor = screen.getCursorScreenPoint()
+    drag.zone = snapZoneAt(cursor.x, cursor.y)
+  } catch { /* keep whatever the last move worked out */ }
+  if (!drag.zone) return
+  // Remember the size to come back to, the way Windows restores a snapped
+  // window to what it was before.
+  drag.target.settings.rememberWindow({ ...drag.restore, maximized: false })
+  if (drag.zone.kind === 'maximize') win.maximize()
+  else win.setBounds(drag.zone.bounds)
+})
 ipcMain.on(IPC.CORNER_MASK_INPUT, (event, input = {}) => {
   const target = browserFromSender(event.sender)
   const mask = target?.tabs?.pageCornerMasks?.find((entry) => entry.view.webContents === event.sender)

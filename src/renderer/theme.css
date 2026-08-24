@@ -25,6 +25,15 @@
   --error:     #FF9B78;
 
   /* reusable captured-backdrop liquid glass */
+  /* Frosted overlay fill. Any surface whose own text has to be read sits on
+     this rather than tinting the page behind it; see glass.css. */
+  --frost-fill:  rgba(17, 15, 19, .78);
+  --frost-sheen: rgba(255, 255, 255, .07);
+  /* One filter for every frosted surface that samples a page capture: blurred
+     past being a picture, desaturated so it stops colouring the panel, and
+     darkened. The light-backdrop palette lifts it instead; see glass.css and
+     context-menu-optics. */
+  --frost-capture: blur(26px) saturate(.6) brightness(.62);
   --glass-bg:          rgba(38, 25, 45, .78);
   --glass-bg-strong:   rgba(21, 16, 28, .90);
   --glass-border:      rgba(255, 236, 226, .34);

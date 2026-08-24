@@ -164,6 +164,10 @@ body.native-glass-page {
   will-change: transform;
   backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturation));
   -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturation));
+  /* A backdrop-filter samples the element's rectangle, not its rounded box, so
+     the pill wore four square corners of unfiltered page. clip-path clips the
+     filtered layer itself. */
+  clip-path: inset(0 round var(--lens-radius, 999px));
 }
 .lg-lens::after {
   content: '';

@@ -36,8 +36,13 @@ window.emberOverlay.onState((state) => {
   els.copy.textContent = 'Copy'
 
   // Replay the entrance only when this is a new selection, not a relayout.
+  // A finished CSS animation is no longer in getAnimations(), so rewinding
+  // what it returns did nothing after the first open; the class has to come
+  // off and go back on with a reflow between.
   if (state.openSequence !== openSequence) {
     openSequence = state.openSequence
-    els.shell.getAnimations?.().forEach((animation) => { animation.currentTime = 0 })
+    els.shell.classList.remove('opening')
+    void els.shell.offsetWidth
+    els.shell.classList.add('opening')
   }
 })

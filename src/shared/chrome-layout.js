@@ -2,7 +2,12 @@ const TOPBAR_HEIGHT = 32
 const SIDEBAR_WIDTH = 168
 const OUTER_INSET = 0
 const COLLAPSED_RAIL_WIDTH = 8
-const OUTER_RADIUS = 12
+// The window's outer corner is DWM's, not Ember's. Drawing a rounded shell
+// inside a square window left the difference between the two curves showing
+// the window's own background — the black 90° corner. Zero here means the
+// shell paints right into the corner and the compositor clips it, so the curve
+// matches every other Windows 11 window and cannot come apart from it.
+const OUTER_RADIUS = 0
 const SHELL_INSET = 8
 const VIEWPORT_RADIUS = 12
 const BOOKMARKS_HEIGHT = 30

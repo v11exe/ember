@@ -140,7 +140,9 @@ test('every bounded shell surface receives its absolute window-coordinate materi
   const { tabs, shellMetrics, frameViews } = fixture()
   tabs.layout()
 
-  const radii = { outerRadius: 12, contentRadius: 12, frameInset: 8 }
+  // outerRadius is 0: DWM rounds the window, so the shell paints square into
+  // the corner rather than leaving a gap for the window background to show.
+  const radii = { outerRadius: 0, contentRadius: 12, frameInset: 8 }
   assert.deepEqual(shellMetrics.chrome.at(-1), { width: 1270, height: 740, x: 0, y: 0, ...radii })
   assert.deepEqual(shellMetrics.sidebar.at(-1), { width: 1270, height: 740, x: 0, y: 0, ...radii })
   assert.deepEqual(frameViews.right.getBounds(), { x: 1262, y: 32, width: 8, height: 700 })

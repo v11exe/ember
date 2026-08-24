@@ -54,13 +54,13 @@ Pressing Ctrl+W several times in quick succession crashes the whole app. Likely
 a close/destroy race against a tab record whose renderer is already gone.
 
 ### B4 — Windows does not treat Ember as a normal application window
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/index.js`
+**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/index.js`
 
 Dragging to the top of the screen does not trigger the Snap bar, and
 minimise/restore from the taskbar plays no standard Windows animation.
 
 ### B5 — Top corner artifacting
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 Black 90° corners subtly stick out behind the rounded top corners, and the
 corners sometimes lose their curve entirely — reproducible after maximising and
@@ -112,29 +112,29 @@ Animate them, including when triggered by Alt+Left, Alt+Right and Ctrl+R.
 ## Overlays, menus and panels
 
 ### B13 — Selection conversion popup uses the purple plastic box
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/selection-panel.js`
+**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/selection-panel.js`
 
 Should be the liquid-glass material, non-elastic, frosted and blurred enough
 that its own text stays readable.
 
 ### B14 — No animation when the smart selection conversion opens
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 ### B15 — File upload menu opens in the centre of the screen
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/upload-panel.js`, `src/main/popup-positioner.js`
+**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/upload-panel.js`, `src/main/popup-positioner.js`
 
 It should anchor a corner to the cursor, picking the corner that keeps the panel
 inside the window, preferring top-left (opening down and to the right) when no
 edge is near or when overflowing is unavoidable.
 
 ### B16 — File upload menu glass is not readable
-**Status:** 🟡 In progress · **Owner:** Claude Code
+**Status:** ✅ Fixed · **Owner:** Claude Code
 
 Text underneath shows through. Increase blur/frost substantially or move it to
 the search-bar liquid-glass material with tuned values.
 
 ### B17 — Hover pill corners break in right-click style menus
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/context-menu-panel.js`, `src/renderer/pages/liquid-glass-ui.*`
+**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/context-menu-panel.js`, `src/renderer/pages/liquid-glass-ui.*`
 
 The hover indicator's corners are not cleanly rounded into the pill; randomly
 coloured 90° angles protrude from all four corners. Affects every menu using
