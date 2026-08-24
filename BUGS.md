@@ -54,7 +54,7 @@ Pressing Ctrl+W several times in quick succession crashes the whole app. Likely
 a close/destroy race against a tab record whose renderer is already gone.
 
 ### B4 — Windows does not treat Ember as a normal application window
-**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/index.js`
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/index.js`
 
 Dragging to the top of the screen does not trigger the Snap bar, and
 minimise/restore from the taskbar plays no standard Windows animation.
@@ -560,3 +560,35 @@ been checked; the omnibox is a separate implementation:
 | space | *(empty)* | YouTube | no | Search YouTube |
 | `liquid glass` | `liquid glass` | YouTube | no | Search YouTube |
 | Backspace on empty | `yt` | — | yes | Search with Google or enter address |
+
+### B4 — works, and deliberately left in progress
+
+Windows draws the caption buttons now, so the shell treats the window as an
+ordinary application and the Snap Layouts flyout appears under the real
+maximise button. That part is done and verified.
+
+It is still marked **in progress** because that is what was asked for: a larger
+reform of how Ember presents itself to the OS is expected to follow, and it
+should arrive without changing anything visually or functionally. Two pieces
+are known to be outstanding for it. Dragging the window is still Ember's own
+`WIN_DRAG_*` path rather than a native move loop, because a `WebContentsView`
+cannot carry a drag region — which is why drag-to-top offers Ember's own
+arrangement picker instead of the shell's. And `NativeBackdrop`'s
+`SetWindowCompositionAttribute` bridge is now redundant: the window is opaque
+with `backgroundMaterial: 'acrylic'`, so DWM is already providing the material
+that bridge was hand-rolling.
+
+### B2 / B13 / B15 — the last thing measurement could reach
+
+A computed `filter: url(#id)` reads identically whether or not the filter it
+names exists, and a dangling reference stops an element rendering — which
+would take the glass away without changing any value this file has quoted. So
+the reference was resolved rather than trusted: `#ember-overlay-glass-1` is a
+real `<filter>` element carrying 17 primitives, in both the conversion and the
+upload documents. The switcher was then opened with a live capture behind it
+(`cards: 4`, backdrop `src` present), so the material has a real picture of the
+page to refract rather than an empty layer.
+
+That exhausts what can be established without looking at it. Every value is
+glass; if it still reads as a solid panel on screen, the cause is in how these
+layers composite on that machine, not in what they are set to.
