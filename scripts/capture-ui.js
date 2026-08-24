@@ -432,6 +432,7 @@ app.whenReady().then(async () => {
   const brandIcon = nativeImage.createFromPath(path.join(__dirname, '..', 'src', 'renderer', 'assets', 'ember-icon.png'))
     .resize({ width: 180 }).toDataURL()
   const backdrop = nativeImage.createFromPath(path.join(output, 'newtab-wide.png')).resize({ width: 650 }).toDataURL()
+  const photoBackdrop = await photographicBackdrop(730, 510)
   const uploadBackdropRect = { x: -40, y: -40, width: 730, height: 510 }
   const uploadState = (uploadBackdrop) => ({
     kind: 'upload', origin: 'uploads.example', accept: 'image/*', multiple: false,
@@ -449,6 +450,7 @@ app.whenReady().then(async () => {
   results['upload-compact'] = await captureOverlay('upload-compact', 'upload', { width: 596, height: 312 }, uploadState(backdrop))
   results['upload-contrast'] = await captureOverlay('upload-contrast', 'upload', { width: 650, height: 430 }, uploadState(contrastBackdrop('light', 730, 510)))
   results['upload-colour'] = await captureOverlay('upload-colour', 'upload', { width: 650, height: 430 }, uploadState(colourBackdrop(730, 510)))
+  results['upload-photo'] = await captureOverlay('upload-photo', 'upload', { width: 650, height: 430 }, uploadState(photoBackdrop))
   results['upload-hover'] = await captureOverlay('upload-hover', 'upload', { width: 650, height: 430 }, uploadState(colourBackdrop(730, 510)), null, '#clipboard-slot')
 
   // The selection conversion popup, over a dark page and a bright one. It has
@@ -461,12 +463,29 @@ app.whenReady().then(async () => {
     approximate: true,
     openSequence: 1,
     backdrop: page,
+    backdropRect: { x: -40, y: -40, width: 348, height: 198 },
   })
   results['conversion-dark'] = await captureOverlay(
     'conversion-dark', 'conversion', { width: 268, height: 118 }, conversionState(saturatedBackdrop(348, 198)),
   )
   results['conversion-light'] = await captureOverlay(
     'conversion-light', 'conversion', { width: 268, height: 118 }, conversionState(contrastBackdrop('light', 348, 198)),
+  )
+  results['conversion-photo'] = await captureOverlay(
+    'conversion-photo', 'conversion', { width: 268, height: 118 }, conversionState(photoBackdrop),
+  )
+
+  results['switcher-glass'] = await captureOverlay(
+    'switcher-glass', 'switcher', { width: 576, height: 178 }, {
+      kind: 'switcher', index: 1, openSequence: 1,
+      backdrop: photoBackdrop,
+      backdropRect: { x: -40, y: -40, width: 656, height: 258 },
+      tabs: [
+        { id: 1, title: 'Ember project', domain: 'github.com', thumbnail: backdrop, favicon: brandIcon, asleep: false },
+        { id: 2, title: 'Liquid Glass reference', domain: 'liquid-glass.maxrovensky.com', thumbnail: colourBackdrop(176, 92), favicon: brandIcon, asleep: false },
+        { id: 3, title: 'Research notes', domain: 'ember://newtab', thumbnail: contrastBackdrop('light', 176, 92), favicon: brandIcon, asleep: true },
+      ],
+    },
   )
   const contextItems = buildContextMenu({
     isEditable: true, selectionText: 'Ember', misspelledWord: 'Embr', dictionarySuggestions: ['Ember'],

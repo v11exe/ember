@@ -5,21 +5,18 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https: crx:; style-src 'self'; script-src 'self'" />
   <title>Switch tab</title>
   <link rel="stylesheet" href="/theme.css" />
-  <link rel="stylesheet" href="/glass.css" />
+  <link rel="stylesheet" href="/overlay-liquid-glass.css" />
   <link rel="stylesheet" href="/switcher.css" />
 </head>
 <body>
-  <div class="shell glass-frosted" id="shell" role="listbox" aria-label="Switch tab">
-    <!-- Real capture of the page behind, refracted by the glass above it. -->
-    <img class="glass-backdrop" id="backdrop" alt="" />
-    <span class="glass-wash" aria-hidden="true"></span>
-    <span class="glass-light" aria-hidden="true"></span>
-    <span class="glass-grain" aria-hidden="true"></span>
+  <div class="shell" id="shell" data-liquid-glass="base" role="listbox" aria-label="Switch tab">
+    <img class="overlay-liquid-glass__backdrop" id="backdrop" alt="" />
 
     <div class="cards" id="cards"></div>
   </div>
 
   <script src="/backdrop-contrast.js"></script>
+  <script src="/overlay-liquid-glass.js"></script>
   <script src="/switcher.js"></script>
 </body>
 </html>

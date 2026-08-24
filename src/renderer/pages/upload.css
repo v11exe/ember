@@ -1,110 +1,62 @@
-@property --hover-x { syntax: '<length>'; inherits: true; initial-value: 0px; }
-@property --hover-y { syntax: '<length>'; inherits: true; initial-value: 0px; }
-@property --hover-width { syntax: '<length>'; inherits: true; initial-value: 0px; }
-@property --hover-height { syntax: '<length>'; inherits: true; initial-value: 0px; }
-@property --sample-x { syntax: '<length>'; inherits: true; initial-value: 0px; }
-@property --sample-y { syntax: '<length>'; inherits: true; initial-value: 0px; }
-
 body { user-select: none; }
-.upload-filter-definitions { position: absolute; width: 0; height: 0; pointer-events: none; }
+
 .upload-shell {
-  --shell-radius: 24px;
-  /* .glass-shell rounds to 24px; the composited tint needs the same clip. */
-  clip-path: inset(0 round 24px);
   --open-motion: 320ms cubic-bezier(.16, 1, .3, 1);
-  --hover-x: 0px; --hover-y: 0px; --hover-width: 0px; --hover-height: 0px;
-  --sample-x: 0px; --sample-y: 0px;
-  display: grid; grid-template-rows: auto 1px auto minmax(0, 1fr) auto auto;
-  background: transparent; border-color: rgba(255, 255, 255, .18);
-  opacity: 0; transform: translate3d(0, -10px, 0) scale(.92); transform-origin: 50% 0;
-  transition: opacity var(--open-motion), transform var(--open-motion); will-change: opacity, transform;
+  width: 100%; height: 100%;
+  display: grid;
+  grid-template-rows: auto 1px auto minmax(0, 1fr) auto auto;
+  color: #fff;
+  opacity: 0;
+  transform: translate3d(0, -10px, 0) scale(.92);
+  transform-origin: 50% 0;
+  transition: opacity var(--open-motion), transform var(--open-motion);
+  will-change: opacity, transform;
 }
 .upload-shell[data-opening="true"] { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
-.upload-texture {
-  position: absolute; z-index: -3; max-width: none; pointer-events: none; opacity: 1;
-  /* The picker is a list of filenames the reader has to be able to read. At
-     the original 1.4px the page underneath stayed legible and competed with
-     them, so the capture is blurred past being a picture and desaturated so it
-     stops colouring the panel — the same bargain .glass-frosted makes. */
-  filter: var(--frost-capture);
-}
-.upload-shell .upload-material-tint {
-  position: absolute; inset: 0; z-index: -2; pointer-events: none;
-  /* An opaque-enough fill so the panel is readable even on the frame before
-     the capture lands; the optics below still refract through it. */
-  background: var(--frost-fill); backdrop-filter: blur(10px) saturate(.95);
-  box-shadow: inset 0 2px 2px -2px rgba(255, 255, 255, .28), inset 0 -2px 2px -2px rgba(0, 0, 0, .2);
-}
-.upload-shell[data-optics-ready="true"] .upload-material-tint { backdrop-filter: url(#switcher) blur(.65px) saturate(1.06); }
-.upload-shell .glass-light, .upload-shell .glass-grain { display: none; }
-#upload-hover-lens {
-  position: absolute; z-index: 0; left: 0; top: 0; overflow: hidden; pointer-events: none;
-  width: var(--hover-width); height: var(--hover-height); border-radius: 13px;
-  /* overflow: hidden does not clip the backdrop-filtered sample's own
-     compositing layer to the rounded corner; clip-path does. */
-  clip-path: inset(0 round 13px);
-  transform: translate3d(var(--hover-x), var(--hover-y), 0);
-  transition: --hover-x 180ms cubic-bezier(.2, .8, .2, 1), --hover-y 180ms cubic-bezier(.2, .8, .2, 1), --hover-width 180ms cubic-bezier(.2, .8, .2, 1), --hover-height 180ms cubic-bezier(.2, .8, .2, 1), --sample-x 180ms cubic-bezier(.2, .8, .2, 1), --sample-y 180ms cubic-bezier(.2, .8, .2, 1), opacity 90ms linear;
-  opacity: 0;
-}
-#upload-hover-lens[data-visible="true"] { opacity: 1; }
-#upload-hover-source, #upload-hover-sample { position: absolute; inset: 0; }
-#upload-hover-source {
-  background-repeat: no-repeat; background-position: var(--sample-x) var(--sample-y);
-  /* The lens samples its own copy of the capture, so it needs the same frost
-     the panel wears — otherwise the hovered row shows a bar of the raw page. */
-  filter: var(--frost-capture);
-}
-/* The panel puts --frost-fill over its capture; the lens has to wear the same
-   fill or the hovered row reads as a bar of raw page colour. */
-#upload-hover-source::after { content: ''; position: absolute; inset: 0; background: var(--frost-fill); }
-#upload-hover-sample { backdrop-filter: url(#toggler) saturate(1.06); }
-#upload-hover-sample::after { content: ''; position: absolute; inset: 0; background: rgba(255, 255, 255, .095); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .11), inset 2px 1px 0 -1px rgba(255, 255, 255, .52), inset -1px -1px 0 rgba(0, 0, 0, .14), 0 3px 7px rgba(0, 0, 0, .12); }
+.upload-texture { opacity: 1; }
+
 .upload-head, .glass-divider, .clipboard-section, .recent-section, .upload-error, footer { position: relative; z-index: 1; }
-.upload-shell .glass-button {
-  position: relative; z-index: 1; background: transparent; border-color: transparent; box-shadow: none;
-  transition: color 180ms cubic-bezier(.2, .8, .2, 1);
-}
-.upload-shell .glass-button:active { transform: none; }
+.glass-divider { height: 1px; background: rgba(255, 255, 255, .2); }
 .upload-head { display: flex; align-items: center; gap: 12px; padding: 16px 17px 14px; }
 .upload-brand { width: 46px; flex: none; }
 .upload-heading { min-width: 0; flex: 1; }
-.upload-heading h1 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -.015em; }
-.upload-heading p { margin: 3px 0 0; color: var(--text-faint); font-size: 11px; }
-.upload-heading p span { color: var(--text-dim); }
-button { font-family: inherit; cursor: pointer; }
-.browse { height: 34px; border-radius: 10px; padding: 0 14px; font-size: 12px; font-weight: 600; }
-.close { width: 34px; height: 34px; border-radius: 50%; padding: 0; font-size: 20px; line-height: 1; }
-.section-label { color: var(--text-dim); font-size: 10px; font-weight: 650; letter-spacing: .11em; text-transform: uppercase; }
+.upload-heading h1 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -.015em; color: #fff; }
+.upload-heading p { margin: 3px 0 0; color: #fff; font-size: 11px; }
+.upload-heading p span { color: #fff; }
+
+button { font-family: inherit; cursor: pointer; color: #fff; border: 0; background: transparent; }
+.browse { --control-radius: 10px; height: 34px; padding: 0 14px; font-size: 12px; font-weight: 600; }
+.close { --control-radius: 999px; width: 34px; height: 34px; padding: 0; font-size: 20px; line-height: 1; }
+.section-label { color: #fff; font-size: 10px; font-weight: 650; letter-spacing: .11em; text-transform: uppercase; }
 .clipboard-section { padding: 12px 16px 2px; }
 .clipboard-slot {
+  --control-radius: 15px;
   width: 100%; height: 62px; margin-top: 8px; padding: 7px 10px;
-  border-radius: 15px; display: flex; align-items: center; gap: 11px; text-align: left;
+  display: flex; align-items: center; gap: 11px; text-align: left;
 }
-.clipboard-preview { width: 48px; height: 48px; flex: none; border-radius: 10px; background: var(--surface-3) center/cover no-repeat; }
+.clipboard-preview { width: 48px; height: 48px; flex: none; border-radius: 10px; background: rgba(255, 255, 255, .1) center/cover no-repeat; }
 .clipboard-preview .file-preview { height: 100%; aspect-ratio: auto; }
 .clipboard-copy { display: grid; gap: 4px; min-width: 0; flex: 1; }
-.clipboard-copy strong { font-size: 13px; font-weight: 600; }
-.clipboard-copy small { color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clipboard-copy strong { font-size: 13px; font-weight: 600; color: #fff; }
+.clipboard-copy small { color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .choose-arrow { color: var(--ember-warm); font-size: 11px; font-weight: 600; padding-right: 4px; }
 .recent-section { min-height: 0; padding: 13px 16px 7px; display: flex; flex-direction: column; }
 .section-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.accept-label { color: var(--text-faint); font-size: 10px; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.accept-label { color: #fff; font-size: 10px; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-files {
   min-height: 0; overflow-y: auto; display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr)); align-content: start; gap: 9px; padding: 2px 4px 4px 0;
 }
 .recent-files::-webkit-scrollbar { width: 7px; }
-.recent-files::-webkit-scrollbar-thumb { background: var(--glass-hover); border-radius: 8px; }
-.recent-file { min-width: 0; border-radius: 13px; padding: 6px; text-align: left; }
-.file-preview { display: grid; place-items: center; width: 100%; aspect-ratio: 1.2; border-radius: 9px; overflow: hidden; background: var(--glass-bg-strong); }
+.recent-files::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .2); border-radius: 8px; }
+.recent-file { --control-radius: 13px; min-width: 0; padding: 6px; text-align: left; }
+.file-preview { display: grid; place-items: center; width: 100%; aspect-ratio: 1.2; border-radius: 9px; overflow: hidden; background: rgba(255, 255, 255, .1); }
 .file-preview img { width: 100%; height: 100%; object-fit: cover; }
 .file-glyph { color: var(--ember-warm); font-size: 11px; font-weight: 700; letter-spacing: .04em; }
-.file-name { display: block; margin-top: 6px; color: var(--text-dim); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.recent-file:hover .file-name { color: var(--text); }
-.empty-state { margin: auto; color: var(--text-faint); font-size: 12px; text-align: center; }
+.file-name { display: block; margin-top: 6px; color: #fff; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.empty-state { margin: auto; color: #fff; font-size: 12px; text-align: center; }
 .upload-error { min-height: 17px; padding: 0 17px; color: var(--error); font-size: 11px; }
-footer { padding: 5px 17px 13px; color: var(--text-faint); font-size: 10px; }
+footer { padding: 5px 17px 13px; color: #fff; font-size: 10px; }
 
 @media (max-width: 610px), (max-height: 360px) {
   .upload-head { padding: 11px 12px 9px; gap: 8px; }
@@ -121,13 +73,4 @@ footer { padding: 5px 17px 13px; color: var(--text-faint); font-size: 10px; }
   footer { display: none; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .upload-shell { --open-motion: 1ms linear; }
-  .upload-shell .glass-button { transition-duration: 1ms; }
-}
-@supports not (backdrop-filter: url(#switcher)) {
-  .upload-shell[data-optics-ready="true"] .upload-material-tint { backdrop-filter: blur(1.4px) saturate(1.04); }
-}
-@supports not (backdrop-filter: url(#toggler)) {
-  #upload-hover-sample { backdrop-filter: blur(1px) saturate(1.04); }
-}
+@media (prefers-reduced-motion: reduce) { .upload-shell { --open-motion: 1ms linear; } }

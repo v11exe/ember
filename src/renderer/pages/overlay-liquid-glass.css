@@ -1,0 +1,111 @@
+/* rdev/liquid-glass-react's standard material, adapted to Ember's captured
+   page backdrop. Page-specific styles own only geometry and content layout. */
+.overlay-liquid-glass {
+  --liquid-glass-radius: 32px;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--liquid-glass-radius);
+  clip-path: inset(0 round var(--liquid-glass-radius));
+  background: transparent;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+}
+
+.overlay-liquid-glass__filter {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.overlay-liquid-glass__warp,
+.overlay-liquid-glass__rim {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.overlay-liquid-glass__warp { background: transparent; }
+
+:root[data-liquid-glass-capture="missing"] [data-liquid-glass="base"] {
+  /* Separate WebContentsViews cannot sample the page view after capture fails.
+     Keep the fallback in image 4's cool gray-blue family, never opaque black. */
+  background: rgba(82, 96, 112, .76);
+}
+
+/* liquid-glass-react's overLight layers, selected from the captured page's
+   measured luminance rather than configured by each overlay. */
+:root[data-backdrop="light"] [data-liquid-glass="base"] {
+  box-shadow: 0 16px 70px rgba(0, 0, 0, .75);
+}
+:root[data-backdrop="light"] [data-liquid-glass="base"]::before,
+:root[data-backdrop="light"] [data-liquid-glass="base"]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: #000;
+}
+:root[data-backdrop="light"] [data-liquid-glass="base"]::before { opacity: .2; }
+:root[data-backdrop="light"] [data-liquid-glass="base"]::after { mix-blend-mode: overlay; }
+
+.overlay-liquid-glass__rim {
+  z-index: 3;
+  padding: 1.5px;
+  opacity: .2;
+  mix-blend-mode: screen;
+  background: linear-gradient(
+    var(--liquid-angle, 135deg),
+    transparent 0%,
+    rgba(255, 255, 255, var(--liquid-highlight, .12)) var(--liquid-stop-a, 33%),
+    rgba(255, 255, 255, var(--liquid-highlight-strong, .4)) var(--liquid-stop-b, 66%),
+    transparent 100%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  box-shadow:
+    inset 0 0 0 .5px rgba(255, 255, 255, .5),
+    inset 0 1px 3px rgba(255, 255, 255, .25),
+    0 1px 4px rgba(0, 0, 0, .35);
+}
+
+.overlay-liquid-glass__rim--overlay {
+  opacity: 1;
+  mix-blend-mode: overlay;
+}
+
+.overlay-liquid-glass > :not(.overlay-liquid-glass__filter):not(.overlay-liquid-glass__warp):not(.overlay-liquid-glass__rim):not(.overlay-liquid-glass__backdrop) {
+  position: relative;
+  z-index: 1;
+}
+
+.overlay-liquid-glass__backdrop {
+  position: absolute;
+  z-index: -1;
+  max-width: none;
+  pointer-events: none;
+}
+
+[data-liquid-glass="control"] {
+  --liquid-glass-radius: var(--control-radius, 12px);
+  box-shadow: 0 5px 14px rgba(0, 0, 0, .2);
+  transition: box-shadow 180ms cubic-bezier(.2, .8, .2, 1), transform 110ms cubic-bezier(.22, 1, .36, 1);
+}
+
+[data-liquid-glass="control"]:hover {
+  box-shadow: 0 7px 18px rgba(0, 0, 0, .25);
+}
+
+[data-liquid-glass="control"]:active { transform: scale(.985); }
+[data-liquid-glass="control"]:focus-visible { box-shadow: var(--focus-ring), 0 7px 18px rgba(0, 0, 0, .25); }
+
+@media (prefers-reduced-motion: reduce) {
+  [data-liquid-glass="control"] { transition-duration: 1ms; }
+  [data-liquid-glass="control"]:active { transform: none; }
+}

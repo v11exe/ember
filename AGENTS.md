@@ -67,6 +67,8 @@ src/renderer/pages/page-glass.js
                                full-page refraction helper
 src/renderer/pages/backdrop-contrast.js
                                light/dark captured-backdrop detection
+src/renderer/pages/overlay-liquid-glass.{js,css}
+                               upstream-standard overlay optics + capture alignment
 src/shared/snap-layouts.js     snap arrangement geometry, shared by main and the picker page
 src/shared/{chrome-layout,favorites}.js
                                shell geometry + ordered Favorite contracts
@@ -141,6 +143,11 @@ test/                          node:test contracts/integration fixtures
   shared `--frost-capture` / `--frost-fill` tokens). Any lens sampling the
   capture needs the same frost *and* the same fill, or the hovered row shows
   raw page colour.
+- Conversion, upload and Ctrl+Tab surfaces use `overlay-liquid-glass` instead:
+  the base material is 100/.5/140/2/0/32 and nested controls are 0/1.0/140/2/0.
+  Always route their captured screenshot through `EmberOverlayGlass.setBackdrop()`
+  so FloatingPanel bleed stays aligned and capture failure gets the non-plastic
+  cool gray-blue fallback.
 - A held-modifier chord cannot be ended by listening for its key-up. A
   `BaseWindow` does not route keys to whichever `WebContentsView` reports
   itself focused, and a sandboxed page view never surfaces a modifier key-up
@@ -382,6 +389,12 @@ Git is the history archive.
 ## 4. Work Log
 
 Newest first. One entry per active/recent unit of work.
+
+### 2026-08-24 — Codex — Liquid-glass overlay restoration
+- **Status / Branch:** completed · `glass-fixing`
+- **Touches:** `AGENTS.md`, `THIRD_PARTY_NOTICES.md`, `src/main/protocol.js`, shared overlay liquid-glass material/asset, conversion/upload/switcher pages, renderer contracts and visual QA
+- **Summary:** Replaced opaque black-plastic selection conversion, recent upload and Ctrl+Tab treatments with a faithful vanilla port of liquid-glass-react's standard filter and exact displacement map.
+- **For the other agent:** The base contract is 100/.5/140/2/0/32; nested controls/cards are 0/1.0/140/2/0. Use the shared capture-aligning helper, and retain its non-black missing-capture fallback.
 
 ```markdown
 ### <YYYY-MM-DD> — <agent> — <title>

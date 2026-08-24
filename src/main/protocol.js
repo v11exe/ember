@@ -10,16 +10,19 @@ const PAGES = path.join(RENDERER, 'pages')
 const SHARED_ASSETS = new Map([
   ['/theme.css', path.join(RENDERER, 'theme.css')],
   ['/glass.css', path.join(RENDERER, 'glass.css')],
+  ['/overlay-liquid-glass.css', path.join(PAGES, 'overlay-liquid-glass.css')],
+  ['/overlay-liquid-glass.js', path.join(PAGES, 'overlay-liquid-glass.js')],
   ['/brand.js', path.join(RENDERER, 'brand.js')],
   ['/brand.css', path.join(RENDERER, 'brand.css')],
   ['/assets/ember-icon.png', path.join(RENDERER, 'assets', 'ember-icon.png')],
   ['/assets/Necosmic-PersonalUse.otf', path.join(RENDERER, 'assets', 'Necosmic-PersonalUse.otf')],
   ['/assets/glass-switcher-map.webp', path.join(RENDERER, 'assets', 'glass-switcher-map.webp')],
+  ['/assets/liquid-glass-map.jpg', path.join(RENDERER, 'assets', 'liquid-glass-map.jpg')],
 ])
 
 const MIME = {
   '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript',
-  '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.json': 'application/json',
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json',
   '.otf': 'font/otf',
 }
 

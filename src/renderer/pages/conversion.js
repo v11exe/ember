@@ -24,8 +24,7 @@ window.addEventListener('keydown', (event) => {
 
 window.emberOverlay.onState((state) => {
   if (!state) return
-  if (state.backdrop) els.backdrop.src = state.backdrop
-  else els.backdrop.removeAttribute('src')
+  window.EmberOverlayGlass.setBackdrop(els.backdrop, state.backdrop, state.backdropRect)
   window.EmberBackdropContrast?.apply(state.backdrop)
 
   els.from.textContent = state.from || ''

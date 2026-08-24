@@ -288,27 +288,21 @@ test('upload picker is a real glass overlay with browse, clipboard, and recent a
   const html = read('src', 'renderer', 'pages', 'upload.html')
   const css = read('src', 'renderer', 'pages', 'upload.css')
   const js = read('src', 'renderer', 'pages', 'upload.js')
-  assert.match(html, /href="\/glass\.css"/)
+  assert.match(html, /href="\/overlay-liquid-glass\.css"/)
   assert.match(html, /id="show-all-files"/)
   assert.match(html, /id="clipboard-slot"/)
   assert.match(html, /id="recent-files"/)
   assert.match(js, /window\.emberOverlay\.action\('browse'/)
   assert.match(js, /window\.emberOverlay\.action\('clipboard'/)
   assert.match(js, /window\.emberOverlay\.action\('recent'/)
-  assert.match(html, /id="switcher"/)
-  assert.match(html, /id="toggler"/)
-  assert.match(html, /id="upload-switcher-map"/)
-  assert.match(html, /upload-optics\.js/)
+  assert.match(html, /data-liquid-glass="base"/)
+  assert.match(html, /data-liquid-glass="control"/)
   assert.match(html, /id="upload-shell"/)
   assert.match(css, /\.upload-shell\[data-opening="true"\]/)
-  assert.match(css, /backdrop-filter:\s*url\(#switcher\) blur\(\.65px\)/)
-  assert.match(css, /backdrop-filter:\s*url\(#toggler\)/)
-  assert.match(html, /id="upload-hover-source"/)
-  assert.match(css, /#upload-hover-source[\s\S]+background-position:\s*var\(--sample-x\) var\(--sample-y\)/)
-  assert.doesNotMatch(css, /blur\(8px\)/)
-  assert.doesNotMatch(css, /rgba\(12,\s*12,\s*14,\s*\.26\)/)
+  assert.doesNotMatch(html, /upload-optics|upload-hover-lens|glass-wash|glass-grain/)
+  assert.doesNotMatch(css, /--frost-fill|--frost-capture/)
   assert.match(js, /shell\.animate\(/)
-  assert.match(js, /pointerenter/)
+  assert.match(js, /button\.dataset\.liquidGlass = 'control'/)
 })
 
 test('shared glass surface includes refractive edges, backdrop sampling, and specular light', () => {
@@ -384,6 +378,13 @@ test('visual QA exercises upload optics on high-contrast and colourful page capt
   assert.match(capture, /uploadBackdropRect/)
 })
 
+test('visual QA captures the Ctrl+Tab liquid-glass hierarchy', () => {
+  const capture = read('scripts', 'capture-ui.js')
+  assert.match(capture, /switcher-glass/)
+  assert.match(capture, /kind:\s*'switcher'/)
+  assert.match(capture, /thumbnail:/)
+})
+
 test('context glass stays neutral and frosts enough to read its own labels', () => {
   const css = read('src', 'renderer', 'pages', 'context-menu.css')
   assert.match(css, /\.menu-shell[\s\S]+background:\s*transparent/)
@@ -415,12 +416,14 @@ test('context menu opens as a reduced-motion-safe popover and does not replay on
   assert.match(js, /shell\.animate\(/)
 })
 
-test('the conversion popup is frosted and replays its entrance on every open', () => {
+test('the conversion popup uses liquid glass and replays its entrance on every open', () => {
   const html = read('src', 'renderer', 'pages', 'conversion.html')
   const css = read('src', 'renderer', 'pages', 'conversion.css')
   const js = read('src', 'renderer', 'pages', 'conversion.js')
-  assert.match(html, /class="shell glass-frosted"/)
-  assert.doesNotMatch(css, /\.shell\s*\{[^}]*background:\s*var\(--glass-bg\)/s, 'no violet tint')
+  assert.match(html, /data-liquid-glass="base"/)
+  assert.match(html, /id="copy"[^>]+data-liquid-glass="control"/)
+  assert.doesNotMatch(html, /glass-frosted|glass-wash|glass-grain/)
+  assert.doesNotMatch(css, /var\(--glass-(?:bg|inner|hover)\)/, 'no plastic tint')
   // The overlay view is reused, so the entrance has to be a class the page
   // re-adds. A finished CSS animation is no longer in getAnimations(), which
   // is why rewinding what it returned did nothing after the first open.
@@ -430,7 +433,35 @@ test('the conversion popup is frosted and replays its entrance on every open', (
   assert.match(js, /els\.shell\.offsetWidth/, 'a reflow between, or the class swap is coalesced away')
 })
 
-test('every frosted surface takes its blur from one shared filter', () => {
+test('conversion, upload and switcher use the requested liquid-glass hierarchy', () => {
+  const conversionHtml = read('src', 'renderer', 'pages', 'conversion.html')
+  const uploadHtml = read('src', 'renderer', 'pages', 'upload.html')
+  const uploadCss = read('src', 'renderer', 'pages', 'upload.css')
+  const uploadJs = read('src', 'renderer', 'pages', 'upload.js')
+  const switcherHtml = read('src', 'renderer', 'pages', 'switcher.html')
+  const switcherJs = read('src', 'renderer', 'pages', 'switcher.js')
+
+  for (const html of [conversionHtml, uploadHtml, switcherHtml]) {
+    assert.match(html, /overlay-liquid-glass\.css/)
+    assert.match(html, /overlay-liquid-glass\.js/)
+    assert.match(html, /data-liquid-glass="base"/)
+    assert.doesNotMatch(html, /glass-frosted|glass-wash|glass-grain/)
+  }
+  assert.match(conversionHtml, /id="copy"[^>]+data-liquid-glass="control"/)
+  for (const id of ['show-all-files', 'upload-close', 'clipboard-slot']) {
+    assert.match(uploadHtml, new RegExp(`id="${id}"[^>]+data-liquid-glass="control"`))
+  }
+  assert.match(uploadJs, /button\.dataset\.liquidGlass = 'control'/)
+  assert.match(switcherJs, /button\.dataset\.liquidGlass = 'control'/)
+  assert.match(uploadJs, /EmberOverlayGlass\.setBackdrop/)
+  assert.match(read('src', 'renderer', 'pages', 'conversion.js'), /EmberOverlayGlass\.setBackdrop/)
+  assert.match(switcherJs, /EmberOverlayGlass\.setBackdrop/)
+  assert.doesNotMatch(uploadHtml, /id="switcher"|id="toggler"|upload-optics\.js/)
+  assert.doesNotMatch(uploadCss, /--frost-fill|--frost-capture|upload-hover-lens/)
+  assert.doesNotMatch(uploadCss, /var\(--text-(?:dim|faint)\)/)
+})
+
+test('legacy frosted context surfaces still take their blur from one shared filter', () => {
   const theme = read('src', 'renderer', 'theme.css')
   assert.match(theme, /--frost-capture:\s*blur\(\d+px\)/)
   assert.match(theme, /--frost-fill:/)
@@ -438,10 +469,8 @@ test('every frosted surface takes its blur from one shared filter', () => {
   // The light palette lifts the capture rather than dimming it, or a frosted
   // panel over a bright page reads as a dark smear.
   assert.match(glass, /\[data-backdrop="light"\][\s\S]*?--frost-capture:[^;]*brightness\(1\./)
-  for (const file of [['upload'], ['context-menu']]) {
-    const css = read('src', 'renderer', 'pages', `${file[0]}.css`)
-    assert.match(css, /filter:\s*var\(--frost-capture\)/, `${file[0]} uses the shared frost`)
-  }
+  const css = read('src', 'renderer', 'pages', 'context-menu.css')
+  assert.match(css, /filter:\s*var\(--frost-capture\)/, 'context menu uses the shared frost')
 })
 
 test('the omnibox names the quick search before you commit to it', () => {

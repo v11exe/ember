@@ -6,45 +6,25 @@
   <title>Choose files</title>
   <link rel="stylesheet" href="/theme.css" />
   <link rel="stylesheet" href="/brand.css" />
-  <link rel="stylesheet" href="/glass.css" />
+  <link rel="stylesheet" href="/overlay-liquid-glass.css" />
   <link rel="stylesheet" href="/upload.css" />
 </head>
 <body>
-  <svg class="upload-filter-definitions" aria-hidden="true">
-    <defs>
-      <filter id="switcher" primitiveUnits="objectBoundingBox">
-        <feImage id="upload-switcher-map" x="0" y="0" width="1" height="1"
-          preserveAspectRatio="xMidYMid meet" result="map"></feImage>
-        <feGaussianBlur in="SourceGraphic" stdDeviation="0.004" result="blur"></feGaussianBlur>
-        <feDisplacementMap in="blur" in2="map" scale="0.08" xChannelSelector="R"
-          yChannelSelector="G"></feDisplacementMap>
-      </filter>
-      <filter id="toggler" primitiveUnits="objectBoundingBox">
-        <feImage href="/assets/glass-switcher-map.webp" x="0" y="0" width="1" height="1"
-          preserveAspectRatio="none" result="map"></feImage>
-        <feGaussianBlur in="SourceGraphic" stdDeviation="0.01" result="blur"></feGaussianBlur>
-        <feDisplacementMap in="blur" in2="map" scale="0.05" xChannelSelector="R"
-          yChannelSelector="G"></feDisplacementMap>
-      </filter>
-    </defs>
-  </svg>
-  <main class="glass-shell upload-shell" id="upload-shell" role="dialog" aria-modal="true" aria-labelledby="upload-title">
-    <img class="upload-texture" id="upload-texture" alt="" draggable="false" />
-    <div class="glass-wash upload-material-tint"></div><div class="glass-light"></div><div class="glass-grain"></div>
-    <div id="upload-hover-lens" aria-hidden="true"><div id="upload-hover-source"></div><div id="upload-hover-sample"></div></div>
+  <main class="upload-shell" id="upload-shell" data-liquid-glass="base" role="dialog" aria-modal="true" aria-labelledby="upload-title">
+    <img class="upload-texture overlay-liquid-glass__backdrop" id="upload-texture" alt="" draggable="false" />
     <header class="upload-head">
       <div class="upload-brand" id="upload-brand"></div>
       <div class="upload-heading">
         <h1 id="upload-title">Choose a file</h1>
         <p>For <span id="upload-origin">this page</span></p>
       </div>
-      <button class="glass-button browse" id="show-all-files" type="button">Show all files</button>
-      <button class="glass-button close" id="upload-close" type="button" aria-label="Close">×</button>
+      <button class="browse" id="show-all-files" data-liquid-glass="control" type="button">Show all files</button>
+      <button class="close" id="upload-close" data-liquid-glass="control" type="button" aria-label="Close">×</button>
     </header>
     <div class="glass-divider"></div>
     <section class="clipboard-section" id="clipboard-section" hidden>
       <div class="section-label">Clipboard</div>
-      <button class="glass-button clipboard-slot" id="clipboard-slot" type="button">
+      <button class="clipboard-slot" id="clipboard-slot" data-liquid-glass="control" type="button">
         <span class="clipboard-preview" id="clipboard-preview"></span>
         <span class="clipboard-copy"><strong>Use clipboard image</strong><small id="clipboard-name"></small></span>
         <span class="choose-arrow">Choose</span>
@@ -62,8 +42,8 @@
     <footer>Choose a recent item, paste an image, or open the full system browser.</footer>
   </main>
   <script src="/brand.js"></script>
-  <script src="upload-optics.js"></script>
   <script src="/backdrop-contrast.js"></script>
+  <script src="/overlay-liquid-glass.js"></script>
   <script src="/upload.js"></script>
 </body>
 </html>

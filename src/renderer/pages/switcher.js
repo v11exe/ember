@@ -15,6 +15,7 @@ function card(tab, position) {
   const button = document.createElement('button')
   button.type = 'button'
   button.className = 'card'
+  button.dataset.liquidGlass = 'control'
   button.setAttribute('role', 'option')
   button.dataset.asleep = String(!!tab.asleep)
   button.title = tab.asleep ? `${tab.title} — sleeping` : tab.title
@@ -116,8 +117,7 @@ window.emberOverlay.onState((incoming) => {
   state = incoming
   // A fresh opening arms the release detector again.
   committed = false
-  if (incoming.backdrop) els.backdrop.src = incoming.backdrop
-  else els.backdrop.removeAttribute('src')
+  window.EmberOverlayGlass.setBackdrop(els.backdrop, incoming.backdrop, incoming.backdropRect)
   window.EmberBackdropContrast?.apply(incoming.backdrop)
   renderAll()
 })

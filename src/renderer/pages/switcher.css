@@ -1,26 +1,18 @@
-/* Ctrl+Tab switcher. One row of cards on the shared captured-backdrop glass
-   (glass.css), sized to be read at a glance and gone again. */
+/* Ctrl+Tab switcher layout. Shared liquid glass owns the base material and the
+   zero-displacement, high-blur card surfaces. */
 
 body { display: grid; place-items: stretch; }
 
 .shell {
   position: relative;
   width: 100%; height: 100%;
-  border: var(--glass-edge);
-  --shell-radius: 20px;
-  border-radius: 20px;
-  overflow: hidden;
-  isolation: isolate;
-  /* Frosted, not tinted: .glass-frosted owns the fill so the cards and their
-     labels are read against a surface rather than against a photograph. */
-  box-shadow: var(--glass-lift), var(--glass-rim);
   animation: rise var(--dur-2) var(--ease);
 }
 @keyframes rise {
   from { opacity: 0; transform: scale(.97); }
   to { opacity: 1; transform: none; }
 }
-.glass-backdrop:not([src]) { display: none; }
+.overlay-liquid-glass__backdrop:not([src]) { display: none; }
 
 .cards {
   position: relative; z-index: 10;
@@ -33,33 +25,30 @@ body { display: grid; place-items: stretch; }
 .cards::-webkit-scrollbar { display: none; }
 
 .card {
+  --control-radius: 12px;
   flex: none;
   width: 176px;
   display: flex; flex-direction: column;
   padding: 0;
-  border: 1px solid transparent;
-  border-radius: 12px;
-  background: var(--glass-inner);
+  border: 0;
+  background: transparent;
   color: var(--text-dim);
   text-align: left;
   cursor: default;
   overflow: hidden;
-  transition: background var(--dur-1) var(--ease-soft), border-color var(--dur-1) var(--ease-soft),
-              transform var(--dur-1) var(--ease), color var(--dur-1) var(--ease-soft);
+  transition: box-shadow var(--dur-1) var(--ease-soft), transform var(--dur-1) var(--ease), color var(--dur-1) var(--ease-soft);
 }
-.card:hover { background: var(--glass-hover); color: var(--text); }
+.card:hover { color: var(--text); }
 .card[aria-selected="true"] {
-  border-color: var(--glass-border);
-  background: var(--glass-hover);
   color: var(--text);
   transform: translateY(-2px);
-  box-shadow: 0 8px 22px var(--glass-shadow), 0 0 0 1px var(--accent-glow) inset;
+  box-shadow: 0 9px 24px rgba(0, 0, 0, .3), 0 0 0 1px var(--accent-glow) inset;
 }
 
 .shot {
   position: relative;
   height: 92px;
-  background: var(--glass-bg-strong);
+  background: rgba(255, 255, 255, .08);
   overflow: hidden;
 }
 .shot img {
@@ -73,7 +62,7 @@ body { display: grid; place-items: stretch; }
   content: "";
   width: 26px; height: 26px;
   border-radius: 7px;
-  background: var(--glass-inner);
+  background: rgba(255, 255, 255, .12);
 }
 .card[data-asleep="true"] .shot img { filter: grayscale(.6) brightness(.8); }
 
