@@ -103,7 +103,7 @@ async function captureSidebar() {
       slot.append(button)
       favorites.append(slot)
     }
-    document.getElementById('sidebar-address-input').value = 'https://ember.example/a-long-active-page-address'
+    document.getElementById('sidebar-address-input').value = 'ember.example/a-long-active-page-address'
   })()`)
   const metrics = await win.webContents.executeJavaScript(`(() => {
     const address = document.getElementById('sidebar-address').getBoundingClientRect()
@@ -111,6 +111,46 @@ async function captureSidebar() {
     return { address: [address.left, address.top, address.right, address.bottom], favorites: [favorites.left, favorites.top] }
   })()`)
   await screenshot(win, 'sidebar-address.png')
+  await win.webContents.executeJavaScript(`(() => {
+    const input = document.getElementById('sidebar-address-input')
+    input.focus()
+    input.select()
+  })()`)
+  await screenshot(win, 'sidebar-address-focused.png')
+  win.destroy()
+  return metrics
+}
+
+async function captureCopyToast() {
+  console.log('[capture] copy toast')
+  const win = new BrowserWindow({
+    show: false,
+    width: 108,
+    height: 30,
+    frame: false,
+    webPreferences: { offscreen: true },
+  })
+  const pages = path.join(__dirname, '..', 'src', 'renderer', 'pages')
+  const source = await fs.readFile(path.join(pages, 'copy-toast.html'), 'utf8')
+  const preview = source
+    .replace(/\s*<meta http-equiv="Content-Security-Policy"[^>]+>/, '')
+    .replace(/\s*<link rel="stylesheet"[^>]+>/g, '')
+    .replace(/\s*<script src="\/copy-toast\.js"><\/script>/, '')
+  const previewFile = path.join(output, 'copy-toast-preview.html')
+  await fs.writeFile(previewFile, preview, 'utf8')
+  await win.loadFile(previewFile)
+  const [theme, toast] = await Promise.all([
+    fs.readFile(path.join(__dirname, '..', 'src', 'renderer', 'theme.css'), 'utf8'),
+    fs.readFile(path.join(pages, 'copy-toast.css'), 'utf8'),
+  ])
+  await win.webContents.insertCSS(`${theme}\n${toast}`)
+  await win.webContents.executeJavaScript("document.getElementById('copy-toast').classList.add('opening')")
+  await new Promise((resolve) => setTimeout(resolve, 250))
+  const metrics = await win.webContents.executeJavaScript(`(() => {
+    const toast = document.getElementById('copy-toast').getBoundingClientRect()
+    return { toast: [toast.left, toast.top, toast.right, toast.bottom] }
+  })()`)
+  await screenshot(win, 'copy-toast.png')
   win.destroy()
   return metrics
 }
@@ -379,6 +419,7 @@ app.whenReady().then(async () => {
   ipcMain.handle(IPC.BOOKMARKS_IMPORT, () => ({ ok: false, canceled: true }))
   const results = {}
   results.sidebar = await captureSidebar()
+  results.copyToast = await captureCopyToast()
   for (const size of sizes) {
     results[`newtab-${size.name}`] = await captureNewTab(size)
     results[`chrome-${size.name}`] = await captureChrome(size)

@@ -73,6 +73,7 @@ class TabManager {
     this.chromeHeight = CHROME_HEIGHT
     this.bookmarksVisible = false
     this.sidebarOpen = opts.sidebarOpen !== false
+    this.htmlFullscreenTabId = null
     this.layoutTimer = null
     win.on('resize', () => this.layout())
   }
@@ -211,6 +212,11 @@ class TabManager {
     // clicking back into the page dismisses any open chrome dropdown
     wc.on('focus', () => this.onPageFocus?.())
     wc.on('context-menu', (event, params) => this.onContextMenu?.(tab, event, params))
+    // A WebContentsView is normally clipped to Ember's page viewport. HTML
+    // fullscreen must promote that view beyond the shell, just as a normal
+    // BrowserWindow would when Chromium emits these events.
+    wc.on('enter-html-full-screen', () => this.enterHtmlFullscreen(tab))
+    wc.on('leave-html-full-screen', () => this.leaveHtmlFullscreen(tab))
 
     // target=_blank and window.open land in a new tab, never a popup window
     wc.setWindowOpenHandler(({ url }) => {
@@ -223,6 +229,7 @@ class TabManager {
     const tab = this.tabs.find((t) => t.id === id)
     if (!tab) return
     const previous = this.active
+    if (this.htmlFullscreenTabId && this.htmlFullscreenTabId !== id) this.leaveHtmlFullscreen(previous)
     if (previous && previous.id !== id) {
       // The idle clock starts when you leave a tab, not when you arrived at
       // it. Without this a page you read for an hour is stale the instant you
@@ -507,6 +514,24 @@ class TabManager {
     this.layout({ animate })
   }
 
+  enterHtmlFullscreen(tab) {
+    if (!tab?.view || tab.id !== this.activeId) return false
+    this.htmlFullscreenTabId = tab.id
+    this.onHtmlFullscreenChange?.(true)
+    this.win.setFullScreen?.(true)
+    this.layout()
+    return true
+  }
+
+  leaveHtmlFullscreen(tab) {
+    if (!tab || tab.id !== this.htmlFullscreenTabId) return false
+    this.htmlFullscreenTabId = null
+    this.win.setFullScreen?.(false)
+    this.layout()
+    this.onHtmlFullscreenChange?.(false)
+    return true
+  }
+
   applyShellBounds({ width, height, sidebarBounds, pageBounds, radius }) {
     if (this.sidebarView) {
       this.sidebarView.setBounds(sidebarBounds)
@@ -530,6 +555,8 @@ class TabManager {
       }
       this.frameViews.right.setBounds(rightBounds)
       this.frameViews.bottom.setBounds(bottomBounds)
+      this.frameViews.right.setVisible?.(true)
+      this.frameViews.bottom.setVisible?.(true)
       this.#sendShellMetrics(this.frameViews.right, rightBounds, width, height)
       this.#sendShellMetrics(this.frameViews.bottom, bottomBounds, width, height)
     }
@@ -562,8 +589,30 @@ class TabManager {
 
   layout({ animate = false } = {}) {
     const { width, height } = this.win.getContentBounds()
+    if (this.htmlFullscreenTabId === this.activeId) {
+      const hidden = { x: 0, y: 0, width: 0, height: 0 }
+      this.chromeView.setBounds(hidden)
+      this.chromeView.setVisible?.(false)
+      if (this.sidebarView) {
+        this.sidebarView.setBounds(hidden)
+        this.sidebarView.setVisible(false)
+      }
+      for (const view of Object.values(this.frameViews || {})) {
+        view.setBounds(hidden)
+        view.setVisible?.(false)
+      }
+      for (const mask of this.pageCornerMasks) {
+        mask.view.setBounds(hidden)
+        mask.view.setVisible(false)
+      }
+      const active = this.active
+      active?.view?.setBounds({ x: 0, y: 0, width, height })
+      active?.view?.setBorderRadius?.(0)
+      return
+    }
     const chromeBounds = { x: 0, y: 0, width, height: this.chromeHeight }
     this.chromeView.setBounds(chromeBounds)
+    this.chromeView.setVisible?.(true)
     this.#sendShellMetrics(this.chromeView, chromeBounds, width, height)
     if (this.layoutTimer) {
       clearTimeout(this.layoutTimer)

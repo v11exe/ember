@@ -376,6 +376,18 @@ Newest first. One entry per active/recent unit of work.
 - **For the other agent:** contracts/risks they must know, or `none`
 ```
 
+### 2026-08-24 — Codex — HTML media fullscreen
+- **Status / Branch:** completed · `codex/url-bar`
+- **Touches:** `src/main/{tabs,index}.js`, `test/tab-layout.test.js`
+- **Summary:** HTML fullscreen events now promote the active page WebContentsView to native fullscreen, temporarily hide Ember's bounded shell, and restore the exact normal viewport when media exits fullscreen.
+- **For the other agent:** Entering page fullscreen is tab-scoped and keeps only the requesting active tab full-screen; changing tabs exits it before normal selection layout resumes.
+
+### 2026-08-24 — Codex — URL-bar refinement
+- **Status / Branch:** completed · `codex/url-bar`
+- **Touches:** `src/main/{index,copy-toast}.js`, `src/renderer/{sidebar.*,pages/copy-toast.*}`, tests and visual QA
+- **Summary:** Simplified HTTP(S) URLs at rest, restored and selected their raw address on focus without native input chrome, used a white vector link glyph with deliberately open outer curves, and added compact animated copy feedback beside the sidebar without shifting its Favorite grid.
+- **For the other agent:** The toast is an independent overlay because the sidebar view clips to 168px; it must not alter sidebar/page bounds or Quick Site hit testing.
+
 ### 2026-08-24 — Codex — Sidebar address field
 - **Status / Branch:** completed · `codex/url-bar`
 - **Touches:** `src/shared/ipc.js`, `src/main/index.js`, `src/renderer/{preload,sidebar}.{js,html,css}`, copy-link asset, focused tests and `docs/superpowers/plans/*`

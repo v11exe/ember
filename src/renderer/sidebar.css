@@ -39,10 +39,10 @@ body.maximized .sidebar-surface { border-radius: 0; }
   border: 1px solid rgba(255, 255, 255, .025);
   border-radius: 7px;
   background: rgba(255, 255, 255, .075);
-  transition: background 130ms ease, border-color 130ms ease;
+  transition: background 130ms ease, border-color 130ms ease, transform 130ms ease;
 }
-.sidebar-address:hover, .sidebar-address:focus-within { background: rgba(255, 255, 255, .13); }
-.sidebar-address:focus-within { border-color: rgba(255, 255, 255, .055); }
+.sidebar-address:hover { background: rgba(255, 255, 255, .13); }
+.sidebar-address:focus-within { background: rgba(255, 255, 255, .18); border-color: rgba(255, 255, 255, .055); }
 .sidebar-address input {
   width: 100%;
   min-width: 0;
@@ -52,11 +52,14 @@ body.maximized .sidebar-surface { border-radius: 0; }
   outline: 0;
   appearance: none;
   background: transparent;
+  box-shadow: none;
+  border-radius: 0;
   color: rgba(255, 255, 255, .82);
   font: inherit;
   font-size: 12px;
   user-select: text;
 }
+.sidebar-address input::selection { background: rgba(255, 255, 255, .24); color: #fff; }
 .sidebar-address-copy {
   width: 26px;
   height: 100%;
@@ -66,10 +69,20 @@ body.maximized .sidebar-surface { border-radius: 0; }
   border: 0;
   border-radius: 6px;
   background: transparent;
+  transition: background 130ms ease, transform 130ms cubic-bezier(.2, .8, .2, 1);
 }
-.sidebar-address-copy:hover { background: rgba(255, 255, 255, .055); }
-.sidebar-address-copy:active { transform: scale(.94); }
-.sidebar-address-copy img { width: 12px; height: 7px; object-fit: contain; filter: brightness(0) invert(1); opacity: .92; }
+.sidebar-address-copy:hover { background: rgba(255, 255, 255, .085); }
+.sidebar-address-copy:active { transform: scale(.9); }
+.sidebar-address-copy img {
+  width: 12px;
+  height: 7px;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+  opacity: .92;
+  transition: transform 130ms cubic-bezier(.2, .8, .2, 1), opacity 130ms ease;
+}
+.sidebar-address-copy:hover img { transform: scale(1.13); opacity: 1; }
+.sidebar-address-copy:active img { transform: scale(.84); }
 body.sidebar-closed .sidebar-address { opacity: 0; transform: translateX(-12px); }
 
 .favorites {

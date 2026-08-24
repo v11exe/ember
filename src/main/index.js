@@ -21,6 +21,7 @@ const { RecentUploadStore } = require('./recent-uploads')
 const { UploadPanel } = require('./upload-panel')
 const { ContextMenuPanel } = require('./context-menu-panel')
 const { SelectionPanel } = require('./selection-panel')
+const { CopyToast } = require('./copy-toast')
 const { RateStore } = require('./rates')
 const { ArchiveLookup } = require('./archive')
 const { TabSwitcher } = require('./switcher-panel')
@@ -255,6 +256,7 @@ function createBrowser({ privateMode = false } = {}) {
     rates,
     prefs: () => settings.get('conversions'),
   })
+  const copyToast = new CopyToast(win, { tabs })
   // A tab with a transfer running underneath it must stay awake; Electron only
   // tells us which webContents started it, so keep the count here.
   const downloadingBy = new Map()
@@ -266,7 +268,7 @@ function createBrowser({ privateMode = false } = {}) {
   const self = {
     win, chrome, sidebarView, frameViews: { right: frameRight, bottom: frameBottom }, tabs, panel, bookmarks, history, downloads, settings, sessionStore, thumbnails, hibernation,
     sessionPrompt: new SessionPrompt(win), closing: false, recentUploads, recentUploadsReady,
-    uploadPanel, contextMenu, selection, rates, archive, switcher, smokeClipboard, smokeUploadPaths, nativeBackdrop, popupPositioner: null,
+    uploadPanel, contextMenu, selection, copyToast, rates, archive, switcher, smokeClipboard, smokeUploadPaths, nativeBackdrop, popupPositioner: null,
     privateMode, fullScreenFrom: null, sidebarEditing: false,
   }
   browser = self
@@ -277,6 +279,9 @@ function createBrowser({ privateMode = false } = {}) {
   // just switched to finishes loading would close the next one the reader
   // opened. It ends on Ctrl coming up, on Escape, or on a card being clicked.
   tabs.onPageFocus = () => { panel.hide(); uploadPanel.cancel(); contextMenu.hide() }
+  tabs.onHtmlFullscreenChange = () => {
+    panel.hide(); uploadPanel.cancel(); contextMenu.hide(); selection.hide(); copyToast.hide(); switcher.cancel()
+  }
   tabs.onVisit = (visit) => { if (!privateMode) history.record(visit) }
   downloads.onChange = (snapshot) => {
     for (const tab of tabs.tabs) {
@@ -381,7 +386,7 @@ function createBrowser({ privateMode = false } = {}) {
   })
 
   win.on('resize', () => {
-    tabs.layout(); panel.layout(); uploadPanel.layout(); contextMenu.layout(); selection.layout()
+    tabs.layout(); panel.layout(); uploadPanel.layout(); contextMenu.layout(); selection.layout(); copyToast.layout()
     switcher.layout()
     browser?.popupPositioner?.layout()
     browser?.sessionPrompt?.layout(); rememberGeometry()
@@ -537,7 +542,10 @@ ipcMain.handle(IPC.SIDEBAR_COPY_ACTIVE_URL, (event) => {
   if (current?.sidebarView?.webContents !== event.sender) return ''
   const active = current.tabs.active
   const url = active?.webContents?.getURL?.() || active?.url || ''
-  if (url) clipboard.writeText(url)
+  if (url) {
+    clipboard.writeText(url)
+    void current.copyToast.show()
+  }
   return url
 })
 /**
@@ -712,6 +720,7 @@ ipcMain.on(IPC.SIDEBAR_SET, async (event, open) => {
   const value = !!open
   for (const target of browsers) {
     target.tabs.setSidebarOpen?.(value, { animate: true })
+    target.copyToast?.hide()
     broadcastChromeConfig(target)
   }
   const snapshot = await source.settings.set('sidebarOpen', value)

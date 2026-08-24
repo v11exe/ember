@@ -62,9 +62,15 @@ function activeUrl() {
   return browserState.tabs.find((tab) => tab.active)?.url || browserState.nav?.url || ''
 }
 
+function displayAddress(url) {
+  const raw = String(url || '')
+  if (!/^https?:\/\//i.test(raw)) return raw
+  return raw.replace(/^https?:\/\//i, '').replace(/^www\./i, '')
+}
+
 function syncAddress() {
   if (addressEditing) return
-  addressInput.value = activeUrl()
+  addressInput.value = displayAddress(activeUrl())
 }
 
 function setAddressEditing(editing) {
@@ -238,7 +244,11 @@ favorites.addEventListener('drop', async (event) => {
   if (result?.id && ['added', 'existing', 'moved', 'replaced'].includes(result.status)) pulseFavorite(result.id)
 })
 
-addressInput.addEventListener('focus', () => setAddressEditing(true))
+addressInput.addEventListener('focus', () => {
+  addressInput.value = activeUrl()
+  setAddressEditing(true)
+  addressInput.select()
+})
 addressInput.addEventListener('input', () => setAddressEditing(true))
 addressInput.addEventListener('blur', () => {
   setAddressEditing(false)

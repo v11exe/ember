@@ -10,6 +10,7 @@ function fixture({ width = 1270, height = 740, sidebarOpen = true } = {}) {
   const sidebarBounds = []
   const pageBounds = []
   const radii = []
+  const fullscreen = []
   const shellMetrics = { chrome: [], sidebar: [], right: [], bottom: [], masks: {} }
   const webContents = (target) => ({
     isDestroyed: () => false,
@@ -19,6 +20,7 @@ function fixture({ width = 1270, height = 740, sidebarOpen = true } = {}) {
     on: () => {},
     getContentBounds: () => ({ width, height }),
     contentView: { addChildView: () => {} },
+    setFullScreen: (open) => fullscreen.push(open),
   }
   const chrome = {
     setBounds: (bounds, options) => chromeBounds.push({ bounds, options }),
@@ -63,7 +65,7 @@ function fixture({ width = 1270, height = 740, sidebarOpen = true } = {}) {
     url: 'https://example.com/',
   }]
   tabs.activeId = 1
-  return { tabs, chromeBounds, sidebarBounds, pageBounds, radii, frameViews, pageCornerMasks, shellMetrics }
+  return { tabs, chromeBounds, sidebarBounds, pageBounds, radii, fullscreen, frameViews, pageCornerMasks, shellMetrics }
 }
 
 test('layout keeps bounded chrome away from the translucent native page', () => {
@@ -80,6 +82,21 @@ test('layout keeps bounded chrome away from the translucent native page', () => 
     bounds: { x: 168, y: 32, width: 1094, height: 700 }, options: undefined,
   })
   assert.equal(radii.at(-1), 12)
+})
+
+test('HTML fullscreen gives the active page the entire native display surface', () => {
+  const { tabs, chromeBounds, sidebarBounds, pageBounds, radii, fullscreen } = fixture()
+  tabs.enterHtmlFullscreen(tabs.active)
+
+  assert.deepEqual(fullscreen, [true])
+  assert.deepEqual(pageBounds.at(-1).bounds, { x: 0, y: 0, width: 1270, height: 740 })
+  assert.equal(radii.at(-1), 0)
+  assert.deepEqual(chromeBounds.at(-1).bounds, { x: 0, y: 0, width: 0, height: 0 })
+  assert.deepEqual(sidebarBounds.at(-1).bounds, { x: 0, y: 0, width: 0, height: 0 })
+
+  tabs.leaveHtmlFullscreen(tabs.active)
+  assert.deepEqual(fullscreen, [true, false])
+  assert.deepEqual(pageBounds.at(-1).bounds, { x: 168, y: 32, width: 1094, height: 700 })
 })
 
 test('sidebar toggling animates the real page and retains the Ember rail', async () => {
