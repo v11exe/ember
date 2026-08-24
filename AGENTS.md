@@ -376,6 +376,12 @@ Newest first. One entry per active/recent unit of work.
 - **For the other agent:** contracts/risks they must know, or `none`
 ```
 
+### 2026-08-24 — Codex — Favorite target matching
+- **Status / Branch:** in-progress · `main`
+- **Touches:** `AGENTS.md`, `docs/superpowers/{specs,plans}/*`, `src/shared/favorites.js`, focused Favorite tests
+- **Summary:** Extending Quick Sites from host-only identity to broad origin shortcuts and specific origin/path shortcuts. Specific paths ignore query and fragment when highlighting or reopening; duplicate Quick Sites are intentionally permitted.
+- **For the other agent:** A broad origin should prefer an already-open origin-root tab, then may reuse any same-origin tab. A specific page must never fall back to a broad origin tab.
+
 ### 2026-08-24 — Codex — BaseWindow resource teardown
 - **Status / Branch:** in-progress · `main`
 - **Touches:** `BUGS.md`, `AGENTS.md`, `docs/superpowers/plans/*`, lifecycle/panel/tab modules and focused tests
