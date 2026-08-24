@@ -38,6 +38,7 @@ src/main/selection-panel.js    smart-conversion popup
 src/main/rates.js              cached exchange-rate provider
 src/main/archive.js            click-only Wayback availability lookup
 src/main/switcher-panel.js     MRU Ctrl+Tab visual switcher
+src/main/snap-picker.js        screen-anchored Snap-layouts picker window
 src/main/session.js            launch/session restore state
 src/main/session-prompt.js     close-time restore prompt
 src/main/shortcuts.js          browser keyboard command table
@@ -64,6 +65,7 @@ src/renderer/pages/page-glass.js
                                full-page refraction helper
 src/renderer/pages/backdrop-contrast.js
                                light/dark captured-backdrop detection
+src/shared/snap-layouts.js     snap arrangement geometry, shared by main and the picker page
 src/shared/{chrome-layout,favorites}.js
                                shell geometry + ordered Favorite contracts
 src/shared/                    IPC, URLs, bangs, conversions, archive and other contracts
@@ -130,6 +132,15 @@ test/                          node:test contracts/integration fixtures
   shared `--frost-capture` / `--frost-fill` tokens). Any lens sampling the
   capture needs the same frost *and* the same fill, or the hovered row shows
   raw page colour.
+- Windows' own Snap Layouts flyout is unreachable: it belongs to the shell and
+  appears only for a window the OS is moving, or one answering WM_NCHITTEST
+  with HTMAXBUTTON — the first needs a native drag region a `WebContentsView`
+  cannot have, the second a window-procedure hook in Ember's process. Ember
+  offers the same arrangements itself through `snap-picker.js`. The picker is
+  its own screen-anchored, click-through window on purpose: inside the browser
+  window it would travel with the cursor during a drag and no zone but the one
+  already under the pointer could be reached. Main hit-tests the cursor against
+  `shared/snap-layouts.js`; the page only paints what it is told.
 - `NativeBackdrop` de-duplicates by material and runs one bridge process at a
   time; concurrent `SetWindowCompositionAttribute` calls on one handle are not
   safe.
@@ -378,6 +389,25 @@ Newest first. One entry per active/recent unit of work.
   tab reorder plus tab-to-Favorite pinning, open-state and removal.
 - **For the other agent:** Preserve the accepted 32px/168px shell geometry and the
   hibernated-tab lifecycle; native page masks remain required on Windows.
+
+### 2026-08-24 — Claude Code — Snap layouts picker
+
+- **Status / Branch:** pushed · `main`
+- **Touches:** `src/shared/snap-layouts.js`, `src/main/snap-picker.js`,
+  `src/renderer/pages/snap.{html,css,js}`, `src/main/index.js` (drag handlers),
+  `src/renderer/chrome.js` (double-click caption), `test/snap-layouts.test.js`
+- **Summary:** Dragging to the top of a display now offers the arrangements
+  rather than only maximising: a screen-anchored picker appears where Windows
+  puts its own flyout, the zone under the cursor lights up, and dropping snaps
+  the window to it. Double-clicking the caption toggles maximised.
+- **For the other agent:** I found your in-progress `restoreUnderCursor` work
+  in this shared tree and left it exactly as it was — I did not write a second
+  un-maximise path. My drag changes are confined to the picker calls inside
+  `WIN_DRAG_MOVE`/`WIN_DRAG_END` and sit *after* your `escaping` guard, which
+  they deliberately respect: the picker does not open while a window is still
+  escaping the edge it was pulled off. I could not confirm your pull-down under
+  synthetic input — `ShowWindow(SW_MAXIMIZE)` does not register with Electron,
+  so it has to be driven through Ember's own maximise button.
 
 ### 2026-08-24 — Claude Code — Bug pass: B1–B17
 

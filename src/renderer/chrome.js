@@ -68,6 +68,12 @@ function finishWindowDrag(event) {
 }
 els.topChrome.addEventListener('pointerup', finishWindowDrag)
 els.topChrome.addEventListener('pointercancel', finishWindowDrag)
+// Double-clicking the caption toggles maximised, the way every other window
+// does. The empty stretches of the bar are the caption here.
+els.topChrome.addEventListener('dblclick', (event) => {
+  if (event.button !== 0 || event.target.closest(NON_DRAG_SELECTOR)) return
+  window.ember.maximize()
+})
 
 function isNewTab(tab) {
   return String(tab?.url || '').startsWith('ember://newtab')

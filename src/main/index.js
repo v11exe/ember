@@ -26,6 +26,7 @@ const { ArchiveLookup } = require('./archive')
 const { TabSwitcher } = require('./switcher-panel')
 const { isDeadStatus, isArchivable } = require('../shared/archive')
 const { NativeBackdrop } = require('./native-backdrop')
+const { SnapPicker } = require('./snap-picker')
 const { ThumbnailCache } = require('./tab-thumbnails')
 const { HibernationManager, hostnameOf, sanitiseHibernation } = require('./hibernation')
 const { listBangs, DEFAULT_BANGS } = require('../shared/bangs')
@@ -40,6 +41,8 @@ registerSchemePrivileges()
 let browser = null
 const browsers = new Set()
 const windowDrags = new Map()
+// One picker for the app: it is anchored to a display, not to a window.
+const snapPicker = new SnapPicker({ screen })
 
 function browserFromSender(sender) {
   return [...browsers].find((candidate) => (
@@ -383,6 +386,17 @@ function createBrowser({ privateMode = false } = {}) {
     browser?.popupPositioner?.layout()
     browser?.sessionPrompt?.layout(); rememberGeometry()
   })
+  // The size to come back to. Windows reports a maximised window's bounds
+  // until well after unmaximize() returns, so the restored size cannot be read
+  // at the moment it is needed — it has to have been kept.
+  const rememberNormalBounds = () => {
+    if (!win.isDestroyed() && !win.isMaximized() && !win.isMinimized()) {
+      self.restoreBounds = win.getBounds()
+    }
+  }
+  rememberNormalBounds()
+  win.on('resize', rememberNormalBounds)
+  win.on('move', rememberNormalBounds)
   win.on('maximize', () => { syncOuterRadius(); broadcastWindowState(self) })
   win.on('unmaximize', () => { syncOuterRadius(); broadcastWindowState(self) })
   win.on('move', () => rememberGeometry())
@@ -843,17 +857,58 @@ function snapZoneAt(x, y) {
   return null
 }
 
+/**
+ * Take a maximised window loose under the cursor, the way every other Windows
+ * application does when its title bar is dragged. The restored window keeps
+ * the grab point at the same fraction of its width, so the pointer stays on
+ * the part of the bar it took hold of rather than jumping to a corner.
+ */
+function restoreUnderCursor(target, x, y) {
+  const win = target.win
+  const from = win.getBounds()
+  const size = target.restoreBounds || {
+    width: Math.round(from.width * 0.62),
+    height: Math.round(from.height * 0.62),
+  }
+  const ratio = from.width ? Math.min(1, Math.max(0, (x - from.x) / from.width)) : 0.5
+  const grabY = Math.min(Math.max(0, y - from.y), Math.max(0, size.height - 1))
+  const placed = {
+    x: Math.round(x - size.width * ratio),
+    y: Math.round(y - grabY),
+    width: size.width,
+    height: size.height,
+  }
+  // unmaximize() does not settle before it returns on Windows, so the bounds
+  // are applied again once the restore has actually landed. Applying them
+  // immediately as well keeps the very first drag frame from lagging.
+  win.once('unmaximize', () => { if (!win.isDestroyed()) win.setBounds(placed) })
+  win.unmaximize()
+  try { win.setBounds(placed) } catch { /* the event handler above still will */ }
+  return placed
+}
+
 ipcMain.on(IPC.WIN_DRAG_START, (event, point = {}) => {
   const target = browserFromSender(event.sender)
-  if (!target || target.win.isMaximized()) return
+  if (!target) return
   const x = Number(point.x)
   const y = Number(point.y)
   if (!Number.isFinite(x) || !Number.isFinite(y)) return
-  const [windowX, windowY] = target.win.getPosition()
+  const win = target.win
+  // A maximised window used to refuse the drag outright, which left the only
+  // way out of full screen being the restore button.
+  const wasMaximized = win.isMaximized()
+  const placed = wasMaximized ? restoreUnderCursor(target, x, y) : null
+  // The window's own position is not trustworthy for a frame or two after a
+  // restore, so the drag starts from where it was actually put.
+  const [windowX, windowY] = placed ? [placed.x, placed.y] : win.getPosition()
   windowDrags.set(event.sender.id, {
     target, pointerX: x, pointerY: y, windowX, windowY,
     // What the window should go back to if it is dragged off a snap again.
-    restore: target.win.getBounds(),
+    restore: placed || win.getBounds(),
+    // Coming off a maximised window, the cursor starts inside the top snap
+    // zone it is trying to escape; re-snapping there until it has actually
+    // left would make the window impossible to pull down.
+    escaping: wasMaximized,
     zone: null,
   })
 })
@@ -864,6 +919,15 @@ ipcMain.on(IPC.WIN_DRAG_MOVE, (event, point = {}) => {
   const y = Number(point.y)
   if (!Number.isFinite(x) || !Number.isFinite(y)) return
   drag.zone = snapZoneAt(x, y)
+  // Once the pointer has left the edge it started on, the window is free and
+  // the snap zones mean what they say again.
+  if (drag.escaping && !drag.zone) drag.escaping = false
+  // Reaching the top offers the arrangements, exactly where Windows puts its
+  // own flyout. While escaping a maximised window the pointer starts up here,
+  // so the offer waits until it has actually left.
+  if (!drag.escaping && drag.zone?.kind === 'maximize') snapPicker.show({ x, y })
+  else if (!snapPicker.contains({ x, y })) snapPicker.hide()
+  if (snapPicker.open) snapPicker.track({ x, y })
   drag.target.win.setPosition(
     Math.round(drag.windowX + x - drag.pointerX),
     Math.round(drag.windowY + y - drag.pointerY),
@@ -877,10 +941,23 @@ ipcMain.on(IPC.WIN_DRAG_END, (event) => {
   // The renderer coalesces moves into an animation frame and drops whatever is
   // still pending when the pointer goes up, so the last position — the one at
   // the edge — never arrives. The cursor itself is the authority at this point.
+  let cursor = null
   try {
-    const cursor = screen.getCursorScreenPoint()
+    cursor = screen.getCursorScreenPoint()
     drag.zone = snapZoneAt(cursor.x, cursor.y)
   } catch { /* keep whatever the last move worked out */ }
+  // Dropped on an arrangement: that choice outranks the plain top-edge
+  // maximise, and it is the only thing the picker is open for.
+  const chosen = cursor && snapPicker.open ? snapPicker.resolve(cursor) : null
+  snapPicker.hide()
+  if (chosen) {
+    drag.target.settings.rememberWindow({ ...drag.restore, maximized: false })
+    win.setBounds(chosen)
+    return
+  }
+  // Let go without ever leaving the edge it was pulled off and the window
+  // simply goes back; that is a cancelled escape, not a request to re-snap.
+  if (drag.escaping && drag.zone?.kind === 'maximize') { win.maximize(); return }
   if (!drag.zone) return
   // Remember the size to come back to, the way Windows restores a snapped
   // window to what it was before.

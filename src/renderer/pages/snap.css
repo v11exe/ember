@@ -1,0 +1,57 @@
+/* The arrangement picker. Sizes come from shared/snap-layouts.js, which main
+   also hit-tests against — so nothing here may invent its own measurements.
+   snap.js writes them onto the shell as custom properties. */
+
+body { display: grid; place-items: stretch; }
+
+.snap-shell {
+  position: relative;
+  width: 100%; height: 100%;
+  padding: var(--snap-padding, 12px);
+  border: var(--glass-edge);
+  border-radius: 14px;
+  overflow: hidden;
+  isolation: isolate;
+  box-shadow: var(--glass-lift-sm), var(--glass-rim);
+  animation: drop 160ms var(--ease);
+}
+@keyframes drop {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: none; }
+}
+
+.groups {
+  position: relative; z-index: 10;
+  height: 100%;
+  display: flex;
+  gap: var(--snap-group-gap, 10px);
+}
+
+.group {
+  position: relative;
+  width: var(--snap-group-width, 96px);
+  height: var(--snap-group-height, 60px);
+  flex: none;
+  border-radius: 7px;
+}
+
+/* One zone of an arrangement. Positioned from the same pixel rectangle main
+   uses, so what lights up is exactly what will be snapped to. */
+.zone {
+  position: absolute;
+  border-radius: 4px;
+  background: var(--glass-inner);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .07);
+  transition: background 120ms var(--ease-soft), box-shadow 120ms var(--ease-soft);
+}
+.zone[data-hot="true"] {
+  background: rgba(255, 111, 26, .78);
+  box-shadow: inset 0 0 0 1px rgba(255, 176, 118, .9), 0 0 10px rgba(255, 96, 0, .34);
+}
+/* The rest of the group dims so the choice reads at a glance. */
+.group[data-hot="true"] .zone:not([data-hot="true"]) { background: rgba(255, 255, 255, .06); }
+
+@media (prefers-reduced-motion: reduce) {
+  .snap-shell { animation-duration: .001ms; }
+  .zone { transition-duration: .001ms; }
+}
