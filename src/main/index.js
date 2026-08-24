@@ -130,7 +130,8 @@ function createBrowser({ privateMode = false } = {}) {
     ...(Number.isFinite(saved?.x) ? { x: saved.x, y: saved.y } : {}),
     minWidth: 620,
     minHeight: 420,
-    frame: false,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#00000000', symbolColor: '#ffffff', height: 32 },
     // Not a transparent window. A layered window is excluded from everything
     // Windows does for an ordinary one — no Snap when it is dragged to an
     // edge, no Snap Layouts flyout, no minimise or restore animation — and its

@@ -51,6 +51,15 @@ test('new tab keeps Ember content above configurable native double-blur layers',
   assert.match(main, /backgroundMaterial:\s*'acrylic'/)
   assert.match(main, /roundedCorners:\s*true/)
   assert.match(main, /backgroundColor:\s*'#00000000'/)
+  // Windows draws the caption buttons itself. That is what makes this an
+  // ordinary application window to the shell — it is where the Snap Layouts
+  // flyout under the maximise button comes from — so the overlay is
+  // transparent, letting Ember's own bar show through beneath the system's
+  // buttons, and Ember must not draw a competing set over them.
+  assert.match(main, /titleBarStyle:\s*'hidden'/)
+  assert.match(main, /titleBarOverlay:\s*\{[^}]*color:\s*'#00000000'/)
+  const chromeCss = read('src', 'renderer', 'chrome.css')
+  assert.match(chromeCss, /\.window-controls\s*\{\s*visibility:\s*hidden/)
 })
 
 test('browser chrome provides a compact live bookmarks bar', () => {

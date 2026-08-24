@@ -54,7 +54,7 @@ Pressing Ctrl+W several times in quick succession crashes the whole app. Likely
 a close/destroy race against a tab record whose renderer is already gone.
 
 ### B4 — Windows does not treat Ember as a normal application window
-**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/index.js`
+**Status:** ✅ Fixed · **Owner:** Claude Code · **Area:** `src/main/index.js`
 
 Dragging to the top of the screen does not trigger the Snap bar, and
 minimise/restore from the taskbar plays no standard Windows animation.
@@ -415,3 +415,26 @@ until the keyword is taken:
 The Tab hint is the one exception, because without it nothing tells the reader
 the shortcut exists. This supersedes the preview behaviour roadmap #2 added,
 and the smoke gate asserts the new contract.
+
+### B4 — Windows draws the caption itself now
+
+Ember was drawing its own minimise/maximise/close. To the shell that is just a
+frameless window with some pictures in it, which is why the Snap Layouts flyout
+never appeared: that flyout belongs to a *real* maximise button — the shell
+shows it for a window that answers `WM_NCHITTEST` with `HTMAXBUTTON`, and only
+the system's own caption buttons do.
+
+`titleBarStyle: 'hidden'` with a **transparent** `titleBarOverlay` gets both:
+Windows draws its real caption buttons, and because the overlay colour has zero
+alpha, Ember's own 32px bar shows through beneath them rather than being
+covered by an opaque strip. An opaque overlay colour hides Ember's chrome
+entirely and produces two stacked bars — that was the first attempt.
+
+Ember's own `.window-controls` stay in the document so the strip still reserves
+`--caption-width`, but are `visibility: hidden` — the system's are the ones you
+see and click. Do not re-show them; a competing set over the real ones is what
+this bug was.
+
+The remaining half of the original report — drag-to-top offering arrangements —
+is still Ember's own picker, because a `WebContentsView` cannot carry a native
+drag region and so Windows never runs a move loop for it.

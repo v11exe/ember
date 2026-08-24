@@ -408,6 +408,12 @@ button, input, .top-navigation, .tabstrip, .top-actions,
 .close-glyph::before { transform: rotate(45deg); }
 .close-glyph::after { transform: rotate(-45deg); }
 .chrome-shell.maximized .window-controls { border-radius: 0; }
+/* Windows draws the real caption buttons over this strip — that is what makes
+   the window an ordinary application to the shell, and what puts the Snap
+   Layouts flyout under the maximise button. Ember's own buttons stay in the
+   document so the strip still reserves --caption-width for them, but the
+   system's are the ones you see and click. */
+.window-controls { visibility: hidden; pointer-events: none; }
 .app-action.open { background: rgba(255, 255, 255, .09); color: #fff; }
 .archive-btn[hidden] { display: none; }
 .archive-btn { color: rgba(255, 119, 34, .92); }
