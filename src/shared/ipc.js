@@ -34,6 +34,8 @@ const IPC = {
   BOOKMARKS_VISIBILITY: 'bookmarks:visibility',
   CHROME_CONFIG_GET: 'chrome-config:get',
   SIDEBAR_SET: 'sidebar:set',
+  SIDEBAR_EDITING: 'sidebar:editing',
+  SIDEBAR_COPY_ACTIVE_URL: 'sidebar:copy-active-url',
   FAVORITE_OPEN: 'favorite:open',
   FAVORITE_PIN_TAB: 'favorite:pin-tab',
   FAVORITE_MOVE: 'favorite:move',

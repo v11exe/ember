@@ -153,6 +153,14 @@ test('chrome preload bridges live shell configuration and Favorite actions', asy
   assert.deepEqual(shellMetrics, { width: 900, height: 640, x: 0, y: 0 })
 })
 
+test('sidebar can copy the authoritative active-tab URL through its isolated bridge', async () => {
+  const { exposed, invoked } = bootPreload()
+
+  assert.equal(typeof exposed.copyActiveUrl, 'function')
+  assert.deepEqual(await exposed.copyActiveUrl(), { channel: IPC.SIDEBAR_COPY_ACTIVE_URL })
+  assert.deepEqual(invoked.at(-1), [IPC.SIDEBAR_COPY_ACTIVE_URL, undefined])
+})
+
 test('the omnibox can ask what Enter will do without leaving the renderer', () => {
   const { exposed } = bootPreload()
   // Built-ins answer before the list has even been fetched.

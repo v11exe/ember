@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('ember', {
   getChromeConfig: () => ipcRenderer.invoke(IPC.CHROME_CONFIG_GET),
   onChromeConfig: (fn) => ipcRenderer.on(IPC.CHROME_CONFIG_CHANGED, (_e, config) => fn(config)),
   setSidebarOpen: (open) => ipcRenderer.send(IPC.SIDEBAR_SET, !!open),
+  setSidebarEditing: (editing) => ipcRenderer.send(IPC.SIDEBAR_EDITING, !!editing),
+  copyActiveUrl: () => ipcRenderer.invoke(IPC.SIDEBAR_COPY_ACTIVE_URL),
   openFavorite: (id) => ipcRenderer.send(IPC.FAVORITE_OPEN, String(id)),
   pinFavoriteFromTab: (id, index) => ipcRenderer.invoke(IPC.FAVORITE_PIN_TAB, {
     id: Number(id), index: Number(index),

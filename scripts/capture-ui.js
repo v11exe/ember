@@ -66,6 +66,55 @@ async function captureNewTab(size) {
   return metrics
 }
 
+async function captureSidebar() {
+  console.log('[capture] sidebar address')
+  const win = new BrowserWindow({
+    show: false,
+    width: 168,
+    height: 336,
+    frame: false,
+    webPreferences: { offscreen: true },
+  })
+  const renderer = path.join(__dirname, '..', 'src', 'renderer')
+  const source = await fs.readFile(path.join(renderer, 'sidebar.html'), 'utf8')
+  const preview = source
+    .replace(/\s*<meta http-equiv="Content-Security-Policy"[^>]+>/, '')
+    .replace('<head>', `<head><base href="${pathToFileURL(renderer + path.sep).href}">`)
+    .replace(/\s*<script src="shell-metrics\.js"><\/script>/, '')
+    .replace(/\s*<script src="sidebar\.js"><\/script>/, '')
+  const previewFile = path.join(output, 'sidebar-preview.html')
+  await fs.writeFile(previewFile, preview, 'utf8')
+  await win.loadFile(previewFile)
+  await win.webContents.executeJavaScript(`(() => {
+    const favorites = document.getElementById('favorites')
+    for (const [title, icon] of [
+      ['YouTube', 'https://www.youtube.com/favicon.ico'],
+      ['Ember', 'assets/icon-white-stroke-tight.png'],
+      ['Google', 'https://www.google.com/favicon.ico'],
+      ['Gmail', 'https://ssl.gstatic.com/ui/v1/icons/mail/rfr/gmail.ico'],
+      ['GitHub', 'https://github.githubassets.com/favicons/favicon.svg'],
+    ]) {
+      const slot = document.createElement('div')
+      slot.className = 'favorite-slot'
+      const button = document.createElement('button')
+      button.className = 'favorite'
+      button.title = title
+      button.innerHTML = '<img alt="" src="' + icon + '">'
+      slot.append(button)
+      favorites.append(slot)
+    }
+    document.getElementById('sidebar-address-input').value = 'https://ember.example/a-long-active-page-address'
+  })()`)
+  const metrics = await win.webContents.executeJavaScript(`(() => {
+    const address = document.getElementById('sidebar-address').getBoundingClientRect()
+    const favorites = document.getElementById('favorites').getBoundingClientRect()
+    return { address: [address.left, address.top, address.right, address.bottom], favorites: [favorites.left, favorites.top] }
+  })()`)
+  await screenshot(win, 'sidebar-address.png')
+  win.destroy()
+  return metrics
+}
+
 async function captureChrome(size) {
   console.log(`[capture] chrome ${size.name}`)
   const win = new BrowserWindow({
@@ -329,6 +378,7 @@ app.whenReady().then(async () => {
   ipcMain.handle(IPC.BOOKMARKS_GET, () => ({ version: 1, visible: false, items: [] }))
   ipcMain.handle(IPC.BOOKMARKS_IMPORT, () => ({ ok: false, canceled: true }))
   const results = {}
+  results.sidebar = await captureSidebar()
   for (const size of sizes) {
     results[`newtab-${size.name}`] = await captureNewTab(size)
     results[`chrome-${size.name}`] = await captureChrome(size)

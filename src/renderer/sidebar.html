@@ -10,7 +10,15 @@
 </head>
 <body>
   <aside class="sidebar-surface shell-material shell-edge shell-edge-sidebar" aria-label="Favorite sites">
-    <div class="favorites" id="favorites"></div>
+    <div class="sidebar-content">
+      <form class="sidebar-address" id="sidebar-address">
+        <input id="sidebar-address-input" type="text" aria-label="Address" spellcheck="false" autocomplete="off" />
+        <button class="sidebar-address-copy" id="sidebar-address-copy" type="button" aria-label="Copy current link" title="Copy current link">
+          <img src="assets/copy-link.png" alt="" />
+        </button>
+      </form>
+      <div class="favorites" id="favorites"></div>
+    </div>
   </aside>
   <script src="shell-metrics.js"></script>
   <script src="sidebar.js"></script>

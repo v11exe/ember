@@ -130,6 +130,28 @@ test('Favorite rail renders in a separate bounded view so native glass stays vis
   assert.doesNotMatch(css, /\.sidebar-surface\s*\{[^}]*border-(?:left|bottom)/s)
 })
 
+test('sidebar keeps a native address field above its unchanged Favorite grid', () => {
+  const sidebarHtml = read('src', 'renderer', 'sidebar.html')
+  const sidebarCss = read('src', 'renderer', 'sidebar.css')
+  const sidebarJs = read('src', 'renderer', 'sidebar.js')
+  const main = read('src', 'main', 'index.js')
+
+  assert.match(sidebarHtml, /<form class="sidebar-address" id="sidebar-address">/)
+  assert.match(sidebarHtml, /<input[^>]+id="sidebar-address-input"/)
+  assert.match(sidebarHtml, /assets\/copy-link\.png/)
+  assert.match(sidebarCss, /\.sidebar-content\s*\{[\s\S]*display:\s*grid/)
+  assert.match(sidebarCss, /\.sidebar-address\s*\{[\s\S]*background:\s*rgba\(255, 255, 255, \.075\)/)
+  assert.match(sidebarCss, /\.sidebar-address-copy img\s*\{[\s\S]*filter:\s*brightness\(0\) invert\(1\)/)
+  assert.match(sidebarJs, /window\.ember\.go\(addressInput\.value\)/)
+  assert.match(sidebarJs, /window\.ember\.copyActiveUrl\(\)/)
+  assert.match(sidebarJs, /if \(addressEditing\) return/)
+  assert.ok(fs.existsSync(path.join(__dirname, '..', 'src', 'renderer', 'assets', 'copy-link.png')))
+  assert.match(main, /ipcMain\.handle\(IPC\.SIDEBAR_COPY_ACTIVE_URL/)
+  assert.match(main, /active\?\.webContents\?\.getURL\?\.\(\) \|\| active\?\.url \|\| ''/)
+  assert.match(main, /clipboard\.writeText\(url\)/)
+  assert.match(main, /inputOwner\?\.sidebarView\?\.webContents === wc && inputOwner\.sidebarEditing/)
+})
+
 test('bounded native surfaces sample one synchronized shell material', () => {
   const material = read('src', 'renderer', 'shell-material.css')
   const metrics = read('src', 'renderer', 'shell-metrics.js')

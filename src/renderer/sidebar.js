@@ -1,4 +1,7 @@
 const favorites = document.getElementById('favorites')
+const addressForm = document.getElementById('sidebar-address')
+const addressInput = document.getElementById('sidebar-address-input')
+const addressCopy = document.getElementById('sidebar-address-copy')
 let browserState = { tabs: [] }
 let config = { favorites: [], favoriteGrid: { columns: 2, rows: 2 } }
 const TAB_DRAG_TYPE = 'application/x-ember-tab'
@@ -11,6 +14,7 @@ let previewFavorites = null
 let hoveredIndex = null
 let draggedFavoriteId = null
 let dropPending = false
+let addressEditing = false
 
 function assetUrl(asset) {
   return new URL(String(asset || '').replace(/^\//, ''), document.baseURI).href
@@ -52,6 +56,20 @@ function dragImageFor(button) {
   document.body.append(image)
   setTimeout(() => image.remove(), 0)
   return image
+}
+
+function activeUrl() {
+  return browserState.tabs.find((tab) => tab.active)?.url || browserState.nav?.url || ''
+}
+
+function syncAddress() {
+  if (addressEditing) return
+  addressInput.value = activeUrl()
+}
+
+function setAddressEditing(editing) {
+  addressEditing = !!editing
+  window.ember.setSidebarEditing(addressEditing)
 }
 
 function favoriteNode(favorite) {
@@ -220,7 +238,32 @@ favorites.addEventListener('drop', async (event) => {
   if (result?.id && ['added', 'existing', 'moved', 'replaced'].includes(result.status)) pulseFavorite(result.id)
 })
 
-window.ember.onState((state) => { browserState = state; render() })
+addressInput.addEventListener('focus', () => setAddressEditing(true))
+addressInput.addEventListener('input', () => setAddressEditing(true))
+addressInput.addEventListener('blur', () => {
+  setAddressEditing(false)
+  syncAddress()
+})
+addressInput.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return
+  event.preventDefault()
+  setAddressEditing(false)
+  addressInput.value = activeUrl()
+  addressInput.blur()
+})
+addressForm.addEventListener('submit', (event) => {
+  event.preventDefault()
+  setAddressEditing(false)
+  window.ember.go(addressInput.value)
+})
+addressCopy.addEventListener('mousedown', (event) => event.preventDefault())
+addressCopy.addEventListener('click', (event) => {
+  event.preventDefault()
+  event.stopPropagation()
+  void window.ember.copyActiveUrl()
+})
+
+window.ember.onState((state) => { browserState = state || { tabs: [] }; syncAddress(); render() })
 function applyConfig(next) {
   config = { ...config, ...(next || {}) }
   document.body.classList.toggle('sidebar-closed', config.sidebarOpen === false)

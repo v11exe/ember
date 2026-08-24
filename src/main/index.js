@@ -267,7 +267,7 @@ function createBrowser({ privateMode = false } = {}) {
     win, chrome, sidebarView, frameViews: { right: frameRight, bottom: frameBottom }, tabs, panel, bookmarks, history, downloads, settings, sessionStore, thumbnails, hibernation,
     sessionPrompt: new SessionPrompt(win), closing: false, recentUploads, recentUploadsReady,
     uploadPanel, contextMenu, selection, rates, archive, switcher, smokeClipboard, smokeUploadPaths, nativeBackdrop, popupPositioner: null,
-    privateMode, fullScreenFrom: null,
+    privateMode, fullScreenFrom: null, sidebarEditing: false,
   }
   browser = self
   browsers.add(self)
@@ -527,6 +527,18 @@ ipcMain.on(IPC.TAB_CONTEXT_MENU, (_e, { id, x } = {}) => {
       hasOtherTabs: current.tabs.tabs.length > 1,
     },
   }).catch((error) => console.error('[ember] tab menu could not open:', error.message))
+})
+ipcMain.on(IPC.SIDEBAR_EDITING, (event, editing) => {
+  const current = browserFromSender(event.sender)
+  if (current?.sidebarView?.webContents === event.sender) current.sidebarEditing = !!editing
+})
+ipcMain.handle(IPC.SIDEBAR_COPY_ACTIVE_URL, (event) => {
+  const current = browserFromSender(event.sender)
+  if (current?.sidebarView?.webContents !== event.sender) return ''
+  const active = current.tabs.active
+  const url = active?.webContents?.getURL?.() || active?.url || ''
+  if (url) clipboard.writeText(url)
+  return url
 })
 /**
  * Tell the toolbar a navigation command ran, so its button animates. Both the
@@ -1155,6 +1167,8 @@ function runCommand({ command, index }) {
 
 app.on('web-contents-created', (_e, wc) => {
   wc.on('before-input-event', (event, input) => {
+    const inputOwner = browserFromSender(wc)
+    if (inputOwner?.sidebarView?.webContents === wc && inputOwner.sidebarEditing) return
     // While the switcher is up it owns Tab. A Tab that arrives without the
     // modifier is a half-finished chord, not a request to walk anything's
     // focus order, and letting it through is what smeared the overlay.

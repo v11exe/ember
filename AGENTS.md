@@ -376,6 +376,12 @@ Newest first. One entry per active/recent unit of work.
 - **For the other agent:** contracts/risks they must know, or `none`
 ```
 
+### 2026-08-24 — Codex — Sidebar address field
+- **Status / Branch:** completed · `codex/url-bar`
+- **Touches:** `src/shared/ipc.js`, `src/main/index.js`, `src/renderer/{preload,sidebar}.{js,html,css}`, copy-link asset, focused tests and `docs/superpowers/plans/*`
+- **Summary:** Added a native editable active-tab address field and minimal authoritative copy action above the existing Favorite grid; visual QA now captures this bounded sidebar state.
+- **For the other agent:** The Favorites grid must move solely through layout; all tile dimensions, placement and drag/drop semantics stay unchanged.
+
 ### 2026-08-23 — Codex — Adaptive Favorite grid
 - **Status / Branch:** completed · `feat/ember-shell`
 - **Touches:** `src/shared/favorites.js`, `src/main/{settings,index}.js`,
