@@ -540,3 +540,23 @@ widths to settle after an open and far too short to fight anyone; the reader's
 own wheel clears it outright, because their intent wins; and it is dropped once
 the tab it names is gone. Verified: wheeled back from 600 to 5, still 5 two
 seconds later, and still 5 after six forced re-renders.
+
+### B1 / B19 — the two measurements that had been missing
+
+**B1's "does not open for a few seconds after closing" — timed.** Four
+consecutive open/close cycles, each measured from the Ctrl+Tab reaching main to
+the switcher's cards existing: 221ms, 261ms, 226ms, 223ms. No dead period and
+no degradation across cycles. The figures include the test harness's own
+round-trips, so the real latency is lower. Compiling the key-watch bridge, the
+one first-use cost in that path, measures 38ms — not seconds.
+
+**B19's toolbar surface — walked, not assumed.** Only the new tab field had
+been checked; the omnibox is a separate implementation:
+
+| typed | box | chip | Tab hint | placeholder |
+|---|---|---|---|---|
+| `y` | `y` | — | no | Search with Google or enter address |
+| `yt` | `yt` | — | yes | Search with Google or enter address |
+| space | *(empty)* | YouTube | no | Search YouTube |
+| `liquid glass` | `liquid glass` | YouTube | no | Search YouTube |
+| Backspace on empty | `yt` | — | yes | Search with Google or enter address |
