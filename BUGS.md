@@ -34,7 +34,7 @@ ships.
 ## Chrome / window shell
 
 ### B1 — Ctrl+Tab switcher does not commit on Ctrl release
-**Status:** 🔴 Open · **Owner:** _unclaimed_ · **Area:** `src/main/switcher-panel.js`, `src/main/shortcuts.js`, switcher page
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/switcher-panel.js`, `src/main/shortcuts.js`, switcher page
 
 Releasing Ctrl does not switch to the highlighted tab; the overlay stays up
 until it is clicked with the mouse. Pressing Tab alone while the overlay is open
@@ -42,52 +42,52 @@ causes artifacting and should not be possible at all. After the overlay closes,
 Ctrl+Tab does nothing for several seconds.
 
 ### B2 — Switcher uses the purple plastic backdrop
-**Status:** 🔴 Open · **Owner:** _unclaimed_
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 Replace with the frosted, heavily blurred liquid-glass material (see
 cross-cutting decisions).
 
 ### B3 — Application crashes on rapid Ctrl+W
-**Status:** 🔴 Open · **Owner:** _unclaimed_ · **Area:** `src/main/tabs.js`
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/tabs.js`
 
 Pressing Ctrl+W several times in quick succession crashes the whole app. Likely
 a close/destroy race against a tab record whose renderer is already gone.
 
 ### B4 — Windows does not treat Ember as a normal application window
-**Status:** 🔴 Open · **Owner:** _unclaimed_ · **Area:** `src/main/index.js`
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/index.js`
 
 Dragging to the top of the screen does not trigger the Snap bar, and
 minimise/restore from the taskbar plays no standard Windows animation.
 
 ### B5 — Top corner artifacting
-**Status:** 🔴 Open · **Owner:** _unclaimed_
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 Black 90° corners subtly stick out behind the rounded top corners, and the
 corners sometimes lose their curve entirely — reproducible after maximising and
 then restoring to a window.
 
 ### B6 — Maximise icon does not change when maximised
-**Status:** 🔴 Open · **Owner:** _unclaimed_
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 It stays a single square; when maximised it should become the two overlapping
 squares Windows uses for restore.
 
 ### B7 — White-stroke logo in the top left looks smushed
-**Status:** 🔴 Open · **Owner:** _unclaimed_ · **Area:** `src/renderer/brand.*`
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/renderer/brand.*`
 
 Replace it outright with the coloured icon, sized so its height matches the
 sidebar icon beside it; move the sidebar icon to compensate for the wider mark.
 
 ### B8 — New-tab `+` icon is not vertically centred
-**Status:** 🔴 Open · **Owner:** _unclaimed_
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 Its hover box is centred but the glyph inside is not.
 
 ### B9 — Close-tab `x` icon is not vertically centred
-**Status:** 🔴 Open · **Owner:** _unclaimed_
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 ### B10 — Overflowed tabs are unreachable
-**Status:** 🔴 Open · **Owner:** _unclaimed_ · **Area:** `src/main/tabs.js`, `src/renderer/chrome.*`
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/tabs.js`, `src/renderer/chrome.*`
 
 Tabs that overflow slide behind the rest of the tab bar (the untouched empty
 space is intentional) but there is no way to get them back. Scrolling the wheel
@@ -96,14 +96,14 @@ on a full bar must push the *left* side behind so the new tab is always fully
 visible.
 
 ### B11 — No open/close tab animation
-**Status:** 🔴 Open · **Owner:** _unclaimed_
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 New tabs should pop up from the bottom edge and closed tabs pop down, matching
 the speed and easing of neighbour tabs shuffling during reorder — and accounting
 for the leftward shift from B10 when space has run out.
 
 ### B12 — Back / forward / reload are not animated
-**Status:** 🔴 Open · **Owner:** _unclaimed_
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 Animate them, including when triggered by Alt+Left, Alt+Right and Ctrl+R.
 
@@ -112,29 +112,29 @@ Animate them, including when triggered by Alt+Left, Alt+Right and Ctrl+R.
 ## Overlays, menus and panels
 
 ### B13 — Selection conversion popup uses the purple plastic box
-**Status:** 🔴 Open · **Owner:** _unclaimed_ · **Area:** `src/main/selection-panel.js`
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/selection-panel.js`
 
 Should be the liquid-glass material, non-elastic, frosted and blurred enough
 that its own text stays readable.
 
 ### B14 — No animation when the smart selection conversion opens
-**Status:** 🔴 Open · **Owner:** _unclaimed_
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 ### B15 — File upload menu opens in the centre of the screen
-**Status:** 🔴 Open · **Owner:** _unclaimed_ · **Area:** `src/main/upload-panel.js`, `src/main/popup-positioner.js`
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/upload-panel.js`, `src/main/popup-positioner.js`
 
 It should anchor a corner to the cursor, picking the corner that keeps the panel
 inside the window, preferring top-left (opening down and to the right) when no
 edge is near or when overflowing is unavoidable.
 
 ### B16 — File upload menu glass is not readable
-**Status:** 🔴 Open · **Owner:** _unclaimed_
+**Status:** 🟡 In progress · **Owner:** Claude Code
 
 Text underneath shows through. Increase blur/frost substantially or move it to
 the search-bar liquid-glass material with tuned values.
 
 ### B17 — Hover pill corners break in right-click style menus
-**Status:** 🔴 Open · **Owner:** _unclaimed_ · **Area:** `src/main/context-menu-panel.js`, `src/renderer/pages/liquid-glass-ui.*`
+**Status:** 🟡 In progress · **Owner:** Claude Code · **Area:** `src/main/context-menu-panel.js`, `src/renderer/pages/liquid-glass-ui.*`
 
 The hover indicator's corners are not cleanly rounded into the pill; randomly
 coloured 90° angles protrude from all four corners. Affects every menu using
