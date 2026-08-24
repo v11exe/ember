@@ -22,6 +22,7 @@ change.
 ```text
 ROADMAP.md                     numbered feature source of truth + compatibility guardrails
 README.md                      product description + meaningful completed/upcoming QOL
+BUGS.md                        shared open defect/polish tracker (B# ids, claim before fixing)
 src/main/index.js              app bootstrap, BaseWindow, IPC handlers, lifecycle
 src/main/tabs.js               TabManager — lifecycle + shared shell/page view layout
 src/main/extensions.js         Chrome Web Store install + chrome.* APIs
@@ -302,7 +303,10 @@ browser's trademarks, icons, sounds, shaders or proprietary implementation.
 contains only the short product description plus meaningful Completed and
 Upcoming feature lists. Do not add installation/start/build instructions to the
 README. Keep implementation detail and compatibility contracts in the roadmap
-or this file rather than bloating the README.
+or this file rather than bloating the README. `BUGS.md` is the shared defect and
+polish tracker: claim a `B#` by setting it in-progress with your agent name
+before editing code, mark it fixed in the same change, and never renumber or
+delete an entry.
 
 **Git:** prefer `feat/...`, `fix/...`, `chore/...`, `refactor/...`. Commit format
 is `<area>: <imperative summary>`. Rebase rather than merge when working on a
