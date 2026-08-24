@@ -12,13 +12,13 @@ Detailed numbered specifications and compatibility notes live in [`ROADMAP.md`](
 - **4. Internet Archive fallback** — unreachable pages and dead HTTP responses can be opened through a user-triggered Wayback action without automatic redirects.
 - **5. Arc-style Ctrl+Tab visual switcher** — MRU tab switching with thumbnails, reverse cycling, cancel/commit behavior and sleeping-tab support.
 - **7. Instant / Favorite sidebar buttons** — a collapsible, configurable 1×1–4×7 shortcut grid with animated insert/reorder/replace drops, fixed-size favicons and persistent ordering; matching tabs are reused or woken instead of duplicated.
+- **8. Arc-style Copy Link button** — a compact address-field action copies the active page URL in one click and confirms it with unobtrusive sidebar feedback.
 - **Recent-file + clipboard upload picker** — file inputs can surface recent files and a clipboard image before falling back to the native picker.
 - **Bookmark import + nested folder navigation** — Chromium/Netscape bookmark HTML can be imported and browsed through a compact nested bookmark bar.
 
 ## Upcoming
 
 - **6. Arc-style Link Peek**
-- **8. Arc-style Copy Link button**
 - **9. Arc-style Split View**
 - **10. Follower Tabs**
 - **11. In-window floating web tabs**

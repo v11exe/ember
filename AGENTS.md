@@ -86,7 +86,8 @@ test/                          node:test contracts/integration fixtures
 - #4 Internet Archive fallback — completed.
 - #5 Arc-style Ctrl+Tab visual switcher — completed.
 - #7 Instant / Favorite sidebar buttons — completed.
-- #6 and #8–#37 — planned unless `ROADMAP.md` has subsequently been updated.
+- #8 Arc-style Copy Link button — completed.
+- #6 and #9–#37 — planned unless `ROADMAP.md` has subsequently been updated.
 - #9 Split View is **not** implemented on current main despite an older roadmap
   draft saying otherwise.
 - The recent-file/clipboard upload picker exists, but it is not the full #31
@@ -389,6 +390,12 @@ Git is the history archive.
 ## 4. Work Log
 
 Newest first. One entry per active/recent unit of work.
+
+### 2026-08-24 — Codex — Copy Link roadmap completion
+- **Status / Branch:** completed · `glass-fixing`
+- **Touches:** `ROADMAP.md`, `README.md`, `AGENTS.md`
+- **Summary:** Reconciled feature #8 with the shipped sidebar Copy Link action, bounded confirmation feedback, and active-URL fallback behavior.
+- **For the other agent:** Future Split View, Link Peek, and floating-page focus models must route Copy Link to their active page source.
 
 ### 2026-08-24 — Codex — Liquid-glass overlay restoration
 - **Status / Branch:** completed · `glass-fixing`

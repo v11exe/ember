@@ -521,9 +521,9 @@ Preserve these rules:
 ## 8. Arc-style Copy Link button
 
 **Source:** Arc  
-**Priority:** HIGH — not yet implemented
+**Priority:** HIGH
 
-**Status:** ⬜ Planned
+**Status:** ✅ Completed
 
 Add a dedicated compact Copy Link button directly around Ember's address/URL area.
 
@@ -596,6 +596,18 @@ Ctrl+Shift+C
 can invoke the same browser-level action when it does not conflict with an important existing command.
 
 The button should remain extremely small because this is intended as a constant one-click QOL action, not a major browser feature.
+
+### Completion / compatibility guardrails
+
+- The compact link icon beside the sidebar address field copies the active tab's
+  authoritative live URL without focusing or selecting the address text.
+- Successful copies show a short bounded `Link copied` confirmation beside the
+  sidebar, never a disruptive toast over the webpage, and the button retains
+  hover/press feedback.
+- Internal and sleeping tabs fall back to their stored current URL when no live
+  renderer URL is available.
+- Split View (#9), Link Peek (#6), and floating pages (#11) must route this action
+  through whichever page source their future focus model defines as active.
 
 ---
 
@@ -1434,7 +1446,7 @@ It should feel like temporarily drawing directly on the webpage rather than laun
 5. Ctrl+Tab visual switcher ✅
 6. Link Peek
 7. Instant/Favorite sidebar buttons
-8. Copy Link
+8. Copy Link ✅
 9. Split View
 10. Follower Tabs
 11. In-window floating webpages
