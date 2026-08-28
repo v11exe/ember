@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "oracleCommit": "9ae3217b20f72bc05a9ce1b11d9d84ce544c746d",
+  "electronVersion": "43.4.1",
+  "capturedOn": "2026-08-27",
+  "source": "scripts/capture-ui.js",
+  "environment": {
+    "platform": "Windows 11 x64",
+    "EMBER_CAPTURE_OFFLINE": "1",
+    "deterministicBackdrops": true
+  },
+  "geometry": {
+    "shell": {
+      "topHeight": 32,
+      "sidebarWidth": 168,
+      "pageInset": 8,
+      "pageRadius": 12
+    },
+    "wide": {
+      "viewport": [1570, 796],
+      "page": [168, 32, 1562, 788]
+    },
+    "medium": {
+      "viewport": [900, 556],
+      "page": [168, 32, 892, 548]
+    },
+    "compact": {
+      "viewport": [620, 336],
+      "page": [168, 32, 612, 328]
+    },
+    "sidebar": {
+      "address": [9, 34, 159, 67],
+      "favoritesOrigin": [9, 77]
+    }
+  },
+  "scenarios": {
+    "shell": [
+      "chrome-wide.png",
+      "chrome-medium.png",
+      "chrome-compact.png"
+    ],
+    "newTab": [
+      "newtab-wide.png",
+      "newtab-medium.png",
+      "newtab-compact.png",
+      "newtab-chip.png"
+    ],
+    "sidebar": [
+      "sidebar-address.png",
+      "sidebar-address-focused.png",
+      "copy-toast.png"
+    ],
+    "omnibox": [
+      "omnibox-hint.png",
+      "omnibox-engaged.png"
+    ],
+    "upload": [
+      "upload-compact.png",
+      "upload-contrast.png",
+      "upload-colour.png",
+      "upload-photo.png",
+      "upload-hover.png"
+    ],
+    "conversion": [
+      "conversion-dark.png",
+      "conversion-light.png",
+      "conversion-photo.png",
+      "conversion-copy-hover.png",
+      "conversion-copy-pressed.png"
+    ],
+    "switcher": [
+      "switcher-glass.png"
+    ],
+    "contextMenu": [
+      "context-grid-rest.png",
+      "context-grid-first.png",
+      "context-grid-middle.png",
+      "context-grid-bottom.png",
+      "context-saturated.png",
+      "context-type-contrast.png",
+      "context-photo.png"
+    ]
+  },
+  "notes": [
+    "Scenario names ending in -photo use the deterministic grid fallback in this offline reference set.",
+    "upload-wide.png was not promoted because the first transparent offscreen overlay frame was blank; the five retained upload states cover the component at 596x312 and 650x430."
+  ]
+}

@@ -5,7 +5,15 @@
   "scripts": {
     "start": "electron .",
     "smoke": "node scripts/smoke.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "chromium:baseline": "node chromium/tools/port.js baseline",
+    "chromium:verify-upstreams": "node chromium/tools/port.js verify-upstreams",
+    "chromium:doctor": "node chromium/tools/port.js doctor",
+    "chromium:prepare": "node chromium/tools/port.js prepare",
+    "chromium:verify-patches": "node chromium/tools/port.js verify-patches",
+    "chromium:build": "node chromium/tools/port.js build",
+    "chromium:package": "node chromium/tools/port.js package",
+    "chromium:run": "node chromium/tools/port.js run"
   },
   "license": "GPL-3.0",
   "type": "commonjs",

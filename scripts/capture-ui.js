@@ -25,17 +25,27 @@ async function screenshot(win, file) {
   console.log(`[capture] paint ${file}`)
   const image = await new Promise((resolve, reject) => {
     let latest = null
+    let settleTimer = null
+    let timeoutTimer = null
+    const finish = (error) => {
+      clearTimeout(settleTimer)
+      clearTimeout(timeoutTimer)
+      win.webContents.off('paint', onPaint)
+      if (error) reject(error)
+      else resolve(latest)
+    }
     const onPaint = (_event, _dirty, next) => {
       if (next.isEmpty()) return
       latest = next
+      clearTimeout(settleTimer)
+      // Offscreen windows are created and destroyed in quick succession. A
+      // short settling window keeps the final composite and gives Chromium's
+      // next renderer enough time to acquire an offscreen surface.
+      settleTimer = setTimeout(() => finish(null), 300)
     }
     win.webContents.on('paint', onPaint)
     win.webContents.invalidate()
-    setTimeout(() => {
-      win.webContents.off('paint', onPaint)
-      if (latest) resolve(latest)
-      else reject(new Error(`paint timed out: ${file}`))
-    }, 300)
+    timeoutTimer = setTimeout(() => finish(new Error(`paint timed out: ${file}`)), 3000)
   })
   console.log(`[capture] write ${file}`)
   await fs.writeFile(path.join(output, file), image.toPNG())
@@ -417,6 +427,7 @@ function typeContrastBackdrop(width, height) {
 }
 
 async function photographicBackdrop(width, height) {
+  if (process.env.EMBER_CAPTURE_OFFLINE === '1') return gridBackdrop(width, height)
   try {
     const response = await fetch('https://images.unsplash.com/photo-1706720094773-d91e070e4b90?auto=format&fit=crop&w=900&q=85')
     if (!response.ok) throw new Error(`photo returned ${response.status}`)

@@ -6,6 +6,8 @@ changing code.
 
 **Repo:** `v11exe/ember` · default branch `main` · Windows development machines.  
 **Stack:** Electron `^43.4.1`, CommonJS JavaScript, no build step.  
+**Native port target:** external pinned Chromium checkout + Ember patch/resource
+overlay; Electron remains the oracle during the port.
 **Gates:** `npm start`, `npm test`, `npm run smoke`.
 
 `ROADMAP.md` is the authoritative numbered feature specification. `README.md`
@@ -22,6 +24,11 @@ change.
 ```text
 ROADMAP.md                     numbered feature source of truth + compatibility guardrails
 README.md                      product description + meaningful completed/upcoming QOL
+CHROMIUM_PORT_STATUS.md        mutable native-port parity/build ledger
+chromium/baseline.json         immutable oracle/upstream revision pins
+chromium/{patches,tools}/      Ember Chromium patch stack + external-checkout CLI
+chromium/research/             pinned-upstream architecture and ABI handoff notes
+chromium/reference/electron/   deterministic Electron visual oracle by commit
 BUGS.md                        shared open defect/polish tracker (B# ids, claim before fixing)
 src/main/index.js              app bootstrap, BaseWindow, IPC handlers, lifecycle
 src/main/tabs.js               TabManager — lifecycle + shared shell/page view layout
@@ -290,6 +297,53 @@ Not yet established unless the repo later proves otherwise: TypeScript config,
 linter, CI, CODEOWNERS, branch protection, `electron-updater`, find bar, or
 `ember://extensions` as a normal tab.
 
+### Native Chromium port contract
+
+- All native-port work stays on `chromium-port` until the user explicitly
+  changes that decision. Never merge it to `main` or delete the Electron app as
+  an incidental cleanup.
+- The Electron decisions and gotchas above describe the parity oracle. The final
+  port must reimplement their user-visible and lifecycle outcomes in Chromium
+  C++/Views/browser systems; it must not ship Electron, an Electron launcher, or
+  an Electron-API compatibility shim.
+- `chromium/baseline.json` is the immutable revision authority for a port
+  baseline. Pin Chromium, the Windows build configuration, its common
+  submodule, the Helium research references, and the exact Ember oracle commit.
+  Never silently track an upstream branch or mix revisions.
+- Chromium source, toolchains, downloads, profiles, and build output live in a
+  short external work root. Do not vendor a full Chromium tree or generated
+  configuration checkout. Source-controlled changes belong in the ordered
+  `chromium/patches/series` stack or a small reviewed resource overlay.
+- The external configuration is generated state. `chromium/tools/port.js`
+  preparation must remain deterministic, idempotent, pinned, path-safe, and
+  unwilling to overwrite foreign edits. Preserve upstream license files and
+  record borrowed architecture/compatible source rather than copying blindly.
+- Windows is the first supported platform. Use a normal HWND and native
+  Chromium window plumbing so DWM corners, real caption hit testing, Snap and
+  Snap Layouts, DPI changes, multi-monitor bounds, minimise/restore animation,
+  accessibility, and input/focus behavior remain OS-native.
+- Use Chromium's real `Profile`, `Browser`, `TabStripModel`, navigation,
+  download, permission, sandbox/site-isolation, and extension systems. Real
+  WebExtensions/Web Store flows and profile/private isolation replace the
+  Electron extension/session emulation; do not weaken Chromium security to
+  simplify parity.
+- Preserve the existing current-main feature set exactly before adding planned
+  roadmap work. `ROADMAP.md` items still marked planned are out of scope for the
+  port. Hibernation and every completed-feature compatibility guardrail remain
+  binding.
+- Every vertical slice needs compile/runtime evidence where the host permits,
+  focused native tests, regression coverage for affected Electron contracts,
+  and visual/interaction comparison against
+  `chromium/reference/electron/<oracle>/`. A screenshot alone never proves
+  focus, lifecycle, security, extensions, accessibility, or Windows behavior.
+- Update `CHROMIUM_PORT_STATUS.md` after every meaningful slice with exact
+  commands/results, parity states, known blockers, and the next executable task.
+  Do not mark an unbuilt or manually unverified subsystem complete.
+- Never change a Windows COM interface or type-library ID only in install-mode
+  metadata. Update the owning IDL and regenerate all persisted x86, x64 and
+  arm64 MIDL outputs (including binary type libraries) in the same slice, then
+  compile and test registration, activation, upgrade and coexistence behavior.
+
 ---
 
 ## 1. Roadmap feature protocol — mandatory
@@ -414,6 +468,12 @@ Git is the history archive.
 ## 4. Work Log
 
 Newest first. One entry per active/recent unit of work.
+
+### 2026-08-28 — Codex — Native Chromium baseline
+- **Status / Branch:** in-progress · `chromium-port`
+- **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`, `package.json`, `scripts/capture-ui.js`, `test/chromium-port.test.js`, `chromium/`
+- **Summary:** Established the external-checkout Chromium fork architecture, pinned Windows baseline, deterministic Electron visual oracle, safe build/patch tooling, and the first two source-level identity/security patches while retaining Electron Ember as the parity oracle.
+- **For the other agent:** Keep port work on `chromium-port`. COM interface/type-library identity remains intentionally shared until IDL and all persisted MIDL outputs can be regenerated and runtime-tested together.
 
 ### 2026-08-24 — Codex — Copy Link roadmap completion
 - **Status / Branch:** completed · `glass-fixing`

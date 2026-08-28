@@ -4,3 +4,6 @@
 *.png binary
 *.jpg binary
 *.ico binary
+# Unified-diff context lines representing a blank source line contain one
+# required leading space. Keep other whitespace checks active for patch files.
+*.patch whitespace=-blank-at-eol,-blank-at-eof
