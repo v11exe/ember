@@ -116,9 +116,31 @@ Completed on this host:
   projects, downloaded the pinned PGO/LLVM/Rust inputs, applied 109 common plus
   23 Windows upstream patches and both Ember patches, completed domain
   substitution, and generated a 31,404-target Ninja graph from 4,791 GN files.
-- `port.js build --work-root C:\src\ember-chromium --jobs 18 --resume` — active;
-  Ninja is compiling 57,877 actions with no error so far. This is progress
-  evidence, not a completed binary/build claim.
+- First `port.js build --work-root C:\src\ember-chromium --jobs 18 --resume`
+  Ninja window — reached the upstream CI timeout after the full 3.5 hours
+  (`15:08:21`–`18:38:18` BST). No failed compiler action was reported. The
+  durable `.ninja_log` contains 86,159 completion records and its latest outputs
+  are Blink modules/V8 bindings. `chrome.exe`, `chromedriver.exe`, and
+  `mini_installer.exe` are not linked yet, so this is progress evidence rather
+  than a completed build claim.
+
+## Live native build checkpoint
+
+Last recorded: 2026-08-28 23:14 BST.
+
+- **State:** second verified Ninja window active since 23:11 BST. Ninja reported
+  21,241 remaining actions after loading the existing graph, proving the first
+  window completed 36,636 / 57,877 actions (63.3%).
+- **Source:** exact pinned Chromium `a96602f...`; 109 common, 23 Windows, and two
+  Ember patches remain applied.
+- **Generated graph:** 57,877 actions from 31,404 GN targets / 4,791 files.
+- **Latest durable outputs:** Blink modules/V8 binding objects at the end of the
+  first 12,597,493 ms Ninja log window; the second window has resumed from those
+  outputs and has already linked `proto_extras_plugin.exe` and
+  `country_native_names_generator.exe`.
+- **Final artifacts:** not present yet. Do not mark packaging/runtime complete.
+- **Recovery rule:** rerun the documented `--resume` command; never repeat
+  acquisition, unpacking, patching, substitution, or completed object work.
 
 ## Current Windows build-host audit
 
