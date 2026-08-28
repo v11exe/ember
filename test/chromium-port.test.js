@@ -21,6 +21,10 @@ test('native port baseline locks the Electron oracle and every upstream revision
   );
   assert.match(baseline.researchReferences.heliumWindows.commit, /^[0-9a-f]{40}$/);
   assert.match(baseline.researchReferences.heliumCore.commit, /^[0-9a-f]{40}$/);
+  assert.equal(baseline.windowsRequirements.visualStudioMajorVersion, 18);
+  assert.equal(baseline.windowsRequirements.minimumPreparedBuildFreeDiskGiB, 60);
+  assert.equal(baseline.windowsRequirements.minimumWindowsSdkFileVersion, '10.0.26100.7705');
+  assert.equal(baseline.windowsRequirements.minimumDebuggingToolsVersion, '10.0.26100.3323');
 });
 
 test('annotated remote tags resolve to their peeled commit and lightweight tags resolve directly', () => {
@@ -79,6 +83,67 @@ test('dependent patches verify sequentially in scratch without changing their so
 
     assert.deepEqual(port.applyPatchSequenceInScratch(sourceRoot, [first, second]), ['value.txt']);
     assert.equal(fs.readFileSync(path.join(sourceRoot, 'value.txt'), 'utf8'), 'alpha\n');
+  } finally {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test('prepared build verification reverses dependent patches in isolated scratch state', () => {
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ember-applied-patch-fixture-'));
+  try {
+    const sourceRoot = path.join(fixtureRoot, 'source');
+    const patchesRoot = path.join(fixtureRoot, 'patches');
+    fs.mkdirSync(sourceRoot);
+    fs.mkdirSync(patchesRoot);
+    fs.writeFileSync(path.join(sourceRoot, 'value.txt'), 'gamma\n');
+    const first = path.join(patchesRoot, 'first.patch');
+    const second = path.join(patchesRoot, 'second.patch');
+    fs.writeFileSync(first, [
+      'diff --git a/value.txt b/value.txt',
+      '--- a/value.txt',
+      '+++ b/value.txt',
+      '@@ -1 +1 @@',
+      '-alpha',
+      '+beta',
+      '',
+    ].join('\n'));
+    fs.writeFileSync(second, [
+      'diff --git a/value.txt b/value.txt',
+      '--- a/value.txt',
+      '+++ b/value.txt',
+      '@@ -1 +1 @@',
+      '-beta',
+      '+gamma',
+      '',
+    ].join('\n'));
+
+    assert.deepEqual(
+      port.verifyAppliedPatchSequenceInScratch(sourceRoot, [first, second]),
+      ['value.txt'],
+    );
+    assert.equal(fs.readFileSync(path.join(sourceRoot, 'value.txt'), 'utf8'), 'gamma\n');
+  } finally {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test('resume repairs a partial GN bootstrap without discarding generated build files', () => {
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ember-gn-resume-fixture-'));
+  try {
+    const outputRoot = path.join(fixtureRoot, 'out', 'Default');
+    fs.mkdirSync(outputRoot, { recursive: true });
+    const gnExecutable = path.join(outputRoot, 'gn.exe');
+    const buildNinja = path.join(outputRoot, 'build.ninja');
+    fs.writeFileSync(gnExecutable, 'partial');
+
+    assert.equal(port.repairPartialResumeArtifacts({ outputRoot }), true);
+    assert.equal(fs.existsSync(gnExecutable), false);
+
+    fs.writeFileSync(gnExecutable, 'complete');
+    fs.writeFileSync(buildNinja, 'generated');
+    assert.equal(port.repairPartialResumeArtifacts({ outputRoot }), false);
+    assert.equal(fs.readFileSync(gnExecutable, 'utf8'), 'complete');
+    assert.equal(fs.readFileSync(buildNinja, 'utf8'), 'generated');
   } finally {
     fs.rmSync(fixtureRoot, { recursive: true, force: true });
   }
@@ -175,6 +240,7 @@ test('only generated overlay files are accepted in the managed configuration che
     '?? patches/ember/identity.patch',
     '?? patches/ember/unlisted.patch',
     '?? .ember-port.json',
+    '?? .gcs_entries',
     ' M flags.windows.gn',
   ].join('\n');
   const dirty = port.parseDirtyPaths(status);
@@ -184,27 +250,32 @@ test('only generated overlay files are accepted in the managed configuration che
     'patches/ember/identity.patch',
     'patches/ember/unlisted.patch',
     '.ember-port.json',
+    '.gcs_entries',
     'flags.windows.gn',
   ]);
   assert.equal(port.isManagedConfigurationPath(dirty[0], entries), true);
   assert.equal(port.isManagedConfigurationPath(dirty[1], entries), true);
   assert.equal(port.isManagedConfigurationPath(dirty[2], entries), false);
   assert.equal(port.isManagedConfigurationPath(dirty[3], entries), true);
-  assert.equal(port.isManagedConfigurationPath(dirty[4], entries), false);
+  assert.equal(port.isManagedConfigurationPath(dirty[4], entries), true);
+  assert.equal(port.isManagedConfigurationPath(dirty[5], entries), false);
 });
 
 test('captured porcelain output keeps its leading Git status column', () => {
   assert.equal(port.normalizeCapturedOutput(' M patches/series\r\n'), ' M patches/series');
 });
 
-test('CLI parsing keeps build arguments behind an explicit separator', () => {
+test('CLI parsing keeps build arguments behind an explicit separator and supports verified resume', () => {
   assert.deepEqual(
-    port.parseCli(['build', '--work-root', 'D:\\ember-chromium', '--jobs', '12', '--', '--tarball']),
+    port.parseCli([
+      'build', '--work-root', 'D:\\ember-chromium', '--jobs', '12', '--resume', '--', '--tarball',
+    ]),
     {
       command: 'build',
       options: {
         workRoot: 'D:\\ember-chromium',
         jobs: 12,
+        resume: true,
         passthrough: ['--tarball'],
       },
     },
@@ -213,7 +284,22 @@ test('CLI parsing keeps build arguments behind an explicit separator', () => {
   assert.throws(() => port.parseCli(['prepare', '--unknown']), /Unknown option/);
 });
 
+test('the generated Windows python3 launcher bypasses broken Store aliases', () => {
+  assert.equal(
+    port.windowsPythonShim('C:\\Program Files\\Python312\\python.exe'),
+    '@echo off\r\n"C:\\Program Files\\Python312\\python.exe" %*\r\n',
+  );
+  assert.throws(() => port.windowsPythonShim('bad\npath'), /invalid executable path/);
+});
+
+test('the Chromium Visual Studio override uses the pinned product line', () => {
+  assert.equal(port.visualStudioInstallVariable('2026'), 'vs2026_install');
+  assert.throws(() => port.visualStudioInstallVariable('latest'), /Invalid Visual Studio/);
+});
+
 test('version comparison accepts patch differences while enforcing the minimum minor', () => {
+  assert.deepEqual(port.parseVersionTuple('10.0.26100.7705 (WinBuild)'), [10, 0, 26100, 7705]);
+  assert.equal(port.versionAtLeast([10, 0, 26100, 7705], [10, 0, 26100, 3323]), true);
   assert.equal(port.versionAtLeast([3, 12, 1], [3, 11]), true);
   assert.equal(port.versionAtLeast([3, 11], [3, 11]), true);
   assert.equal(port.versionAtLeast([3, 10, 9], [3, 11]), false);

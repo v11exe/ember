@@ -35,8 +35,13 @@
     "architecture": "x64",
     "minimumMemoryGiB": 16,
     "minimumFreeDiskGiB": 100,
+    "minimumPreparedBuildFreeDiskGiB": 60,
     "minimumPython": "3.11",
     "httplib2": "0.22.0",
-    "windowsSdk": "10.0.26100.0"
+    "visualStudioProductLine": "2026",
+    "visualStudioMajorVersion": 18,
+    "windowsSdk": "10.0.26100.0",
+    "minimumWindowsSdkFileVersion": "10.0.26100.7705",
+    "minimumDebuggingToolsVersion": "10.0.26100.3323"
   }
 }

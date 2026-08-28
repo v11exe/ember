@@ -49,7 +49,7 @@ follow an upstream branch.
 
 | Subsystem | State | Current evidence / remaining work |
 | --- | --- | --- |
-| Reproducible source and build architecture | **Partial** | Exact external configuration/common commits prepared twice successfully; full Chromium acquisition/build has not run. |
+| Reproducible source and build architecture | **Partial** | Exact external configuration/common commits prepared twice successfully. Full source/dependency acquisition, upstream/Ember patching, substitution, and GN generation have completed; the first pinned native build is compiling. |
 | Product and Windows installer identity | **Partial** | Two ordered patches apply to a pristine nine-file scratch tree at the exact Chromium commit. Ember owns the product GUID, integration names, toast/elevator/tracing class CLSIDs and sandbox SID family. Chromium interface/type-library IDs intentionally remain unchanged until IDL plus all checked-in x86/x64/arm64 MIDL outputs can be regenerated together. No compiled binary, icon audit, executable rename, About page, installer, registry, toast, COM activation, upgrade or coexistence test yet. |
 | Native Windows top-level window | **Not started** | Must use a normal HWND/DWM path with native caption hit testing, Snap Layouts, rounded corners, minimise/restore animation, DPI changes, and multi-monitor behavior. |
 | Native C++/Views shell | **Not started** | Must reproduce the accepted 32 px top shell, 168 px sidebar, 8 px page inset, 12 px page radius, bounded material, tab strip, navigation controls, and caption reservation without renderer-hosted Electron chrome. |
@@ -86,7 +86,7 @@ pixels and geometry are under `chromium/reference/electron/9ae3217/`.
 
 Completed on this host:
 
-- `node --test test/chromium-port.test.js` — 14/14 focused contracts pass.
+- `node --test test/chromium-port.test.js` — 18/18 focused contracts pass.
 - `git diff --check` in the exact Chromium sparse checkout — pass.
 - `port.js verify-patches` — both Ember patches apply sequentially in an
   isolated nine-file scratch tree based on exact Chromium commit `a96602f...`;
@@ -99,32 +99,48 @@ Completed on this host:
 - `EMBER_CAPTURE_OFFLINE=1 electron scripts/capture-ui.js ...` — pass with 31
   raw PNGs; 30 nonblank/promoted scenarios are checked in and validated.
 
-- `npm test` — 396/396 pass after the final two-patch and ABI-guard changes.
-- `npm run smoke` — pass. It explicitly skipped three frame-dependent assertions
-  because this host produces no capturable runtime frames; every runnable check
-  completed.
+- `npm test` — 400/400 pass with the build-resume/toolchain contracts included.
+- `npm run smoke` — pass on the required retry. One concurrent-build run failed
+  when its active page renderer disappeared during the probe; the immediate
+  clean-profile rerun passed and explicitly skipped the same three
+  frame-dependent assertions because this host produces no capturable runtime
+  frames. Keep the first result as a flake signal; it is not attributed to these
+  Chromium-tooling-only changes.
 - `npm start` — live application launch confirmed, then stopped deliberately
   with Ctrl+C. A persisted third-party extension logged its pre-existing
   unsupported `chrome.tabs.onRemoved` service-worker error; Ember itself
   launched.
-- `port.js build --work-root C:\src\ember-chromium --jobs 1` — stopped by the
-  doctor before source acquisition, as designed, because required host checks
-  remain incomplete.
+- `port.js doctor --work-root C:\src\ember-chromium` — 12/12 exact host checks
+  pass after installing VS 2026 C++/ATL/MFC and the SDK Debugging Tools.
+- The first full build acquired 504,294 source objects, synced all 155 gclient
+  projects, downloaded the pinned PGO/LLVM/Rust inputs, applied 109 common plus
+  23 Windows upstream patches and both Ember patches, completed domain
+  substitution, and generated a 31,404-target Ninja graph from 4,791 GN files.
+- `port.js build --work-root C:\src\ember-chromium --jobs 18 --resume` — active;
+  Ninja is compiling 57,877 actions with no error so far. This is progress
+  evidence, not a completed binary/build claim.
 
 ## Current Windows build-host audit
 
 `node chromium/tools/port.js doctor --work-root C:\src\ember-chromium` currently
-passes 10 of 12 required checks:
+passes all 12 required checks:
 
-- Pass: Windows x64, 31.9 GiB RAM, safe short external root, Git 2.42, Python
-  3.12.1 with user-installed `httplib2==0.22.0`, 7-Zip, Visual Studio 2022 Build
-  Tools with C++, Windows SDK 10.0.26100.0, and long paths enabled.
-- Fail: 80.6 GiB free on C: versus the 100 GiB floor, and SDK Debugging Tools
-  (`dbghelp.dll`) missing.
+- Windows x64 with 31.9 GiB RAM and a safe short external work root.
+- 104.0 GiB free during the latest audit versus the 100 GiB acquisition floor;
+  verified prepared builds may resume above the separate 60 GiB floor.
+- Git 2.42, Python 3.12.1 with `httplib2==0.22.0`, 7-Zip, and long paths.
+- Visual Studio Build Tools 2026 18.9.1 with the core x86/x64 C++ tools and
+  ATL/MFC.
+- Windows SDK directory 10.0.26100.0 with file version 10.0.26100.8249 and x64
+  SDK Debugging Tools `dbghelp.dll` version 10.0.26100.7705.
 
-The native build has not been started while those required checks fail. This is
-an environmental blocker to compiled-runtime evidence, not evidence that the
-port is complete.
+Initial acquisition retains the 100 GiB floor. A prepared build may use
+`--resume`: the tool verifies the pinned source commit and that both Ember
+patches reverse cleanly in an isolated scratch tree, repairs only an incomplete
+GN bootstrap, and retains the source and incremental objects. A child-only
+`python3.bat` shim avoids the broken Windows Store alias, while the verified
+Build Tools path is supplied through `vs2026_install` because this host installed
+it under Program Files (x86).
 
 COM coexistence remains a source-level blocker even after the host is ready:
 Ember-specific interface and type-library IDs require coordinated edits to both
@@ -135,9 +151,9 @@ so this baseline deliberately changes only class CLSIDs.
 
 ## Next vertical slice
 
-1. Satisfy all doctor checks on a drive with at least 100 GiB free and rerun the
-   pinned prepare/build without bypassing the preflight.
-2. Produce and fingerprint the first Windows `chrome.exe`/package; verify visible
+1. Finish the active pinned Ninja build and fingerprint the first Windows
+   `chrome.exe`, `chromedriver.exe`, `mini_installer.exe`, and package.
+2. Launch the native binary with an isolated profile; verify visible
    Ember identity, profile paths, installer registry keys, protocol registration,
    process tree, sandbox, and startup/shutdown behavior.
 3. Close remaining identity gaps (icons/resources, executable/install artifacts,

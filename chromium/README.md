@@ -59,6 +59,25 @@ npm run chromium:package -- --work-root D:\src\ember-chromium
 npm run chromium:run -- --work-root D:\src\ember-chromium --url https://example.com
 ```
 
+If acquisition and patching completed but GN or Ninja stopped, resume the same
+verified checkout instead of repeating the download and patch stages:
+
+```powershell
+npm run chromium:build -- --work-root D:\src\ember-chromium --jobs 18 --resume
+```
+
+Resume mode verifies the pinned source commit, proves the already-applied Ember
+patch postimages in an isolated scratch tree, applies the lower prepared-build
+free-space floor from `baseline.json`, and repairs the narrow case where GN
+exists but `build.ninja` was never generated. It then enters the upstream CI
+path, which retains the existing source and incremental object files.
+
+On Windows the tool also creates an external `python3.bat` launcher for the
+interpreter that passed the doctor. This prevents depot_tools from accidentally
+resolving the disabled Microsoft Store `python3.exe` alias. The verified Visual
+Studio install is passed to Chromium through its product-line-specific
+environment variable; no machine-global environment variables are changed.
+
 Arguments after a second `--` are passed to the upstream Python script. For
 example, `... chromium:build -- --work-root D:\src\ember-chromium -- --tarball`
 uses its tarball acquisition path.

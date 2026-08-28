@@ -119,7 +119,7 @@ function tryCommand(command, args) {
 }
 
 function parseVersionTuple(text) {
-  const match = String(text).match(/(\d+)\.(\d+)(?:\.(\d+))?/);
+  const match = String(text).match(/(\d+)\.(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
   return match ? match.slice(1).map((part) => Number(part || 0)) : null;
 }
 
@@ -182,6 +182,42 @@ function findPython() {
   return null;
 }
 
+function windowsPythonShim(executable) {
+  if (!executable || /[\r\n]/.test(executable)) {
+    throw new Error('Cannot create the Windows python3 shim for an invalid executable path.');
+  }
+  return `@echo off\r\n"${executable}" %*\r\n`;
+}
+
+function visualStudioInstallVariable(productLine) {
+  if (!/^\d{4}$/.test(String(productLine))) {
+    throw new Error(`Invalid Visual Studio product line: ${productLine}`);
+  }
+  return `vs${productLine}_install`;
+}
+
+function buildPythonEnvironment(paths, python) {
+  if (process.platform !== 'win32') return process.env;
+  const executable = runCaptured(python.command, [
+    ...python.prefix,
+    '-c',
+    'import sys; print(sys.executable)',
+  ]);
+  const shimRoot = path.join(paths.workRoot, '.ember-tools');
+  fs.mkdirSync(shimRoot, { recursive: true });
+  fs.writeFileSync(path.join(shimRoot, 'python3.bat'), windowsPythonShim(executable));
+  const env = {
+    ...process.env,
+    PATH: `${shimRoot}${path.delimiter}${process.env.PATH || ''}`,
+  };
+  const requirements = readBaseline().windowsRequirements;
+  const visualStudio = findVisualStudio(requirements.visualStudioMajorVersion);
+  if (visualStudio) {
+    env[visualStudioInstallVariable(requirements.visualStudioProductLine)] = visualStudio;
+  }
+  return env;
+}
+
 function registryValue(key, name) {
   const output = tryCommand('reg.exe', ['query', key, '/v', name]);
   if (!output) return null;
@@ -214,7 +250,24 @@ function hasMsvcTools(installationPath) {
   }
 }
 
-function findVisualStudio() {
+function hasAtlMfc(installationPath) {
+  const toolsRoot = path.join(installationPath, 'VC', 'Tools', 'MSVC');
+  try {
+    return fs.readdirSync(toolsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .some((entry) => fs.existsSync(path.join(
+        toolsRoot,
+        entry.name,
+        'atlmfc',
+        'include',
+        'atlbase.h',
+      )));
+  } catch {
+    return false;
+  }
+}
+
+function findVisualStudio(requiredMajorVersion) {
   const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
   const vswhereCandidates = [
     'vswhere.exe',
@@ -225,25 +278,40 @@ function findVisualStudio() {
       '-latest',
       '-products',
       '*',
+      '-version',
+      `[${requiredMajorVersion}.0,${requiredMajorVersion + 1}.0)`,
       '-requires',
       'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
+      'Microsoft.VisualStudio.Component.VC.ATLMFC',
       '-property',
       'installationPath',
     ]);
-    if (installationPath && hasMsvcTools(installationPath)) return installationPath.trim();
+    if (installationPath
+      && hasMsvcTools(installationPath)
+      && hasAtlMfc(installationPath)) return installationPath.trim();
   }
 
   const candidates = [
     process.env.vs2026_install,
-    process.env.vs2022_install,
     'C:\\Program Files\\Microsoft Visual Studio\\18\\Community',
     'C:\\Program Files\\Microsoft Visual Studio\\18\\BuildTools',
+    'C:\\Program Files (x86)\\Microsoft Visual Studio\\18\\Community',
+    'C:\\Program Files (x86)\\Microsoft Visual Studio\\18\\BuildTools',
     'C:\\Program Files\\Microsoft Visual Studio\\2026\\Community',
     'C:\\Program Files\\Microsoft Visual Studio\\2026\\BuildTools',
-    'C:\\Program Files\\Microsoft Visual Studio\\2022\\Community',
-    'C:\\Program Files\\Microsoft Visual Studio\\2022\\BuildTools',
   ].filter(Boolean);
-  return candidates.find(hasMsvcTools) || null;
+  return candidates.find((candidate) => hasMsvcTools(candidate) && hasAtlMfc(candidate)) || null;
+}
+
+function windowsFileProductVersion(filePath) {
+  if (!fs.existsSync(filePath)) return null;
+  const escaped = filePath.replaceAll("'", "''");
+  return tryCommand('powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    `(Get-Item -LiteralPath '${escaped}').VersionInfo.ProductVersion`,
+  ]);
 }
 
 function nearestExistingPath(candidate) {
@@ -263,9 +331,11 @@ function freeDiskGiB(candidate) {
   return Number(stats.bavail) * Number(stats.bsize) / GIB;
 }
 
-function collectDoctorFindings(workRootValue = DEFAULT_WORK_ROOT) {
+function collectDoctorFindings(workRootValue = DEFAULT_WORK_ROOT, options = {}) {
   const baseline = readBaseline();
   const requirements = baseline.windowsRequirements;
+  const minimumFreeDiskGiB = options.minimumFreeDiskGiB
+    ?? requirements.minimumFreeDiskGiB;
   const findings = [];
   const add = (id, label, ok, details) => findings.push({ id, label, ok, details });
 
@@ -286,10 +356,11 @@ function collectDoctorFindings(workRootValue = DEFAULT_WORK_ROOT) {
   if (workRoot) {
     try {
       const freeGiB = freeDiskGiB(workRoot);
-      add('disk', 'Free disk space', freeGiB !== null && freeGiB >= requirements.minimumFreeDiskGiB,
+      add('disk', options.preparedBuild ? 'Free disk space (prepared build)' : 'Free disk space',
+        freeGiB !== null && freeGiB >= minimumFreeDiskGiB,
         freeGiB === null
           ? 'unable to determine free space'
-          : `${freeGiB.toFixed(1)} GiB; ${requirements.minimumFreeDiskGiB} GiB required`);
+          : `${freeGiB.toFixed(1)} GiB; ${minimumFreeDiskGiB} GiB required`);
     } catch (error) {
       add('disk', 'Free disk space', false, error.message);
     }
@@ -317,18 +388,28 @@ function collectDoctorFindings(workRootValue = DEFAULT_WORK_ROOT) {
   const sevenZip = findSevenZip();
   add('7zip', '7-Zip', Boolean(sevenZip), sevenZip ? sevenZip.command : '7z.exe not found');
 
-  const visualStudio = findVisualStudio();
-  add('visual-studio', 'Visual Studio C++', Boolean(visualStudio),
-    visualStudio || 'Visual Studio with the Desktop development with C++ workload not found');
+  const visualStudio = findVisualStudio(requirements.visualStudioMajorVersion);
+  add('visual-studio', `Visual Studio ${requirements.visualStudioProductLine} C++`,
+    Boolean(visualStudio), visualStudio
+      || `Visual Studio ${requirements.visualStudioProductLine} with C++, ATL and MFC not found`);
 
   const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
   const sdkRoot = process.env.WindowsSdkDir || path.join(programFilesX86, 'Windows Kits', '10');
   const sdkInclude = path.join(sdkRoot, 'Include', requirements.windowsSdk, 'um', 'Windows.h');
   const sdkRc = path.join(sdkRoot, 'bin', requirements.windowsSdk, 'x64', 'rc.exe');
-  add('windows-sdk', 'Windows SDK', fs.existsSync(sdkInclude) && fs.existsSync(sdkRc),
-    `${requirements.windowsSdk} at ${sdkRoot}`);
+  const sdkFileVersion = windowsFileProductVersion(sdkRc);
+  const sdkVersion = sdkFileVersion && parseVersionTuple(sdkFileVersion);
+  const minimumSdkVersion = parseVersionTuple(requirements.minimumWindowsSdkFileVersion);
+  add('windows-sdk', 'Windows SDK', fs.existsSync(sdkInclude)
+    && Boolean(sdkVersion && versionAtLeast(sdkVersion, minimumSdkVersion)),
+  `${sdkFileVersion || 'missing'} files in ${requirements.windowsSdk} at ${sdkRoot}`);
   const debugHelp = path.join(sdkRoot, 'Debuggers', 'x64', 'dbghelp.dll');
-  add('debugging-tools', 'SDK Debugging Tools', fs.existsSync(debugHelp), debugHelp);
+  const debuggingToolsVersion = windowsFileProductVersion(debugHelp);
+  const debuggingVersion = debuggingToolsVersion && parseVersionTuple(debuggingToolsVersion);
+  const minimumDebuggingVersion = parseVersionTuple(requirements.minimumDebuggingToolsVersion);
+  add('debugging-tools', 'SDK Debugging Tools', Boolean(debuggingVersion
+    && versionAtLeast(debuggingVersion, minimumDebuggingVersion)),
+  `${debuggingToolsVersion || 'missing'} at ${debugHelp}`);
 
   const longPaths = registryValue(
     'HKLM\\SYSTEM\\CurrentControlSet\\Control\\FileSystem',
@@ -426,6 +507,33 @@ function applyPatchSequenceInScratch(sourceRoot, patchPaths) {
   }
 }
 
+function verifyAppliedPatchSequenceInScratch(sourceRoot, patchPaths) {
+  const touchedPaths = touchedPathsFromPatches(patchPaths);
+  const scratchPrefix = path.join(os.tmpdir(), 'ember-chromium-applied-patches-');
+  const scratchRoot = fs.mkdtempSync(scratchPrefix);
+  try {
+    for (const relativePath of touchedPaths) {
+      const source = path.join(sourceRoot, ...relativePath.split('/'));
+      const destination = path.join(scratchRoot, ...relativePath.split('/'));
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      if (fs.existsSync(source)) fs.copyFileSync(source, destination);
+    }
+    for (const patchPath of [...patchPaths].reverse()) {
+      runCaptured('git', ['apply', '--reverse', '--check', '--no-index', patchPath], {
+        cwd: scratchRoot,
+      });
+      runCaptured('git', ['apply', '--reverse', '--no-index', patchPath], { cwd: scratchRoot });
+    }
+    return touchedPaths;
+  } finally {
+    const safePrefix = normalizeForComparison(scratchPrefix);
+    const safeScratch = normalizeForComparison(scratchRoot);
+    if (safeScratch.startsWith(safePrefix)) {
+      fs.rmSync(scratchRoot, { recursive: true, force: true });
+    }
+  }
+}
+
 function parseDirtyPaths(statusText) {
   return statusText
     .split(/\r?\n/)
@@ -437,6 +545,7 @@ function parseDirtyPaths(statusText) {
 function isManagedConfigurationPath(relativePath, entries = parseSeriesEntries()) {
   const normalized = relativePath.replaceAll('\\', '/');
   return normalized === '.ember-port.json'
+    || normalized === '.gcs_entries'
     || normalized === 'patches/series'
     || entries.some((entry) => normalized === `patches/${entry}`);
 }
@@ -633,39 +742,74 @@ function verifySourceHead(paths, baseline = readBaseline()) {
   return head;
 }
 
-function requireHealthyDoctor(workRoot) {
-  const findings = collectDoctorFindings(workRoot);
+function verifyPreparedBuildState(paths, baseline = readBaseline()) {
+  verifySourceHead(paths, baseline);
+  const patchPaths = parseSeriesEntries()
+    .map((entry) => path.join(PATCHES_ROOT, ...entry.split('/')));
+  const touchedPaths = verifyAppliedPatchSequenceInScratch(paths.sourceRoot, patchPaths);
+  console.log(
+    `Verified the applied Ember patch postimages in an isolated ${touchedPaths.length}-file scratch tree.`,
+  );
+}
+
+function repairPartialResumeArtifacts(paths) {
+  const gnExecutable = path.join(paths.outputRoot, 'gn.exe');
+  const buildNinja = path.join(paths.outputRoot, 'build.ninja');
+  if (fs.existsSync(gnExecutable) && !fs.existsSync(buildNinja)) {
+    fs.rmSync(gnExecutable);
+    console.log('Removed partial gn.exe so upstream resume regenerates build.ninja.');
+    return true;
+  }
+  return false;
+}
+
+function requireHealthyDoctor(workRoot, options = {}) {
+  const findings = collectDoctorFindings(workRoot, options);
   if (!printDoctor(findings)) {
     throw new Error('Chromium build prerequisites are incomplete; resolve the failed doctor checks first.');
   }
 }
 
-function invokePythonScript(scriptName, workRootValue, args) {
+function invokePythonScript(scriptName, workRootValue, args, options = {}) {
   const paths = getPortPaths(workRootValue);
   const baseline = readBaseline();
-  requireHealthyDoctor(paths.workRoot);
+  requireHealthyDoctor(paths.workRoot, options.doctor);
   assertPrepared(paths, baseline);
   if (scriptName === 'build.py') verifyUpstreamBaselines(baseline);
   else verifySourceHead(paths, baseline);
   const python = findPython();
   if (!python) throw new Error('Python is unavailable.');
+  const env = buildPythonEnvironment(paths, python);
   runInherited(python.command, [
     ...python.prefix,
     path.join(paths.configurationRoot, scriptName),
     ...args,
-  ], { cwd: paths.configurationRoot });
+  ], { cwd: paths.configurationRoot, env });
   return paths;
 }
 
-function build(workRootValue, jobs, passthrough) {
+function build(workRootValue, jobs, passthrough, resume = false) {
   const defaultJobs = Math.max(1, (os.availableParallelism?.() || os.cpus().length) - 2);
   const requestedJobs = jobs || defaultJobs;
-  const paths = invokePythonScript(
+  const paths = getPortPaths(workRootValue);
+  if (resume) {
+    verifyPreparedBuildState(paths);
+    repairPartialResumeArtifacts(paths);
+  }
+  const buildArgs = ['-j', String(requestedJobs), ...passthrough];
+  if (resume && !buildArgs.includes('--ci')) buildArgs.push('--ci');
+  const builtPaths = invokePythonScript(
     'build.py',
     workRootValue,
-    ['-j', String(requestedJobs), ...passthrough],
+    buildArgs,
+    resume ? {
+      doctor: {
+        minimumFreeDiskGiB: readBaseline().windowsRequirements.minimumPreparedBuildFreeDiskGiB,
+        preparedBuild: true,
+      },
+    } : {},
   );
-  const head = verifySourceHead(paths);
+  const head = verifySourceHead(builtPaths);
   console.log(`Native build completed from pinned Chromium source ${head}.`);
 }
 
@@ -711,6 +855,7 @@ function parseCli(argv) {
     if (token === '--work-root') options.workRoot = values.shift();
     else if (token === '--source') options.source = values.shift();
     else if (token === '--jobs') options.jobs = Number(values.shift());
+    else if (token === '--resume') options.resume = true;
     else if (token === '--url') options.url = values.shift();
     else throw new Error(`Unknown option: ${token}`);
   }
@@ -729,7 +874,7 @@ Usage:
   node chromium/tools/port.js doctor [--work-root PATH]
   node chromium/tools/port.js prepare [--work-root PATH]
   node chromium/tools/port.js verify-patches --source PATH
-  node chromium/tools/port.js build [--work-root PATH] [--jobs N] [-- BUILD.PY_ARGS]
+  node chromium/tools/port.js build [--work-root PATH] [--jobs N] [--resume] [-- BUILD.PY_ARGS]
   node chromium/tools/port.js package [--work-root PATH] [-- PACKAGE.PY_ARGS]
   node chromium/tools/port.js run [--work-root PATH] [--url URL]
 
@@ -746,7 +891,9 @@ function main(argv = process.argv.slice(2)) {
   else if (command === 'prepare') prepare(options.workRoot);
   else if (command === 'verify-patches') {
     verifyPatchStack(options.source || getPortPaths(options.workRoot).sourceRoot);
-  } else if (command === 'build') build(options.workRoot, options.jobs, options.passthrough);
+  } else if (command === 'build') {
+    build(options.workRoot, options.jobs, options.passthrough, options.resume);
+  }
   else if (command === 'package') packageBuild(options.workRoot, options.passthrough);
   else if (command === 'run') runNative(options.workRoot, options.url);
   else throw new Error(`Unknown command: ${command}`);
@@ -782,10 +929,16 @@ module.exports = {
   parseCli,
   parseDirtyPaths,
   parseSeriesEntries,
+  parseVersionTuple,
   patchStackHash,
   readBaseline,
+  repairPartialResumeArtifacts,
   touchedPathsFromPatches,
   versionAtLeast,
   verifySourceHead,
+  verifyAppliedPatchSequenceInScratch,
+  verifyPreparedBuildState,
   verifyUpstreamBaselines,
+  visualStudioInstallVariable,
+  windowsPythonShim,
 };

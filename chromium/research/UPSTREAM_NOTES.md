@@ -62,17 +62,49 @@ Windows token/AppContainer audit pass.
 
 ## Host and build findings
 
-The validated host had Visual Studio 2022 Build Tools with C++, Windows SDK
-10.0.26100.0, Git, Python 3.12.1, 7-Zip, long paths, and
-`httplib2==0.22.0`. It lacked:
+The exact Chromium 151 source requires Visual Studio 2026 (major version 18),
+not Visual Studio 2022. Its pinned Windows checks require SDK directory
+`10.0.26100.0`, SDK file version at least `10.0.26100.7705`, and Debugging Tools
+`dbghelp.dll` version at least `10.0.26100.3323`. Ember records and validates
+those exact constraints instead of accepting a directory name alone.
 
-- the required 100 GiB free-space floor on the selected drive;
-- Windows SDK Debugging Tools (`Debuggers\\x64\\dbghelp.dll`).
+The validated host now has Visual Studio Build Tools 2026 18.9.1 with the core
+VCTools workload, VC 14.51.36231 x86/x64 tools, ATL/MFC, Windows SDK files at
+10.0.26100.8249, x64 Debugging Tools at 10.0.26100.7705, Git 2.42, Python
+3.12.1, 7-Zip, long paths, and `httplib2==0.22.0`. The debugger payload is about
+249 MiB across x86, x64, and arm64; it is a build prerequisite, not part of the
+shipped browser.
 
-`chromium/tools/port.js doctor` intentionally blocks source acquisition/build
+Two Windows-specific bootstrap details were discovered during the first full
+acquisition:
+
+- depot_tools invokes `python3`, which can resolve to the nonfunctional Windows
+  Store alias even when `python.exe` is valid. The port tool writes an external
+  `python3.bat` shim for the doctor-verified interpreter and prepends only that
+  child directory to `PATH`.
+- Chromium finds VS 2026 through `vs2026_install`. Build Tools installed under
+  `Program Files (x86)`, outside Chromium's default probe, so the port derives
+  that child-process variable from its verified installation. It does not set a
+  permanent machine variable.
+
+The full acquisition produced 504,294 source objects, synced 155 gclient
+projects, downloaded the pinned PGO/LLVM/Rust inputs, applied 109 common plus 23
+Windows upstream patches and both Ember patches, and completed domain
+substitution. The download cache was removed only after all hashes/unpacks had
+completed, reclaiming 1.82 GiB without touching source or build output.
+
+`build --resume` exists for this prepared state. It verifies the source HEAD,
+proves the two applied Ember patch postimages by reverse-applying them in an
+isolated nine-file scratch tree, accepts only known generated state including
+`.gcs_entries`, and uses the 60 GiB prepared-build floor. If a failed GN attempt
+left `out/Default/gn.exe` without `build.ninja`, resume deletes only that partial
+bootstrap executable so upstream regenerates the Ninja graph. Incremental Ninja
+objects are retained.
+
+`chromium/tools/port.js doctor` intentionally blocks initial source acquisition
 until every requirement passes. Do not weaken these checks to manufacture build
-evidence. Use another short work root on a drive with adequate free space or fix
-the host prerequisites, then rerun `prepare`, `verify-patches`, and `build`.
+evidence. The lower resume floor applies only after the exact pinned and patched
+checkout has been verified.
 
 ## Next source inspection targets
 
