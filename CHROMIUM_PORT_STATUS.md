@@ -126,14 +126,13 @@ Completed on this host:
 
 ## Live native build checkpoint
 
-Last recorded: 2026-08-28 23:59 BST.
+Last recorded: 2026-08-29 00:30 BST.
 
 - **State:** second verified Ninja window active since 23:11 BST. Ninja reported
   21,241 remaining actions after loading the existing graph, proving the first
   window completed 36,636 / 57,877 actions (63.3%). The resumed window has now
-  completed another 4,241 actions, putting the durable total at 40,877 / 57,877
-  (70.63%) with exactly 17,000 actions remaining. There is still no failed
-  action.
+  completed another 10,104 actions, putting the durable total at 46,740 / 57,877
+  (80.76%) with 11,137 actions remaining. There is still no failed action.
 - **Source:** exact pinned Chromium `a96602f...`; 109 common, 23 Windows, and two
   Ember patches remain applied.
 - **Generated graph:** 57,877 actions from 31,404 GN targets / 4,791 files.
@@ -142,8 +141,11 @@ Last recorded: 2026-08-28 23:59 BST.
   outputs, linked `proto_extras_plugin.exe` and
   `country_native_names_generator.exe`, and has progressed through Blink web
   platform, Autofill/payment, DevTools, core `content/browser`, public browser
-  interfaces, Mojo/protobuf generators, performance-manager and Viz service
-  objects.
+  interfaces, Mojo/protobuf generators, performance-manager, Viz service,
+  `content/renderer`, Open Screen/Cast and Views widget/control objects; Chrome
+  WebUI, omnibox/NTP, native extension Mojo/browser/API, metrics/media-router,
+  page-info and bookmark-sync resources and objects have also been generated or
+  compiled. `v8_context_snapshot_generator.exe` has linked successfully.
 - **Final artifacts:** not present yet. Do not mark packaging/runtime complete.
 - **Recovery rule:** rerun the documented `--resume` command; never repeat
   acquisition, unpacking, patching, substitution, or completed object work.
