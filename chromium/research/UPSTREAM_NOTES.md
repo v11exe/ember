@@ -106,10 +106,43 @@ until every requirement passes. Do not weaken these checks to manufacture build
 evidence. The lower resume floor applies only after the exact pinned and patched
 checkout has been verified.
 
+## First native build and runtime findings
+
+The pinned official x64 build completed on 2026-08-29 without a failed Ninja
+action. The first 3.5-hour CI window completed 36,636 of 57,877 actions and the
+verified resume completed the remaining 21,241 in about three hours. The most
+expensive final step was the optimized `chrome.dll` link, which used about
+10.7 GiB working memory; post-link resource-allowlist and locale generation then
+produced `chrome.exe` and the mini installer. The upstream build script also
+created its installer and portable ZIP automatically.
+
+The resulting `chrome.exe` and `chrome.dll` have Windows product name `Ember`,
+version 151.0.7922.173. `mini_installer.exe` reports `Ember Installer`. The
+portable ZIP is 197,120,693 bytes (187.99 MiB), the installer 126,752,768 bytes
+(120.88 MiB), and the completed `out/Default` tree is 15.04 GiB including
+incremental objects and PDBs. Exact hashes are kept in `CHROMIUM_PORT_STATUS.md`.
+
+A supervised launch with a fresh external profile and DevTools port proved:
+
+- a real responding top-level HWND and a seven-process browser/GPU/renderer/
+  utility tree;
+- default sandboxed process roles with no `--no-sandbox` flag;
+- the exact pinned official x64 revision and isolated executable/profile paths
+  on `chrome://version`;
+- successful HTTPS navigation and rendering of `https://example.com`; and
+- graceful `Browser.close`, after which every process, the profile singleton
+  lock, and the debugging listener disappeared.
+
+Compiled metadata is only the first identity layer. The window title, About
+page/logo, CDP product and user agent still say Chromium/Chrome, About includes
+`ungoogled-chromium`, package filenames retain the upstream distribution name,
+and artifacts are unsigned. The installer was not executed on the development
+machine, so registry, protocol, COM activation, update, upgrade, uninstall, and
+coexistence behavior remain unverified.
+
 ## Next source inspection targets
 
-After producing the first binary, inspect and patch identity surfaces in this
-order:
+With the first binary proven, inspect and patch identity surfaces in this order:
 
 1. executable/package/installer naming and product resources;
 2. About/version strings, icons, shortcuts, file associations, and protocol

@@ -89,6 +89,22 @@ still named `chrome.exe`, and Chromium's COM interface/type-library IDs remain
 unchanged so checked-in MIDL output stays ABI-consistent; identity parity is
 therefore partial, not complete.
 
+### First verified Windows result
+
+The pinned Chromium 151 official x64 build completed on 2026-08-29 across two
+incremental Ninja windows: 36,636 actions before the upstream 3.5-hour CI timeout
+and 21,241 actions after `--resume`, with no failed action. Upstream packaging
+then produced a 120.88 MiB installer and 187.99 MiB portable ZIP. The built
+`chrome.exe`/`chrome.dll` report product name `Ember`, and an isolated-profile
+runtime probe verified the real browser/GPU/renderer/utility process tree,
+default sandbox flags, HTTPS navigation, and clean shutdown.
+
+This is a build/runtime baseline, not UI parity. Visible Chromium/Chrome/About/
+UA branding, upstream package filenames, executable naming, icons, signatures,
+installer behavior, and the full Ember C++/Views shell remain open. Exact file
+hashes, runtime commands/results, disk measurements, and blockers are recorded
+in `../CHROMIUM_PORT_STATUS.md`.
+
 To check the Ember patch stack against a pristine checkout of the exact
 Chromium commit:
 

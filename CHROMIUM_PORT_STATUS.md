@@ -1,6 +1,6 @@
 # Ember native Chromium port status
 
-Last updated: 2026-08-28 on branch `chromium-port`.
+Last updated: 2026-08-29 on branch `chromium-port`.
 
 This is the mutable handoff and parity ledger for the native Chromium fork. It
 is deliberately strict: a subsystem is not complete until native runtime
@@ -44,14 +44,18 @@ follow an upstream branch.
 - Focused contracts for pins, safe paths, patch ordering/hashing, managed dirty
   paths, deterministic series generation, CLI parsing, GUID/product identity,
   and reference PNG integrity.
+- The first pinned official x64 native build, portable archive and installer,
+  plus a sandboxed isolated-profile launch/navigation/shutdown probe. This is a
+  native Chromium baseline milestone, not a claim that the Ember shell or
+  Electron feature set has been ported.
 
 ## Parity matrix
 
 | Subsystem | State | Current evidence / remaining work |
 | --- | --- | --- |
-| Reproducible source and build architecture | **Partial** | Exact external configuration/common commits prepared twice successfully. Full source/dependency acquisition, upstream/Ember patching, substitution, and GN generation have completed; the first pinned native build is compiling. |
-| Product and Windows installer identity | **Partial** | Two ordered patches apply to a pristine nine-file scratch tree at the exact Chromium commit. Ember owns the product GUID, integration names, toast/elevator/tracing class CLSIDs and sandbox SID family. Chromium interface/type-library IDs intentionally remain unchanged until IDL plus all checked-in x86/x64/arm64 MIDL outputs can be regenerated together. No compiled binary, icon audit, executable rename, About page, installer, registry, toast, COM activation, upgrade or coexistence test yet. |
-| Native Windows top-level window | **Not started** | Must use a normal HWND/DWM path with native caption hit testing, Snap Layouts, rounded corners, minimise/restore animation, DPI changes, and multi-monitor behavior. |
+| Reproducible source and build architecture | **Passing baseline** | Exact external configuration/common commits prepared twice. Full acquisition, 155-project sync, 134 upstream patches, two Ember patches, substitution, GN generation, 57,877 Ninja actions across two resumable windows, and automatic packaging completed at the pinned revision. Reproducibility on a second clean host remains untested. |
+| Product and Windows installer identity | **Partial** | `chrome.exe`/`chrome.dll` report product `Ember` and `mini_installer.exe` reports `Ember Installer`; product, integration, class-ID and SID-family source patches compile. The visible title/About/logo/UA and package filenames still say Chromium/Chrome/ungoogled-chromium, the executable remains `chrome.exe`, and artifacts are unsigned. Installer registry, toast, COM activation, upgrade, uninstall and coexistence are untested. Interface/type-library IDs remain unchanged until IDL plus all persisted x86/x64/arm64 MIDL outputs can be regenerated together. |
+| Native Windows top-level window | **Partial** | The first native build created a responding normal HWND and stock Chromium browser/renderer/GPU/utility process tree. Caption hit testing, Snap Layouts, DWM corners, minimise/restore animation, DPI changes, multi-monitor behavior and Ember geometry have not been tested or implemented. |
 | Native C++/Views shell | **Not started** | Must reproduce the accepted 32 px top shell, 168 px sidebar, 8 px page inset, 12 px page radius, bounded material, tab strip, navigation controls, and caption reservation without renderer-hosted Electron chrome. |
 | Tabs and navigation | **Not started** | Create/select/close/reorder, wheel scroll physics, navigation history, focus, page fullscreen, omnibox resolution, Tab-to-search, bangs, and internal URLs remain Electron-only. |
 | Favorites/sidebar/Copy Link | **Not started** | Ordered grid, capacity semantics, matching/wake behavior, tab drops, address editing, and copy feedback remain Electron-only. |
@@ -60,8 +64,8 @@ follow an upstream branch.
 | Extensions | **Not started** | Final port must use Chromium's real extension system, Web Store install path, profiles, actions/popups, permissions, service workers, and lifecycle—not Electron extension emulation. |
 | Internal pages and protocol | **Not started** | New tab, settings, history, downloads, bookmarks, unreachable/archive flows, and any retained `ember://` routing need native Chromium integration and security review. |
 | Bounded overlays and material | **Not started** | Upload, conversion, context menu, Ctrl+Tab, archive, extension popup, and related focus/capture behavior need native equivalents and image/interaction diffs. |
-| Security and privacy model | **Not started** | No native audit yet for sandboxing, site isolation, permissions, private profiles, telemetry/network defaults, crash reporting, update trust, or extension boundaries. |
-| Packaging and distribution | **Not started** | No compiled `chrome.exe`, packaged archive, Ember-named installer, signing, upgrade/uninstall, or clean-machine test. |
+| Security and privacy model | **Partial** | The isolated runtime used Chromium's browser broker plus GPU, renderer and utility roles with no `--no-sandbox`; real HTTPS navigation succeeded. Windows token/AppContainer, site isolation, permissions, private profiles, telemetry/network defaults, crash reporting, update trust and extension boundaries still require focused audits. |
+| Packaging and distribution | **Partial** | A 187.99 MiB portable ZIP and 120.88 MiB installer were produced and hashed. Both package filenames still carry the upstream `ungoogled-chromium` name; binaries are unsigned and install/registry/protocol/upgrade/uninstall/clean-machine behavior has not been exercised. |
 | Automated native parity harness | **Not started** | Electron references are present; native deterministic launch/capture, pixel/geometry thresholds, interaction probes, and accessibility checks remain to build. |
 | Electron oracle | **Passing baseline capture** | Electron 43.4.1 produced the checked-in offline reference set. Existing Electron source is intentionally retained. |
 
@@ -86,7 +90,8 @@ pixels and geometry are under `chromium/reference/electron/9ae3217/`.
 
 Completed on this host:
 
-- `node --test test/chromium-port.test.js` — 18/18 focused contracts pass.
+- Post-build `node --test test/chromium-port.test.js` — 18/18 focused contracts
+  pass.
 - `git diff --check` in the exact Chromium sparse checkout — pass.
 - `port.js verify-patches` — both Ember patches apply sequentially in an
   isolated nine-file scratch tree based on exact Chromium commit `a96602f...`;
@@ -99,13 +104,13 @@ Completed on this host:
 - `EMBER_CAPTURE_OFFLINE=1 electron scripts/capture-ui.js ...` — pass with 31
   raw PNGs; 30 nonblank/promoted scenarios are checked in and validated.
 
-- `npm test` — 400/400 pass with the build-resume/toolchain contracts included.
-- `npm run smoke` — pass on the required retry. One concurrent-build run failed
-  when its active page renderer disappeared during the probe; the immediate
-  clean-profile rerun passed and explicitly skipped the same three
-  frame-dependent assertions because this host produces no capturable runtime
-  frames. Keep the first result as a flake signal; it is not attributed to these
-  Chromium-tooling-only changes.
+- Post-build `npm test` — 400/400 pass with the build-resume/toolchain contracts
+  included.
+- Post-build `npm run smoke` — pass in 17.8 seconds, with the same three
+  frame-dependent assertions explicitly skipped because this host produces no
+  capturable runtime frames. One earlier concurrent-build run lost its active
+  renderer before the immediate clean-profile retry passed; retain that result
+  as a flake signal rather than attributing it to tooling-only changes.
 - `npm start` — live application launch confirmed, then stopped deliberately
   with Ctrl+C. A persisted third-party extension logged its pre-existing
   unsupported `chrome.tabs.onRemoved` service-worker error; Ember itself
@@ -119,48 +124,62 @@ Completed on this host:
 - First `port.js build --work-root C:\src\ember-chromium --jobs 18 --resume`
   Ninja window — reached the upstream CI timeout after the full 3.5 hours
   (`15:08:21`–`18:38:18` BST). No failed compiler action was reported. The
-  durable `.ninja_log` contains 86,159 completion records and its latest outputs
-  are Blink modules/V8 bindings. `chrome.exe`, `chromedriver.exe`, and
-  `mini_installer.exe` are not linked yet, so this is progress evidence rather
-  than a completed build claim.
+  durable `.ninja_log` retained every completed object.
+- Second verified resume window (`23:11`–`02:11` BST) loaded 21,241 remaining
+  actions and completed all of them without a failed action. Across both windows
+  the graph completed all 57,877 actions from 31,404 GN targets / 4,791 files,
+  linked `chrome.dll`, `chrome.exe`, `chromedriver.exe` and
+  `mini_installer.exe`, then generated both upstream packages.
 
-## Live native build checkpoint
+## First native build and runtime checkpoint
 
-Last recorded: 2026-08-29 01:04 BST.
+Last recorded: 2026-08-29 02:19 BST.
 
-- **State:** second verified Ninja window active since 23:11 BST. Ninja reported
-  21,241 remaining actions after loading the existing graph, proving the first
-  window completed 36,636 / 57,877 actions (63.3%). The resumed window has now
-  completed another 16,094 actions, putting the durable total at 52,730 / 57,877
-  (91.11%) with 5,147 actions remaining. There is still no failed action.
+- **State:** native build and automatic package generation completed successfully
+  from the exact pinned source. The first window completed 36,636 actions and
+  the second completed the remaining 21,241, for 57,877 / 57,877 total.
 - **Source:** exact pinned Chromium `a96602f...`; 109 common, 23 Windows, and two
   Ember patches remain applied.
 - **Generated graph:** 57,877 actions from 31,404 GN targets / 4,791 files.
-- **Latest durable outputs:** Blink modules/V8 binding objects at the end of the
-  first 12,597,493 ms Ninja log window; the second window resumed from those
-  outputs, linked `proto_extras_plugin.exe` and
-  `country_native_names_generator.exe`, and has progressed through Blink web
-  platform, Autofill/payment, DevTools, core `content/browser`, public browser
-  interfaces, Mojo/protobuf generators, performance-manager, Viz service,
-  `content/renderer`, Open Screen/Cast and Views widget/control objects; Chrome
-  WebUI, omnibox/NTP, native extension Mojo/browser/API, metrics/media-router,
-  page-info, bookmark-sync, browser Views/tab-strip, side-panel, web-app,
-  Safe-Browsing, Windows WinHTTP/sandbox helper, PDFium, profiles, HTTPS-first,
-  translation, Aura/browser UI, media-control and device-chooser resources and
-  objects have also been generated or compiled.
-  `v8_context_snapshot_generator.exe` has linked successfully.
-- **Final artifacts:** not present yet. Do not mark packaging/runtime complete.
+- **Built files:** `chrome.exe` 4,256,768 bytes / SHA-256
+  `5E5C205025E20D2ED37939795DBCC85419459AD829FCE34106F0DBE4A90EC5CA`;
+  `chrome.dll` 298,944,512 bytes /
+  `22062B9734742DE599AA14E76B721C9C904E72D67334F55E92CFC9DA69C4FDC1`;
+  `chromedriver.exe` 42,826,752 bytes /
+  `2807C0F057343E1BC3E670585B5F6050286D6080053F9E012E918B9C183D2686`;
+  `mini_installer.exe` 126,752,768 bytes /
+  `D5B5F5391E1C7F17C451EF96DC89D98DB9CA32B64CD75AB10725AE441CBB59D6`.
+- **Packages:** upstream-named installer 120.88 MiB with the same hash as
+  `mini_installer.exe`; upstream-named portable ZIP 197,120,693 bytes /
+  SHA-256 `086F4709240C3DC84192037424B113952549F4743338E53BB7C6A2524ACDDAB6`.
+- **Runtime:** a fresh profile at
+  `C:\src\ember-chromium\profile-runtime-20260829` launched the built binary
+  with DevTools port 9223, no sandbox-disabling flags, three page targets and a
+  seven-process browser/GPU/renderer/utility tree. `chrome://version` rendered
+  the exact official x64 revision and isolated paths; `https://example.com`
+  navigated and rendered successfully. The browser owned a responding normal
+  HWND. `Browser.close` then removed all seven processes, the profile singleton
+  lock and the debugging listener.
+- **Observed gaps:** the visible title/About/logo, CDP browser product and UA
+  still identify Chromium/Chrome/ungoogled-chromium; both package filenames are
+  upstream-named and the binaries are not signed. The installer was built but
+  not executed, so registry/protocol/COM/upgrade behavior is not yet evidence.
+- **Disk:** `out\Default` is 15.04 GiB after the official build (including
+  objects and PDBs), the runtime profile is 0.01 GiB, and 81.02 GiB remains free.
 - **Recovery rule:** rerun the documented `--resume` command; never repeat
   acquisition, unpacking, patching, substitution, or completed object work.
 
 ## Current Windows build-host audit
 
 `node chromium/tools/port.js doctor --work-root C:\src\ember-chromium` currently
-passes all 12 required checks:
+passes 11/12 initial-acquisition checks. The only failure is expected after the
+build: 81.0 GiB free is below the 100 GiB required to acquire a new checkout.
+Every toolchain check passes, and the verified prepared checkout remains above
+the separate 60 GiB `--resume` floor:
 
 - Windows x64 with 31.9 GiB RAM and a safe short external work root.
-- 104.0 GiB free during the latest audit versus the 100 GiB acquisition floor;
-  verified prepared builds may resume above the separate 60 GiB floor.
+- 81.0 GiB free after the completed build versus the 100 GiB new-acquisition
+  floor; verified prepared builds may resume above the separate 60 GiB floor.
 - Git 2.42, Python 3.12.1 with `httplib2==0.22.0`, 7-Zip, and long paths.
 - Visual Studio Build Tools 2026 18.9.1 with the core x86/x64 C++ tools and
   ATL/MFC.
@@ -184,17 +203,16 @@ so this baseline deliberately changes only class CLSIDs.
 
 ## Next vertical slice
 
-1. Finish the active pinned Ninja build and fingerprint the first Windows
-   `chrome.exe`, `chromedriver.exe`, `mini_installer.exe`, and package.
-2. Launch the native binary with an isolated profile; verify visible
-   Ember identity, profile paths, installer registry keys, protocol registration,
-   process tree, sandbox, and startup/shutdown behavior.
-3. Close remaining identity gaps (icons/resources, executable/install artifacts,
-   About/version surfaces) as the next reviewable patch unit.
-4. Implement the first native C++/Views vertical slice: a normal Chromium
+1. Close remaining identity gaps (icons/resources, executable/package names,
+   title/About/UA surfaces) as the next reviewable patch unit and keep installer
+   registry/COM/upgrade tests isolated from the development machine where
+   practical.
+2. Add an explicit signing/distribution decision; do not represent unsigned
+   development artifacts as release-ready.
+3. Implement the first native C++/Views vertical slice: a normal Chromium
    `Browser` window with Ember shell geometry, one functioning tab, omnibox
    navigation, and real Windows caption/Snap behavior.
-5. Add deterministic native capture and interaction probes for that slice, diff
+4. Add deterministic native capture and interaction probes for that slice, diff
    them against the checked-in Electron wide/medium/compact references, and
    update this matrix with evidence rather than estimates.
 

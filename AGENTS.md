@@ -469,11 +469,11 @@ Git is the history archive.
 
 Newest first. One entry per active/recent unit of work.
 
-### 2026-08-28 — Codex — Native Chromium baseline
+### 2026-08-29 — Codex — Native Chromium baseline
 - **Status / Branch:** in-progress · `chromium-port`
 - **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`, `package.json`, `scripts/capture-ui.js`, `test/chromium-port.test.js`, `chromium/`
-- **Summary:** Established the external-checkout Chromium fork architecture, pinned Windows baseline, deterministic Electron visual oracle, safe build/patch tooling, and the first two source-level identity/security patches while retaining Electron Ember as the parity oracle. The first full Chromium acquisition is prepared and compiling with a verified incremental-resume path.
-- **For the other agent:** Keep port work on `chromium-port`. Chromium 151 requires VS 2026 major 18, SDK 10.0.26100.0 files >= 10.0.26100.7705, and Debugging Tools >= 10.0.26100.3323. `build --resume` verifies patch postimages and repairs an incomplete GN bootstrap; depot_tools gets an external Python 3 shim and `vs2026_install` because this host's Build Tools live under Program Files (x86). COM interface/type-library identity remains intentionally shared until IDL and all persisted MIDL outputs can be regenerated and runtime-tested together.
+- **Summary:** Established the external-checkout Chromium fork architecture, pinned Windows baseline, deterministic Electron visual oracle, safe build/patch tooling, and first two identity/security patches. The exact official x64 build completed all 57,877 actions across two resumable windows, produced installer/portable packages, and passed isolated-profile native HTTPS/process/sandbox/shutdown probes while Electron remains the parity oracle.
+- **For the other agent:** Keep port work on `chromium-port`. `chrome.exe` metadata says Ember, but title/About/logo/UA and upstream package filenames still identify Chromium/Chrome/ungoogled-chromium; artifacts are unsigned and the installer has not been executed. `out/Default` is 15.04 GiB and exact hashes/runtime evidence are in `CHROMIUM_PORT_STATUS.md`. COM interface/type-library identity remains intentionally shared until IDL and every persisted x86/x64/arm64 MIDL output can be regenerated and runtime-tested together.
 
 ### 2026-08-24 — Codex — Copy Link roadmap completion
 - **Status / Branch:** completed · `glass-fixing`
