@@ -89,13 +89,13 @@ acquisition:
 
 The full acquisition produced 504,294 source objects, synced 155 gclient
 projects, downloaded the pinned PGO/LLVM/Rust inputs, applied 109 common plus 23
-Windows upstream patches and both Ember patches, and completed domain
+Windows upstream patches and the first two Ember patches, and completed domain
 substitution. The download cache was removed only after all hashes/unpacks had
 completed, reclaiming 1.82 GiB without touching source or build output.
 
 `build --resume` exists for this prepared state. It verifies the source HEAD,
-proves the two applied Ember patch postimages by reverse-applying them in an
-isolated nine-file scratch tree, accepts only known generated state including
+proves all three applied Ember patch postimages by reverse-applying them in an
+isolated 13-file scratch tree, accepts only known generated state including
 `.gcs_entries`, and uses the 60 GiB prepared-build floor. If a failed GN attempt
 left `out/Default/gn.exe` without `build.ninja`, resume deletes only that partial
 bootstrap executable so upstream regenerates the Ninja graph. Incremental Ninja
@@ -133,25 +133,46 @@ A supervised launch with a fresh external profile and DevTools port proved:
 - graceful `Browser.close`, after which every process, the profile singleton
   lock, and the debugging listener disappeared.
 
-Compiled metadata is only the first identity layer. The window title, About
-page/logo, CDP product and user agent still say Chromium/Chrome, About includes
-`ungoogled-chromium`, package filenames retain the upstream distribution name,
-and artifacts are unsigned. The installer was not executed on the development
-machine, so registry, protocol, COM activation, update, upgrade, uninstall, and
-coexistence behavior remain unverified.
+The third Ember patch owns visible product strings in
+`chrome/app/chromium_strings.grd`, Settings-specific strings in
+`chrome/app/settings_chromium_strings.grdp`, and dedicated official/developer
+Ember build labels in `components/version_ui_strings.grdp` selected by
+`chrome/browser/ui/webui/version/version_ui.cc`. Dedicated version IDs avoid
+depending on the ungoogled patch's modification of Chromium's original build
+label, so the Ember patch applies both to pristine pinned Chromium and after the
+upstream patch stack.
+
+The incremental identity build initially encountered synchronized Clang
+crashes while Windows logged `Virtual Memory Minimum Too Low`; the exact failed
+translation units succeeded when the same Ninja graph resumed at `--jobs 6`.
+The remaining 951 actions completed, including GRIT resources, `chrome.dll`,
+`chrome.exe`, locale packs, and both packages. The optimized DLL link used about
+9 GiB working memory in this pass. Treat parallelism as a host-memory budget:
+the prepared checkout and object graph were healthy, and no reacquisition or
+clean rebuild was required.
+
+The rebuilt runtime now titles its HWNDs `New Tab - Ember` and `About Version -
+Ember`. `chrome://version` identifies Ember, The Ember Authors, and the exact
+official ungoogled-Chromium-based build; `chrome://settings/help` says `About
+Ember`. Packaging normalization emits only deterministic Ember-named installer
+and portable artifacts and refuses to overwrite a differing existing package.
+The stable `Chrome/...` user-agent token is deliberately retained for website
+compatibility. About/logo icons, executable naming, signing, CDP identity, and
+installer integration remain open. The installer was not executed on the
+development machine, so registry, protocol, COM activation, update, upgrade,
+uninstall, and coexistence behavior remain unverified.
 
 ## Next source inspection targets
 
-With the first binary proven, inspect and patch identity surfaces in this order:
+With the first binary and visible identity slice proven, continue in this order:
 
-1. executable/package/installer naming and product resources;
-2. About/version strings, icons, shortcuts, file associations, and protocol
-   registration;
-3. installer registry, toast activation, elevated services, upgrade/uninstall,
+1. icons, About logo, shortcuts, file associations, CDP identity, and an
+   explicit compatibility decision on executable naming;
+2. installer registry, toast activation, elevated services, upgrade/uninstall,
    and side-by-side behavior;
-4. a native `Browser`/Views shell vertical slice using real `Profile`,
+3. a native `Browser`/Views shell vertical slice using real `Profile`,
    `TabStripModel`, navigation, extension, sandbox, and Windows HWND plumbing;
-5. deterministic native visual and interaction capture against the locked
+4. deterministic native visual and interaction capture against the locked
    Electron reference manifest.
 
 Do not implement a `ROADMAP.md` feature still marked planned while closing

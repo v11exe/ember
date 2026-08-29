@@ -57,6 +57,7 @@ function getPortPaths(workRootValue) {
   return {
     workRoot,
     configurationRoot,
+    packageRoot: path.join(configurationRoot, 'build'),
     sourceRoot: path.join(configurationRoot, 'build', 'src'),
     outputRoot: path.join(configurationRoot, 'build', 'src', 'out', 'Default'),
     executable: path.join(configurationRoot, 'build', 'src', 'out', 'Default', 'chrome.exe'),
@@ -763,6 +764,102 @@ function repairPartialResumeArtifacts(paths) {
   return false;
 }
 
+function packageArtifactPlan(paths, baseline = readBaseline()) {
+  const tag = baseline.buildConfiguration.tag;
+  const architecture = baseline.windowsRequirements.architecture;
+  return [
+    {
+      kind: 'installer',
+      source: path.join(
+        paths.packageRoot,
+        `ungoogled-chromium_${tag}_installer_${architecture}.exe`,
+      ),
+      destination: path.join(
+        paths.packageRoot,
+        `ember_${tag}_installer_${architecture}.exe`,
+      ),
+    },
+    {
+      kind: 'portable',
+      source: path.join(
+        paths.packageRoot,
+        `ungoogled-chromium_${tag}_windows_${architecture}.zip`,
+      ),
+      destination: path.join(
+        paths.packageRoot,
+        `ember_${tag}_windows_${architecture}.zip`,
+      ),
+    },
+  ];
+}
+
+function filesEqual(leftPath, rightPath) {
+  const leftStat = fs.statSync(leftPath);
+  const rightStat = fs.statSync(rightPath);
+  if (leftStat.size !== rightStat.size) return false;
+
+  const chunkSize = 1024 * 1024;
+  const leftBuffer = Buffer.allocUnsafe(chunkSize);
+  const rightBuffer = Buffer.allocUnsafe(chunkSize);
+  const left = fs.openSync(leftPath, 'r');
+  let right;
+  try {
+    right = fs.openSync(rightPath, 'r');
+    const readChunk = (descriptor, buffer, length, position) => {
+      let total = 0;
+      while (total < length) {
+        const bytes = fs.readSync(
+          descriptor,
+          buffer,
+          total,
+          length - total,
+          position + total,
+        );
+        if (bytes === 0) break;
+        total += bytes;
+      }
+      return total;
+    };
+    let position = 0;
+    while (position < leftStat.size) {
+      const length = Math.min(chunkSize, leftStat.size - position);
+      const leftRead = readChunk(left, leftBuffer, length, position);
+      const rightRead = readChunk(right, rightBuffer, length, position);
+      if (leftRead !== length
+        || rightRead !== length
+        || Buffer.compare(leftBuffer.subarray(0, length), rightBuffer.subarray(0, length)) !== 0) {
+        return false;
+      }
+      position += length;
+    }
+    return true;
+  } finally {
+    fs.closeSync(left);
+    if (right !== undefined) fs.closeSync(right);
+  }
+}
+
+function normalizePackageArtifacts(paths, baseline = readBaseline()) {
+  const available = [];
+  for (const artifact of packageArtifactPlan(paths, baseline)) {
+    const sourceExists = fs.existsSync(artifact.source);
+    const destinationExists = fs.existsSync(artifact.destination);
+    if (sourceExists && destinationExists) {
+      if (!filesEqual(artifact.source, artifact.destination)) {
+        throw new Error(
+          `Refusing to overwrite a different Ember ${artifact.kind} package: ${artifact.destination}`,
+        );
+      }
+      fs.rmSync(artifact.source);
+    } else if (sourceExists) {
+      fs.renameSync(artifact.source, artifact.destination);
+    }
+    if (sourceExists || destinationExists) available.push(artifact.destination);
+  }
+  for (const artifactPath of available) console.log(`Ember package: ${artifactPath}`);
+  return available;
+}
+
 function requireHealthyDoctor(workRoot, options = {}) {
   const findings = collectDoctorFindings(workRoot, options);
   if (!printDoctor(findings)) {
@@ -810,11 +907,20 @@ function build(workRootValue, jobs, passthrough, resume = false) {
     } : {},
   );
   const head = verifySourceHead(builtPaths);
+  normalizePackageArtifacts(builtPaths);
   console.log(`Native build completed from pinned Chromium source ${head}.`);
 }
 
 function packageBuild(workRootValue, passthrough) {
-  invokePythonScript('package.py', workRootValue, passthrough);
+  const paths = getPortPaths(workRootValue);
+  verifyPreparedBuildState(paths);
+  const packagedPaths = invokePythonScript('package.py', workRootValue, passthrough, {
+    doctor: {
+      minimumFreeDiskGiB: readBaseline().windowsRequirements.minimumPreparedBuildFreeDiskGiB,
+      preparedBuild: true,
+    },
+  });
+  normalizePackageArtifacts(packagedPaths);
 }
 
 function runNative(workRootValue, url) {
@@ -926,6 +1032,8 @@ module.exports = {
   isManagedConfigurationPath,
   isPathWithin,
   normalizeCapturedOutput,
+  normalizePackageArtifacts,
+  packageArtifactPlan,
   parseCli,
   parseDirtyPaths,
   parseSeriesEntries,

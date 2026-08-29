@@ -84,7 +84,10 @@ uses its tarball acquisition path.
 
 The run command uses a dedicated profile under the work root. The current patch
 stack changes product, installer, policy, registry, protocol, toast/elevated
-service class identities, and the AppContainer SID family. The executable is
+service class identities, the AppContainer SID family, and visible window,
+About, accessibility, relaunch, default-browser, uninstall, and startup-error
+text. Packaging normalizes completed upstream artifacts to deterministic Ember
+filenames without overwriting a differing existing artifact. The executable is
 still named `chrome.exe`, and Chromium's COM interface/type-library IDs remain
 unchanged so checked-in MIDL output stays ABI-consistent; identity parity is
 therefore partial, not complete.
@@ -99,11 +102,17 @@ then produced a 120.88 MiB installer and 187.99 MiB portable ZIP. The built
 runtime probe verified the real browser/GPU/renderer/utility process tree,
 default sandbox flags, HTTPS navigation, and clean shutdown.
 
-This is a build/runtime baseline, not UI parity. Visible Chromium/Chrome/About/
-UA branding, upstream package filenames, executable naming, icons, signatures,
-installer behavior, and the full Ember C++/Views shell remain open. Exact file
-hashes, runtime commands/results, disk measurements, and blockers are recorded
-in `../CHROMIUM_PORT_STATUS.md`.
+The third patch then completed a 2,910-action incremental rebuild and a fresh
+runtime probe. Window titles now end in Ember, `chrome://version` identifies the
+Ember product and authors, Settings says `About Ember`, and packaging emits the
+120.85 MiB installer and 187.99 MiB portable ZIP under deterministic
+`ember_151.0.7922.173-1.1_*_x64` names. Chromium's stable Chrome user-agent
+token remains intentional for web compatibility.
+
+This is a build/runtime identity baseline, not UI parity. Executable naming,
+icons/About logo, signatures, installer behavior, CDP identity, and the full
+Ember C++/Views shell remain open. Exact file hashes, runtime commands/results,
+disk measurements, and blockers are recorded in `../CHROMIUM_PORT_STATUS.md`.
 
 To check the Ember patch stack against a pristine checkout of the exact
 Chromium commit:

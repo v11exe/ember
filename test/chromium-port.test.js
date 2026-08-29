@@ -45,6 +45,7 @@ test('the Ember patch series is ordered, local, and complete', () => {
   assert.deepEqual(entries, [
     'ember/0001-ember-product-identity.patch',
     'ember/0002-ember-windows-security-identities.patch',
+    'ember/0003-ember-visible-product-surfaces.patch',
   ]);
   for (const entry of entries) {
     assert.equal(fs.existsSync(path.join(port.PATCHES_ROOT, ...entry.split('/'))), true);
@@ -201,6 +202,54 @@ test('the Windows security identity patch separates tracing COM and AppContainer
   assert.doesNotMatch(patchText, /^[-+].*tracing_service_iid/m);
   assert.match(patchText, /1530412577-/);
   assert.doesNotMatch(patchText, /^\+.*(?:83f69367|a3fd580a|924012148)/im);
+});
+
+test('the visible product patch brands window, About, accessibility, and default-browser surfaces', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0003-ember-visible-product-surfaces.patch'),
+    'utf8',
+  );
+
+  assert.match(patchText, /IDS_BROWSER_WINDOW_TITLE_FORMAT[\s\S]*- Ember/);
+  assert.match(patchText, /IDS_ACCESSIBLE_BROWSER_WINDOW_TITLE_FORMAT[\s\S]*- Ember/);
+  assert.match(patchText, /IDS_SETTINGS_ABOUT_PROGRAM[\s\S]*About Ember/);
+  assert.match(patchText, /Official Ember Build, ungoogled Chromium base/);
+  assert.match(patchText, /Make Ember the default browser/);
+  assert.doesNotMatch(patchText, /^[-+].*User-Agent|^[-+].*Chrome\//m);
+});
+
+test('packaging normalizes pinned artifacts to Ember names without overwriting conflicts', () => {
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ember-packages-fixture-'));
+  const baseline = {
+    buildConfiguration: { tag: '151.0.0.0-1.1' },
+    windowsRequirements: { architecture: 'x64' },
+  };
+  try {
+    const paths = { packageRoot: fixtureRoot };
+    const plan = port.packageArtifactPlan(paths, baseline);
+    fs.writeFileSync(plan[0].source, 'installer');
+    fs.writeFileSync(plan[1].source, 'portable');
+
+    assert.deepEqual(port.normalizePackageArtifacts(paths, baseline), [
+      path.join(fixtureRoot, 'ember_151.0.0.0-1.1_installer_x64.exe'),
+      path.join(fixtureRoot, 'ember_151.0.0.0-1.1_windows_x64.zip'),
+    ]);
+    assert.equal(fs.existsSync(plan[0].source), false);
+    assert.equal(fs.readFileSync(plan[0].destination, 'utf8'), 'installer');
+    assert.equal(port.normalizePackageArtifacts(paths, baseline).length, 2);
+
+    fs.writeFileSync(plan[0].source, 'installer');
+    assert.equal(port.normalizePackageArtifacts(paths, baseline).length, 2);
+    assert.equal(fs.existsSync(plan[0].source), false);
+
+    fs.writeFileSync(plan[0].source, 'different');
+    assert.throws(
+      () => port.normalizePackageArtifacts(paths, baseline),
+      /Refusing to overwrite a different Ember installer package/,
+    );
+  } finally {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
 });
 
 test('managed patch-series composition is deterministic and does not duplicate Ember entries', () => {

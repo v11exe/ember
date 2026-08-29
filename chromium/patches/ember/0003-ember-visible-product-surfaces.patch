@@ -1,0 +1,297 @@
+diff --git a/chrome/app/chromium_strings.grd b/chrome/app/chromium_strings.grd
+--- a/chrome/app/chromium_strings.grd
++++ b/chrome/app/chromium_strings.grd
+@@ -294,10 +294,10 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
+         </then>
+         <else>
+           <message name="IDS_PRODUCT_NAME" desc="The Chrome application name" translateable="false">
+-            Chromium
++            Ember
+           </message>
+           <message name="IDS_SHORT_PRODUCT_NAME" desc="The Chrome application short name." translateable="false">
+-            Chromium
++            Ember
+           </message>
+         </else>
+       </if>
+@@ -309,10 +309,10 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
+         <message name="IDS_SHORTCUT_NAME_DEV" desc="Unused in Chromium builds" translateable="false">
+         </message>
+         <message name="IDS_PRODUCT_DESCRIPTION" desc="Browser description">
+-          Chromium is a web browser that runs webpages and applications with lightning speed. It's fast, stable, and easy to use. Browse the web more safely with malware and phishing protection built into Chromium.
++          Ember is a web browser built on Chromium for fast, stable, and secure browsing.
+         </message>
+         <message name="IDS_WELCOME_TO_CHROME" desc="Welcoming text announced via screen readers the first time Chrome is launched at the conclusion of installation.">
+-          Welcome to Chromium; new browser window opened
++          Welcome to Ember; new browser window opened
+         </message>
+       </if>
+       <if expr="is_macosx or is_linux">
+@@ -355,7 +355,7 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
+       </if>
+       <if expr="not is_macosx and not is_chromeos">
+         <message name="IDS_TASK_MANAGER_TITLE" desc="The title of the Task Manager window">
+-          Task Manager - Chromium
++          Task Manager - Ember
+         </message>
+       </if>
+       <message name="IDS_TASK_MANAGER_SEARCH_PLACEHOLDER" desc="The placeholder text for the Search bar in the Task Manager window">
+@@ -443,7 +443,7 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+           </then>
+           <else>
+             <message name="IDS_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for titles displayed in tabs and popup windows">
+-              <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Chromium
++              <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Ember
+             </message>
+           </else>
+         </if>
+@@ -457,7 +457,7 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+       <if expr="not is_chromeos and not is_macosx">
+         <!-- Captive Portal Browser Window Title Format -->
+         <message name="IDS_CAPTIVE_PORTAL_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for titles displayed in captive portal popup windows">
+-          <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Network Sign-in - Chromium
++          <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Network Sign-in - Ember
+         </message>
+       </if>
+       <if expr="is_chromeos">
+@@ -482,18 +482,18 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+         </then>
+         <else>
+           <message name="IDS_ACCESSIBLE_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for the accessible name of a tabbed browser window">
+-            <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Chromium
++            <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Ember
+           </message>
+         </else>
+       </if>
+       <message name="IDS_ACCESSIBLE_BETA_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for the accessible name of a tabbed browser window for the beta channel version of the browser">
+-        <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Chromium Beta
++        <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Ember Beta
+       </message>
+       <message name="IDS_ACCESSIBLE_DEV_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for the accessible name of a tabbed browser window for the developer (dev) channel version of the browser">
+-        <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Chromium Dev
++        <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Ember Dev
+       </message>
+       <message name="IDS_ACCESSIBLE_CANARY_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for the accessible name of a tabbed browser window for the canary (nightly build) channel version of the browser">
+-        <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Chromium Canary
++        <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Ember Canary
+       </message>
+       <if expr="_is_chrome_for_testing_branded">
+         <then>
+@@ -506,10 +506,10 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+         </then>
+         <else>
+           <message name="IDS_ABOUT_VERSION_COMPANY_NAME" desc="Company name on the about pages">
+-            The Chromium Authors
++            The Ember Authors
+           </message>
+           <message name="IDS_ABOUT_VERSION_COPYRIGHT" desc="Copyright information on the about pages">
+-            Copyright <ph name="YEAR">{0,date,y}<ex>2016</ex></ph> The Chromium Authors. All rights reserved.
++            Copyright <ph name="YEAR">{0,date,y}<ex>2016</ex></ph> The Ember Authors. All rights reserved.
+           </message>
+         </else>
+       </if>
+@@ -567,18 +567,18 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+         </message>
+       </if>
+       <message name="IDS_ACCNAME_APP" desc="The accessible name for the app menu." translateable="false">
+-        Chromium
++        Ember
+       </message>
+       <!-- Hung Browser Detector -->
+       <if expr="is_win">
+         <message name="IDS_BROWSER_HUNGBROWSER_MESSAGE" desc="Content of the dialog box shown when the browser is hung">
+-          Chromium is unresponsive. Relaunch now?
++          Ember is unresponsive. Relaunch now?
+         </message>
+       </if>
+       <!-- General app failure messages -->
+       <if expr="not is_chromeos and not is_android">
+         <message name="IDS_COULDNT_STARTUP_PROFILE_ERROR" desc="Error displayed when Chrome cannot start because profiles were not opened correctly.">
+-          Cannot start Chromium because something went wrong when opening your profile. Try to restart Chromium.
++          Cannot start Ember because something went wrong when opening your profile. Try to restart Ember.
+         </message>
+       </if>
+       <!-- Sharing messages -->
+@@ -594,37 +594,37 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+       <!-- Uninstall messages -->
+       <if expr="is_win">
+         <message name="IDS_UNINSTALL_CLOSE_APP" desc="Message to user when uninstall detects other app instance running">
+-          Please close all Chromium windows and try again.
++          Please close all Ember windows and try again.
+         </message>
+         <message name="IDS_UNINSTALL_VERIFY" desc="Message to confirm user wants to uninstall">
+-          Are you sure you want to uninstall Chromium?
++          Are you sure you want to uninstall Ember?
+         </message>
+         <message name="IDS_UNINSTALL_CHROME" desc="The title of the Chromium uninstall dialog.">
+-          Uninstall Chromium
++          Uninstall Ember
+         </message>
+       </if>
+       <!-- Default Browser messages -->
+       <message name="IDS_FR_CUSTOMIZE_DEFAULT_BROWSER" desc="Default browser checkbox label">
+-        Make Chromium the default browser
++        Make Ember the default browser
+       </message>
+       <message name="IDS_DEFAULT_BROWSER_CHANGED_MESSAGE" desc="Body of the notification shown when Chrome is no longer the default browser.">
+-        Chromium is no longer your default browser. Make Chromium the default browser?
++        Ember is no longer your default browser. Make Ember the default browser?
+       </message>
+       <if expr="is_win">
+         <message name="IDS_DEFAULT_BROWSER_VISUAL_GUIDED_SETTER_PAGE_TITLE" desc="Title of the default browser visual guided setter page.">
+-          Set Chromium as your default browser
++          Set Ember as your default browser
+         </message>
+         <message name="IDS_DEFAULT_BROWSER_VISUAL_GUIDED_SETTER_HEADER_TITLE" desc="Header text of the default browser visual guided setter.">
+-          Use Chromium recommended browser settings
++          Use Ember recommended browser settings
+         </message>
+         <message name="IDS_DEFAULT_BROWSER_VISUAL_GUIDED_SETTER_CONTENT_TITLE" desc="Content title of the default browser visual guided setter.">
+-          Set Chromium as your default browser
++          Set Ember as your default browser
+         </message>
+         <message name="IDS_DEFAULT_BROWSER_VISUAL_GUIDED_SETTER_CONTENT_DESCRIPTION" desc="Body text of the default browser visual guided setter.">
+-          Get easy access to the features you know, love, and trust by setting Chromium as your default browser.
++          Get easy access to the features you know, love, and trust by setting Ember as your default browser.
+         </message>
+         <message name="IDS_DEFAULT_BROWSER_VISUAL_GUIDED_SETTER_INSTRUCTION_STEP_2" desc="Instruction step 2 of the default browser visual guided setter. $1 is the bold button name.">
+-          Click <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>Yes<ph name="END_BOLD">&lt;/strong&gt;</ph> in the Windows notification to pin Chromium to your taskbar for quick access.
++          Click <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>Yes<ph name="END_BOLD">&lt;/strong&gt;</ph> in the Windows notification to pin Ember to your taskbar for quick access.
+         </message>
+       </if>
+       <if expr="use_titlecase">
+diff --git a/chrome/app/settings_chromium_strings.grdp b/chrome/app/settings_chromium_strings.grdp
+--- a/chrome/app/settings_chromium_strings.grdp
++++ b/chrome/app/settings_chromium_strings.grdp
+@@ -4,7 +4,7 @@
+   <!-- Shared across multiple page -->
+   <if expr="not is_chromeos">
+     <message name="IDS_RELAUNCH_CONFIRMATION_DIALOG_TITLE" desc="The title of the modal dialog that we show when users click on relaunch and they have open Incognito windows. The dialog serves to warn the users about losing their Incognito windows if they proceed with the relaunch.">
+-      Relaunch Chromium?
++      Relaunch Ember?
+     </message>
+   </if>
+   <!-- About Page -->
+@@ -18,26 +18,26 @@
+       </message>
+     </then>
+     <else>
+-      <message name="IDS_SETTINGS_ABOUT_PROGRAM" desc="Menu title for the About Chromium page.">
+-        About Chromium
++      <message name="IDS_SETTINGS_ABOUT_PROGRAM" desc="Menu title for the About Ember page.">
++        About Ember
+       </message>
+       <message name="IDS_SETTINGS_GET_HELP_USING_CHROME" desc="Text of the button which takes the user to the Chrome help page.">
+-        Get help with Chromium
++        Get help with Ember
+       </message>
+     </else>
+   </if>
+   <if expr="not is_chromeos">
+-    <message name="IDS_SETTINGS_UPGRADE_UPDATING" desc="Status label: Updating Chromium">
+-      Updating Chromium
++    <message name="IDS_SETTINGS_UPGRADE_UPDATING" desc="Status label: Updating Ember">
++      Updating Ember
+     </message>
+-    <message name="IDS_SETTINGS_UPGRADE_UPDATING_PERCENT" desc="Status label: Updating Chromium (90%)">
+-      Updating Chromium (<ph name="PROGRESS_PERCENT">$1<ex>90%</ex></ph>)
++    <message name="IDS_SETTINGS_UPGRADE_UPDATING_PERCENT" desc="Status label: Updating Ember (90%)">
++      Updating Ember (<ph name="PROGRESS_PERCENT">$1<ex>90%</ex></ph>)
+     </message>
+-    <message name="IDS_SETTINGS_UPGRADE_SUCCESSFUL_RELAUNCH" desc="Status label: Successfully updated Chromium">
+-      Nearly up to date! Relaunch Chromium to finish updating.
++    <message name="IDS_SETTINGS_UPGRADE_SUCCESSFUL_RELAUNCH" desc="Status label: Successfully updated Ember">
++      Nearly up to date! Relaunch Ember to finish updating.
+     </message>
+-    <message name="IDS_SETTINGS_UPGRADE_UP_TO_DATE" desc="Status label: Already up to date (Chromium)">
+-      Chromium is up to date
++    <message name="IDS_SETTINGS_UPGRADE_UP_TO_DATE" desc="Status label: Already up to date (Ember)">
++      Ember is up to date
+     </message>
+   </if>
+   <if expr="is_chromeos">
+@@ -61,25 +61,25 @@
+   <!-- Default Browser Page -->
+   <if expr="not is_chromeos">
+     <message name="IDS_SETTINGS_DEFAULT_BROWSER_DEFAULT" desc="The text displayed when Chrome is the default browser">
+-      Chromium is your default browser
++      Ember is your default browser
+     </message>
+-    <message name="IDS_SETTINGS_DEFAULT_BROWSER_DEFAULT_THANK_YOU" desc="The text displayed when Chromium is the default browser">
+-      Thanks for choosing Chromium as your default browser!
++    <message name="IDS_SETTINGS_DEFAULT_BROWSER_DEFAULT_THANK_YOU" desc="The text displayed when Ember is the default browser">
++      Thanks for choosing Ember as your default browser!
+     </message>
+     <message name="IDS_SETTINGS_DEFAULT_BROWSER_MAKE_DEFAULT" desc="Default browser checkbox label">
+-      Make Chromium the default browser
++      Make Ember the default browser
+     </message>
+-    <message name="IDS_SETTINGS_DEFAULT_BROWSER_MAKE_DEFAULT_USER_VALUE" desc="The text displayed when Chromium is not the default browser. This string describes the effect (user benefit) of setting a browser as the default.">
+-      You can use Chromium anytime you click links in messages, documents, and other apps
++    <message name="IDS_SETTINGS_DEFAULT_BROWSER_MAKE_DEFAULT_USER_VALUE" desc="The text displayed when Ember is not the default browser. This string describes the effect (user benefit) of setting a browser as the default.">
++      You can use Ember anytime you click links in messages, documents, and other apps
+     </message>
+-    <message name="IDS_SETTINGS_DEFAULT_BROWSER_MAKE_DEFAULT_AND_PIN" desc="The text of the button to make Chromium the default browser and pin it to the taskbar.">
+-      Make Chromium the default browser and pin to the taskbar
++    <message name="IDS_SETTINGS_DEFAULT_BROWSER_MAKE_DEFAULT_AND_PIN" desc="The text of the button to make Ember the default browser and pin it to the taskbar.">
++      Make Ember the default browser and pin to the taskbar
+     </message>
+-    <message name="IDS_SETTINGS_DEFAULT_BROWSER_MAKE_DEFAULT_AND_PIN_USER_VALUE" desc="The text of the button to make Chromium the default browser and pin it to the taskbar.">
+-      You can use Chromium anytime you click links in messages, documents, and other apps. It will also be pinned to your taskbar.
++    <message name="IDS_SETTINGS_DEFAULT_BROWSER_MAKE_DEFAULT_AND_PIN_USER_VALUE" desc="The text of the button to make Ember the default browser and pin it to the taskbar.">
++      You can use Ember anytime you click links in messages, documents, and other apps. It will also be pinned to your taskbar.
+     </message>
+     <message name="IDS_SETTINGS_DEFAULT_BROWSER_ERROR" desc="The text displayed when Chrome cannot determine or set the default browser">
+-      Chromium cannot determine or set the default browser
++      Ember cannot determine or set the default browser
+     </message>
+     <if expr="_is_chrome_for_testing_branded">
+       <then>
+@@ -88,8 +88,8 @@
+         </message>
+       </then>
+       <else>
+-        <message name="IDS_SETTINGS_DEFAULT_BROWSER_SECONDARY" desc="The text displayed when Chromium is installed in side-by-side mode, which does not support setting as the default browser.">
+-          This is a secondary installation of Chromium, and cannot be made your default browser.
++        <message name="IDS_SETTINGS_DEFAULT_BROWSER_SECONDARY" desc="The text displayed when Ember is installed in side-by-side mode, which does not support setting as the default browser.">
++          This is a secondary installation of Ember, and cannot be made your default browser.
+         </message>
+       </else>
+     </if>
+diff --git a/chrome/browser/ui/webui/version/version_ui.cc b/chrome/browser/ui/webui/version/version_ui.cc
+--- a/chrome/browser/ui/webui/version/version_ui.cc
++++ b/chrome/browser/ui/webui/version/version_ui.cc
+@@ -241,7 +241,7 @@ void VersionUI::AddVersionDetailStrings(content::WebUIDataSource* html_source) {
+   html_source->AddLocalizedString(version_ui::kOfficial,
+                                   version_info::IsOfficialBuild()
+-                                      ? IDS_VERSION_UI_OFFICIAL
+-                                      : IDS_VERSION_UI_UNOFFICIAL);
++                                      ? IDS_VERSION_UI_EMBER_OFFICIAL
++                                      : IDS_VERSION_UI_EMBER_UNOFFICIAL);
+   html_source->AddLocalizedString(version_ui::kVersionProcessorVariation,
+                                   VersionProcessorVariation());
+ 
+@@ -343,8 +343,8 @@ std::u16string VersionUI::GetAnnotatedVersionStringForUi() {
+       base::UTF8ToUTF16(version_info::GetVersionNumber()),
+       base::UTF8ToUTF16(GetVersionInformationalSuffix()),
+       l10n_util::GetStringUTF16(version_info::IsOfficialBuild()
+-                                    ? IDS_VERSION_UI_OFFICIAL
+-                                    : IDS_VERSION_UI_UNOFFICIAL),
++                                    ? IDS_VERSION_UI_EMBER_OFFICIAL
++                                    : IDS_VERSION_UI_EMBER_UNOFFICIAL),
+       base::UTF8ToUTF16(GetProductModifier()),
+       l10n_util::GetStringUTF16(VersionUI::VersionProcessorVariation()));
+ }
+diff --git a/components/version_ui_strings.grdp b/components/version_ui_strings.grdp
+--- a/components/version_ui_strings.grdp
++++ b/components/version_ui_strings.grdp
+@@ -4,3 +4,9 @@
+     About Version
+   </message>
++  <message name="IDS_VERSION_UI_EMBER_OFFICIAL" desc="official Ember build on the about:version page">
++    Official Ember Build, ungoogled Chromium base
++  </message>
++  <message name="IDS_VERSION_UI_EMBER_UNOFFICIAL" desc="unofficial Ember build on the about:version page">
++    Developer Ember Build, ungoogled Chromium base
++  </message>
+   <message name="IDS_VERSION_UI_OFFICIAL" desc="official build on the about:version page">
