@@ -46,6 +46,8 @@ test('the Ember patch series is ordered, local, and complete', () => {
     'ember/0001-ember-product-identity.patch',
     'ember/0002-ember-windows-security-identities.patch',
     'ember/0003-ember-visible-product-surfaces.patch',
+    'ember/0004-ember-windows-app-icon-version.patch',
+    'ember/0005-ember-webui-product-icon.patch',
   ]);
   for (const entry of entries) {
     assert.equal(fs.existsSync(path.join(port.PATCHES_ROOT, ...entry.split('/'))), true);
@@ -218,6 +220,130 @@ test('the visible product patch brands window, About, accessibility, and default
   assert.doesNotMatch(patchText, /^[-+].*User-Agent|^[-+].*Chrome\//m);
 });
 
+test('the native resource overlay is path-safe and carries valid Ember raster and ICO assets', () => {
+  const manifest = port.readResourceManifest();
+  assert.equal(manifest.files.length, 18);
+  assert.equal(new Set(manifest.files.map((item) => item.destination)).size, 18);
+  assert.match(port.resourceOverlayHash(manifest), /^[0-9a-f]{64}$/);
+  assert.equal(
+    manifest.files.some((item) => item.destination.endsWith('/chromium/win/chromium.ico')),
+    true,
+  );
+  assert.equal(
+    manifest.files.filter((item) => item.destination.includes('components/resources/')).length,
+    4,
+  );
+
+  const dimensions = new Map([
+    ['app-16.png', [16, 16]],
+    ['app-24.png', [24, 24]],
+    ['app-32.png', [32, 32]],
+    ['app-48.png', [48, 48]],
+    ['app-64.png', [64, 64]],
+    ['app-128.png', [128, 128]],
+    ['app-256.png', [256, 256]],
+    ['about-logo.png', [171, 32]],
+    ['about-logo-200.png', [342, 64]],
+  ]);
+  for (const [filename, expected] of dimensions) {
+    const bytes = fs.readFileSync(path.join(port.RESOURCES_ROOT, 'branding', filename));
+    assert.deepEqual([...bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+    assert.deepEqual([bytes.readUInt32BE(16), bytes.readUInt32BE(20)], expected);
+  }
+
+  for (const filename of [
+    'product-logo.svg',
+    'product-logo-animation.svg',
+    'webui-logo-dark.svg',
+  ]) {
+    const svg = fs.readFileSync(path.join(port.RESOURCES_ROOT, 'branding', filename), 'utf8');
+    assert.match(svg, /^<svg [^>]+>/);
+    assert.match(svg, /href="data:image\/png;base64,/);
+    assert.match(svg, /<\/svg>\n$/);
+  }
+
+  const ico = fs.readFileSync(path.join(port.RESOURCES_ROOT, 'branding', 'ember.ico'));
+  assert.equal(ico.readUInt16LE(0), 0);
+  assert.equal(ico.readUInt16LE(2), 1);
+  assert.equal(ico.readUInt16LE(4), 4);
+  const icoSizes = [];
+  for (let index = 0; index < 4; index += 1) {
+    const entry = 6 + (index * 16);
+    icoSizes.push(ico[entry] || 256);
+    const length = ico.readUInt32LE(entry + 8);
+    const offset = ico.readUInt32LE(entry + 12);
+    assert.ok(offset + length <= ico.length);
+    assert.deepEqual([...ico.subarray(offset, offset + 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  }
+  assert.deepEqual(icoSizes, [16, 32, 48, 256]);
+});
+
+test('resource copying verifies exact destinations and the build hook rejects traversal', () => {
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ember-resources-fixture-'));
+  try {
+    const resourceRoot = path.join(fixtureRoot, 'resources');
+    const destinationRoot = path.join(fixtureRoot, 'chromium');
+    fs.mkdirSync(resourceRoot);
+    fs.mkdirSync(destinationRoot);
+    fs.writeFileSync(path.join(resourceRoot, 'asset.bin'), 'ember');
+    fs.writeFileSync(path.join(destinationRoot, 'target.bin'), 'upstream');
+    const manifest = {
+      resourceRoot,
+      files: [{ source: 'asset.bin', destination: 'target.bin' }],
+    };
+    assert.deepEqual(port.copyResourceOverlay(manifest, destinationRoot), ['target.bin']);
+    assert.deepEqual(port.verifyResourceOverlay(manifest, destinationRoot), ['target.bin']);
+    assert.equal(fs.readFileSync(path.join(destinationRoot, 'target.bin'), 'utf8'), 'ember');
+    const destination = path.join(destinationRoot, 'target.bin');
+    const stableTime = new Date('2020-01-02T03:04:05.000Z');
+    fs.utimesSync(destination, stableTime, stableTime);
+    port.copyResourceOverlay(manifest, destinationRoot);
+    assert.equal(fs.statSync(destination).mtimeMs, stableTime.getTime());
+
+    const unsafeManifest = path.join(fixtureRoot, 'unsafe.json');
+    fs.writeFileSync(unsafeManifest, JSON.stringify({
+      schemaVersion: 1,
+      files: [{ source: '../escape.bin', destination: 'target.bin' }],
+    }));
+    assert.throws(() => port.readResourceManifest(unsafeManifest), /Unsafe source resource path/);
+  } finally {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+
+  const configurationPatch = fs.readFileSync(
+    path.join(port.REPO_ROOT, 'chromium', 'configuration', '0001-ember-resource-overlay.patch'),
+    'utf8',
+  );
+  assert.match(configurationPatch, /source\.is_relative_to\(resource_root\)/);
+  assert.match(configurationPatch, /destination\.is_relative_to\(source_tree\)/);
+  assert.match(configurationPatch, /\.ember-resource-overlay\.sha256/);
+  assert.match(configurationPatch, /chrome_initial\/chrome_exe\.res/);
+  assert.match(configurationPatch, /chrome_dll_resources\/chrome_dll\.res/);
+  assert.match(configurationPatch, /if destination\.read_bytes\(\) != source_bytes:/);
+  assert.equal(port.isManagedConfigurationPath('build.py'), true);
+  assert.equal(port.isManagedConfigurationPath('ember-resources/manifest.json'), true);
+  assert.equal(port.isManagedConfigurationPath('ember-resources/foreign.bin'), false);
+});
+
+test('the Windows icon patch advances profile shortcut migration state', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0004-ember-windows-app-icon-version.patch'),
+    'utf8',
+  );
+  assert.match(patchText, /-const int kCurrentProfileIconVersion = 10;/);
+  assert.match(patchText, /\+const int kCurrentProfileIconVersion = 11;/);
+});
+
+test('the WebUI product icon patch replaces the last shared Chromium glyph', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0005-ember-webui-product-icon.patch'),
+    'utf8',
+  );
+  assert.match(patchText, /<g id="chrome-product"/);
+  assert.match(patchText, /M160-800h360/);
+  assert.doesNotMatch(patchText, /^\+.*M336-479/m);
+});
+
 test('packaging normalizes pinned artifacts to Ember names without overwriting conflicts', () => {
   const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ember-packages-fixture-'));
   const baseline = {
@@ -242,6 +368,11 @@ test('packaging normalizes pinned artifacts to Ember names without overwriting c
     assert.equal(port.normalizePackageArtifacts(paths, baseline).length, 2);
     assert.equal(fs.existsSync(plan[0].source), false);
 
+    fs.writeFileSync(plan[0].source, 'updated');
+    assert.equal(port.normalizePackageArtifacts(paths, baseline).length, 2);
+    assert.equal(fs.readFileSync(plan[0].destination, 'utf8'), 'updated');
+
+    fs.writeFileSync(plan[0].destination, 'foreign');
     fs.writeFileSync(plan[0].source, 'different');
     assert.throws(
       () => port.normalizePackageArtifacts(paths, baseline),
@@ -262,6 +393,50 @@ test('managed patch-series composition is deterministic and does not duplicate E
   assert.equal(once.match(/ember\/identity\.patch/g).length, 1);
   assert.match(once, new RegExp(port.MANAGED_SERIES_BEGIN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(once, new RegExp(port.MANAGED_SERIES_END.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('managed configuration overlays upgrade only from their exact stamped bytes', () => {
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ember-config-overlay-fixture-'));
+  const paths = { configurationRoot: fixtureRoot };
+  const originalPlan = {
+    files: [{
+      relativePath: 'build.py',
+      expected: Buffer.from('original\r\n'),
+      acceptedBeforePrepare: [Buffer.from('original\r\n')],
+      text: true,
+    }],
+  };
+  try {
+    port.prepareConfigurationOverlay(paths, originalPlan);
+    const expectedHash = port.configurationOverlayHash(originalPlan);
+    assert.equal(port.existingConfigurationOverlayHash(paths, originalPlan), expectedHash);
+
+    const upgradedPlan = {
+      files: [
+        {
+          relativePath: 'build.py',
+          expected: Buffer.from('upgraded\n'),
+          acceptedBeforePrepare: [Buffer.from('upgraded\n')],
+          text: true,
+        },
+        {
+          relativePath: 'ember-resources/asset.bin',
+          expected: Buffer.from('asset'),
+          acceptedBeforePrepare: [Buffer.from('asset')],
+        },
+      ],
+    };
+    port.prepareConfigurationOverlay(paths, upgradedPlan, true);
+    assert.equal(fs.readFileSync(path.join(fixtureRoot, 'build.py'), 'utf8'), 'upgraded\n');
+    assert.equal(fs.readFileSync(path.join(fixtureRoot, 'ember-resources', 'asset.bin'), 'utf8'),
+      'asset');
+
+    fs.writeFileSync(path.join(fixtureRoot, 'build.py'), 'foreign');
+    assert.notEqual(port.existingConfigurationOverlayHash(paths, upgradedPlan),
+      port.configurationOverlayHash(upgradedPlan));
+  } finally {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
 });
 
 test('work-root validation keeps the Chromium checkout away from Ember and broad roots', () => {

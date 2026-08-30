@@ -94,9 +94,10 @@ substitution. The download cache was removed only after all hashes/unpacks had
 completed, reclaiming 1.82 GiB without touching source or build output.
 
 `build --resume` exists for this prepared state. It verifies the source HEAD,
-proves all three applied Ember patch postimages by reverse-applying them in an
-isolated 13-file scratch tree, accepts only known generated state including
-`.gcs_entries`, and uses the 60 GiB prepared-build floor. If a failed GN attempt
+proves all five applied Ember patch postimages by reverse-applying them in an
+isolated 15-file scratch tree, verifies all 18 resource destinations, accepts
+only known generated state including `.gcs_entries`, and uses the 60 GiB
+prepared-build floor. If a failed GN attempt
 left `out/Default/gn.exe` without `build.ninja`, resume deletes only that partial
 bootstrap executable so upstream regenerates the Ninja graph. Incremental Ninja
 objects are retained.
@@ -157,16 +158,57 @@ official ungoogled-Chromium-based build; `chrome://settings/help` says `About
 Ember`. Packaging normalization emits only deterministic Ember-named installer
 and portable artifacts and refuses to overwrite a differing existing package.
 The stable `Chrome/...` user-agent token is deliberately retained for website
-compatibility. About/logo icons, executable naming, signing, CDP identity, and
+compatibility. Executable naming, signing, final rebuilt icon verification, and
 installer integration remain open. The installer was not executed on the
 development machine, so registry, protocol, COM activation, update, upgrade,
 uninstall, and coexistence behavior remain unverified.
+
+## Branding-overlay and automation findings
+
+The exact Helium Windows research commit `332bb0b...` and its pinned common
+commit `971d367...` were inspected in a disposable external clone. Its
+maintainable pattern is a small source-controlled resource list plus generated
+and copied resource stages invoked by the platform build script
+(`resources/platform_resources.txt`, common `resources/helium_resources.txt`,
+`utils/generate_resources.py`, and `replace_resources.py`). Ember reimplements
+that architecture with its own manifest, validation, generator and canonical
+assets; no Helium visual asset or source implementation was copied.
+
+Chromium's DevTools browser product is not an isolated display string.
+`content/browser/devtools/devtools_http_handler.cc` obtains it from
+`ContentBrowserClient::GetProduct()`, and Chrome's implementation returns the
+same stable product token used by compatible browser plumbing. The pinned
+ChromeDriver parser in `chrome/test/chromedriver/chrome/browser_info.cc` accepts
+only `Chrome/` or `HeadlessChrome/`, and that product also participates in GPU
+shader-cache namespacing. Ember therefore keeps CDP `Chrome/151.0.7922.173` and
+the stable Chrome UA intentionally while branding user-visible surfaces as
+Ember.
+
+The first 15-resource incremental build completed 476 actions and rendered the
+gold Ember mark on the live About page. Direct `PrivateExtractIcons` extraction
+then proved `chrome.exe` still embedded Chromium's blue icon. The source ICO was
+byte-for-byte Ember, but `out/Default/obj/chrome/chrome_initial/chrome_exe.res`
+and the corresponding DLL resource still predated the overlay: Windows RC
+includes are not dependency-tracked by this Ninja graph. The Windows build hook
+now hashes the full prepared overlay and invalidates exactly
+`chrome_exe.res` and `chrome_dll.res` only when those bytes change. It also
+copies only differing resources so ordinary resumes do not create false mtime
+rebuilds.
+
+The live Settings capture exposed two more upstream glyph routes:
+`ui/webui/resources/images/chrome_logo_dark.svg` used by the shared toolbar and
+`cr:chrome-product` defined in `ui/webui/resources/cr_elements/icons.html.ts`.
+The former is now an Ember-owned generated SVG wrapper; the latter is replaced
+by a small monochrome Ember meteor path in patch five. All five patches reverse
+cleanly from the applied 15-file source set and all 18 resource destinations
+verify, but the final resource-object/DLL rebuild remains blocked by the 60 GiB
+prepared-build disk floor.
 
 ## Next source inspection targets
 
 With the first binary and visible identity slice proven, continue in this order:
 
-1. icons, About logo, shortcuts, file associations, CDP identity, and an
+1. final executable/HWND/shortcut/WebUI icon rebuild and verification, then an
    explicit compatibility decision on executable naming;
 2. installer registry, toast activation, elevated services, upgrade/uninstall,
    and side-by-side behavior;

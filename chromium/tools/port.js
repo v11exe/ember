@@ -12,6 +12,14 @@ const CHROMIUM_ROOT = path.join(REPO_ROOT, 'chromium');
 const BASELINE_PATH = path.join(CHROMIUM_ROOT, 'baseline.json');
 const PATCHES_ROOT = path.join(CHROMIUM_ROOT, 'patches');
 const SERIES_PATH = path.join(PATCHES_ROOT, 'series');
+const RESOURCES_ROOT = path.join(CHROMIUM_ROOT, 'resources');
+const RESOURCE_MANIFEST_PATH = path.join(RESOURCES_ROOT, 'manifest.json');
+const CONFIGURATION_PATCH_PATH = path.join(
+  CHROMIUM_ROOT,
+  'configuration',
+  '0001-ember-resource-overlay.patch',
+);
+const CONFIGURATION_RESOURCE_DIRECTORY = 'ember-resources';
 const DEFAULT_WORK_ROOT = 'C:\\src\\ember-chromium';
 const MANAGED_SERIES_BEGIN = '# BEGIN EMBER PORT PATCHES - managed by chromium/tools/port.js';
 const MANAGED_SERIES_END = '# END EMBER PORT PATCHES';
@@ -57,6 +65,7 @@ function getPortPaths(workRootValue) {
   return {
     workRoot,
     configurationRoot,
+    configurationResourceRoot: path.join(configurationRoot, CONFIGURATION_RESOURCE_DIRECTORY),
     packageRoot: path.join(configurationRoot, 'build'),
     sourceRoot: path.join(configurationRoot, 'build', 'src'),
     outputRoot: path.join(configurationRoot, 'build', 'src', 'out', 'Default'),
@@ -464,6 +473,106 @@ function patchStackHash(entries = parseSeriesEntries()) {
   return hash.digest('hex');
 }
 
+function safeRelativeResourcePath(value, label) {
+  if (typeof value !== 'string' || !value || value.trim() !== value) {
+    throw new Error(`Invalid ${label} resource path: ${String(value)}`);
+  }
+  const normalized = value.replaceAll('\\', '/');
+  const parts = normalized.split('/');
+  if (normalized.startsWith('/')
+    || /^[a-z]:\//i.test(normalized)
+    || parts.some((part) => !part || part === '.' || part === '..')) {
+    throw new Error(`Unsafe ${label} resource path: ${value}`);
+  }
+  return normalized;
+}
+
+function readResourceManifest(manifestPath = RESOURCE_MANIFEST_PATH) {
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  if (manifest.schemaVersion !== 1 || !Array.isArray(manifest.files) || !manifest.files.length) {
+    throw new Error(`Invalid Ember resource manifest: ${manifestPath}`);
+  }
+  const destinations = new Set();
+  const files = manifest.files.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new Error(`Invalid Ember resource entry in ${manifestPath}`);
+    }
+    const source = safeRelativeResourcePath(item.source, 'source');
+    const destination = safeRelativeResourcePath(item.destination, 'destination');
+    if (destinations.has(destination)) {
+      throw new Error(`Duplicate Ember resource destination: ${destination}`);
+    }
+    destinations.add(destination);
+    return { source, destination };
+  });
+  return {
+    schemaVersion: 1,
+    files,
+    manifestPath: path.resolve(manifestPath),
+    resourceRoot: path.dirname(path.resolve(manifestPath)),
+  };
+}
+
+function resourceOverlayHash(manifest = readResourceManifest()) {
+  const hash = crypto.createHash('sha256');
+  hash.update('ember-resource-overlay-v1\n');
+  hash.update(fs.readFileSync(CONFIGURATION_PATCH_PATH));
+  for (const item of manifest.files) {
+    const sourcePath = path.join(manifest.resourceRoot, ...item.source.split('/'));
+    if (!fs.existsSync(sourcePath)) {
+      throw new Error(`Missing Ember resource: ${sourcePath}`);
+    }
+    hash.update(`\n${item.source}\n${item.destination}\n`);
+    hash.update(fs.readFileSync(sourcePath));
+  }
+  return hash.digest('hex');
+}
+
+function configurationOverlayManagedPaths(manifest = readResourceManifest()) {
+  return [
+    'build.py',
+    `${CONFIGURATION_RESOURCE_DIRECTORY}/manifest.json`,
+    ...manifest.files.map((item) => `${CONFIGURATION_RESOURCE_DIRECTORY}/${item.source}`),
+  ];
+}
+
+function copyResourceOverlay(manifest, destinationRoot) {
+  const copies = manifest.files.map((item) => {
+    const source = path.join(manifest.resourceRoot, ...item.source.split('/'));
+    const destination = path.join(destinationRoot, ...item.destination.split('/'));
+    if (!fs.existsSync(source)) throw new Error(`Missing Ember resource: ${source}`);
+    if (!fs.existsSync(destination)) {
+      throw new Error(`Missing Chromium resource destination: ${destination}`);
+    }
+    return {
+      source,
+      destination,
+      relativeDestination: item.destination,
+      sourceBytes: fs.readFileSync(source),
+    };
+  });
+  for (const item of copies) {
+    if (!item.sourceBytes.equals(fs.readFileSync(item.destination))) {
+      fs.copyFileSync(item.source, item.destination);
+    }
+  }
+  return copies.map((item) => item.relativeDestination);
+}
+
+function verifyResourceOverlay(manifest, destinationRoot) {
+  const verified = [];
+  for (const item of manifest.files) {
+    const source = path.join(manifest.resourceRoot, ...item.source.split('/'));
+    const destination = path.join(destinationRoot, ...item.destination.split('/'));
+    if (!fs.existsSync(source) || !fs.existsSync(destination)
+      || !fs.readFileSync(source).equals(fs.readFileSync(destination))) {
+      throw new Error(`Chromium resource differs from Ember: ${item.destination}`);
+    }
+    verified.push(item.destination);
+  }
+  return verified;
+}
+
 function touchedPathsFromPatches(patchPaths) {
   const touched = new Set();
   for (const patchPath of patchPaths) {
@@ -543,20 +652,154 @@ function parseDirtyPaths(statusText) {
     .map((entry) => entry.replace(/^"|"$/g, '').replaceAll('\\', '/'));
 }
 
-function isManagedConfigurationPath(relativePath, entries = parseSeriesEntries()) {
+function readGitBlob(repositoryRoot, revisionPath) {
+  const result = spawnSync('git', ['-C', repositoryRoot, 'show', revisionPath], {
+    encoding: null,
+    windowsHide: true,
+  });
+  if (result.error || result.status !== 0) {
+    const details = Buffer.concat([result.stderr || Buffer.alloc(0), result.stdout || Buffer.alloc(0)])
+      .toString('utf8')
+      .trim();
+    throw new Error(`Could not read ${revisionPath}${details ? `:\n${details}` : ''}`);
+  }
+  return result.stdout;
+}
+
+function applyConfigurationPatchToBuffer(pristineBuildScript) {
+  const scratchPrefix = path.join(os.tmpdir(), 'ember-configuration-patch-');
+  const scratchRoot = fs.mkdtempSync(scratchPrefix);
+  try {
+    const buildScript = path.join(scratchRoot, 'build.py');
+    fs.writeFileSync(buildScript, pristineBuildScript);
+    runCaptured('git', ['apply', '--check', '--no-index', CONFIGURATION_PATCH_PATH], {
+      cwd: scratchRoot,
+    });
+    runCaptured('git', ['apply', '--no-index', CONFIGURATION_PATCH_PATH], { cwd: scratchRoot });
+    return fs.readFileSync(buildScript);
+  } finally {
+    const safePrefix = normalizeForComparison(scratchPrefix);
+    const safeScratch = normalizeForComparison(scratchRoot);
+    if (safeScratch.startsWith(safePrefix)) {
+      fs.rmSync(scratchRoot, { recursive: true, force: true });
+    }
+  }
+}
+
+function configurationOverlayPlan(paths, baseline = readBaseline()) {
+  const manifest = readResourceManifest();
+  const pristineBuildScript = readGitBlob(
+    paths.configurationRoot,
+    `${baseline.buildConfiguration.commit}:build.py`,
+  );
+  const patchedBuildScript = applyConfigurationPatchToBuffer(pristineBuildScript);
+  const files = [
+    {
+      relativePath: 'build.py',
+      sourcePath: null,
+      expected: patchedBuildScript,
+      acceptedBeforePrepare: [pristineBuildScript, patchedBuildScript],
+      text: true,
+    },
+    {
+      relativePath: `${CONFIGURATION_RESOURCE_DIRECTORY}/manifest.json`,
+      sourcePath: RESOURCE_MANIFEST_PATH,
+      expected: fs.readFileSync(RESOURCE_MANIFEST_PATH),
+      acceptedBeforePrepare: [fs.readFileSync(RESOURCE_MANIFEST_PATH)],
+    },
+    ...manifest.files.map((item) => {
+      const sourcePath = path.join(manifest.resourceRoot, ...item.source.split('/'));
+      const expected = fs.readFileSync(sourcePath);
+      return {
+        relativePath: `${CONFIGURATION_RESOURCE_DIRECTORY}/${item.source}`,
+        sourcePath,
+        expected,
+        acceptedBeforePrepare: [expected],
+      };
+    }),
+  ];
+  return { manifest, files };
+}
+
+function comparableConfigurationBytes(item, bytes) {
+  return item.text
+    ? Buffer.from(bytes.toString('utf8').replaceAll('\r\n', '\n'), 'utf8')
+    : bytes;
+}
+
+function configurationOverlayHash(plan, readBytes = (item) => item.expected) {
+  const hash = crypto.createHash('sha256');
+  hash.update('ember-configuration-overlay-v1\n');
+  for (const item of plan.files) {
+    const bytes = readBytes(item);
+    if (!bytes) return null;
+    hash.update(`${item.relativePath}\n`);
+    hash.update(comparableConfigurationBytes(item, bytes));
+    hash.update('\n');
+  }
+  return hash.digest('hex');
+}
+
+function existingConfigurationOverlayHash(paths, plan) {
+  return configurationOverlayHash(plan, (item) => {
+    const source = path.join(paths.configurationRoot, ...item.relativePath.split('/'));
+    return fs.existsSync(source) ? fs.readFileSync(source) : null;
+  });
+}
+
+function prepareConfigurationOverlay(paths, plan, allowManagedUpgrade = false) {
+  for (const item of plan.files) {
+    const destination = path.join(paths.configurationRoot, ...item.relativePath.split('/'));
+    if (fs.existsSync(destination) && !allowManagedUpgrade) {
+      const current = fs.readFileSync(destination);
+      const comparableCurrent = comparableConfigurationBytes(item, current);
+      const accepted = item.acceptedBeforePrepare.some((candidate) => (item.text
+        ? comparableCurrent.equals(comparableConfigurationBytes(item, candidate))
+        : current.equals(candidate)));
+      if (!accepted) {
+        throw new Error(`Refusing to overwrite a foreign configuration edit: ${destination}`);
+      }
+    }
+  }
+  for (const item of plan.files) {
+    const destination = path.join(paths.configurationRoot, ...item.relativePath.split('/'));
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.writeFileSync(destination, item.expected);
+  }
+}
+
+function verifyConfigurationOverlay(paths, plan) {
+  for (const item of plan.files) {
+    const destination = path.join(paths.configurationRoot, ...item.relativePath.split('/'));
+    if (!fs.existsSync(destination) || !item.expected.equals(fs.readFileSync(destination))) {
+      throw new Error(`Generated configuration overlay differs from Ember: ${item.relativePath}`);
+    }
+  }
+}
+
+function isManagedConfigurationPath(
+  relativePath,
+  entries = parseSeriesEntries(),
+  overlayPaths = configurationOverlayManagedPaths(),
+) {
   const normalized = relativePath.replaceAll('\\', '/');
   return normalized === '.ember-port.json'
     || normalized === '.gcs_entries'
     || normalized === 'patches/series'
+    || overlayPaths.includes(normalized)
     || entries.some((entry) => normalized === `patches/${entry}`);
 }
 
-function assertNoUnexpectedConfigurationChanges(configurationRoot, entries = parseSeriesEntries()) {
+function assertNoUnexpectedConfigurationChanges(
+  configurationRoot,
+  entries = parseSeriesEntries(),
+  overlayPaths = configurationOverlayManagedPaths(),
+) {
   const status = runCaptured('git', [
     '-C', configurationRoot, 'status', '--short', '--untracked-files=all', '--ignore-submodules=none',
   ]);
   const unexpected = parseDirtyPaths(status)
-    .filter((entry) => !isManagedConfigurationPath(entry, entries));
+    .filter((entry) => !isManagedConfigurationPath(entry, entries, overlayPaths));
   if (unexpected.length) {
     throw new Error(
       `Refusing to overwrite unexpected changes in the managed configuration checkout:\n${unexpected.join('\n')}`,
@@ -564,15 +807,21 @@ function assertNoUnexpectedConfigurationChanges(configurationRoot, entries = par
   }
 }
 
-function expectedStamp(baseline, entries) {
+function expectedStamp(baseline, entries, overlayPlan) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 3,
     chromiumVersion: baseline.chromium.version,
     chromiumCommit: baseline.chromium.commit,
     configurationCommit: baseline.buildConfiguration.commit,
     commonCommit: baseline.buildConfiguration.commonSubmodule.commit,
     electronOracleCommit: baseline.electronOracle.referenceCommit,
     patchStackSha256: patchStackHash(entries),
+    resourceOverlaySha256: resourceOverlayHash(),
+    configurationOverlaySha256: configurationOverlayHash(overlayPlan),
+    configurationOverlayFiles: overlayPlan.files.map((item) => ({
+      relativePath: item.relativePath,
+      text: Boolean(item.text),
+    })),
   };
 }
 
@@ -626,7 +875,24 @@ function prepare(workRootValue) {
   if (head !== configuration.commit) {
     throw new Error(`Configuration checkout is ${head}; expected ${configuration.commit}`);
   }
-  assertNoUnexpectedConfigurationChanges(paths.configurationRoot, entries);
+  const overlayPlan = configurationOverlayPlan(paths, baseline);
+  const overlayPaths = overlayPlan.files.map((item) => item.relativePath);
+  assertNoUnexpectedConfigurationChanges(paths.configurationRoot, entries, overlayPaths);
+  let allowManagedUpgrade = false;
+  if (fs.existsSync(paths.stampPath)) {
+    const priorStamp = JSON.parse(fs.readFileSync(paths.stampPath, 'utf8'));
+    const priorFiles = Array.isArray(priorStamp.configurationOverlayFiles)
+      ? priorStamp.configurationOverlayFiles.map((item) => ({
+        relativePath: safeRelativeResourcePath(item?.relativePath, 'configuration overlay'),
+        text: item?.text === true,
+      }))
+      : null;
+    allowManagedUpgrade = priorStamp.schemaVersion === 3
+      && typeof priorStamp.configurationOverlaySha256 === 'string'
+      && priorFiles !== null
+      && existingConfigurationOverlayHash(paths, { files: priorFiles })
+        === priorStamp.configurationOverlaySha256;
+  }
 
   runInherited('git', [
     '-C', paths.configurationRoot, 'submodule', 'update', '--init', '--depth=1',
@@ -650,9 +916,10 @@ function prepare(workRootValue) {
     composeManagedSeries(baseSeries, entries),
     'utf8',
   );
+  prepareConfigurationOverlay(paths, overlayPlan, allowManagedUpgrade);
   fs.writeFileSync(
     paths.stampPath,
-    `${JSON.stringify(expectedStamp(baseline, entries), null, 2)}\n`,
+    `${JSON.stringify(expectedStamp(baseline, entries, overlayPlan), null, 2)}\n`,
     'utf8',
   );
 
@@ -664,8 +931,10 @@ function prepare(workRootValue) {
 
 function assertPrepared(paths, baseline = readBaseline()) {
   const entries = parseSeriesEntries();
+  const overlayPlan = configurationOverlayPlan(paths, baseline);
+  const overlayPaths = overlayPlan.files.map((item) => item.relativePath);
   verifyManagedCheckout(paths, baseline);
-  assertNoUnexpectedConfigurationChanges(paths.configurationRoot, entries);
+  assertNoUnexpectedConfigurationChanges(paths.configurationRoot, entries, overlayPaths);
   if (!fs.existsSync(paths.stampPath)) {
     throw new Error(`Preparation stamp is missing; run the prepare command: ${paths.stampPath}`);
   }
@@ -691,11 +960,15 @@ function assertPrepared(paths, baseline = readBaseline()) {
       throw new Error(`The generated external patch differs from Ember: ${entry}; run prepare again.`);
     }
   }
+  verifyConfigurationOverlay(paths, overlayPlan);
 
   const actual = JSON.parse(fs.readFileSync(paths.stampPath, 'utf8'));
-  const expected = expectedStamp(baseline, entries);
+  const expected = expectedStamp(baseline, entries, overlayPlan);
   for (const [key, value] of Object.entries(expected)) {
-    if (actual[key] !== value) {
+    const matches = value !== null && typeof value === 'object'
+      ? JSON.stringify(actual[key]) === JSON.stringify(value)
+      : actual[key] === value;
+    if (!matches) {
       throw new Error(`Preparation stamp mismatch for ${key}; run the prepare command again.`);
     }
   }
@@ -751,6 +1024,11 @@ function verifyPreparedBuildState(paths, baseline = readBaseline()) {
   console.log(
     `Verified the applied Ember patch postimages in an isolated ${touchedPaths.length}-file scratch tree.`,
   );
+  const manifest = readResourceManifest(
+    path.join(paths.configurationResourceRoot, 'manifest.json'),
+  );
+  const resources = verifyResourceOverlay(manifest, paths.sourceRoot);
+  console.log(`Verified ${resources.length} applied Ember resource destinations.`);
 }
 
 function repairPartialResumeArtifacts(paths) {
@@ -839,23 +1117,103 @@ function filesEqual(leftPath, rightPath) {
   }
 }
 
+function sha256File(filePath) {
+  const hash = crypto.createHash('sha256');
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  const descriptor = fs.openSync(filePath, 'r');
+  try {
+    let position = 0;
+    while (true) {
+      const bytes = fs.readSync(descriptor, buffer, 0, buffer.length, position);
+      if (bytes === 0) break;
+      hash.update(buffer.subarray(0, bytes));
+      position += bytes;
+    }
+  } finally {
+    fs.closeSync(descriptor);
+  }
+  return hash.digest('hex');
+}
+
+function readManagedPackageManifest(paths) {
+  const manifestPath = path.join(paths.packageRoot, '.ember-packages.json');
+  if (!fs.existsSync(manifestPath)) return { manifestPath, artifacts: new Map() };
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  if (manifest.schemaVersion !== 1 || !Array.isArray(manifest.artifacts)) {
+    throw new Error(`Invalid managed package manifest: ${manifestPath}`);
+  }
+  const artifacts = new Map();
+  for (const item of manifest.artifacts) {
+    if (!item || typeof item !== 'object'
+      || typeof item.filename !== 'string'
+      || !/^[a-z0-9._-]+$/i.test(item.filename)
+      || typeof item.sha256 !== 'string'
+      || !/^[0-9a-f]{64}$/i.test(item.sha256)) {
+      throw new Error(`Invalid managed package entry: ${manifestPath}`);
+    }
+    artifacts.set(item.filename, item.sha256.toLowerCase());
+  }
+  return { manifestPath, artifacts };
+}
+
+function replaceManagedPackage(source, destination) {
+  const backup = `${destination}.ember-backup-${process.pid}`;
+  if (fs.existsSync(backup)) {
+    throw new Error(`Refusing to reuse an existing package backup path: ${backup}`);
+  }
+  fs.renameSync(destination, backup);
+  try {
+    fs.renameSync(source, destination);
+    fs.rmSync(backup);
+  } catch (error) {
+    if (!fs.existsSync(destination) && fs.existsSync(backup)) fs.renameSync(backup, destination);
+    throw error;
+  }
+}
+
+function writeManagedPackageManifest(paths, available) {
+  if (!available.length) return;
+  const manifestPath = path.join(paths.packageRoot, '.ember-packages.json');
+  const payload = {
+    schemaVersion: 1,
+    artifacts: available.map((artifactPath) => ({
+      filename: path.basename(artifactPath),
+      bytes: fs.statSync(artifactPath).size,
+      sha256: sha256File(artifactPath),
+    })),
+  };
+  const temporary = `${manifestPath}.tmp-${process.pid}`;
+  if (fs.existsSync(temporary)) {
+    throw new Error(`Refusing to reuse an existing package manifest path: ${temporary}`);
+  }
+  fs.writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  fs.renameSync(temporary, manifestPath);
+}
+
 function normalizePackageArtifacts(paths, baseline = readBaseline()) {
   const available = [];
+  const managed = readManagedPackageManifest(paths);
   for (const artifact of packageArtifactPlan(paths, baseline)) {
     const sourceExists = fs.existsSync(artifact.source);
     const destinationExists = fs.existsSync(artifact.destination);
     if (sourceExists && destinationExists) {
       if (!filesEqual(artifact.source, artifact.destination)) {
-        throw new Error(
-          `Refusing to overwrite a different Ember ${artifact.kind} package: ${artifact.destination}`,
-        );
+        const expectedHash = managed.artifacts.get(path.basename(artifact.destination));
+        if (!expectedHash || sha256File(artifact.destination) !== expectedHash) {
+          throw new Error(
+            `Refusing to overwrite a different Ember ${artifact.kind} package: ${artifact.destination}`,
+          );
+        }
+        replaceManagedPackage(artifact.source, artifact.destination);
+      } else {
+        fs.rmSync(artifact.source);
       }
-      fs.rmSync(artifact.source);
     } else if (sourceExists) {
       fs.renameSync(artifact.source, artifact.destination);
     }
     if (sourceExists || destinationExists) available.push(artifact.destination);
   }
+  writeManagedPackageManifest(paths, available);
   for (const artifactPath of available) console.log(`Ember package: ${artifactPath}`);
   return available;
 }
@@ -889,6 +1247,14 @@ function build(workRootValue, jobs, passthrough, resume = false) {
   const defaultJobs = Math.max(1, (os.availableParallelism?.() || os.cpus().length) - 2);
   const requestedJobs = jobs || defaultJobs;
   const paths = getPortPaths(workRootValue);
+  if (fs.existsSync(path.join(paths.sourceRoot, 'BUILD.gn'))) {
+    assertPrepared(paths);
+    const manifest = readResourceManifest(
+      path.join(paths.configurationResourceRoot, 'manifest.json'),
+    );
+    const resources = copyResourceOverlay(manifest, paths.sourceRoot);
+    console.log(`Applied ${resources.length} Ember resource destinations.`);
+  }
   if (resume) {
     verifyPreparedBuildState(paths);
     repairPartialResumeArtifacts(paths);
@@ -907,6 +1273,10 @@ function build(workRootValue, jobs, passthrough, resume = false) {
     } : {},
   );
   const head = verifySourceHead(builtPaths);
+  const manifest = readResourceManifest(
+    path.join(builtPaths.configurationResourceRoot, 'manifest.json'),
+  );
+  verifyResourceOverlay(manifest, builtPaths.sourceRoot);
   normalizePackageArtifacts(builtPaths);
   console.log(`Native build completed from pinned Chromium source ${head}.`);
 }
@@ -1021,13 +1391,20 @@ module.exports = {
   MANAGED_SERIES_END,
   PATCHES_ROOT,
   REPO_ROOT,
+  RESOURCES_ROOT,
+  RESOURCE_MANIFEST_PATH,
   assertSafeWorkRoot,
   assertPrepared,
+  applyConfigurationPatchToBuffer,
   applyPatchSequenceInScratch,
   collectDoctorFindings,
   commitFromLsRemote,
   composeManagedSeries,
+  configurationOverlayHash,
+  configurationOverlayManagedPaths,
+  copyResourceOverlay,
   expectedStamp,
+  existingConfigurationOverlayHash,
   getPortPaths,
   isManagedConfigurationPath,
   isPathWithin,
@@ -1039,13 +1416,17 @@ module.exports = {
   parseSeriesEntries,
   parseVersionTuple,
   patchStackHash,
+  prepareConfigurationOverlay,
   readBaseline,
+  readResourceManifest,
   repairPartialResumeArtifacts,
+  resourceOverlayHash,
   touchedPathsFromPatches,
   versionAtLeast,
   verifySourceHead,
   verifyAppliedPatchSequenceInScratch,
   verifyPreparedBuildState,
+  verifyResourceOverlay,
   verifyUpstreamBaselines,
   visualStudioInstallVariable,
   windowsPythonShim,

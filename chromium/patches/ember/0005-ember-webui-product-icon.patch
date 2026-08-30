@@ -1,0 +1,15 @@
+diff --git a/ui/webui/resources/cr_elements/icons.html.ts b/ui/webui/resources/cr_elements/icons.html.ts
+--- a/ui/webui/resources/cr_elements/icons.html.ts
++++ b/ui/webui/resources/cr_elements/icons.html.ts
+@@ -115,7 +115,10 @@ div.innerHTML = getTrustedHTML`
+         </path>
+       </g>
+       <g id="chrome-product" viewBox="0 -960 960 960">
+-        <path d="M336-479q0 60 42 102t102 42q60 0 102-42t42-102q0-60-42-102t-102-42q-60 0-102 42t-42 102Zm144 216q11 0 22.5-.5T525-267L427-99q-144-16-237.5-125T96-479q0-43 9.5-84.5T134-645l160 274q28 51 78 79.5T480-263Zm0-432q-71 0-126.5 42T276-545l-98-170q53-71 132.5-109.5T480-863q95 0 179 45t138 123H480Zm356 72q15 35 21.5 71t6.5 73q0 155-100 260.5T509-96l157-275q14-25 22-52t8-56q0-40-15-77t-41-67h196Z">
++        <path fill-rule="evenodd"
++          d="M160-800h360q168 0 264 88t96 232q0 144-96 232t-264 88H160v-128h360q104 0 168-52t64-140q0-88-64-140t-168-52H160v-128Z">
++        </path>
++        <path d="M80-704h392v112H80zm0 168h344v112H80zm0 168h392v112H80z">
+         </path>
+       </g>
+       <g id="close">

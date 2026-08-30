@@ -16,20 +16,23 @@ Helium:
 
 1. Keep a small, pinned Windows build-configuration checkout outside Ember.
 2. Keep Ember-owned Chromium changes as an ordered patch stack in this repo.
-3. Overlay that stack onto the pinned configuration's Windows patch series.
-4. Let the upstream build scripts acquire and build Chromium in the external
+3. Keep Ember-owned raster/SVG/ICO branding in a path-safe manifest overlay.
+4. Overlay both onto the pinned configuration's Windows build flow.
+5. Let the upstream build scripts acquire and build Chromium in the external
    work root.
 
 `chromium/tools/port.js` refuses work roots inside, above, or equal to the Ember
 repository. It also refuses unexpected edits in its managed configuration
-checkout. Re-running `prepare` is deterministic and does not duplicate series
-entries.
+checkout. Re-running `prepare` is deterministic, does not duplicate series
+entries, and upgrades an older generated overlay only when its complete stamped
+bytes still match.
 
 ```text
 Ember repository                         External work root
 chromium/baseline.json                   configuration/       pinned small repo
 chromium/patches/series        ->        configuration/patches/series
 chromium/patches/ember/*       ->        configuration/patches/ember/*
+chromium/resources/*           ->        configuration/ember-resources/*
                                          configuration/build/src/ Chromium source
                                          profile/             isolated test profile
 ```
@@ -87,7 +90,11 @@ stack changes product, installer, policy, registry, protocol, toast/elevated
 service class identities, the AppContainer SID family, and visible window,
 About, accessibility, relaunch, default-browser, uninstall, and startup-error
 text. Packaging normalizes completed upstream artifacts to deterministic Ember
-filenames without overwriting a differing existing artifact. The executable is
+filenames, records their hashes in a generated ownership manifest, and replaces
+only an unchanged prior managed artifact. The resource overlay supplies the
+Windows ICO, scaled product/About rasters and shared WebUI logos; a content-hash
+stamp invalidates the two RC objects whose ICO dependency Ninja does not track.
+The executable is
 still named `chrome.exe`, and Chromium's COM interface/type-library IDs remain
 unchanged so checked-in MIDL output stays ABI-consistent; identity parity is
 therefore partial, not complete.
@@ -109,10 +116,20 @@ Ember product and authors, Settings says `About Ember`, and packaging emits the
 `ember_151.0.7922.173-1.1_*_x64` names. Chromium's stable Chrome user-agent
 token remains intentional for web compatibility.
 
+The first native branding-resource build then completed 476 incremental actions
+and proved Ember's gold logo live on `chrome://settings/help`. Direct PE icon
+extraction also caught Chromium's missing RC include dependency: the old
+executable icon remained embedded even though the source ICO had changed. Five
+patches, 18 resources, and deterministic RC invalidation are now prepared; the
+final link is blocked only by the documented 60 GiB free-space gate. CDP
+deliberately retains `Chrome/...` because the pinned ChromeDriver parser and
+shader-cache namespace depend on that compatibility token.
+
 This is a build/runtime identity baseline, not UI parity. Executable naming,
-icons/About logo, signatures, installer behavior, CDP identity, and the full
-Ember C++/Views shell remain open. Exact file hashes, runtime commands/results,
-disk measurements, and blockers are recorded in `../CHROMIUM_PORT_STATUS.md`.
+final rebuilt executable/shortcut icon verification, signatures, installer
+behavior, and the full Ember C++/Views shell remain open. Exact file hashes,
+runtime commands/results, disk measurements, and blockers are recorded in
+`../CHROMIUM_PORT_STATUS.md`.
 
 To check the Ember patch stack against a pristine checkout of the exact
 Chromium commit:
@@ -126,6 +143,8 @@ npm run chromium:verify-patches -- --source D:\src\chromium-151.0.7922.173
 - Make upstream edits against the exact commit in `baseline.json`.
 - Store one reviewable concern per patch under `patches/ember/` and append it to
   `patches/series`.
+- Regenerate branding with `tools/generate-brand-resources.ps1`; update the
+  explicit resource manifest rather than copying files ad hoc into Chromium.
 - Run the focused Node tests, `chromium:verify-patches`, then `prepare` twice to
   prove both applicability and idempotence.
 - Never commit `configuration/`, `build/src`, `out/`, downloaded toolchains, or

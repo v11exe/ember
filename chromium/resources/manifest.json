@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "files": [
+    {
+      "source": "branding/ember.ico",
+      "destination": "chrome/app/theme/chromium/win/chromium.ico"
+    },
+    {
+      "source": "branding/product-logo.svg",
+      "destination": "chrome/app/theme/chromium/product_logo.svg"
+    },
+    {
+      "source": "branding/product-logo-animation.svg",
+      "destination": "chrome/app/theme/chromium/product_logo_animation.svg"
+    },
+    {
+      "source": "branding/webui-logo-dark.svg",
+      "destination": "ui/webui/resources/images/chrome_logo_dark.svg"
+    },
+    {
+      "source": "branding/app-16.png",
+      "destination": "chrome/app/theme/chromium/product_logo_16.png"
+    },
+    {
+      "source": "branding/app-24.png",
+      "destination": "chrome/app/theme/chromium/product_logo_24.png"
+    },
+    {
+      "source": "branding/app-48.png",
+      "destination": "chrome/app/theme/chromium/product_logo_48.png"
+    },
+    {
+      "source": "branding/app-64.png",
+      "destination": "chrome/app/theme/chromium/product_logo_64.png"
+    },
+    {
+      "source": "branding/app-128.png",
+      "destination": "chrome/app/theme/chromium/product_logo_128.png"
+    },
+    {
+      "source": "branding/app-256.png",
+      "destination": "chrome/app/theme/chromium/product_logo_256.png"
+    },
+    {
+      "source": "branding/app-16.png",
+      "destination": "chrome/app/theme/default_100_percent/chromium/product_logo_16.png"
+    },
+    {
+      "source": "branding/app-32.png",
+      "destination": "chrome/app/theme/default_100_percent/chromium/product_logo_32.png"
+    },
+    {
+      "source": "branding/app-32.png",
+      "destination": "chrome/app/theme/default_200_percent/chromium/product_logo_16.png"
+    },
+    {
+      "source": "branding/app-64.png",
+      "destination": "chrome/app/theme/default_200_percent/chromium/product_logo_32.png"
+    },
+    {
+      "source": "branding/about-logo.png",
+      "destination": "components/resources/default_100_percent/chromium/product_logo.png"
+    },
+    {
+      "source": "branding/about-logo.png",
+      "destination": "components/resources/default_100_percent/chromium/product_logo_white.png"
+    },
+    {
+      "source": "branding/about-logo-200.png",
+      "destination": "components/resources/default_200_percent/chromium/product_logo.png"
+    },
+    {
+      "source": "branding/about-logo-200.png",
+      "destination": "components/resources/default_200_percent/chromium/product_logo_white.png"
+    }
+  ]
+}

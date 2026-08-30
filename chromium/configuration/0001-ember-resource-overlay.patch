@@ -1,0 +1,83 @@
+diff --git a/build.py b/build.py
+--- a/build.py
++++ b/build.py
+@@ -16,6 +16,8 @@ import re
+ import shutil
+ import subprocess
+ import ctypes
++import json
++import hashlib
+ from pathlib import Path
+ 
+ sys.path.insert(0, str(Path(__file__).resolve().parent / 'ungoogled-chromium' / 'utils'))
+@@ -104,6 +106,61 @@ def _make_tmp_paths():
+         tmp_path.mkdir()
+ 
+ 
++def _copy_ember_resources(source_tree):
++    """Copies the prepared, path-safe Ember branding overlay into Chromium."""
++    resource_root = (_ROOT_DIR / 'ember-resources').resolve()
++    manifest_path = resource_root / 'manifest.json'
++    manifest = json.loads(manifest_path.read_text(encoding=ENCODING))
++    if manifest.get('schemaVersion') != 1 or not isinstance(manifest.get('files'), list):
++        raise ValueError('Invalid Ember resource manifest')
++
++    overlay_hash = hashlib.sha256()
++    overlay_hash.update(manifest_path.read_bytes())
++    for item in manifest['files']:
++        if not isinstance(item, dict):
++            raise ValueError('Invalid Ember resource entry')
++        source_value = item.get('source')
++        destination_value = item.get('destination')
++        if not isinstance(source_value, str) or not isinstance(destination_value, str):
++            raise ValueError('Invalid Ember resource path')
++        source = (resource_root / source_value).resolve()
++        destination = (source_tree / destination_value).resolve()
++        if not source.is_relative_to(resource_root):
++            raise ValueError(f'Unsafe Ember resource source: {source_value}')
++        if not destination.is_relative_to(source_tree):
++            raise ValueError(f'Unsafe Ember resource destination: {destination_value}')
++        if not source.is_file():
++            raise FileNotFoundError(f'Missing Ember resource: {source}')
++        if not destination.is_file():
++            raise FileNotFoundError(f'Missing Chromium resource destination: {destination}')
++        source_bytes = source.read_bytes()
++        overlay_hash.update(source_value.encode(ENCODING))
++        overlay_hash.update(destination_value.encode(ENCODING))
++        overlay_hash.update(source_bytes)
++        if destination.read_bytes() != source_bytes:
++            shutil.copy2(source, destination)
++            print(f'Copied Ember resource {source_value} to {destination_value}')
++
++    output_root = (source_tree / 'out' / 'Default').resolve()
++    stamp_path = output_root / '.ember-resource-overlay.sha256'
++    digest = overlay_hash.hexdigest()
++    previous_digest = stamp_path.read_text(encoding=ENCODING).strip() if stamp_path.is_file() else None
++    if previous_digest != digest:
++        stale_outputs = (
++            Path('obj/chrome/chrome_initial/chrome_exe.res'),
++            Path('obj/chrome/app/chrome_dll_resources/chrome_dll.res'),
++        )
++        for relative_output in stale_outputs:
++            output = (output_root / relative_output).resolve()
++            if not output.is_relative_to(output_root):
++                raise ValueError(f'Unsafe Ember resource output: {relative_output}')
++            if output.is_file():
++                output.unlink()
++                print(f'Invalidated stale Ember resource output {relative_output}')
++        output_root.mkdir(parents=True, exist_ok=True)
++        stamp_path.write_text(f'{digest}\n', encoding=ENCODING)
++
++
+ def main():
+     """CLI Entrypoint"""
+     parser = argparse.ArgumentParser(description=__doc__)
+@@ -236,6 +293,8 @@ def main():
+             None
+         )
+ 
++    _copy_ember_resources(source_tree)
++
+     # Check if rust-toolchain folder has been populated
+     HOST_CPU_IS_64BIT = sys.maxsize > 2**32
+     RUST_DIR_DST = source_tree / 'third_party' / 'rust-toolchain'

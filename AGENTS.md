@@ -469,11 +469,11 @@ Git is the history archive.
 
 Newest first. One entry per active/recent unit of work.
 
-### 2026-08-29 — Codex — Native Chromium baseline
+### 2026-08-30 — Codex — Native Chromium baseline
 - **Status / Branch:** in-progress · `chromium-port`
 - **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`, `package.json`, `scripts/capture-ui.js`, `test/chromium-port.test.js`, `chromium/`
-- **Summary:** Established the external-checkout Chromium fork architecture, pinned Windows baseline, deterministic Electron visual oracle, safe build/patch tooling, and three identity/security patches. The exact official x64 build completed all 57,877 initial actions plus the visible-identity incremental rebuild, emits deterministic Ember-named installer/portable packages, and passed isolated-profile native identity/HTTPS/process/sandbox/shutdown probes while Electron remains the parity oracle.
-- **For the other agent:** Keep port work on `chromium-port`. Live title/About/accessibility/default-browser strings and packages now identify Ember; the stable Chrome UA token is intentionally retained for website compatibility. Icons/About logo, `chrome.exe` naming, signing, CDP identity, and installer integration remain open, and the installer has not been executed. `out/Default` is 15.04 GiB; exact hashes/runtime and low-virtual-memory recovery evidence are in `CHROMIUM_PORT_STATUS.md`. COM interface/type-library identity remains intentionally shared until IDL and every persisted x86/x64/arm64 MIDL output can be regenerated and runtime-tested together.
+- **Summary:** Established the external-checkout Chromium fork architecture, pinned Windows baseline, deterministic Electron visual oracle, safe build/patch/resource tooling, and five identity/security/WebUI patches. The official x64 build completed all 57,877 initial actions, the visible-identity rebuild, and a 476-action resource build; live About now uses Ember art and managed Ember packages are hash-owned. A direct PE probe caught stale RC icon objects, so content-hash invalidation and 18-resource coverage are prepared but await one final native link.
+- **For the other agent:** Keep port work on `chromium-port`. The final five-patch/18-resource rebuild is blocked only by disk: 36.5 GiB free versus the unchanged 60 GiB resume floor, so clear roughly 24 GiB and rerun at `--jobs 6`. Do not mark icons complete until direct PE/HWND/shortcut and both shared Settings glyphs pass. Stable Chrome UA and CDP product tokens are intentional website/ChromeDriver compatibility surfaces; `chrome.exe` naming, signing and installer integration remain open. Exact hashes, cleanup, runtime and low-virtual-memory evidence are in `CHROMIUM_PORT_STATUS.md`. COM interface/type-library identity remains shared until IDL and every persisted x86/x64/arm64 MIDL output can be regenerated and runtime-tested together.
 
 ### 2026-08-24 — Codex — Copy Link roadmap completion
 - **Status / Branch:** completed · `glass-fixing`
