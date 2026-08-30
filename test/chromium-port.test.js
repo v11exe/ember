@@ -48,6 +48,7 @@ test('the Ember patch series is ordered, local, and complete', () => {
     'ember/0003-ember-visible-product-surfaces.patch',
     'ember/0004-ember-windows-app-icon-version.patch',
     'ember/0005-ember-webui-product-icon.patch',
+    'ember/0006-ember-native-shell-geometry.patch',
   ]);
   for (const entry of entries) {
     assert.equal(fs.existsSync(path.join(port.PATCHES_ROOT, ...entry.split('/'))), true);
@@ -342,6 +343,30 @@ test('the WebUI product icon patch replaces the last shared Chromium glyph', () 
   assert.match(patchText, /<g id="chrome-product"/);
   assert.match(patchText, /M160-800h360/);
   assert.doesNotMatch(patchText, /^\+.*M336-479/m);
+});
+
+test('the native shell patch reserves Ember geometry around real Chromium contents', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0006-ember-native-shell-geometry.patch'),
+    'utf8',
+  );
+  const touchedFiles = [...patchText.matchAll(/^diff --git a\/(\S+) b\/\S+$/gm)]
+    .map((match) => match[1]);
+
+  assert.deepEqual(touchedFiles, [
+    'chrome/browser/ui/views/frame/browser_view.cc',
+    'chrome/browser/ui/views/frame/browser_view.h',
+    'chrome/browser/ui/views/frame/layout/browser_view_layout.cc',
+    'chrome/browser/ui/views/frame/layout/browser_view_layout.h',
+    'chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc',
+  ]);
+  assert.match(patchText, /browser_->is_type_normal\(\)/);
+  assert.match(patchText, /kEmberSidebarWidth = 168/);
+  assert.match(patchText, /kEmberPageInset = 8/);
+  assert.match(patchText, /!is_fullscreen\(layout_data_->window_state\)/);
+  assert.match(patchText, /params\.InsetHorizontal\(kEmberSidebarWidth/);
+  assert.match(patchText, /unclipped_contents_region\.Inset\(content_insets\)/);
+  assert.doesNotMatch(patchText, /^\+.*(?:no-sandbox|disable-site-isolation|TabStripModel)/im);
 });
 
 test('packaging normalizes pinned artifacts to Ember names without overwriting conflicts', () => {

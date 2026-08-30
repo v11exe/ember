@@ -215,18 +215,40 @@ closes the practical identity slice; deeper installer/upgrade/coexistence work
 is deferred for the friends-only distribution so shell and feature parity can
 take priority.
 
+## First native Views shell result
+
+`BrowserView` owns the correct integration point. Patch six adds the rail as a
+normal child only for `Browser::TYPE_NORMAL`, passes it through
+`BrowserViewLayoutViews`, and reserves its width at the start of
+`BrowserViewTabbedLayoutImpl::CalculateProposedLayout`. That shifts Chromium's
+real horizontal tab strip, top container, side-panel calculations, contents,
+modal-dialog anchor and minimum size together; no WebContents overlay or
+Electron compatibility layer is involved. The page-only 8 px inset is applied
+after top/infobar/side-panel layout and before contents layout, while fullscreen
+hides the rail and skips both reservations.
+
+The affected objects and full six-patch build pass. A 1570×796 sandboxed live
+probe measured `#1A100A` x=8..175 for the 168 px rail, x=176..183 for the 8 px
+gap, and page start x=184. Seven normal Chromium processes ran without
+`--no-sandbox` and shut down through CDP. Keep this layout seam for subsequent
+rail controls and top-shell styling instead of introducing a parallel window or
+renderer-hosted chrome.
+
 ## Next source inspection targets
 
 With the build and practical visible-identity slice proven, continue in this
 order:
 
-1. a native `Browser`/Views shell vertical slice using real `Profile`,
-   `TabStripModel`, navigation, extension, sandbox, and Windows HWND plumbing;
-2. deterministic native visual and interaction capture against the locked
+1. an Ember sidebar view/controller using real `Profile`, `TabStripModel` and
+   navigation state for address, Copy Link and Favorites;
+2. compacting and styling Chromium's real horizontal tab strip/top container
+   toward the 32 px oracle without replacing its focus, extension, sandbox or
+   Windows caption behavior;
+3. deterministic native visual and interaction capture against the locked
    Electron reference manifest.
-3. existing sidebar/Favorites/Copy Link and tab interaction parity in small
+4. remaining tab interaction parity in small
    functioning slices;
-4. signing and deeper installer integration only when distribution hardening is
+5. signing and deeper installer integration only when distribution hardening is
    needed, without blocking the visible UI work.
 
 Do not implement a `ROADMAP.md` feature still marked planned while closing

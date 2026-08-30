@@ -1,0 +1,147 @@
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -338,6 +338,7 @@
+ #include "ui/views/accessibility/view_accessibility.h"
+ #include "ui/views/accessibility/view_accessibility_utils.h"
+ #include "ui/views/animation/compositor_animation_runner.h"
++#include "ui/views/background.h"
+ #include "ui/views/bubble/bubble_dialog_delegate_view.h"
+ #include "ui/views/controls/button/menu_button.h"
+ #include "ui/views/controls/textfield/textfield.h"
+@@ -912,6 +913,15 @@ BrowserView::BrowserView(Browser* browser)
+       views::kElementIdentifierKey,
+       BrowserViewLayoutViews::kMainBackgroundRegionElementId);
+ 
++  if (browser_->is_type_normal()) {
++    ember_sidebar_ = AddChildView(std::make_unique<views::View>());
++    ember_sidebar_->SetBackground(
++        views::CreateSolidBackground(SkColorSetRGB(0x1A, 0x10, 0x0A)));
++    ember_sidebar_->SetProperty(
++        views::kElementIdentifierKey,
++        BrowserViewLayoutViews::kEmberSidebarElementId);
++  }
++
+   top_container_ = AddChildView(std::make_unique<TopContainerView>(this));
+   top_container_insertion_index_ = GetIndexOf(top_container_.get());
+ 
+@@ -1129,6 +1139,7 @@ BrowserView::~BrowserView() {
+   // before `RemoveAllChildViews()` is called to avoid dangling.
+   browser_widget_ = nullptr;
+   main_background_region_ = nullptr;
++  ember_sidebar_ = nullptr;
+   top_container_ = nullptr;
+   web_app_frame_toolbar_ = nullptr;
+   web_app_window_title_ = nullptr;
+@@ -4919,6 +4930,7 @@ void BrowserView::AddedToWidget() {
+   layout_views.window_scrim = window_scrim_view_;
+   layout_views.main_shadow_overlay = main_shadow_overlay_;
+   layout_views.main_background_region = main_background_region_;
++  layout_views.ember_sidebar = ember_sidebar_;
+   layout_views.top_container = top_container_;
+   layout_views.web_app_frame_toolbar = web_app_frame_toolbar_;
+   layout_views.web_app_window_title = web_app_window_title_;
+diff --git a/chrome/browser/ui/views/frame/browser_view.h b/chrome/browser/ui/views/frame/browser_view.h
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -1133,6 +1133,9 @@ class BrowserView : public BrowserWindow,
+   // side_panel are displayed on.
+   raw_ptr<views::View> main_background_region_ = nullptr;
+ 
++  // The persistent Ember shell rail shown by normal browser windows.
++  raw_ptr<views::View> ember_sidebar_ = nullptr;
++
+   // The view that contains the primary UI (Toolbar, BookmarksBar, InfoBar,
+   // WebContents, and Side panel).
+   raw_ptr<ShadowOverlayView> main_shadow_overlay_ = nullptr;
+diff --git a/chrome/browser/ui/views/frame/layout/browser_view_layout.cc b/chrome/browser/ui/views/frame/layout/browser_view_layout.cc
+--- a/chrome/browser/ui/views/frame/layout/browser_view_layout.cc
++++ b/chrome/browser/ui/views/frame/layout/browser_view_layout.cc
+@@ -33,6 +33,8 @@ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(BrowserViewLayoutViews,
+                                       kShadowOverlayElementId);
+ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(BrowserViewLayoutViews,
+                                       kMainBackgroundRegionElementId);
++DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(BrowserViewLayoutViews,
++                                      kEmberSidebarElementId);
+ 
+ BrowserViewLayoutViews::BrowserViewLayoutViews() = default;
+ BrowserViewLayoutViews::BrowserViewLayoutViews(
+diff --git a/chrome/browser/ui/views/frame/layout/browser_view_layout.h b/chrome/browser/ui/views/frame/layout/browser_view_layout.h
+--- a/chrome/browser/ui/views/frame/layout/browser_view_layout.h
++++ b/chrome/browser/ui/views/frame/layout/browser_view_layout.h
+@@ -48,6 +48,7 @@ struct BrowserViewLayoutViews {
+       kVerticalTabStripBottomCornerElementId);
+   DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kShadowOverlayElementId);
+   DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kMainBackgroundRegionElementId);
++  DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kEmberSidebarElementId);
+ 
+   // LINT.IfChange(BrowserViewLayoutViews)
+ 
+@@ -59,6 +60,7 @@ struct BrowserViewLayoutViews {
+   // testing much easier.
+   raw_ptr<views::View> window_scrim = nullptr;
+   raw_ptr<views::View> main_background_region = nullptr;
++  raw_ptr<views::View> ember_sidebar = nullptr;
+   raw_ptr<views::View> main_shadow_overlay = nullptr;
+   raw_ptr<views::View> top_container = nullptr;
+   raw_ptr<WebAppFrameToolbarView> web_app_frame_toolbar = nullptr;
+diff --git a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+--- a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
++++ b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+@@ -55,6 +55,10 @@ namespace {
+ // Minimum area next to caption buttons to use as a grab handle.
+ constexpr int kVerticalTabsGrabHandleSize = 40;
+ 
++// Ember keeps its persistent shell outside Chromium's real browser contents.
++constexpr int kEmberSidebarWidth = 168;
++constexpr int kEmberPageInset = 8;
++
+ // Maximum portion of the window a "size-restricted" contents-height side panel
+ // can take up. This is not the only limit on side panel size.
+ constexpr float kMaxContentsHeightSidePanelFraction = 2.f / 3.f;
+@@ -657,6 +661,9 @@ gfx::Size BrowserViewTabbedLayoutImpl::GetMinimumSize(
+                   std::max({horizontal_tabstrip_size.width(),
+                             side_panel_size.width() + main_area_size.width(),
+                             kMainBrowserContentsMinimumWidth});
++  if (views().ember_sidebar) {
++    min_width += kEmberSidebarWidth + (2 * kEmberPageInset);
++  }
+ 
+   // Maybe adjust for additional padding when the side panel is visible.
+   if (side_panel_size.width() > 0 && !delegate().IsActiveTabSplit()) {
+@@ -684,6 +691,22 @@ BrowserViewTabbedLayoutImpl::CalculateProposedLayout(
+   }
+ 
+   BrowserLayoutParams params = layout_data_->revised_params;
++  const bool ember_sidebar_visible =
++      views().ember_sidebar && !is_fullscreen(layout_data_->window_state);
++  if (views().ember_sidebar) {
++    const gfx::Rect sidebar_bounds = ember_sidebar_visible
++                                         ? gfx::Rect(
++                                               browser_params.visual_client_area.x(),
++                                               browser_params.visual_client_area.y(),
++                                               kEmberSidebarWidth,
++                                               browser_params.visual_client_area.height())
++                                         : gfx::Rect();
++    layout.AddChild(views().ember_sidebar, sidebar_bounds,
++                    ember_sidebar_visible);
++  }
++  if (ember_sidebar_visible) {
++    params.InsetHorizontal(kEmberSidebarWidth, /*leading=*/true);
++  }
+   bool needs_exclusion = true;
+   const bool adjust_for_cracking = AvoidCrackingForFractionalDisplay();
+   const HorizontalLayout& horizontal_layout = layout_data_->horizontal_layout;
+@@ -1085,6 +1108,12 @@ BrowserViewTabbedLayoutImpl::CalculateProposedLayout(
+   views().multi_contents_view->SetIsAnimatingContent(
+       side_panel_is_animating || vertical_tab_strip_animation.current_motion);
+ 
++  if (ember_sidebar_visible) {
++    const gfx::Insets content_insets(kEmberPageInset);
++    params.Inset(content_insets);
++    unclipped_contents_region.Inset(content_insets);
++  }
++
+   // Lay out contents container. The contents container contains the multi-
+   // contents view when multi-contents are enabled. The checks here are to
+   // force the logic to be updated when multi-contents is fully rolled-out.

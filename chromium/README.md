@@ -137,6 +137,15 @@ the native Ember C++/Views shell and existing features. Exact file hashes,
 runtime evidence, disk measurements and the next UI slice are recorded in
 `../CHROMIUM_PORT_STATUS.md`.
 
+Patch six starts UI parity in Chromium itself. A normal `BrowserView` now owns
+a 168 px Ember rail and lays out the real tab strip, toolbar, dialogs, side
+panels and web contents beside it; the page receives the oracle's 8 px inset,
+and fullscreen removes the shell reservation. The six-patch incremental build
+completed 584 actions and a deterministic live-page screenshot measured both
+dimensions exactly while the ordinary Chromium sandbox/process model remained
+enabled. The rail is structural today: address, Copy Link and Favorites are the
+next native feature slice, followed by compacting/styling the real top chrome.
+
 To check the Ember patch stack against a pristine checkout of the exact
 Chromium commit:
 

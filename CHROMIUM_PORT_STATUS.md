@@ -30,14 +30,15 @@ follow an upstream branch.
   Electron compatibility shim.
 - A safe Node CLI for baseline inspection, environment diagnosis, pinned config
   preparation, patch verification, build, packaging, and isolated-profile run.
-- Five ordered upstream Chromium patches covering Ember product strings, install
+- Six ordered upstream Chromium patches covering Ember product strings, install
   and profile paths, URL scheme, HTML/PDF ProgIDs, registry/policy roots,
   archive names, installer log name, stable product GUID, Ember-owned toast,
   elevator and tracing class CLSIDs, and an Ember-specific AppContainer SID
   family component. The third patch owns visible window, About/version,
   accessibility, relaunch, default-browser, uninstall, and startup-error text;
   the fourth advances Windows shortcut-icon migration and the fifth replaces
-  Chromium's shared WebUI product glyph.
+  Chromium's shared WebUI product glyph. The sixth patch begins the real native
+  shell by reserving Ember's sidebar and page geometry in `BrowserView`.
 - A deterministic 18-file Ember branding overlay for the Windows executable,
   scaled raster logos, About artwork, shared WebUI SVGs, and generated ICO. The
   build hook hashes that overlay and invalidates Chromium's two untracked `.rc`
@@ -51,20 +52,20 @@ follow an upstream branch.
 - Focused contracts for pins, safe paths, patch ordering/hashing, managed dirty
   paths, deterministic series generation, CLI parsing, GUID/product identity,
   and reference PNG integrity.
-- The pinned official x64 native build, final five-patch/18-resource branding
-  rebuild, portable archive and installer, plus sandboxed isolated-profile
-  launch/navigation/icon/accessibility/shutdown probes. This is a native
-  Chromium baseline milestone, not a claim that the Ember shell or Electron
-  feature set has been ported.
+- The pinned official x64 native build, final branding rebuild, first native
+  shell rebuild, portable archive and installer, plus sandboxed isolated-profile
+  launch/navigation/icon/accessibility/geometry/shutdown probes. This is the
+  practical identity baseline and first functioning shell slice, not full
+  Electron feature parity.
 
 ## Parity matrix
 
 | Subsystem | State | Current evidence / remaining work |
 | --- | --- | --- |
-| Reproducible source and build architecture | **Passing baseline** | Exact external configuration/common commits prepared repeatedly. Full acquisition, 155-project sync, 134 upstream patches, substitution, GN generation, the original 57,877-action build, the 2,910-action visible-identity rebuild, the 476-action intermediate resource build, and the final 952-action five-patch/18-resource rebuild plus automatic packaging completed at the pinned revision. Reproducibility on a second clean host remains untested. |
+| Reproducible source and build architecture | **Passing baseline** | Exact external configuration/common commits prepared repeatedly. Full acquisition, 155-project sync, 134 upstream patches, substitution, GN generation, the original 57,877-action build, the 2,910-action visible-identity rebuild, the 476-action intermediate resource build, the 952-action branding rebuild, and the 584-action six-patch shell rebuild plus automatic packaging completed at the pinned revision. Reproducibility on a second clean host remains untested. |
 | Product and Windows installer identity | **Practical baseline complete** | `chrome.exe`/`chrome.dll` report product `Ember`; live window/HWND titles, About/version content, Settings About title, accessibility/default-browser/relaunch strings, deterministic package filenames, executable/HWND icons, About art, Settings toolbar logo, and the About-menu glyph are Ember-owned. Direct PE and live HWND extraction prove the icon path rather than relying on shell cache. The stable Chrome UA and CDP `Chrome/...` token remain intentional for compatibility. The executable name stays upstream and artifacts remain unsigned; deep installer registry/toast/COM/upgrade/uninstall/coexistence testing is deferred for this friends-only build while UI parity is prioritized. Interface/type-library IDs remain unchanged unless IDL plus every persisted x86/x64/arm64 MIDL output can be regenerated together. |
-| Native Windows top-level window | **Partial** | The first native build created a responding normal HWND and stock Chromium browser/renderer/GPU/utility process tree. Caption hit testing, Snap Layouts, DWM corners, minimise/restore animation, DPI changes, multi-monitor behavior and Ember geometry have not been tested or implemented. |
-| Native C++/Views shell | **Next active slice** | Reproduce the accepted 32 px top shell, 168 px sidebar, 8 px page inset, 12 px page radius, bounded material, tab strip, navigation controls, and caption reservation without renderer-hosted Electron chrome. |
+| Native Windows top-level window | **Partial** | A responding normal 1570×796 HWND now owns the first Ember shell geometry while retaining the real browser/renderer/GPU/utility process tree. Caption hit testing, Snap Layouts, DWM corners, minimise/restore animation, DPI changes and multi-monitor behavior still need focused tests. |
+| Native C++/Views shell | **Partial — geometry live** | Patch 0006 creates a native Ember rail only for normal browser windows, reserves exactly 168 px before Chromium lays out its real tab strip/toolbar/contents, and applies an 8 px inset around the real page. Fullscreen removes both reservations. A captured live neon page measured the rail at x=8..175 (168 px), the gap at x=176..183 (8 px), and page x=184..1553; stock Chromium top chrome remains and the rail has no feature controls yet. Next: native sidebar address/Copy Link/Favorites, then top-shell compaction and styling. |
 | Tabs and navigation | **Not started** | Create/select/close/reorder, wheel scroll physics, navigation history, focus, page fullscreen, omnibox resolution, Tab-to-search, bangs, and internal URLs remain Electron-only. |
 | Favorites/sidebar/Copy Link | **Not started** | Ordered grid, capacity semantics, matching/wake behavior, tab drops, address editing, and copy feedback remain Electron-only. |
 | Profiles, history, downloads, bookmarks, settings, session restore | **Not started** | Must map Ember behavior onto Chromium Profile/Browser/TabStripModel and native storage/lifecycle systems with normal/private isolation. |
@@ -73,8 +74,8 @@ follow an upstream branch.
 | Internal pages and protocol | **Not started** | New tab, settings, history, downloads, bookmarks, unreachable/archive flows, and any retained `ember://` routing need native Chromium integration and security review. |
 | Bounded overlays and material | **Not started** | Upload, conversion, context menu, Ctrl+Tab, archive, extension popup, and related focus/capture behavior need native equivalents and image/interaction diffs. |
 | Security and privacy model | **Partial** | The isolated runtime used Chromium's browser broker plus GPU, renderer and utility roles with no `--no-sandbox`; real HTTPS navigation succeeded. Windows token/AppContainer, site isolation, permissions, private profiles, telemetry/network defaults, crash reporting, update trust and extension boundaries still require focused audits. |
-| Packaging and distribution | **Development packages built** | The final 188.22 MiB portable ZIP and 120.91 MiB installer are emitted as deterministic `ember_151.0.7922.173-1.1_*_x64` artifacts, with a generated ownership manifest that permits safe replacement of prior managed packages but never overwrites foreign bytes. They contain the final rebuilt Ember icon/resources. Binaries are unsigned and install/registry/protocol/upgrade/uninstall/clean-machine behavior is intentionally deferred while UI parity is built. |
-| Automated native parity harness | **Not started** | Electron references are present; native deterministic launch/capture, pixel/geometry thresholds, interaction probes, and accessibility checks remain to build. |
+| Packaging and distribution | **Development packages built** | The shell build emits a 197,369,205-byte portable ZIP and 126,778,880-byte installer as deterministic `ember_151.0.7922.173-1.1_*_x64` artifacts, with a generated ownership manifest that permits safe replacement of prior managed packages but never overwrites foreign bytes. Binaries are unsigned and install/registry/protocol/upgrade/uninstall/clean-machine behavior is intentionally deferred while UI parity is built. |
+| Automated native parity harness | **Partial** | The Electron references are present and the first isolated native geometry probe uses a deterministic neon page plus exact screenshot pixel runs, HWND/process inspection and graceful CDP shutdown. Commit a reusable wide/medium/compact capture runner and interaction thresholds next. |
 | Electron oracle | **Passing baseline capture** | Electron 43.4.1 produced the checked-in offline reference set. Existing Electron source is intentionally retained. |
 
 ## Fidelity contract extracted from the oracle
@@ -98,19 +99,24 @@ pixels and geometry are under `chromium/reference/electron/9ae3217/`.
 
 Completed on this host:
 
-- Current resource/tooling `node --test test/chromium-port.test.js` — 25/25
-  focused contracts pass. They cover five-patch ordering/apply/reverse,
+- Current resource/tooling `node --test test/chromium-port.test.js` — 26/26
+  focused contracts pass. They cover six-patch ordering/apply/reverse,
   18-resource path and image validity, no-op copies that preserve timestamps,
   content-hashed configuration upgrades, RC invalidation markers, and managed
   package replacement/tamper refusal.
-- Current `prepare` — two consecutive passes with five Ember patches, 18 exact
+- Current `prepare` — two consecutive passes with six Ember patches, 18 exact
   resources, schema-3 source/configuration hashes, and no duplicated series
-  entries. Applied postimages reverse cleanly in an isolated 15-file tree.
-- Final `build --resume` preflight — all five patches, all 18 resources and all
-  12/12 doctor checks passed with 67.1 GiB free. Ninja completed the final 952
-  executed actions, including both explicitly invalidated RC outputs,
-  `chrome.dll`, resource packs, `chrome.exe`, mini installer and packages.
-- Current `npm test` — 408/408 pass. Current `npm run smoke` — pass in 11.5
+  entries. Applied postimages reverse cleanly in an isolated 20-file tree.
+- Shell `build --resume` preflight — all six patches, all 18 resources and all
+  12/12 doctor checks passed with 61.7 GiB free. Ninja completed all 584
+  executed actions, including the affected Views graph, `chrome.dll`, resource
+  allowlist, locale packs, `chrome.exe`, mini installer and packages.
+- Shell runtime — a fresh isolated 1570×796 normal HWND rendered the exact
+  168 px rail and 8 px page gap around a deterministic green page. Seven
+  browser/GPU/renderer/utility processes ran with zero `--no-sandbox` flags;
+  the stable CDP/UA token remained intentional. `Browser.close` left zero
+  processes and no singleton artifacts.
+- Current `npm test` — 409/409 pass. Current `npm run smoke` — pass in 10.3
   seconds with the same three frame-dependent assertions explicitly skipped on
   this no-capturable-frame host. A preceding cold-start run exposed that the
   harness cached `tabs.active` before chrome created its first tab; the harness
@@ -294,15 +300,51 @@ Last recorded: 2026-08-30 18:50 BST.
   migration runtime matrices remain documented but are deferred. Engineering
   now moves to the visible native C++/Views shell and existing Ember features.
 
+## First native shell geometry checkpoint
+
+Last recorded: 2026-08-30 23:50 BST.
+
+- **Patch:** `0006-ember-native-shell-geometry.patch` adds an Ember-owned Views
+  child to normal `BrowserView` windows and threads it through the current
+  `BrowserViewLayoutViews`/`BrowserViewTabbedLayoutImpl` path. It reserves
+  168 px before Chromium lays out its real tabs, toolbar, side panels, dialogs
+  and contents, then insets only the page region by 8 px on every edge.
+  Fullscreen hides the rail and removes both reservations.
+- **Compile/build:** the three directly affected objects compiled first. Two
+  consecutive deterministic prepares then passed with six patches, and the
+  official `--jobs 6 --resume` build completed 584/584 actions including the
+  optimized DLL/executable links, resource allowlist, locale packs, installer
+  and portable package.
+- **Runtime geometry:** a deterministic green page in a 1570×796 live window
+  produced a screenshot with the exact rail color `#1A100A` at x=8..175
+  (168 px), black page gap at x=176..183 (8 px), and live contents beginning at
+  x=184. The page also retained its 8 px trailing and bottom gaps. This is real
+  Views layout, not an overlay or screenshot mock.
+- **Runtime security/lifecycle:** the sandboxed run contained seven processes
+  across browser, GPU, renderer and utility roles with no `--no-sandbox` flag.
+  The title was `Ember Shell Geometry - Ember`; `Browser.close` removed all
+  processes and profile singleton artifacts.
+- **Built binaries:** `chrome.exe`, 4,263,936 bytes, SHA-256
+  `DC354C3328FC3E67277AE458D2DFF1078F53989E009B946AF7905D45F9003FE6`;
+  `chrome.dll`, 298,953,216 bytes, SHA-256
+  `CCF868272BCCC3718291E617F5A2B9E3F1827B3F572CE6718A6F05DEA0B7F078`.
+- **Packages:** installer 126,778,880 bytes / SHA-256
+  `623B9C0C706935663AF23B51B24252BA96D5814DB40A86E56E89A73F260C147B`;
+  portable ZIP 197,369,205 bytes / SHA-256
+  `89B4FA0C69F94985151A736AA8CEA37AF6CC8D302ECDA7308EDE3D36F99FC8C6`.
+- **Known visual gap:** the rail is deliberately only the structural slice and
+  Chromium's stock tab/toolbar presentation remains. The next implementation
+  must add actual address/Copy Link/Favorite controls to the native rail, then
+  compact and style the real top chrome toward the 32 px oracle.
+
 ## Current Windows build-host audit
 
 `node chromium/tools/port.js build --work-root C:\src\ember-chromium --jobs 6
---resume` passed 12/12 prepared-build checks and completed the final resource
-rebuild:
+--resume` passed 12/12 prepared-build checks and completed the shell rebuild:
 
 - Windows x64 with 31.9 GiB RAM and a safe short external work root.
-- 67.1 GiB free at build start versus the 60 GiB prepared-build floor and
-  100 GiB new-acquisition floor; 62.8 GiB remained after build/runtime work.
+- 61.7 GiB free at build start versus the 60 GiB prepared-build floor and
+  100 GiB new-acquisition floor; 61.2 GiB remained after build/runtime work.
 - Git 2.42, Python 3.12.1 with `httplib2==0.22.0`, 7-Zip, and long paths.
 - Visual Studio Build Tools 2026 18.9.1 with the core x86/x64 C++ tools and
   ATL/MFC.
@@ -310,8 +352,8 @@ rebuild:
   SDK Debugging Tools `dbghelp.dll` version 10.0.26100.7705.
 
 Initial acquisition retains the 100 GiB floor. A prepared build may use
-`--resume`: the tool verifies the pinned source commit and that all five Ember
-patches reverse cleanly in an isolated 15-file scratch tree, verifies all 18
+`--resume`: the tool verifies the pinned source commit and that all six Ember
+patches reverse cleanly in an isolated 20-file scratch tree, verifies all 18
 resources, repairs only an incomplete GN bootstrap, and retains the source and
 incremental objects. A child-only
 `python3.bat` shim avoids the broken Windows Store alias, while the verified
@@ -327,15 +369,15 @@ so this baseline deliberately changes only class CLSIDs.
 
 ## Next vertical slice
 
-1. Implement the first native C++/Views shell slice on the real Chromium
-   `BrowserView`: Ember's 32 px top chrome, 168 px sidebar, 8 px page inset,
-   native tab strip, omnibox/navigation controls, and Windows caption reservation.
+1. Turn the live native rail into useful Ember UI: current-address presentation,
+   Copy Link feedback, and Favorite tiles backed by real Chromium profile/tab
+   state rather than hard-coded pages.
 2. Keep real Chromium `Profile`, `Browser`, `TabStripModel`, navigation and
    renderer security as the backing systems; do not recreate an Electron shim.
-3. Add deterministic native capture and interaction probes for wide, medium and
-   compact layouts, then compare them to the checked-in Electron oracle.
-4. Port the existing sidebar/Favorites/Copy Link and tab interaction contracts
-   in small functioning slices after the basic shell geometry works.
+3. Compact and style the real native tab strip/toolbar toward the accepted
+   32 px top shell, then add the 12 px page radius and bounded material.
+4. Commit deterministic wide, medium and compact native capture/interaction
+   probes and compare them with the checked-in Electron oracle.
 5. Revisit signing and installer integration only when the friends-only build
    needs distribution hardening; do not block UI parity on those release-scale
    tasks.

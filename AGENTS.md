@@ -469,11 +469,11 @@ Git is the history archive.
 
 Newest first. One entry per active/recent unit of work.
 
-### 2026-08-30 — Codex — Native Chromium baseline
-- **Status / Branch:** branding complete, native UI in-progress · `chromium-port`
+### 2026-08-30 — Codex — Native Chromium baseline and shell geometry
+- **Status / Branch:** first native UI slice built, next features in-progress · `chromium-port`
 - **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`, `package.json`, `scripts/capture-ui.js`, `src/main/index.js`, `test/{chromium-port,smoke-startup}.test.js`, `chromium/`
-- **Summary:** Established the pinned external-checkout architecture, Electron visual oracle, safe build/patch/resource tooling, and five identity/security/WebUI patches. The official x64 build completed all 57,877 initial actions plus visible-identity, 476-action intermediate-resource and final 952-action branding rebuilds. Direct PE/live-HWND probes and live Settings pixels/accessibility now prove Ember icons and every targeted glyph; final hash-owned installer/portable packages were produced. A smoke cold-start race found during the gate now awaits the first active tab and has regression coverage; 408/408 tests and smoke pass.
-- **For the other agent:** Keep port work on `chromium-port`. Practical identity is closed for this friends-only build; defer executable renaming, signing and deep installer/upgrade/coexistence work unless distribution needs change. Start the native C++/Views shell now: preserve the 32 px top shell, 168 px sidebar, 8 px page inset, real `Profile`/`Browser`/`TabStripModel`, sandbox and Windows HWND behavior. Stable Chrome UA/CDP tokens remain intentional. Exact final hashes/runtime evidence are in `CHROMIUM_PORT_STATUS.md`; COM interface/type-library identity remains shared unless IDL and all persisted x86/x64/arm64 MIDL outputs are regenerated together.
+- **Summary:** Established the pinned external-checkout architecture, Electron visual oracle, safe build/patch/resource tooling, and six ordered patches. Identity is practically complete; patch six starts the actual UI port by giving normal Chromium `BrowserView` windows a native 168 px Ember rail and exact 8 px page inset. Its 584-action official build, packages, sandboxed seven-process launch, exact pixel geometry and clean shutdown all pass. A smoke cold-start race found during the earlier gate now awaits the first active tab and has regression coverage; 409/409 Electron tests and smoke pass.
+- **For the other agent:** Keep port work on `chromium-port`. The rail is structural but real: extend it with current-address/Copy Link/Favorites backed by Chromium profile and `TabStripModel` state, then compact/style the real tab strip and toolbar toward 32 px; do not replace the native sandbox, focus, extension or HWND plumbing. Practical identity remains closed for this friends-only build, the stable Chrome UA/CDP tokens are intentional, and exact hashes/runtime evidence are in `CHROMIUM_PORT_STATUS.md`.
 
 ### 2026-08-24 — Codex — Copy Link roadmap completion
 - **Status / Branch:** completed · `glass-fixing`
