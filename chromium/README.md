@@ -117,18 +117,24 @@ Ember product and authors, Settings says `About Ember`, and packaging emits the
 token remains intentional for web compatibility.
 
 The first native branding-resource build then completed 476 incremental actions
-and proved Ember's gold logo live on `chrome://settings/help`. Direct PE icon
-extraction also caught Chromium's missing RC include dependency: the old
-executable icon remained embedded even though the source ICO had changed. Five
-patches, 18 resources, and deterministic RC invalidation are now prepared; the
-final link is blocked only by the documented 60 GiB free-space gate. CDP
-deliberately retains `Chrome/...` because the pinned ChromeDriver parser and
-shader-cache namespace depend on that compatibility token.
+and caught Chromium's missing RC include dependency: the old executable icon
+remained embedded even though the source ICO had changed. The final five-patch,
+18-resource rebuild subsequently passed all 12 host checks and completed 952
+executed actions, including both invalidated RC outputs, the optimized DLL and
+executable links, localized resource packs, mini installer, and packages.
 
-This is a build/runtime identity baseline, not UI parity. Executable naming,
-final rebuilt executable/shortcut icon verification, signatures, installer
-behavior, and the full Ember C++/Views shell remain open. Exact file hashes,
-runtime commands/results, disk measurements, and blockers are recorded in
+Direct PE extraction now returns Ember's gold 256 px meteor, the live HWND owns
+the gold 32 px meteor, and `chrome://settings/help` renders Ember art in its top
+toolbar, About card and About-menu glyph. Accessibility strings, window title,
+official build text and shutdown were also verified. CDP deliberately retains
+`Chrome/...` because the pinned ChromeDriver parser and shader-cache namespace
+depend on that compatibility token.
+
+This closes the practical build/runtime identity baseline, not UI parity. For
+the current small friends-only distribution, executable renaming, signatures
+and deep installer/upgrade/coexistence testing are deferred so work can move to
+the native Ember C++/Views shell and existing features. Exact file hashes,
+runtime evidence, disk measurements and the next UI slice are recorded in
 `../CHROMIUM_PORT_STATUS.md`.
 
 To check the Ember patch stack against a pristine checkout of the exact

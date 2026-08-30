@@ -201,21 +201,33 @@ The live Settings capture exposed two more upstream glyph routes:
 The former is now an Ember-owned generated SVG wrapper; the latter is replaced
 by a small monochrome Ember meteor path in patch five. All five patches reverse
 cleanly from the applied 15-file source set and all 18 resource destinations
-verify, but the final resource-object/DLL rebuild remains blocked by the 60 GiB
-prepared-build disk floor.
+verify. After 67.1 GiB became available, the final six-job build completed 952
+executed actions. It rebuilt both explicitly invalidated RC outputs, the DLL,
+localized resource packs, executable, mini installer and managed packages.
+
+Direct `PrivateExtractIcons` extraction from the final `chrome.exe` returned
+the 256 px gold Ember meteor from PE resource ID 4. The live browser HWND's
+`GCLP_HICON` returned the 32 px gold meteor. A CDP screenshot and accessibility
+tree proved the Settings top-toolbar logo, About card art, About-menu glyph,
+title, official Ember build label and Ember copyright together. Graceful
+`Browser.close` left zero matching processes and no singleton artifacts. This
+closes the practical identity slice; deeper installer/upgrade/coexistence work
+is deferred for the friends-only distribution so shell and feature parity can
+take priority.
 
 ## Next source inspection targets
 
-With the first binary and visible identity slice proven, continue in this order:
+With the build and practical visible-identity slice proven, continue in this
+order:
 
-1. final executable/HWND/shortcut/WebUI icon rebuild and verification, then an
-   explicit compatibility decision on executable naming;
-2. installer registry, toast activation, elevated services, upgrade/uninstall,
-   and side-by-side behavior;
-3. a native `Browser`/Views shell vertical slice using real `Profile`,
+1. a native `Browser`/Views shell vertical slice using real `Profile`,
    `TabStripModel`, navigation, extension, sandbox, and Windows HWND plumbing;
-4. deterministic native visual and interaction capture against the locked
+2. deterministic native visual and interaction capture against the locked
    Electron reference manifest.
+3. existing sidebar/Favorites/Copy Link and tab interaction parity in small
+   functioning slices;
+4. signing and deeper installer integration only when distribution hardening is
+   needed, without blocking the visible UI work.
 
 Do not implement a `ROADMAP.md` feature still marked planned while closing
 native parity.

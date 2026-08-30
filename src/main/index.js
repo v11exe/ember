@@ -1257,10 +1257,15 @@ app.whenReady().then(() => {
           }
           return null
         }
-        const active = browser?.tabs.active
+        // The chrome view creates the first tab from its did-finish-load
+        // callback. On a cold profile that can land after this smoke probe's
+        // initial delay, so keep waiting for the real active record instead of
+        // retaining a stale null while the tab appears underneath us.
+        const active = await waitFor(() => browser?.tabs.active, 30_000)
+        if (!active?.webContents || !active.view) throw new Error('active tab did not become ready')
         const testExtensions = await browser?.testExtensionsReady
         const fixtureIds = testExtensions.map((extension) => extension.id)
-        await active?.webContents.loadURL('data:text/html,<title>Ember smoke page</title><main style="color:white">Rendered page</main>')
+        await active.webContents.loadURL('data:text/html,<title>Ember smoke page</title><main style="color:white">Rendered page</main>')
 
         // Some machines will not present a frame for an Electron window at all
         // — a wedged viz service answers UnknownVizError, an unpresented one
@@ -1268,7 +1273,7 @@ app.whenReady().then(() => {
         // frame cannot say anything then, so ask once and skip them loudly
         // rather than reporting a pass nobody earned or a failure that is
         // really about the compositor.
-        const canCapture = await active?.webContents
+        const canCapture = await active.webContents
           .capturePage({ x: 0, y: 0, width: 32, height: 32 })
           .then((shot) => !!shot && !shot.isEmpty())
           .catch(() => false)
@@ -1279,7 +1284,7 @@ app.whenReady().then(() => {
         checks.push(['window and tab created', !!browser && browser.tabs.tabs.length > 0])
         checks.push(['chrome loaded', !!browser?.chrome.webContents.getTitle()])
         checks.push(['extensions panel opened', !!browser?.panel.open && !!browser.panel.view?.getVisible()])
-        checks.push(['web page remains visible', !!active?.view.getVisible()])
+        checks.push(['web page remains visible', active.view.getVisible()])
         const panelExpanded = await browser.chrome.webContents.executeJavaScript(
           "document.getElementById('ext-btn').getAttribute('aria-expanded') === 'true'"
         )
