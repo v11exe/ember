@@ -4,3 +4,4 @@ ember/0003-ember-visible-product-surfaces.patch
 ember/0004-ember-windows-app-icon-version.patch
 ember/0005-ember-webui-product-icon.patch
 ember/0006-ember-native-shell-geometry.patch
+ember/0007-ember-sidebar-address-copy-link.patch

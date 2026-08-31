@@ -469,11 +469,11 @@ Git is the history archive.
 
 Newest first. One entry per active/recent unit of work.
 
-### 2026-08-30 — Codex — Native Chromium baseline and shell geometry
-- **Status / Branch:** first native UI slice built, next features in-progress · `chromium-port`
+### 2026-08-31 — Codex — Native Chromium shell and first sidebar feature
+- **Status / Branch:** address/Copy Link slice built, Favorites next · `chromium-port`
 - **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`, `package.json`, `scripts/capture-ui.js`, `src/main/index.js`, `test/{chromium-port,smoke-startup}.test.js`, `chromium/`
-- **Summary:** Established the pinned external-checkout architecture, Electron visual oracle, safe build/patch/resource tooling, and six ordered patches. Identity is practically complete; patch six starts the actual UI port by giving normal Chromium `BrowserView` windows a native 168 px Ember rail and exact 8 px page inset. Its 584-action official build, packages, sandboxed seven-process launch, exact pixel geometry and clean shutdown all pass. A smoke cold-start race found during the earlier gate now awaits the first active tab and has regression coverage; 409/409 Electron tests and smoke pass.
-- **For the other agent:** Keep port work on `chromium-port`. The rail is structural but real: extend it with current-address/Copy Link/Favorites backed by Chromium profile and `TabStripModel` state, then compact/style the real tab strip and toolbar toward 32 px; do not replace the native sandbox, focus, extension or HWND plumbing. Practical identity remains closed for this friends-only build, the stable Chrome UA/CDP tokens are intentional, and exact hashes/runtime evidence are in `CHROMIUM_PORT_STATUS.md`.
+- **Summary:** Established the pinned external-checkout architecture, oracle, tooling and seven ordered patches. Patch six supplies the native 168 px rail/8 px page inset; patch seven adds a live active-tab address chip and functional, accessible Copy Link feedback backed by Chromium's existing `WebContents` observers. Official builds/packages, two-way tab switching, exact clipboard behavior, sandboxed eight-process launch and clean shutdown pass; 410/410 Electron tests, smoke and live oracle launch pass.
+- **For the other agent:** Keep port work on `chromium-port`. Add profile-backed Favorite tiles on the existing rail next, then compact/style the real tab strip and toolbar toward 32 px; retain patch seven's active-tab URL source and do not replace the native sandbox, focus, extension or HWND plumbing. Practical identity remains closed for this friends-only build, stable Chrome UA/CDP tokens are intentional, and exact hashes/runtime evidence are in `CHROMIUM_PORT_STATUS.md`.
 
 ### 2026-08-24 — Codex — Copy Link roadmap completion
 - **Status / Branch:** completed · `glass-fixing`

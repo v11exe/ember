@@ -49,6 +49,7 @@ test('the Ember patch series is ordered, local, and complete', () => {
     'ember/0004-ember-windows-app-icon-version.patch',
     'ember/0005-ember-webui-product-icon.patch',
     'ember/0006-ember-native-shell-geometry.patch',
+    'ember/0007-ember-sidebar-address-copy-link.patch',
   ]);
   for (const entry of entries) {
     assert.equal(fs.existsSync(path.join(port.PATCHES_ROOT, ...entry.split('/'))), true);
@@ -367,6 +368,31 @@ test('the native shell patch reserves Ember geometry around real Chromium conten
   assert.match(patchText, /params\.InsetHorizontal\(kEmberSidebarWidth/);
   assert.match(patchText, /unclipped_contents_region\.Inset\(content_insets\)/);
   assert.doesNotMatch(patchText, /^\+.*(?:no-sandbox|disable-site-isolation|TabStripModel)/im);
+});
+
+test('the sidebar feature patch reads the active tab and copies its real URL', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0007-ember-sidebar-address-copy-link.patch'),
+    'utf8',
+  );
+  const touchedFiles = [...patchText.matchAll(/^diff --git a\/(\S+) b\/\S+$/gm)]
+    .map((match) => match[1]);
+
+  assert.deepEqual(touchedFiles, [
+    'chrome/browser/ui/views/frame/browser_view.cc',
+    'chrome/browser/ui/views/frame/browser_view.h',
+  ]);
+  assert.match(patchText, /GetActiveWebContents\(\)/);
+  assert.match(patchText, /GetVisibleURL\(\)/);
+  assert.match(patchText, /url_formatter::FormatUrl\(url\)/);
+  assert.match(patchText, /ui::ScopedClipboardWriter\(ui::ClipboardBuffer::kCopyPaste\)/);
+  assert.match(patchText, /CopyEmberSidebarLink/);
+  assert.match(patchText, /SetText\(u"Copy"\)/);
+  assert.doesNotMatch(patchText, /IDS_COPY/);
+  assert.match(patchText, /OnActiveTabChanged[\s\S]*UpdateEmberSidebar\(\)/);
+  assert.match(patchText, /DidFinishNavigation[\s\S]*UpdateEmberSidebar\(\)/);
+  assert.match(patchText, /base::Milliseconds\(1200\)/);
+  assert.doesNotMatch(patchText, /^\+.*(?:no-sandbox|disable-site-isolation|WebContents::Create)/im);
 });
 
 test('packaging normalizes pinned artifacts to Ember names without overwriting conflicts', () => {

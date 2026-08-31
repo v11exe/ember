@@ -1,0 +1,234 @@
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -34,6 +34,7 @@
+ #include "base/scoped_observation.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/stringprintf.h"
++#include "base/strings/utf_string_conversions.h"
+ #include "base/task/sequenced_task_runner.h"
+ #include "base/task/single_thread_task_runner.h"
+ #include "base/trace_event/trace_event.h"
+@@ -271,6 +272,7 @@
+ #include "components/tabs/public/tab_interface.h"
+ #include "components/translate/core/browser/language_state.h"
+ #include "components/translate/core/browser/translate_manager.h"
++#include "components/url_formatter/url_formatter.h"
+ #include "components/user_education/common/feature_promo/feature_promo_handle.h"
+ #include "components/user_education/common/feature_promo/feature_promo_result.h"
+ #include "components/user_education/common/help_bubble/help_bubble_factory_registry.h"
+@@ -307,6 +309,8 @@
+ #include "ui/accessibility/platform/ax_mode_observer.h"
+ #include "ui/accessibility/platform/ax_platform.h"
+ #include "ui/base/accelerators/accelerator.h"
++#include "ui/base/clipboard/clipboard_buffer.h"
++#include "ui/base/clipboard/scoped_clipboard_writer.h"
+ #include "ui/base/dragdrop/os_exchange_data.h"
+ #include "ui/base/hit_test.h"
+ #include "ui/base/l10n/l10n_util.h"
+@@ -339,12 +343,16 @@
+ #include "ui/views/accessibility/view_accessibility_utils.h"
+ #include "ui/views/animation/compositor_animation_runner.h"
+ #include "ui/views/background.h"
++#include "ui/views/border.h"
+ #include "ui/views/bubble/bubble_dialog_delegate_view.h"
++#include "ui/views/controls/button/label_button.h"
+ #include "ui/views/controls/button/menu_button.h"
++#include "ui/views/controls/label.h"
+ #include "ui/views/controls/textfield/textfield.h"
+ #include "ui/views/controls/webview/webview.h"
+ #include "ui/views/interaction/element_tracker_views.h"
+ #include "ui/views/interaction/view_subregion_anchor.h"
++#include "ui/views/layout/box_layout.h"
+ #include "ui/views/layout/fill_layout.h"
+ #include "ui/views/view.h"
+ #include "ui/views/view_class_properties.h"
+@@ -411,6 +419,11 @@ using content::WebContents;
+ using input::NativeWebKeyboardEvent;
+ using web_modal::WebContentsModalDialogHost;
+ 
++DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(BrowserView,
++                                      kEmberSidebarAddressElementId);
++DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(BrowserView,
++                                      kEmberSidebarCopyLinkElementId);
++
+ namespace {
+ 
+ // The visible height of the shadow above the tabs. Clicks in this area are
+@@ -921,5 +934,48 @@ BrowserView::BrowserView(Browser* browser)
+         views::kElementIdentifierKey,
+         BrowserViewLayoutViews::kEmberSidebarElementId);
++
++    ember_sidebar_->SetLayoutManager(std::make_unique<views::BoxLayout>(
++        views::BoxLayout::Orientation::kVertical, gfx::Insets(8), 8));
++    auto* address_row =
++        ember_sidebar_->AddChildView(std::make_unique<views::View>());
++    address_row->SetPreferredSize(gfx::Size(0, 36));
++    address_row->SetBackground(views::CreateRoundedRectBackground(
++        SkColorSetARGB(0x30, 0xFF, 0xFF, 0xFF), 9));
++    auto* address_layout =
++        address_row->SetLayoutManager(std::make_unique<views::BoxLayout>(
++            views::BoxLayout::Orientation::kHorizontal,
++            gfx::Insets::TLBR(0, 10, 0, 4), 4));
++    address_layout->set_cross_axis_alignment(
++        views::BoxLayout::CrossAxisAlignment::kCenter);
++
++    ember_sidebar_address_ =
++        address_row->AddChildView(std::make_unique<views::Label>());
++    ember_sidebar_address_->SetProperty(
++        views::kElementIdentifierKey, kEmberSidebarAddressElementId);
++    ember_sidebar_address_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++    ember_sidebar_address_->SetElideBehavior(gfx::ELIDE_MIDDLE);
++    ember_sidebar_address_->SetEnabledColor(
++        SkColorSetARGB(0xE6, 0xFF, 0xFF, 0xFF));
++    address_layout->SetFlexForView(ember_sidebar_address_, 1);
++
++    ember_sidebar_copy_link_ =
++        address_row->AddChildView(std::make_unique<views::LabelButton>(
++            base::BindRepeating(&BrowserView::CopyEmberSidebarLink,
++                                weak_ptr_factory_.GetWeakPtr()),
++            u"Copy"));
++    ember_sidebar_copy_link_->SetProperty(
++        views::kElementIdentifierKey, kEmberSidebarCopyLinkElementId);
++    ember_sidebar_copy_link_->SetEnabledTextColors(
++        SkColorSetRGB(0xFF, 0xC9, 0x3C));
++    ember_sidebar_copy_link_->SetBorder(
++        views::CreateEmptyBorder(gfx::Insets::VH(5, 7)));
++    ember_sidebar_copy_link_->SetBackground(
++        views::CreateRoundedRectBackground(
++            SkColorSetARGB(0x22, 0xFF, 0xC9, 0x3C), 7));
++    ember_sidebar_copy_link_->SetFocusBehavior(
++        views::View::FocusBehavior::ALWAYS);
++    ember_sidebar_copy_link_->SetTooltipText(u"Copy link");
++    UpdateEmberSidebar();
+   }
+ 
+   top_container_ = AddChildView(std::make_unique<TopContainerView>(this));
+@@ -1139,7 +1195,10 @@ BrowserView::~BrowserView() {
+   // before `RemoveAllChildViews()` is called to avoid dangling.
+   browser_widget_ = nullptr;
+   main_background_region_ = nullptr;
++  ember_sidebar_copy_feedback_timer_.Stop();
+   ember_sidebar_ = nullptr;
++  ember_sidebar_address_ = nullptr;
++  ember_sidebar_copy_link_ = nullptr;
+   top_container_ = nullptr;
+   web_app_frame_toolbar_ = nullptr;
+   web_app_window_title_ = nullptr;
+@@ -1938,6 +1997,7 @@ void BrowserView::OnActiveTabChanged(content::WebContents* old_contents,
+   }
+ 
+   WebContentsObserver::Observe(new_contents);
++  UpdateEmberSidebar();
+ 
+   // If |contents_container_| already has the correct WebContents, we can save
+   // some work.  This also prevents extra events from being reported by the
+@@ -2331,6 +2391,7 @@ void BrowserView::UpdateToolbar(content::WebContents* contents) {
+   if (toolbar_) {
+     toolbar_->Update(contents);
+   }
++  UpdateEmberSidebar();
+   for (ContentsContainerView* contents_container :
+        multi_contents_view_->contents_container_views()) {
+     contents_container->mini_toolbar()->UpdateContents();
+@@ -2887,12 +2948,57 @@ void BrowserView::DidFinishNavigation(
+     return;
+   }
+ 
++  UpdateEmberSidebar();
++
+   if (AppUsesUnframedMode() && !window_management_subscription_id_) {
+     SetWindowManagementPermissionSubscriptionForUnframedMode(
+         navigation_handle->GetWebContents());
+   }
+ }
+ 
++void BrowserView::UpdateEmberSidebar() {
++  if (!ember_sidebar_address_ || !ember_sidebar_copy_link_) {
++    return;
++  }
++
++  content::WebContents* contents = GetActiveWebContents();
++  const GURL url = contents ? contents->GetVisibleURL() : GURL();
++  const std::u16string display_url =
++      url.is_empty() ? l10n_util::GetStringUTF16(IDS_NEW_TAB)
++                     : url_formatter::FormatUrl(url);
++  ember_sidebar_address_->SetText(display_url);
++  ember_sidebar_address_->SetTooltipText(display_url);
++  ember_sidebar_copy_link_->SetEnabled(url.is_valid() && !url.is_empty());
++  ember_sidebar_copy_feedback_timer_.Stop();
++  ResetEmberSidebarCopyFeedback();
++}
++
++void BrowserView::CopyEmberSidebarLink() {
++  content::WebContents* contents = GetActiveWebContents();
++  const GURL url = contents ? contents->GetVisibleURL() : GURL();
++  if (!url.is_valid() || url.is_empty() || !ember_sidebar_copy_link_) {
++    return;
++  }
++
++  ui::ScopedClipboardWriter(ui::ClipboardBuffer::kCopyPaste)
++      .WriteText(base::UTF8ToUTF16(url.spec()));
++  ember_sidebar_copy_link_->SetText(u"Copied");
++  ember_sidebar_copy_link_->SetTooltipText(u"Link copied");
++  ember_sidebar_copy_link_->GetViewAccessibility().AnnounceText(u"Link copied");
++  ember_sidebar_copy_feedback_timer_.Start(
++      FROM_HERE, base::Milliseconds(1200),
++      base::BindOnce(&BrowserView::ResetEmberSidebarCopyFeedback,
++                     weak_ptr_factory_.GetWeakPtr()));
++}
++
++void BrowserView::ResetEmberSidebarCopyFeedback() {
++  if (!ember_sidebar_copy_link_) {
++    return;
++  }
++  ember_sidebar_copy_link_->SetText(u"Copy");
++  ember_sidebar_copy_link_->SetTooltipText(u"Copy link");
++}
++
+ void BrowserView::TouchModeChanged() {
+ #if BUILDFLAG(IS_CHROMEOS)
+   if (ui::TouchUiController::Get()->touch_ui()) {
+diff --git a/chrome/browser/ui/views/frame/browser_view.h b/chrome/browser/ui/views/frame/browser_view.h
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -116,6 +116,8 @@ enum class Channel;
+ }
+ 
+ namespace views {
++class Label;
++class LabelButton;
+ class WebView;
+ }  // namespace views
+ 
+@@ -151,6 +153,9 @@ class BrowserView : public BrowserWindow,
+   // locate this object using just the handle.
+   static constexpr char kBrowserViewKey[] = "__BROWSER_VIEW__";
+ 
++  DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kEmberSidebarAddressElementId);
++  DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kEmberSidebarCopyLinkElementId);
++
+   explicit BrowserView(Browser* browser);
+   BrowserView(const BrowserView&) = delete;
+   BrowserView& operator=(const BrowserView&) = delete;
+@@ -879,6 +884,10 @@ class BrowserView : public BrowserWindow,
+   // Shared implementation by cut, copy and paste.
+   void CutCopyPaste(int command_id);
+ 
++  void UpdateEmberSidebar();
++  void CopyEmberSidebarLink();
++  void ResetEmberSidebarCopyFeedback();
++
+   // If the browser is in immersive full screen mode, it will reveal the
+   // top container for a short duration. The top container will have the toolbar
+   // and possibly the tab strip (only in horizontal mode). This is useful for
+@@ -1136,6 +1145,9 @@ class BrowserView : public BrowserWindow,
+ 
+   // The persistent Ember shell rail shown by normal browser windows.
+   raw_ptr<views::View> ember_sidebar_ = nullptr;
++  raw_ptr<views::Label> ember_sidebar_address_ = nullptr;
++  raw_ptr<views::LabelButton> ember_sidebar_copy_link_ = nullptr;
++  base::OneShotTimer ember_sidebar_copy_feedback_timer_;
+ 
+   // The view that contains the primary UI (Toolbar, BookmarksBar, InfoBar,
+   // WebContents, and Side panel).

@@ -234,13 +234,33 @@ gap, and page start x=184. Seven normal Chromium processes ran without
 rail controls and top-shell styling instead of introducing a parallel window or
 renderer-hosted chrome.
 
+## First native sidebar feature result
+
+`BrowserView` already owns the required `TabStripModelObserver` and active
+`WebContentsObserver` lifecycles. Patch seven reuses those observers rather than
+creating a second navigation controller: active-tab changes, toolbar updates
+and committed primary navigations all refresh one address label from
+`GetActiveWebContents()->GetVisibleURL()`. The adjacent Views button writes the
+same exact URL to `ClipboardBuffer::kCopyPaste`, provides bounded `Copied`
+feedback, and remains keyboard-focusable and visible to Windows accessibility.
+
+The focused object and full seven-patch native build pass. Windows UI Automation
+invoked the real button without synthetic input, verified the exact clipboard
+value and 1.2-second reset, then proved a CDP-created second tab updates the rail
+and reactivating the first restores its URL. Visual inspection caught the
+localized Windows `&Copy` mnemonic leaking into the custom button; the final
+source uses a clean visible `Copy` label. Eight browser/GPU/renderer/utility
+processes retained sandbox flags and shut down normally. Continue with
+profile-backed Favorite tiles on this same rail before changing the real tab
+strip and toolbar.
+
 ## Next source inspection targets
 
 With the build and practical visible-identity slice proven, continue in this
 order:
 
-1. an Ember sidebar view/controller using real `Profile`, `TabStripModel` and
-   navigation state for address, Copy Link and Favorites;
+1. profile-backed Favorite tiles on the existing native rail, retaining its
+   active-tab address and Copy Link behavior;
 2. compacting and styling Chromium's real horizontal tab strip/top container
    toward the 32 px oracle without replacing its focus, extension, sandbox or
    Windows caption behavior;

@@ -143,8 +143,16 @@ panels and web contents beside it; the page receives the oracle's 8 px inset,
 and fullscreen removes the shell reservation. The six-patch incremental build
 completed 584 actions and a deterministic live-page screenshot measured both
 dimensions exactly while the ordinary Chromium sandbox/process model remained
-enabled. The rail is structural today: address, Copy Link and Favorites are the
-next native feature slice, followed by compacting/styling the real top chrome.
+enabled.
+
+Patch seven makes that rail useful. Its native address row follows the active
+Chromium `WebContents` across committed navigation and tab changes, and its
+focusable Copy button writes the exact visible URL to the ordinary Windows
+clipboard with accessible `Copied` feedback and a 1.2-second reset. UI
+Automation proved the label, clipboard, feedback timer and two-way tab switch;
+the final eight-process run retained the normal sandbox and shut down cleanly.
+Favorites are the next native feature slice, followed by compacting/styling the
+real top chrome.
 
 To check the Ember patch stack against a pristine checkout of the exact
 Chromium commit:
