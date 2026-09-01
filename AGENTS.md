@@ -469,6 +469,32 @@ Git is the history archive.
 
 Newest first. One entry per active/recent unit of work.
 
+### 2026-09-01 — Claude Code — Chromium port: honest Favorites state, host blocker
+- **Status / Branch:** checkpoint, native work blocked on the build host · `chromium-port`
+- **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`, `chromium/README.md`,
+  `chromium/research/UPSTREAM_NOTES.md`,
+  `docs/superpowers/plans/2026-08-31-native-chromium-favorites.md`,
+  `docs/superpowers/specs/2026-09-01-native-top-chrome-parity.md`
+- **Summary:** The native build environment is gone from this machine:
+  `C:\src\ember-chromium` with its ~15 GiB `out/Default`, every built binary and
+  both packages no longer exist, VS 2026 has been replaced by VS 2022 Build
+  Tools, the SDK Debugging Tools are missing and long paths are off — `doctor`
+  is 8/12. Patch 0008's runtime proof is therefore impossible right now. Its
+  plan had Task 3's build boxes checked, but no build output or hash for an
+  eight-patch build exists anywhere in the repository, so those boxes are now
+  unchecked and every ledger entry says Favorites is source-complete and
+  unbuilt. Everything that does not need a compiler was run and passes, and the
+  next slice's parity numbers were extracted from the oracle so the work can
+  start the moment the host is back.
+- **For the other agent:** Do not report native Favorites as working — nothing
+  has ever compiled or launched it. Restoring the host needs an elevated VS 2026
+  Build Tools install (`VC.Tools.x86.x64` + `VC.ATLMFC`), the SDK Debugging
+  Tools feature and `LongPathsEnabled = 1`; after that the next `build` is a
+  full fresh acquisition, not a resume, because `.ninja_log` is gone. `prepare`
+  still works and is idempotent with eight patches. The measured top-chrome
+  contract is in `docs/superpowers/specs/2026-09-01-native-top-chrome-parity.md`
+  — use it rather than re-deriving numbers from CSS.
+
 ### 2026-08-31 — Codex — Native Chromium shell and sidebar features
 - **Status / Branch:** Favorites implementation in progress after built address/Copy Link slice · `chromium-port`
 - **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`, `docs/superpowers/plans/2026-08-31-native-chromium-favorites.md`, `package.json`, `scripts/capture-ui.js`, `src/main/index.js`, `test/{chromium-port,smoke-startup}.test.js`, `chromium/`

@@ -1,0 +1,143 @@
+# Native top-chrome parity contract (extracted from the Electron oracle)
+
+Source of every number below: Ember `main` at `9ae3217`, files
+`src/shared/chrome-layout.js`, `src/shared/tab-scroll.js`,
+`src/renderer/chrome.html`, `src/renderer/chrome.css`,
+`src/renderer/chrome.js`, `src/renderer/shell-material.css`, and the promoted
+captures in `chromium/reference/electron/9ae3217/` (`chrome-wide.png`,
+`chrome-medium.png`, `chrome-compact.png`).
+
+This is a measurement record, not a design. Nothing here was invented; if a
+value disagrees with the oracle, the oracle wins and this file is stale.
+
+## 1. Strip anatomy, left to right
+
+The whole bar is one 32 px flex row, `align-items: center`, `gap: 5px`,
+`padding: 0`, `overflow: hidden`.
+
+| Region | Width | Notes |
+| --- | --- | --- |
+| `.sidebar-header` | 168 px (140 px when the sidebar is collapsed) | Holds the brand mark and the sidebar toggle. `padding: 0 14px`, inner `gap: 2px`, `transition: width 210ms cubic-bezier(.2,.8,.2,1)`. |
+| `.top-navigation` | content | Back / forward / reload, inner `gap: 1px`. |
+| `.tabstrip` | `flex: 0 1 auto`, `max-width: var(--tabstrip-max)` | Contains `.tabs` then the new-tab button, `gap: 8px`. |
+| `.drag-fill` | `flex: 1 1 auto`, `min-width: 96px` | The blank caption-drag target. This is the 96 px `DRAG_RESERVE`. |
+| `.top-actions` | content | Archive (hidden by default) and extensions, `gap: 2px`. |
+| `.window-controls` | 138 px (`--caption-width`) | `visibility: hidden` on Windows — it only reserves the system caption width. Three 46×32 buttons. |
+| `.omnibox` | overlay | Transient, not part of the flex run. |
+
+## 2. Tabs
+
+- Height 28 px, radius 6 px, gap 8 px, `padding: 0 9px`, inner `gap: 7px`.
+- Width is `max-content` clamped to `min-width: 95px` / `max-width:
+  var(--tab-max-width)`; the max is recomputed, not fixed at 190.
+- Border `1px solid rgba(255,255,255,.035)`; background
+  `rgba(255,255,255,.075)`; text `rgba(255,255,255,.70)` at `12.5px/400`.
+- Hover: background `rgba(255,255,255,.10)`, text `rgba(255,255,255,.86)`.
+- Active: background `rgba(24,20,19,.82)`, border `rgba(255,91,0,.80)`, text
+  `rgba(255,255,255,.94)`, shadow `0 0 8px rgba(255,86,0,.25)` plus
+  `inset 0 0 8px rgba(255,88,0,.07)`.
+- Asleep: background `rgba(255,255,255,.025)`, border
+  `rgba(255,255,255,.025)`, text `rgba(255,255,255,.43)`, favicon
+  `grayscale(1)` at `opacity .5`, and a `zZ` glyph pair in a 16×18 slot
+  (`z` 10px at left 1 / bottom 2, `Z` 12px at right 0 / top 1, colour
+  `rgba(255,255,255,.38)`).
+- Favicon 16×16, radius 4 (0 for the new-tab glyph), `object-fit: contain`.
+- Title never ellipsises: it *fades*. `.tab-title.overflowing` wears a mask
+  `linear-gradient(to right, #000 0, #000 calc(100% - 22px), transparent)`;
+  on hover the fade widens to 24 px and the title takes `padding-right: 20px`
+  to clear the close button.
+- Close button: absolutely positioned, 28×28, `right: 5px`, vertically
+  centred, radius 6, background `rgba(35,29,27,.96)`, icon 12×12 stroke 1.5,
+  `opacity: 0` and `pointer-events: none` until the tab is hovered.
+- Loading spinner: 15×15, `1.5px` ring `rgba(255,255,255,.18)` with top colour
+  `rgba(255,112,24,.92)`, `0.7s` linear rotation.
+- Transition: `background 120ms, border-color 120ms, color 120ms, box-shadow
+  160ms, transform 150ms cubic-bezier(.2,.8,.2,1), opacity 120ms`.
+- Drag: source tab drops to `opacity .34` with no shadow; the drag preview is
+  a fixed clone at `opacity .96` with
+  `0 10px 24px rgba(0,0,0,.42), 0 0 10px rgba(255,88,0,.12)`.
+- New-tab button: 30×30, radius 6, glyph 17×17 stroke 1.45, hover background
+  `rgba(255,255,255,.07)`, `:active { transform: scale(.92) }`. The 34 px
+  `NEW_TAB_WIDTH` in the layout contract is the button plus its gap
+  allowance, not its painted box.
+
+## 3. Dynamic tab width (`dynamicTabMax`)
+
+```
+fixed          = sidebarHeader + navigation + actions + caption + 40
+availableWidth = max(0, windowWidth - fixed)
+share          = floor((availableWidth - 34 - 96 - 8*(count-1)) / count)
+--tab-max-width = clamp(share, 95, 190)
+--tabstrip-max  = max(95, availableWidth - 96)
+```
+
+`count == 0` yields the 190 maximum. The 40 px addend is a literal in
+`updateTabMetrics()`; it is not derived from any token.
+
+## 4. Wheel physics (`src/shared/tab-scroll.js`)
+
+- One notch = 132 px base stride.
+- Notches under 230 ms apart multiply the stride by
+  `min(2.8, 1 + (230 - gap) / 150)`, capped at 430 px per notch.
+- Overscroll lean is capped at 44 px and grows 17 px per dead-end notch, in
+  the direction opposite the push.
+- The glide covers a per-millisecond fraction: `1 - (1 - perFrame)^(ms/16.667)`
+  with `ms` clamped to 64, so a dropped frame lengthens the step.
+- Lean relaxes as `overscroll * spring^(ms/16.667)`, snapping to 0 below 0.4 px.
+- A lean of *n* px stretches the strip by `1 + min(0.06, n/900)`, with
+  `transform-origin` left when leaning positive and right when negative.
+- Edge fades are 22 px wide and appear only while there is content past that
+  edge; they are rewritten only when the whole-pixel value changes.
+- The strip must **not** chase the active tab on every state emit — that was
+  B10, and the fix is recorded in `AGENTS.md`.
+
+## 5. Material
+
+The bar samples the same window-wide material as every other shell surface
+(`.shell-material`), positioned by window-relative metrics so it cannot seam
+against the sidebar:
+
+```
+radial-gradient(ellipse 34% 62% at 2.5% 2%,
+  rgba(255,90,0,.31) 0%, rgba(165,58,5,.19) 21%,
+  rgba(84,32,6,.075) 45%, transparent 69%),
+radial-gradient(ellipse 48% 30% at 15% 0%,
+  rgba(116,45,14,.10) 0%, transparent 64%),
+linear-gradient(110deg, #1a100a 0%, #12100f 29%, #0e0e0e 60%, #0b0b0c 100%)
+```
+
+Its top edge (`.shell-edge-top`) is two 1 px bands: a black
+`rgba(0,0,0,.84)` hairline at y=0, and above the content an orange
+`linear-gradient(90deg, rgba(255,82,0,.25), rgba(255,82,0,.11) 24%,
+rgba(255,82,0,.035) 58%, transparent 88%)` at y=1.
+
+## 6. Icon buttons
+
+`.icon` is 30×30, radius 6, colour `rgba(255,255,255,.82)`, glyph 17×17 with
+`stroke-width: 1.45`, `stroke-linecap/linejoin: round`. Hover background
+`rgba(255,255,255,.07)` at full white; `:active { transform: scale(.93) }`;
+disabled `opacity .34` with hover suppressed. The sidebar toggle glyph is the
+exception at 18×18 / stroke 1.35.
+
+Navigation feedback is scripted from main so keyboard and mouse animate
+identically: back/forward throw the glyph 7 px and swap sides at 38–39 % over
+340 ms; reload spins once over 520 ms.
+
+## 7. What this means for the native port
+
+- Chromium's `TabStripModel`, `Tab`, `TabStrip` and `BrowserView` layout stay
+  authoritative. The target is a restyled and re-measured real tab strip, not
+  a second tab system painted over it.
+- The 32 px bar has to hold the tab strip *and* the navigation buttons *and*
+  the actions — Chromium's separate `TabStrip` + `ToolbarView` rows must
+  collapse into one row, or the window grows a second bar. Patch 0006 already
+  owns `BrowserViewLayout`; that is the seam.
+- `.window-controls` reserving 138 px is an Electron workaround for a
+  `WebContentsView` that cannot answer `WM_NCHITTEST`. Native Chromium already
+  owns its non-client area, so the native port must use the real frame's
+  caption reservation instead of porting the hidden-button trick.
+- `.drag-fill` is likewise a substitute for a native caption drag region.
+  Native Chromium gets that from the frame; only the 96 px reserve in
+  `dynamicTabMax` is a real layout contract worth keeping.
+- Title fading, the `zZ` sleeping glyph, the orange active border and the
+  dynamic width clamp have no Chromium equivalent and are genuine Ember work.

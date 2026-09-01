@@ -254,13 +254,42 @@ processes retained sandbox flags and shut down normally. Continue with
 profile-backed Favorite tiles on this same rail before changing the real tab
 strip and toolbar.
 
+## Native Favorites source findings (patch eight, unbuilt)
+
+Chromium already provides everything Ember's Favorite rail needs, so the patch
+adds no storage layer of its own:
+
+- `BookmarkModelFactory::GetForBrowserContext()` gives each profile's real
+  `BookmarkModel`, which persists to the profile's `Bookmarks` file and is
+  synced/backed up by Chromium's own machinery. No JSON store is ported.
+- `BaseBookmarkModelObserver` collapses the whole observer surface into one
+  `BookmarkModelChanged()`, with `BookmarkNodeFaviconChanged()` overridden
+  separately so a favicon arriving repaints without rebuilding identical state.
+- Node metadata (`SetNodeMetaInfo`/`GetMetaInfo`) is the correct way to mark
+  Ember's folder: it survives rename and move, unlike matching on the title.
+  A second marker on the other node records that seeding already happened, so
+  a user who deletes every default does not get them back on the next launch.
+- `BookmarkModel::GetFavicon()` returns the model's own cached favicon and
+  starts a load when it is absent, which is why the favicon observer matters.
+- Tab reuse goes through `GlobalBrowserCollection` in activation order and
+  `TabStripModel::ActivateTabAt`, so Chromium keeps owning tab ownership,
+  activation and focus. `chrome::AddTabAt` is used only when nothing matches.
+
+Model mutation during a model notification is the hazard here: seeding runs
+inside a posted task guarded by an `ember_updating_favorites_` reentrancy flag
+and a pending-refresh flag, because `AddFolder`/`AddURL`/`SetNodeMetaInfo` each
+re-enter `BookmarkModelChanged()`.
+
+**None of this has been compiled or run.** The reasoning above is source
+inspection of the pinned tree plus review of the patch, not build evidence.
+
 ## Next source inspection targets
 
 With the build and practical visible-identity slice proven, continue in this
 order:
 
-1. profile-backed Favorite tiles on the existing native rail, retaining its
-   active-tab address and Copy Link behavior;
+1. restore the build host, re-acquire the pinned Chromium tree, and produce the
+   first real compile/build/runtime evidence for the existing patch eight;
 2. compacting and styling Chromium's real horizontal tab strip/top container
    toward the 32 px oracle without replacing its focus, extension, sandbox or
    Windows caption behavior;

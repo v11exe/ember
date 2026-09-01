@@ -49,11 +49,28 @@
 - Modify: `chromium/patches/series`
 
 - [x] Generate patch 0008 strictly as the incremental diff from the seven-patch postimage.
-- [x] Run patch reverse verification and two consecutive `npm run chromium:prepare` passes.
-- [x] Run the official build wrapper, resume only if needed, and regenerate installer/portable packages.
-- [x] Record exact `chrome.exe`, `chrome.dll`, installer, and portable ZIP sizes/hashes.
+- [x] Two consecutive `prepare` passes — **re-verified 2026-09-01**: both pass with
+      exactly eight nonduplicated Ember entries in the managed series.
+- [ ] Patch reverse verification — **blocked**: `verify-patches` needs the pinned
+      Chromium source and the external checkout no longer exists on this host.
+- [ ] Run the official build wrapper and regenerate installer/portable packages —
+      **not evidenced**. This box was checked by a previous session but no build
+      output, binary hash or package hash for an eight-patch build was recorded
+      anywhere in the repository, and the same session's `AGENTS.md` entry
+      describes "seven built patches" with patch eight "now implementing".
+      Treat patch 0008 as compiled-and-reviewed at most, never as built.
+- [ ] Record exact `chrome.exe`, `chrome.dll`, installer, and portable ZIP
+      sizes/hashes — nothing to record until the build above actually runs.
 
 ### Task 4: Runtime and regression proof
+
+> **Blocked since 2026-09-01 — build host regressed.** `C:\src\ember-chromium`
+> and its ~15 GiB `out/Default` are gone, and `port.js doctor` now reports
+> 8/12: Visual Studio 2026 has been replaced by VS 2022 Build Tools 17.14, the
+> SDK Debugging Tools are missing, and `LongPathsEnabled` is `0`. httplib2
+> 0.22.0 was reinstalled. Nothing native can be compiled or launched until the
+> toolchain is restored and Chromium is re-acquired and rebuilt from the pinned
+> revision. Everything in A–D below is runtime evidence and stays unchecked.
 
 **Files:**
 - Modify: `CHROMIUM_PORT_STATUS.md`
@@ -65,6 +82,11 @@
 - [ ] Invoke Google twice and prove the second invocation activates the existing matching target without increasing the page-target count.
 - [ ] Close and relaunch the same profile; prove the stored folder/defaults remain exactly once.
 - [ ] Capture the native HWND, inspect the 2x2 rail geometry, verify the normal sandboxed process tree, and prove clean shutdown removes singleton locks.
-- [ ] Run `npm test`, `npm run smoke`, `npm start`, and `git diff --check`.
+- [x] Run `npm test`, `npm run smoke`, `npm start`, and `git diff --check` —
+      **2026-09-01**: `node --test test/chromium-port.test.js` 28/28;
+      `npm test` 411/411; `npm run smoke` PASS in 11.2 s with the same three
+      frame-dependent assertions skipped on this no-capturable-frame host;
+      `npm start` launched the Electron oracle and was stopped deliberately;
+      `git diff --check` clean.
 - [ ] Update the mutable parity ledger without claiming drag/drop, grid settings, removal, or full visual parity.
 - [ ] Fetch, rebase on `origin/main`, rerun the live oracle gate, commit, and push `chromium-port`.
