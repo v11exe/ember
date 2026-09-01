@@ -618,3 +618,136 @@ test('version comparison accepts patch differences while enforcing the minimum m
   assert.equal(port.versionAtLeast([3, 11], [3, 11]), true);
   assert.equal(port.versionAtLeast([3, 10, 9], [3, 11]), false);
 });
+
+// The native parity specs are hand-copied numbers. Nothing stops the Electron
+// oracle from moving underneath them, and a stale spec is worse than none: the
+// next native slice would be built to a measurement that is no longer true.
+// These read the oracle back and fail when the two disagree.
+const ORACLE_ROOT = path.join(__dirname, '..');
+const SPECS_ROOT = path.join(ORACLE_ROOT, 'docs', 'superpowers', 'specs');
+
+function cssBlock(text, selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const block = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(text);
+  if (!block) throw new Error(`Missing CSS rule: ${selector}`);
+  return block[1];
+}
+
+function cssDeclaration(text, selector, property) {
+  const declaration = new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`)
+    .exec(cssBlock(text, selector));
+  if (!declaration) throw new Error(`Missing ${property} in ${selector}`);
+  return declaration[1].trim();
+}
+
+test('the native sidebar parity spec still matches the Electron oracle it measured', () => {
+  const sidebarCss = fs.readFileSync(
+    path.join(ORACLE_ROOT, 'src', 'renderer', 'sidebar.css'), 'utf8',
+  );
+  const sidebarJs = fs.readFileSync(
+    path.join(ORACLE_ROOT, 'src', 'renderer', 'sidebar.js'), 'utf8',
+  );
+  const manifest = JSON.parse(fs.readFileSync(
+    path.join(ORACLE_ROOT, 'chromium', 'reference', 'electron', '9ae3217', 'manifest.json'),
+    'utf8',
+  ));
+
+  // The rail's coordinate system, which every native inset is derived from.
+  assert.equal(cssDeclaration(sidebarCss, '.sidebar-surface', 'padding'), '34px 9px 8px');
+  assert.equal(cssDeclaration(sidebarCss, '.sidebar-content', 'grid-template-rows'), '33px auto');
+  assert.equal(cssDeclaration(sidebarCss, '.sidebar-content', 'gap'), '10px');
+  assert.deepEqual(manifest.geometry.sidebar.address, [9, 34, 159, 67]);
+  assert.deepEqual(manifest.geometry.sidebar.favoritesOrigin, [9, 77]);
+  // 168 rail less 9 px of padding on each side is a 150 px content column.
+  assert.equal(
+    manifest.geometry.shell.sidebarWidth - 18,
+    manifest.geometry.sidebar.address[2] - manifest.geometry.sidebar.address[0],
+  );
+
+  // Address row.
+  assert.equal(cssDeclaration(sidebarCss, '.sidebar-address', 'height'), '33px');
+  assert.equal(cssDeclaration(sidebarCss, '.sidebar-address', 'border-radius'), '7px');
+  assert.equal(
+    cssDeclaration(sidebarCss, '.sidebar-address', 'background'),
+    'rgba(255, 255, 255, .075)',
+  );
+  assert.equal(
+    cssDeclaration(sidebarCss, '.sidebar-address', 'border'),
+    '1px solid rgba(255, 255, 255, .025)',
+  );
+  assert.equal(
+    cssDeclaration(sidebarCss, '.sidebar-address input', 'color'),
+    'rgba(255, 255, 255, .82)',
+  );
+  assert.equal(cssDeclaration(sidebarCss, '.sidebar-address-copy', 'width'), '26px');
+  assert.equal(cssDeclaration(sidebarCss, '.sidebar-address-copy img', 'width'), '12px');
+  assert.equal(cssDeclaration(sidebarCss, '.sidebar-address-copy img', 'height'), '7px');
+  // The oracle strips the scheme for https as well as http, and a leading www.
+  assert.match(sidebarJs, /\^https\?:\\\/\\\//);
+  assert.match(sidebarJs, /replace\(\/\^www\\\./);
+
+  // Favorite tiles.
+  assert.equal(cssDeclaration(sidebarCss, ':root', '--favorite-tile-height'), '43px');
+  assert.equal(cssDeclaration(sidebarCss, ':root', '--favorite-gap'), '10px');
+  assert.equal(cssDeclaration(sidebarCss, ':root', '--favorite-grid-height'), '98px');
+  assert.equal(cssDeclaration(sidebarCss, '.favorite', 'border-radius'), '7px');
+  assert.equal(
+    cssDeclaration(sidebarCss, '.favorite', 'background'),
+    'rgba(255, 255, 255, .075)',
+  );
+  assert.equal(cssDeclaration(sidebarCss, '.favorite', 'border'),
+    '1px solid rgba(255, 255, 255, .025)');
+  assert.equal(cssDeclaration(sidebarCss, '.favorite img', 'width'), '19px');
+  // Icon-only: the tile centres a single image and carries no title text.
+  assert.equal(cssDeclaration(sidebarCss, '.favorite', 'place-items'), 'center');
+  assert.match(sidebarCss, /\.favorite\.is-open \{ background: rgba\(255, 255, 255, \.18\)/);
+
+  const spec = fs.readFileSync(
+    path.join(SPECS_ROOT, '2026-09-01-native-sidebar-visual-parity.md'), 'utf8',
+  );
+  for (const quoted of ['34px 9px 8px', '150', '33', '0x13', '0x06', '12×7', '19×19']) {
+    assert.ok(spec.includes(quoted), `sidebar parity spec no longer quotes ${quoted}`);
+  }
+});
+
+test('the native top-chrome parity spec still matches the Electron oracle it measured', () => {
+  const layout = require('../src/shared/chrome-layout');
+  const scroll = require('../src/shared/tab-scroll');
+  const chromeCss = fs.readFileSync(
+    path.join(ORACLE_ROOT, 'src', 'renderer', 'chrome.css'), 'utf8',
+  );
+
+  assert.equal(layout.TOPBAR_HEIGHT, 32);
+  assert.equal(layout.SIDEBAR_WIDTH, 168);
+  assert.equal(layout.TAB_MIN_WIDTH, 95);
+  assert.equal(layout.TAB_MAX_WIDTH, 190);
+  assert.equal(layout.TAB_GAP, 8);
+  assert.equal(layout.NEW_TAB_WIDTH, 34);
+  assert.equal(layout.DRAG_RESERVE, 96);
+  assert.equal(cssDeclaration(chromeCss, ':root', '--tab-height'), '28px');
+  assert.equal(cssDeclaration(chromeCss, ':root', '--tab-radius'), '6px');
+  assert.equal(cssDeclaration(chromeCss, ':root', '--caption-width'), '138px');
+
+  // The dynamic width formula the native strip has to reproduce exactly.
+  assert.equal(layout.dynamicTabMax({ availableWidth: 0, count: 0 }), 190);
+  assert.equal(layout.dynamicTabMax({ availableWidth: 2000, count: 4 }), 190);
+  assert.equal(layout.dynamicTabMax({ availableWidth: 400, count: 4 }), 95);
+  assert.equal(
+    layout.dynamicTabMax({ availableWidth: 900, count: 5 }),
+    Math.floor((900 - 34 - 96 - 8 * 4) / 5),
+  );
+
+  // Wheel physics.
+  assert.equal(scroll.STEP, 132);
+  assert.equal(scroll.STEP_MAX, 430);
+  assert.equal(scroll.OVERSCROLL_LIMIT, 44);
+  assert.equal(scroll.OVERSCROLL_STEP, 17);
+  assert.equal(scroll.strideFor(Number.POSITIVE_INFINITY), 132);
+
+  const spec = fs.readFileSync(
+    path.join(SPECS_ROOT, '2026-09-01-native-top-chrome-parity.md'), 'utf8',
+  );
+  for (const quoted of ['132 px base stride', '430 px', '44 px', '17 px', '138 px', '28 px']) {
+    assert.ok(spec.includes(quoted), `top-chrome parity spec no longer quotes ${quoted}`);
+  }
+});
