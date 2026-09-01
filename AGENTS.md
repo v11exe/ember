@@ -469,6 +469,22 @@ Git is the history archive.
 
 Newest first. One entry per active/recent unit of work.
 
+### 2026-09-01 — Codex — Native sidebar measured parity corrections
+- **Status / Branch:** in progress, source-only while host audit runs · `chromium-port`
+- **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`,
+  `docs/superpowers/plans/2026-08-31-native-chromium-favorites.md`,
+  `test/chromium-port.test.js`, `chromium/patches/ember/0007-*.patch`,
+  `chromium/patches/ember/0008-*.patch`
+- **Summary:** Synchronized to `origin/chromium-port` at `d7ab970`, read the
+  checked-in oracle measurements, and started folding the measured Favorite
+  tile corrections into unfinished patch 0008 with test-first source contracts.
+  Patch 0007 address/Copy parity is the next bounded concern if the remote stays
+  clear. Native compile/runtime claims remain forbidden until the doctor and an
+  actual rebuilt checkout prove them.
+- **For the other agent:** Avoid editing patches 0007/0008 concurrently until
+  this entry is checkpointed; build-host inspection is read-only and running in
+  parallel. Preserve the measured specs and fold 0008 fixes into 0008 itself.
+
 ### 2026-09-01 — Claude Code — Chromium port: honest Favorites state, host blocker
 - **Status / Branch:** checkpoint, native work blocked on the build host · `chromium-port`
 - **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`, `chromium/README.md`,

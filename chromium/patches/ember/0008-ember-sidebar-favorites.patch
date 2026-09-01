@@ -2,7 +2,7 @@ diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/v
 index 1be1303..17498c7 100644
 --- a/chrome/browser/ui/views/frame/browser_view.cc
 +++ b/chrome/browser/ui/views/frame/browser_view.cc
-@@ -33,6 +33,7 @@
+@@ -33,12 +33,14 @@
  #include "base/notreached.h"
  #include "base/scoped_observation.h"
  #include "base/strings/string_number_conversions.h"
@@ -10,6 +10,12 @@ index 1be1303..17498c7 100644
  #include "base/strings/stringprintf.h"
  #include "base/strings/utf_string_conversions.h"
  #include "base/task/sequenced_task_runner.h"
+ #include "base/task/single_thread_task_runner.h"
+ #include "base/trace_event/trace_event.h"
+ #include "build/build_config.h"
++#include "cc/paint/paint_flags.h"
+ #include "chrome/app/chrome_command_ids.h"
+ #include "chrome/browser/actor/ui/actor_overlay_web_view.h"
 @@ -44,6 +45,7 @@
  #include "chrome/browser/app_mode/app_mode_utils.h"
  #include "chrome/browser/ash/boca/on_task/on_task_locked_controller.h"
@@ -27,14 +33,22 @@ index 1be1303..17498c7 100644
  #include "components/collaboration/public/messaging/message.h"
  #include "components/content_settings/core/common/features.h"
  #include "components/enterprise/buildflags/buildflags.h"
-@@ -338,6 +342,7 @@
+@@ -333,10 +338,15 @@
+ #include "ui/gfx/animation/animation_runner.h"
++#include "ui/gfx/animation/linear_animation.h"
++#include "ui/gfx/animation/tween.h"
+ #include "ui/gfx/canvas.h"
+ #include "ui/gfx/color_utils.h"
++#include "ui/gfx/geometry/cubic_bezier.h"
+ #include "ui/gfx/geometry/outsets.h"
+ #include "ui/gfx/geometry/point.h"
  #include "ui/gfx/geometry/rect.h"
  #include "ui/gfx/geometry/rect_conversions.h"
++#include "ui/gfx/geometry/rect_f.h"
  #include "ui/gfx/geometry/size.h"
 +#include "ui/gfx/image/image_skia_operations.h"
  #include "ui/gfx/scoped_canvas.h"
  #include "ui/gfx/scrollbar_size.h"
- #include "ui/views/accessibility/view_accessibility.h"
 @@ -424,9 +429,68 @@ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(BrowserView,
                                        kEmberSidebarAddressElementId);
  DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(BrowserView,
@@ -49,6 +63,157 @@ index 1be1303..17498c7 100644
 +constexpr char kEmberFavoritesInitializedMetaKey[] =
 +    "ember_favorites_initialized";
 +constexpr size_t kEmberVisibleFavoriteCount = 4;
++constexpr int kEmberFavoriteTileWidth = 70;
++constexpr int kEmberFavoriteTileHeight = 43;
++constexpr int kEmberFavoritesGridHeight = 98;
++constexpr float kEmberFavoriteCornerRadius = 7.0f;
++constexpr int kEmberFavoriteRestingFillAlpha = 0x13;
++constexpr int kEmberFavoriteRestingBorderAlpha = 0x06;
++constexpr int kEmberFavoriteHoverFillAlpha = 0x21;
++constexpr int kEmberFavoriteOpenFillAlpha = 0x2E;
++constexpr int kEmberFavoriteOpenBorderAlpha = 0x0E;
++constexpr float kEmberFavoritePressedScale = 0.97f;
++constexpr base::TimeDelta kEmberFavoriteTransitionDuration =
++    base::Milliseconds(130);
++
++class EmberFavoriteButton : public views::LabelButton {
++ public:
++  explicit EmberFavoriteButton(views::Button::PressedCallback callback)
++      : views::LabelButton(std::move(callback), std::u16string()),
++        transition_(kEmberFavoriteTransitionDuration,
++                    gfx::LinearAnimation::kDefaultFrameRate,
++                    this) {
++    SetPaintToLayer();
++    layer()->SetFillsBoundsOpaquely(false);
++  }
++
++  EmberFavoriteButton(const EmberFavoriteButton&) = delete;
++  EmberFavoriteButton& operator=(const EmberFavoriteButton&) = delete;
++  ~EmberFavoriteButton() override = default;
++
++  void SetOpen(bool is_open) {
++    if (is_open_ == is_open) {
++      return;
++    }
++    is_open_ = is_open;
++    StartVisualTransition();
++  }
++
++ protected:
++  void StateChanged(ButtonState old_state) override {
++    views::LabelButton::StateChanged(old_state);
++    StartVisualTransition();
++  }
++
++  void OnBoundsChanged(const gfx::Rect& previous_bounds) override {
++    views::LabelButton::OnBoundsChanged(previous_bounds);
++    UpdateLayerTransform();
++  }
++
++  void PaintButtonContents(gfx::Canvas* canvas) override {
++    cc::PaintFlags flags;
++    flags.setAntiAlias(true);
++    flags.setStyle(cc::PaintFlags::kFill_Style);
++    flags.setColor(SkColorSetARGB(current_fill_alpha_, 0xFF, 0xFF, 0xFF));
++    canvas->DrawRoundRect(gfx::RectF(GetLocalBounds()),
++                          kEmberFavoriteCornerRadius, flags);
++
++    gfx::RectF border_bounds(GetLocalBounds());
++    border_bounds.Inset(0.5f);
++    flags.setStyle(cc::PaintFlags::kStroke_Style);
++    flags.setStrokeWidth(1.0f);
++    flags.setColor(
++        SkColorSetARGB(current_border_alpha_, 0xFF, 0xFF, 0xFF));
++    canvas->DrawRoundRect(border_bounds,
++                          kEmberFavoriteCornerRadius - 0.5f, flags);
++  }
++
++  void AnimationProgressed(const gfx::Animation* animation) override {
++    if (animation != &transition_) {
++      views::LabelButton::AnimationProgressed(animation);
++      return;
++    }
++    ApplyTransition(animation->GetCurrentValue());
++  }
++
++  void AnimationEnded(const gfx::Animation* animation) override {
++    if (animation == &transition_) {
++      ApplyTransition(1.0);
++    }
++  }
++
++ private:
++  int TargetFillAlpha() const {
++    if (is_open_) {
++      return kEmberFavoriteOpenFillAlpha;
++    }
++    return GetState() == STATE_HOVERED || GetState() == STATE_PRESSED
++               ? kEmberFavoriteHoverFillAlpha
++               : kEmberFavoriteRestingFillAlpha;
++  }
++
++  int TargetBorderAlpha() const {
++    return is_open_ ? kEmberFavoriteOpenBorderAlpha
++                    : kEmberFavoriteRestingBorderAlpha;
++  }
++
++  float TargetScale() const {
++    return GetState() == STATE_PRESSED ? kEmberFavoritePressedScale : 1.0f;
++  }
++
++  void StartVisualTransition() {
++    transition_.Stop();
++    start_fill_alpha_ = current_fill_alpha_;
++    start_border_alpha_ = current_border_alpha_;
++    start_scale_ = current_scale_;
++    target_fill_alpha_ = TargetFillAlpha();
++    target_border_alpha_ = TargetBorderAlpha();
++    target_scale_ = TargetScale();
++    if (start_fill_alpha_ == target_fill_alpha_ &&
++        start_border_alpha_ == target_border_alpha_ &&
++        start_scale_ == target_scale_) {
++      return;
++    }
++    transition_.Start();
++  }
++
++  void ApplyTransition(double value) {
++    static const auto ease = gfx::CubicBezier(0.25, 0.1, 0.25, 1.0);
++    const double eased_value = ease.Solve(value);
++    current_fill_alpha_ = gfx::Tween::IntValueBetween(
++        eased_value, start_fill_alpha_, target_fill_alpha_);
++    current_border_alpha_ = gfx::Tween::IntValueBetween(
++        eased_value, start_border_alpha_, target_border_alpha_);
++    current_scale_ = gfx::Tween::FloatValueBetween(
++        eased_value, start_scale_, target_scale_);
++    UpdateLayerTransform();
++    SchedulePaint();
++  }
++
++  void UpdateLayerTransform() {
++    gfx::Transform transform;
++    if (current_scale_ != 1.0f) {
++      const float center_x = width() / 2.0f;
++      const float center_y = height() / 2.0f;
++      transform.Translate(center_x, center_y);
++      transform.Scale(current_scale_);
++      transform.Translate(-center_x, -center_y);
++    }
++    layer()->SetTransform(transform);
++  }
++
++  bool is_open_ = false;
++  int start_fill_alpha_ = kEmberFavoriteRestingFillAlpha;
++  int target_fill_alpha_ = kEmberFavoriteRestingFillAlpha;
++  int current_fill_alpha_ = kEmberFavoriteRestingFillAlpha;
++  int start_border_alpha_ = kEmberFavoriteRestingBorderAlpha;
++  int target_border_alpha_ = kEmberFavoriteRestingBorderAlpha;
++  int current_border_alpha_ = kEmberFavoriteRestingBorderAlpha;
++  float start_scale_ = 1.0f;
++  float target_scale_ = 1.0f;
++  float current_scale_ = 1.0f;
++  gfx::LinearAnimation transition_;
++};
 +
 +std::string EmberFavoriteHost(const GURL& url) {
 +  std::string host = base::ToLowerASCII(url.host());
@@ -113,7 +278,8 @@ index 1be1303..17498c7 100644
 +        ember_sidebar_->AddChildView(std::make_unique<views::View>());
 +    ember_sidebar_favorites_->SetProperty(
 +        views::kElementIdentifierKey, kEmberSidebarFavoritesElementId);
-+    ember_sidebar_favorites_->SetPreferredSize(gfx::Size(0, 96));
++    ember_sidebar_favorites_->SetPreferredSize(
++        gfx::Size(0, kEmberFavoritesGridHeight));
 +    ember_sidebar_favorites_->SetLayoutManager(
 +        std::make_unique<views::BoxLayout>(
 +            views::BoxLayout::Orientation::kVertical, gfx::Insets(), 10));
@@ -282,22 +448,19 @@ index 1be1303..17498c7 100644
 +    if (index % 2 == 0) {
 +      row = ember_sidebar_favorites_->AddChildView(
 +          std::make_unique<views::View>());
-+      row->SetPreferredSize(gfx::Size(0, 43));
++      row->SetPreferredSize(gfx::Size(0, kEmberFavoriteTileHeight));
 +      row->SetLayoutManager(std::make_unique<views::BoxLayout>(
 +          views::BoxLayout::Orientation::kHorizontal, gfx::Insets(), 10));
 +    }
 +
-+    auto button = std::make_unique<views::LabelButton>(
++    auto button = std::make_unique<EmberFavoriteButton>(
 +        base::BindRepeating(&BrowserView::OpenEmberFavorite,
-+                            weak_ptr_factory_.GetWeakPtr(), child->url()),
-+        favorite_titles[index]);
-+    button->SetPreferredSize(gfx::Size(71, 43));
-+    button->SetBorder(views::CreateEmptyBorder(gfx::Insets::VH(4, 5)));
-+    button->SetElideBehavior(gfx::ELIDE_TAIL);
++                            weak_ptr_factory_.GetWeakPtr(), child->url()));
++    button->SetPreferredSize(
++        gfx::Size(kEmberFavoriteTileWidth, kEmberFavoriteTileHeight));
 +    button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-+    button->SetImageLabelSpacing(4);
 +    button->SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
-+    button->SetFocusRingCornerRadius(9);
++    button->SetFocusRingCornerRadius(kEmberFavoriteCornerRadius);
 +    button->SetTooltipText(favorite_titles[index]);
 +    std::u16string accessible_name = u"Open ";
 +    accessible_name += favorite_titles[index];
@@ -360,14 +523,8 @@ index 1be1303..17498c7 100644
 +      std::min(ember_favorite_urls_.size(), ember_favorite_buttons_.size());
 +  for (size_t index = 0; index < count; ++index) {
 +    const bool is_open = FindEmberFavoriteTab(ember_favorite_urls_[index]);
-+    ember_favorite_buttons_[index]->SetEnabledTextColors(
-+        is_open ? SkColorSetRGB(0xFF, 0xC9, 0x3C)
-+                : SkColorSetARGB(0xE6, 0xFF, 0xFF, 0xFF));
-+    ember_favorite_buttons_[index]->SetBackground(
-+        views::CreateRoundedRectBackground(
-+            is_open ? SkColorSetARGB(0x38, 0xFF, 0xC9, 0x3C)
-+                    : SkColorSetARGB(0x24, 0xFF, 0xFF, 0xFF),
-+            9));
++    static_cast<EmberFavoriteButton*>(ember_favorite_buttons_[index].get())
++        ->SetOpen(is_open);
 +  }
 +}
 +

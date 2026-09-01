@@ -428,6 +428,33 @@ test('the native Favorites patch persists shortcuts and reuses real Chromium tab
   assert.match(patchText, /SingleThreadTaskRunner::GetCurrentDefault\(\)->PostTask/);
   assert.match(patchText, /BookmarkMetaInfoChanged/);
   assert.match(patchText, /gfx::Size\(19, 19\)/);
+  assert.match(patchText, /kEmberFavoriteTileWidth = 70/);
+  assert.match(patchText, /kEmberFavoritesGridHeight = 98/);
+  assert.match(patchText, /kEmberFavoriteCornerRadius = 7/);
+  assert.match(patchText, /kEmberFavoriteRestingFillAlpha = 0x13/);
+  assert.match(patchText, /kEmberFavoriteRestingBorderAlpha = 0x06/);
+  assert.match(patchText, /kEmberFavoriteHoverFillAlpha = 0x21/);
+  assert.match(patchText, /kEmberFavoriteOpenFillAlpha = 0x2E/);
+  assert.match(patchText, /kEmberFavoriteOpenBorderAlpha = 0x0E/);
+  assert.match(patchText, /kEmberFavoritePressedScale = 0\.97f/);
+  assert.match(patchText, /base::Milliseconds\(130\)/);
+  assert.match(patchText, /gfx::CubicBezier\(0\.25, 0\.1, 0\.25, 1\.0\)/);
+  assert.match(
+    patchText,
+    /views::LabelButton\(std::move\(callback\), std::u16string\(\)\)/,
+  );
+  assert.match(patchText, /SetTooltipText\(favorite_titles\[index\]\)/);
+  assert.match(patchText, /SetName\(accessible_name\)/);
+  assert.match(patchText, /SetHorizontalAlignment\(gfx::ALIGN_CENTER\)/);
+  assert.match(patchText, /setStrokeWidth\(1\.0f\)/);
+  assert.match(patchText, /layer\(\)->SetTransform\(transform\)/);
+  assert.doesNotMatch(patchText, /gfx::Size\(71, 43\)/);
+  assert.doesNotMatch(patchText, /gfx::Size\(0, 96\)/);
+  assert.doesNotMatch(patchText, /SetFocusRingCornerRadius\(9\)/);
+  assert.doesNotMatch(patchText, /SkColorSetARGB\(0x24,/);
+  assert.doesNotMatch(patchText, /SkColorSetARGB\(0x38,/);
+  assert.doesNotMatch(patchText, /0xFF, 0xC9, 0x3C/);
+  assert.doesNotMatch(patchText, /SetEnabledTextColors/);
   assert.doesNotMatch(
     patchText,
     /^\+.*(?:no-sandbox|disable-site-isolation|WebContents::Create|ChildProcessSecurityPolicy)/im,
