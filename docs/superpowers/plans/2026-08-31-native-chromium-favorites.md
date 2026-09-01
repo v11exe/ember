@@ -90,3 +90,51 @@
       `git diff --check` clean.
 - [ ] Update the mutable parity ledger without claiming drag/drop, grid settings, removal, or full visual parity.
 - [ ] Fetch, rebase on `origin/main`, rerun the live oracle gate, commit, and push `chromium-port`.
+
+---
+
+### Task 5: Measured visual corrections to patch 0008
+
+Added 2026-09-01 from a direct comparison of the patch against
+`src/renderer/sidebar.css` and `chromium/reference/electron/9ae3217/`
+(`manifest.json` sidebar rects, `sidebar-address.png`). These are measurement
+errors, not preferences: `.sidebar-surface` is `padding: 34px 9px 8px`, so the
+rail's content column is exactly `168 - 18 = 150` px wide, the address row is
+33 px tall at y=34, and the grid starts at y=77 after a 10 px gap.
+
+Fold every one of these into patch 0008 itself — they belong to the unfinished
+Favorites unit, not to a new patch — then compile, build and re-run Task 4.
+
+- [ ] Tile width `71` → **70**. Two columns in a 150 px column with a 10 px gap
+      is `(150 - 10) / 2 = 70`.
+- [ ] Grid container height `96` → **98**. The oracle's `--favorite-grid-height`
+      is 98: 43 + 10 + 43 content inside a 1 px transparent border box.
+- [ ] Tile corner radius `9` → **7** (`.favorite { border-radius: 7px }`). The
+      9 px radius belongs to the `.favorites` container, not to a tile.
+- [ ] Resting fill `rgba(255,255,255,.141)` (`0x24`) →
+      **`rgba(255,255,255,.075)`** (`SkColorSetARGB(0x13, 0xFF, 0xFF, 0xFF)`).
+- [ ] Add the missing resting border: 1 px `rgba(255,255,255,.025)`
+      (`SkColorSetARGB(0x06, 0xFF, 0xFF, 0xFF)`).
+- [ ] Replace the invented orange open state. The oracle's `.favorite.is-open`
+      is background `rgba(255,255,255,.18)` (`0x2E`) with border
+      `rgba(255,255,255,.055)` (`0x0E`) — brighter white, no orange, and the
+      icon is not recoloured.
+- [ ] **Drop the text label.** `.favorite` is `display: grid; place-items:
+      center` containing only a 19×19 `object-fit: contain` image. The tiles are
+      icon-only; the title belongs to the tooltip and the accessible name, which
+      the patch already sets. A `LabelButton` painting the title beside the
+      favicon is the single largest visual mismatch in this patch.
+- [ ] Add hover `rgba(255,255,255,.13)` (`0x21`) and a pressed
+      `transform: scale(.97)`, with the oracle's
+      `background 130ms ease, transform 130ms ease, border-color 130ms ease`.
+- [ ] Keep what is already right: the 19×19 favicon, the 10 px gap, the 43 px
+      tile height, the 2×2 shape, and the broad-root / exact-path matching —
+      the matching rules were checked line by line against
+      `sameFavoriteSite()` and `findFavoriteTab()` in `src/shared/favorites.js`
+      on 2026-09-01 and are faithful, including `www.` stripping, subdomain
+      matching, query/fragment insensitivity and the direct-host-root
+      preference.
+
+Still deliberately out of scope for this unit, and not to be claimed: dragging
+tabs into Favorites, native add/remove/reorder, configurable grid capacity, the
+empty-slot and drop-target treatments, and the `favorite-satisfied` animation.

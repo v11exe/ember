@@ -448,10 +448,26 @@ restored host can be compared against it.
   checked the plan's build boxes, but recorded no build output or hashes and
   its own `AGENTS.md` entry describes seven built patches with the eighth
   "now implementing". Do not report Favorites as delivered.
+- **Measured visual gaps found 2026-09-01 (before any build):** comparing the
+  patch against `src/renderer/sidebar.css` and the reference manifest shows the
+  rail's content column is `168 - 18 = 150` px, so tiles are 70 px wide, not the
+  patch's 71, and the grid box is 98 px, not 96. The patch also uses a 9 px
+  radius where the oracle tile is 7 px, a resting fill of `.141` where the
+  oracle is `.075`, no resting border where the oracle has 1 px at `.025`, and an
+  invented orange open state where the oracle brightens to white `.18`. Largest
+  of all: the oracle tile is icon-only — a centred 19×19 favicon — while the
+  patch paints a `LabelButton` with the title beside the icon. These are listed
+  with exact values as Task 5 of the Favorites plan and belong inside patch 0008.
+- **Verified correct 2026-09-01:** the matching rules were compared line by line
+  against `sameFavoriteSite()` and `findFavoriteTab()` in `src/shared/favorites.js`
+  — `www.` stripping, lowercasing, subdomain matching for root shortcuts,
+  host-plus-exact-path for specific pages, query/fragment insensitivity and the
+  direct-host-root preference all agree. So do the 19 px favicon, the 43 px tile
+  height, the 10 px gap and the 2×2 shape.
 - **Unimplemented by design so far:** dragging tabs into Favorites, editing or
   removing Favorites natively, configurable grid capacity (fixed 2×2 / first
-  four children), and Ember's visual treatment. Only the flat placeholder
-  colours in the patch are painted.
+  four children), empty-slot and drop-target treatments, and the
+  `favorite-satisfied` animation.
 
 ## Historical Windows build-host audit
 
