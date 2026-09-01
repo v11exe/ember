@@ -50,6 +50,7 @@ test('the Ember patch series is ordered, local, and complete', () => {
     'ember/0005-ember-webui-product-icon.patch',
     'ember/0006-ember-native-shell-geometry.patch',
     'ember/0007-ember-sidebar-address-copy-link.patch',
+    'ember/0008-ember-sidebar-favorites.patch',
   ]);
   for (const entry of entries) {
     assert.equal(fs.existsSync(path.join(port.PATCHES_ROOT, ...entry.split('/'))), true);
@@ -393,6 +394,44 @@ test('the sidebar feature patch reads the active tab and copies its real URL', (
   assert.match(patchText, /DidFinishNavigation[\s\S]*UpdateEmberSidebar\(\)/);
   assert.match(patchText, /base::Milliseconds\(1200\)/);
   assert.doesNotMatch(patchText, /^\+.*(?:no-sandbox|disable-site-isolation|WebContents::Create)/im);
+});
+
+test('the native Favorites patch persists shortcuts and reuses real Chromium tabs', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0008-ember-sidebar-favorites.patch'),
+    'utf8',
+  );
+  const touchedFiles = [...patchText.matchAll(/^diff --git a\/(\S+) b\/\S+$/gm)]
+    .map((match) => match[1]);
+
+  assert.deepEqual(touchedFiles, [
+    'chrome/browser/ui/views/frame/browser_view.cc',
+    'chrome/browser/ui/views/frame/browser_view.h',
+  ]);
+  assert.match(patchText, /BaseBookmarkModelObserver/);
+  assert.match(patchText, /BookmarkModelFactory::GetForBrowserContext/);
+  assert.match(patchText, /Ember Favorites/);
+  assert.match(patchText, /ember_favorites_folder/);
+  assert.match(patchText, /ember_favorites_initialized/);
+  assert.match(patchText, /https:\/\/www\.google\.com\//);
+  assert.match(patchText, /https:\/\/www\.youtube\.com\//);
+  assert.match(patchText, /https:\/\/calendar\.google\.com\//);
+  assert.match(patchText, /GetFavicon\(/);
+  assert.match(patchText, /FindEmberFavoriteTab/);
+  assert.match(patchText, /IsEmberFavoriteMatch/);
+  assert.match(patchText, /GlobalBrowserCollection::GetInstance\(\)->ForEach/);
+  assert.match(patchText, /ActivateTabAt\(/);
+  assert.match(patchText, /chrome::AddTabAt\(/);
+  assert.match(patchText, /GetVisibleURL\(\)/);
+  assert.match(patchText, /ends_with/);
+  assert.match(patchText, /\.path\(\)/);
+  assert.match(patchText, /SingleThreadTaskRunner::GetCurrentDefault\(\)->PostTask/);
+  assert.match(patchText, /BookmarkMetaInfoChanged/);
+  assert.match(patchText, /gfx::Size\(19, 19\)/);
+  assert.doesNotMatch(
+    patchText,
+    /^\+.*(?:no-sandbox|disable-site-isolation|WebContents::Create|ChildProcessSecurityPolicy)/im,
+  );
 });
 
 test('packaging normalizes pinned artifacts to Ember names without overwriting conflicts', () => {

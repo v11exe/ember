@@ -1,0 +1,491 @@
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+index 1be1303..17498c7 100644
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -33,6 +33,7 @@
+ #include "base/notreached.h"
+ #include "base/scoped_observation.h"
+ #include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
+ #include "base/strings/stringprintf.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/task/sequenced_task_runner.h"
+@@ -44,6 +45,7 @@
+ #include "chrome/browser/app_mode/app_mode_utils.h"
+ #include "chrome/browser/ash/boca/on_task/on_task_locked_controller.h"
+ #include "chrome/browser/browser_process.h"
++#include "chrome/browser/bookmarks/bookmark_model_factory.h"
+ #include "chrome/browser/browsing_data/browsing_data_important_sites_util.h"
+ #include "chrome/browser/desktop_to_mobile_promos/promos_utils.h"
+ #include "chrome/browser/devtools/devtools_ui_controller.h"
+@@ -244,6 +246,8 @@
+ #include "chrome/grit/generated_resources.h"
+ #include "chrome/grit/theme_resources.h"
+ #include "components/autofill/core/common/autofill_payments_features.h"
++#include "components/bookmarks/browser/bookmark_model.h"
++#include "components/bookmarks/browser/bookmark_node.h"
+ #include "components/collaboration/public/messaging/message.h"
+ #include "components/content_settings/core/common/features.h"
+ #include "components/enterprise/buildflags/buildflags.h"
+@@ -338,6 +342,7 @@
+ #include "ui/gfx/geometry/rect.h"
+ #include "ui/gfx/geometry/rect_conversions.h"
+ #include "ui/gfx/geometry/size.h"
++#include "ui/gfx/image/image_skia_operations.h"
+ #include "ui/gfx/scoped_canvas.h"
+ #include "ui/gfx/scrollbar_size.h"
+ #include "ui/views/accessibility/view_accessibility.h"
+@@ -424,9 +429,68 @@ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(BrowserView,
+                                       kEmberSidebarAddressElementId);
+ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(BrowserView,
+                                       kEmberSidebarCopyLinkElementId);
++DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(BrowserView,
++                                      kEmberSidebarFavoritesElementId);
+ 
+ namespace {
+ 
++constexpr char kEmberFavoritesFolderMetaKey[] = "ember_favorites_folder";
++constexpr char kEmberFavoritesFolderMetaValue[] = "1";
++constexpr char kEmberFavoritesInitializedMetaKey[] =
++    "ember_favorites_initialized";
++constexpr size_t kEmberVisibleFavoriteCount = 4;
++
++std::string EmberFavoriteHost(const GURL& url) {
++  std::string host = base::ToLowerASCII(url.host());
++  if (base::StartsWith(host, "www.")) {
++    host.erase(0, 4);
++  }
++  return host;
++}
++
++bool IsEmberFavoriteMatch(const GURL& favorite_url, const GURL& tab_url) {
++  if (!favorite_url.SchemeIsHTTPOrHTTPS() ||
++      !tab_url.SchemeIsHTTPOrHTTPS()) {
++    return false;
++  }
++
++  const std::string favorite_host = EmberFavoriteHost(favorite_url);
++  const std::string tab_host = EmberFavoriteHost(tab_url);
++  const std::string_view favorite_path = favorite_url.path();
++  const std::string_view tab_path = tab_url.path();
++  if (favorite_host.empty() || tab_host.empty()) {
++    return false;
++  }
++
++  if (favorite_path.empty() || favorite_path == "/") {
++    const std::string child_suffix = "." + favorite_host;
++    return tab_host == favorite_host || tab_host.ends_with(child_suffix);
++  }
++  return tab_host == favorite_host && tab_path == favorite_path;
++}
++
++const bookmarks::BookmarkNode* FindMarkedEmberFavoritesFolder(
++    const bookmarks::BookmarkNode* parent) {
++  if (!parent) {
++    return nullptr;
++  }
++  for (const auto& child : parent->children()) {
++    std::string marker;
++    if (child->is_folder() &&
++        child->GetMetaInfo(kEmberFavoritesFolderMetaKey, &marker) &&
++        marker == kEmberFavoritesFolderMetaValue) {
++      return child.get();
++    }
++    if (child->is_folder()) {
++      if (const bookmarks::BookmarkNode* match =
++              FindMarkedEmberFavoritesFolder(child.get())) {
++        return match;
++      }
++    }
++  }
++  return nullptr;
++}
++
+ // The visible height of the shadow above the tabs. Clicks in this area are
+ // treated as clicks to the frame, rather than clicks to the tab.
+ const int kTabShadowSize = 2;
+@@ -979,6 +1043,16 @@ BrowserView::BrowserView(Browser* browser)
+     ember_sidebar_copy_link_->SetFocusBehavior(
+         views::View::FocusBehavior::ALWAYS);
+     ember_sidebar_copy_link_->SetTooltipText(u"Copy link");
++
++    ember_sidebar_favorites_ =
++        ember_sidebar_->AddChildView(std::make_unique<views::View>());
++    ember_sidebar_favorites_->SetProperty(
++        views::kElementIdentifierKey, kEmberSidebarFavoritesElementId);
++    ember_sidebar_favorites_->SetPreferredSize(gfx::Size(0, 96));
++    ember_sidebar_favorites_->SetLayoutManager(
++        std::make_unique<views::BoxLayout>(
++            views::BoxLayout::Orientation::kVertical, gfx::Insets(), 10));
++    InitializeEmberFavorites();
+     UpdateEmberSidebar();
+   }
+ 
+@@ -1199,10 +1273,16 @@ BrowserView::~BrowserView() {
+   // before `RemoveAllChildViews()` is called to avoid dangling.
+   browser_widget_ = nullptr;
+   main_background_region_ = nullptr;
++  ember_bookmark_model_observation_.Reset();
++  ember_bookmark_model_ = nullptr;
++  ember_favorite_urls_.clear();
++  ember_favorite_titles_.clear();
++  ember_favorite_buttons_.clear();
+   ember_sidebar_copy_feedback_timer_.Stop();
+   ember_sidebar_ = nullptr;
+   ember_sidebar_address_ = nullptr;
+   ember_sidebar_copy_link_ = nullptr;
++  ember_sidebar_favorites_ = nullptr;
+   top_container_ = nullptr;
+   web_app_frame_toolbar_ = nullptr;
+   web_app_window_title_ = nullptr;
+@@ -2985,6 +3065,7 @@ void BrowserView::UpdateEmberSidebar() {
+   ember_sidebar_copy_link_->SetEnabled(url.is_valid() && !url.is_empty());
+   ember_sidebar_copy_feedback_timer_.Stop();
+   ResetEmberSidebarCopyFeedback();
++  UpdateEmberFavoriteOpenStates();
+ }
+ 
+ void BrowserView::CopyEmberSidebarLink() {
+@@ -3013,6 +3094,244 @@ void BrowserView::ResetEmberSidebarCopyFeedback() {
+   ember_sidebar_copy_link_->SetTooltipText(u"Copy link");
+ }
+ 
++void BrowserView::InitializeEmberFavorites() {
++  ember_bookmark_model_ =
++      BookmarkModelFactory::GetForBrowserContext(browser_->profile());
++  if (!ember_bookmark_model_) {
++    return;
++  }
++  ember_bookmark_model_observation_.Observe(ember_bookmark_model_);
++  ScheduleEmberFavoritesRefresh();
++}
++
++const bookmarks::BookmarkNode* BrowserView::GetEmberFavoritesFolder() const {
++  if (!ember_bookmark_model_ || !ember_bookmark_model_->loaded()) {
++    return nullptr;
++  }
++
++  return FindMarkedEmberFavoritesFolder(ember_bookmark_model_->root_node());
++}
++
++void BrowserView::BookmarkModelChanged() {
++  ScheduleEmberFavoritesRefresh();
++}
++
++void BrowserView::ScheduleEmberFavoritesRefresh() {
++  if (!ember_bookmark_model_ || !ember_bookmark_model_->loaded() ||
++      ember_updating_favorites_ || ember_favorites_refresh_pending_) {
++    return;
++  }
++  ember_favorites_refresh_pending_ = true;
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE,
++      base::BindOnce(&BrowserView::RefreshEmberFavorites,
++                     weak_ptr_factory_.GetWeakPtr()));
++}
++
++void BrowserView::RefreshEmberFavorites() {
++  ember_favorites_refresh_pending_ = false;
++  if (!ember_bookmark_model_ || !ember_bookmark_model_->loaded() ||
++      ember_updating_favorites_) {
++    return;
++  }
++
++  base::AutoReset<bool> updating(&ember_updating_favorites_, true);
++  const bookmarks::BookmarkNode* folder = GetEmberFavoritesFolder();
++  const bookmarks::BookmarkNode* other = ember_bookmark_model_->other_node();
++  std::string initialized_marker;
++  const bool initialized =
++      other->GetMetaInfo(kEmberFavoritesInitializedMetaKey,
++                         &initialized_marker) &&
++      initialized_marker == kEmberFavoritesFolderMetaValue;
++  if (!initialized) {
++    ember_bookmark_model_->SetNodeMetaInfo(
++        other, kEmberFavoritesInitializedMetaKey,
++        kEmberFavoritesFolderMetaValue);
++  }
++  if (!initialized && !folder) {
++    bookmarks::BookmarkNode::MetaInfoMap metadata = {
++        {kEmberFavoritesFolderMetaKey, kEmberFavoritesFolderMetaValue}};
++    folder = ember_bookmark_model_->AddFolder(
++        other, other->children().size(), u"Ember Favorites", &metadata);
++    ember_bookmark_model_->AddURL(folder, folder->children().size(), u"Google",
++                                  GURL("https://www.google.com/"));
++    ember_bookmark_model_->AddURL(folder, folder->children().size(),
++                                  u"YouTube",
++                                  GURL("https://www.youtube.com/"));
++    ember_bookmark_model_->AddURL(folder, folder->children().size(),
++                                  u"Google Calendar",
++                                  GURL("https://calendar.google.com/"));
++  }
++  RebuildEmberFavorites();
++}
++
++void BrowserView::BookmarkModelBeingDeleted() {
++  ember_bookmark_model_observation_.Reset();
++  ember_bookmark_model_ = nullptr;
++  ember_favorites_refresh_pending_ = false;
++  RebuildEmberFavorites(/*force=*/true);
++}
++
++void BrowserView::BookmarkMetaInfoChanged(
++    const bookmarks::BookmarkNode* node) {
++  ScheduleEmberFavoritesRefresh();
++}
++
++void BrowserView::BookmarkNodeFaviconChanged(
++    const bookmarks::BookmarkNode* node) {
++  const bookmarks::BookmarkNode* folder = GetEmberFavoritesFolder();
++  if (folder && node && node->parent() == folder) {
++    RebuildEmberFavorites(/*force=*/true);
++  }
++}
++
++void BrowserView::RebuildEmberFavorites(bool force) {
++  if (!ember_sidebar_favorites_) {
++    return;
++  }
++
++  const bookmarks::BookmarkNode* folder = GetEmberFavoritesFolder();
++  std::vector<const bookmarks::BookmarkNode*> favorite_nodes;
++  std::vector<GURL> favorite_urls;
++  std::vector<std::u16string> favorite_titles;
++  if (folder && ember_bookmark_model_) {
++    for (const auto& child : folder->children()) {
++      if (!child->is_url() || !child->url().SchemeIsHTTPOrHTTPS()) {
++        continue;
++      }
++      if (favorite_nodes.size() >= kEmberVisibleFavoriteCount) {
++        break;
++      }
++      std::u16string title = child->GetTitle();
++      if (title.empty()) {
++        title = base::UTF8ToUTF16(EmberFavoriteHost(child->url()));
++      }
++      favorite_nodes.push_back(child.get());
++      favorite_urls.push_back(child->url());
++      favorite_titles.push_back(std::move(title));
++    }
++  }
++  if (!force && favorite_urls == ember_favorite_urls_ &&
++      favorite_titles == ember_favorite_titles_) {
++    return;
++  }
++
++  ember_favorite_urls_ = favorite_urls;
++  ember_favorite_titles_ = favorite_titles;
++  ember_favorite_buttons_.clear();
++  ember_sidebar_favorites_->RemoveAllChildViews();
++  views::View* row = nullptr;
++  for (size_t index = 0; index < favorite_nodes.size(); ++index) {
++    const bookmarks::BookmarkNode* child = favorite_nodes[index];
++    if (index % 2 == 0) {
++      row = ember_sidebar_favorites_->AddChildView(
++          std::make_unique<views::View>());
++      row->SetPreferredSize(gfx::Size(0, 43));
++      row->SetLayoutManager(std::make_unique<views::BoxLayout>(
++          views::BoxLayout::Orientation::kHorizontal, gfx::Insets(), 10));
++    }
++
++    auto button = std::make_unique<views::LabelButton>(
++        base::BindRepeating(&BrowserView::OpenEmberFavorite,
++                            weak_ptr_factory_.GetWeakPtr(), child->url()),
++        favorite_titles[index]);
++    button->SetPreferredSize(gfx::Size(71, 43));
++    button->SetBorder(views::CreateEmptyBorder(gfx::Insets::VH(4, 5)));
++    button->SetElideBehavior(gfx::ELIDE_TAIL);
++    button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
++    button->SetImageLabelSpacing(4);
++    button->SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
++    button->SetFocusRingCornerRadius(9);
++    button->SetTooltipText(favorite_titles[index]);
++    std::u16string accessible_name = u"Open ";
++    accessible_name += favorite_titles[index];
++    button->GetViewAccessibility().SetName(accessible_name);
++    const gfx::Image& favicon = ember_bookmark_model_->GetFavicon(child);
++    if (!favicon.IsEmpty()) {
++      const gfx::ImageSkia resized =
++          gfx::ImageSkiaOperations::CreateResizedImage(
++              favicon.AsImageSkia(), skia::ImageOperations::RESIZE_BEST,
++              gfx::Size(19, 19));
++      button->SetImageModel(views::Button::STATE_NORMAL,
++                            ui::ImageModel::FromImageSkia(resized));
++    }
++
++    views::LabelButton* button_ptr = row->AddChildView(std::move(button));
++    ember_favorite_buttons_.push_back(button_ptr);
++  }
++
++  UpdateEmberFavoriteOpenStates();
++  ember_sidebar_favorites_->InvalidateLayout();
++  ember_sidebar_favorites_->SchedulePaint();
++}
++
++content::WebContents* BrowserView::FindEmberFavoriteTab(
++    const GURL& favorite_url) const {
++  content::WebContents* first_match = nullptr;
++  const bool broad = favorite_url.path().empty() || favorite_url.path() == "/";
++  const std::string favorite_host = EmberFavoriteHost(favorite_url);
++  GlobalBrowserCollection::GetInstance()->ForEach(
++      [&](BrowserWindowInterface* candidate) {
++        if (candidate->GetProfile() != browser_->profile() ||
++            candidate->GetType() != BrowserWindowInterface::TYPE_NORMAL) {
++          return true;
++        }
++        TabStripModel* tab_strip = candidate->GetTabStripModel();
++        for (int index = 0; index < tab_strip->count(); ++index) {
++          content::WebContents* contents = tab_strip->GetWebContentsAt(index);
++          const GURL tab_url =
++              contents ? contents->GetVisibleURL() : GURL();
++          if (!IsEmberFavoriteMatch(favorite_url, tab_url)) {
++            continue;
++          }
++          if (!first_match) {
++            first_match = contents;
++          }
++          if (broad && EmberFavoriteHost(tab_url) == favorite_host &&
++              tab_url.path() == "/") {
++            first_match = contents;
++            return false;
++          }
++        }
++        return true;
++      },
++      BrowserCollection::Order::kActivation);
++  return first_match;
++}
++
++void BrowserView::UpdateEmberFavoriteOpenStates() {
++  const size_t count =
++      std::min(ember_favorite_urls_.size(), ember_favorite_buttons_.size());
++  for (size_t index = 0; index < count; ++index) {
++    const bool is_open = FindEmberFavoriteTab(ember_favorite_urls_[index]);
++    ember_favorite_buttons_[index]->SetEnabledTextColors(
++        is_open ? SkColorSetRGB(0xFF, 0xC9, 0x3C)
++                : SkColorSetARGB(0xE6, 0xFF, 0xFF, 0xFF));
++    ember_favorite_buttons_[index]->SetBackground(
++        views::CreateRoundedRectBackground(
++            is_open ? SkColorSetARGB(0x38, 0xFF, 0xC9, 0x3C)
++                    : SkColorSetARGB(0x24, 0xFF, 0xFF, 0xFF),
++            9));
++  }
++}
++
++void BrowserView::OpenEmberFavorite(GURL favorite_url) {
++  if (content::WebContents* existing = FindEmberFavoriteTab(favorite_url)) {
++    BrowserWindowInterface* target =
++        GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(existing);
++    if (target) {
++      TabStripModel* tab_strip = target->GetTabStripModel();
++      const int existing_index = tab_strip->GetIndexOfWebContents(existing);
++      if (existing_index != TabStripModel::kNoTab) {
++        tab_strip->ActivateTabAt(existing_index);
++        target->GetWindow()->Activate();
++        return;
++      }
++    }
++  }
++  chrome::AddTabAt(browser_.get(), favorite_url, -1, true);
++}
++
+ void BrowserView::TouchModeChanged() {
+ #if BUILDFLAG(IS_CHROMEOS)
+   if (ui::TouchUiController::Get()->touch_ui()) {
+@@ -3548,6 +3867,7 @@ void BrowserView::OnTabChangedAt(tabs::TabInterface* tab,
+                                  int index,
+                                  TabChangeType change_type) {
+   content::WebContents* contents = tab->GetContents();
++  UpdateEmberFavoriteOpenStates();
+ 
+   if (change_type == TabChangeType::kBlockedOnly) {
+     if (auto* container =
+@@ -3571,6 +3891,8 @@ void BrowserView::OnTabStripModelChanged(
+     TabStripModel* tab_strip_model,
+     const TabStripModelChange& change,
+     const TabStripSelectionChange& selection) {
++  UpdateEmberFavoriteOpenStates();
++
+   // When the active tab changes, elements in the omnibox can change, which
+   // can change its preferred size. Re-lay-out the toolbar to reflect the
+   // possible change.
+diff --git a/chrome/browser/ui/views/frame/browser_view.h b/chrome/browser/ui/views/frame/browser_view.h
+index 28bfaa2..2fbf733 100644
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -39,6 +39,7 @@
+ #include "chrome/browser/ui/views/tabs/tab.h"
+ #include "chrome/browser/ui/webui/tab_search/tab_search.mojom.h"
+ #include "chrome/common/buildflags.h"
++#include "components/bookmarks/browser/base_bookmark_model_observer.h"
+ #include "components/enterprise/buildflags/buildflags.h"
+ #include "components/infobars/core/infobar_container.h"
+ #include "components/user_education/common/feature_promo/feature_promo_handle.h"
+@@ -99,6 +100,11 @@ class TopControlsSlideControllerTest;
+ class VerticalTabStripRegionView;
+ class WebAppFrameToolbarView;
+ 
++namespace bookmarks {
++class BookmarkModel;
++class BookmarkNode;
++}  // namespace bookmarks
++
+ namespace gfx {
+ class AnimationRunner;
+ }  // namespace gfx
+@@ -136,6 +142,7 @@ class CustomFloatingCorner;
+ //
+ class BrowserView : public BrowserWindow,
+                     public TabStripModelObserver,
++                    public bookmarks::BaseBookmarkModelObserver,
+                     public ui::AcceleratorProvider,
+                     public views::WidgetDelegate,
+                     public views::WidgetObserver,
+@@ -155,6 +162,7 @@ class BrowserView : public BrowserWindow,
+ 
+   DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kEmberSidebarAddressElementId);
+   DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kEmberSidebarCopyLinkElementId);
++  DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kEmberSidebarFavoritesElementId);
+ 
+   explicit BrowserView(Browser* browser);
+   BrowserView(const BrowserView&) = delete;
+@@ -887,6 +895,23 @@ class BrowserView : public BrowserWindow,
+   void UpdateEmberSidebar();
+   void CopyEmberSidebarLink();
+   void ResetEmberSidebarCopyFeedback();
++  void InitializeEmberFavorites();
++  void ScheduleEmberFavoritesRefresh();
++  void RefreshEmberFavorites();
++  const bookmarks::BookmarkNode* GetEmberFavoritesFolder() const;
++  void RebuildEmberFavorites(bool force = false);
++  void UpdateEmberFavoriteOpenStates();
++  content::WebContents* FindEmberFavoriteTab(
++      const GURL& favorite_url) const;
++  void OpenEmberFavorite(GURL favorite_url);
++
++  // bookmarks::BaseBookmarkModelObserver:
++  void BookmarkModelChanged() override;
++  void BookmarkModelBeingDeleted() override;
++  void BookmarkMetaInfoChanged(
++      const bookmarks::BookmarkNode* node) override;
++  void BookmarkNodeFaviconChanged(
++      const bookmarks::BookmarkNode* node) override;
+ 
+   // If the browser is in immersive full screen mode, it will reveal the
+   // top container for a short duration. The top container will have the toolbar
+@@ -1147,6 +1172,16 @@ class BrowserView : public BrowserWindow,
+   raw_ptr<views::View> ember_sidebar_ = nullptr;
+   raw_ptr<views::Label> ember_sidebar_address_ = nullptr;
+   raw_ptr<views::LabelButton> ember_sidebar_copy_link_ = nullptr;
++  raw_ptr<views::View> ember_sidebar_favorites_ = nullptr;
++  raw_ptr<bookmarks::BookmarkModel> ember_bookmark_model_ = nullptr;
++  std::vector<GURL> ember_favorite_urls_;
++  std::vector<std::u16string> ember_favorite_titles_;
++  std::vector<raw_ptr<views::LabelButton>> ember_favorite_buttons_;
++  base::ScopedObservation<bookmarks::BookmarkModel,
++                          bookmarks::BookmarkModelObserver>
++      ember_bookmark_model_observation_{this};
++  bool ember_updating_favorites_ = false;
++  bool ember_favorites_refresh_pending_ = false;
+   base::OneShotTimer ember_sidebar_copy_feedback_timer_;
+ 
+   // The view that contains the primary UI (Toolbar, BookmarksBar, InfoBar,
