@@ -472,9 +472,9 @@ Newest first. One entry per active/recent unit of work.
 ### 2026-09-01 — Claude Code — Chromium port: honest Favorites state, host blocker
 - **Status / Branch:** checkpoint, native work blocked on the build host · `chromium-port`
 - **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`, `chromium/README.md`,
-  `chromium/research/UPSTREAM_NOTES.md`,
+  `chromium/research/UPSTREAM_NOTES.md`, `test/chromium-port.test.js`,
   `docs/superpowers/plans/2026-08-31-native-chromium-favorites.md`,
-  `docs/superpowers/specs/2026-09-01-native-top-chrome-parity.md`
+  `docs/superpowers/specs/2026-09-01-native-{top-chrome,sidebar-visual}-parity.md`
 - **Summary:** The native build environment is gone from this machine:
   `C:\src\ember-chromium` with its ~15 GiB `out/Default`, every built binary and
   both packages no longer exist, VS 2026 has been replaced by VS 2022 Build
@@ -485,7 +485,13 @@ Newest first. One entry per active/recent unit of work.
   unchecked and every ledger entry says Favorites is source-complete and
   unbuilt. Everything that does not need a compiler was run and passes, and the
   next slice's parity numbers were extracted from the oracle so the work can
-  start the moment the host is back.
+  start the moment the host is back. Measuring patches 0007 and 0008 against
+  that oracle found real errors in both — wrong tile width, grid box, radii,
+  fills, a missing border, an invented orange open state, a title label on a
+  tile the oracle draws icon-only, and a gold `Copy` text button where the
+  oracle has a 12×7 white link glyph — all recorded with exact values. Two new
+  contract tests re-read the oracle so those specs fail when it moves; 30/30
+  focused and 413/413 overall.
 - **For the other agent:** Do not report native Favorites as working — nothing
   has ever compiled or launched it. Restoring the host needs an elevated VS 2026
   Build Tools install (`VC.Tools.x86.x64` + `VC.ATLMFC`), the SDK Debugging
@@ -493,7 +499,9 @@ Newest first. One entry per active/recent unit of work.
   full fresh acquisition, not a resume, because `.ninja_log` is gone. `prepare`
   still works and is idempotent with eight patches. The measured top-chrome
   contract is in `docs/superpowers/specs/2026-09-01-native-top-chrome-parity.md`
-  — use it rather than re-deriving numbers from CSS.
+  — use it rather than re-deriving numbers from CSS, and the sidebar's in
+  `…-native-sidebar-visual-parity.md`. Fold the Favorites corrections into
+  patch 0008 itself rather than adding a patch for its own mistakes.
 
 ### 2026-08-31 — Codex — Native Chromium shell and sidebar features
 - **Status / Branch:** Favorites implementation in progress after built address/Copy Link slice · `chromium-port`
