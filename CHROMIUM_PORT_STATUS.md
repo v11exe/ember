@@ -390,9 +390,19 @@ Last recorded: 2026-08-31.
   `AA59F26AAF2D52087AB845B719433E2EE8A6BB9883692E93A8A4E6A5A188F10A`;
   portable ZIP 197,375,610 bytes / SHA-256
   `DA1FBD88CAFE10F9F67B6ECBFE6F02FD4F18D01D318B9B2A1A0409A16AF1157E`.
-- **Known visual gap:** this is functional but intentionally plain. The address
-  is display-only, Favorite tiles are absent, and Chromium's stock tab strip and
-  toolbar still dominate the shell. Feature parity continues before polish.
+- **Known visual gap, now measured (2026-09-01):** this is functional but
+  intentionally plain, and the exact distance from the oracle is recorded in
+  `docs/superpowers/specs/2026-09-01-native-sidebar-visual-parity.md`. In short:
+  the row is 36 px where the oracle is 33, radius 9 where it is 7, fill `.188`
+  where it is `.075`, with no border, hover or focus state; the rail's insets
+  are `Insets(8)` where the oracle is `34/9/8/9` with a 10 px row gap; the text
+  is `.902` where it is `.82` and middle-elides where the oracle clips; the URL
+  goes through `url_formatter::FormatUrl()` instead of Ember's own rule, which
+  strips the scheme for https as well as http; and the Copy control is a gold
+  `Copy` text button where the oracle is a 26 px transparent button holding a
+  12×7 white link glyph, with the confirmation raised as a separate bounded
+  toast rather than by relabelling the button. Focus-to-edit and sidebar
+  collapse are not implemented natively at all.
 
 ## Build host regression — 2026-09-01 (current blocker)
 
