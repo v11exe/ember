@@ -857,3 +857,67 @@ test('the native capture runner targets the exact oracle viewports', () => {
   assert.match(source, /Page\.captureScreenshot/);
   assert.match(source, /Browser\.close/);
 });
+
+test('the patch hunk checker catches the stale counts a hand edit leaves behind', () => {
+  const checker = require('../chromium/tools/check-patch-hunks');
+
+  const good = [
+    'diff --git a/f.cc b/f.cc',
+    '--- a/f.cc',
+    '+++ b/f.cc',
+    '@@ -1,3 +1,4 @@',
+    ' one',
+    '+inserted',
+    ' two',
+    ' three',
+    '',
+  ].join('\n');
+  assert.deepEqual(checker.checkPatchText(good), { hunks: 1, defects: [] });
+
+  // The exact failure mode: a line was added to the body and the header was
+  // left alone, so `patch` aborts with "malformed patch" mid-build.
+  const stale = good.replace(' three', ' three\n+also inserted');
+  const staleResult = checker.checkPatchText(stale);
+  assert.equal(staleResult.defects.length, 1);
+  assert.equal(staleResult.defects[0].declaredNew, 4);
+  assert.equal(staleResult.defects[0].actualNew, 5);
+  assert.equal(staleResult.defects[0].actualOld, 3);
+
+  // A hunk header with no comma means exactly one line on that side.
+  const single = [
+    '@@ -5 +5 @@',
+    '-before',
+    '+after',
+  ].join('\n');
+  assert.deepEqual(checker.checkPatchText(single).defects, []);
+
+  // "\ No newline at end of file" annotates the previous line, it is not one.
+  const noNewline = [
+    '@@ -1,2 +1,2 @@',
+    ' kept',
+    '-old',
+    '+new',
+    '\\ No newline at end of file',
+  ].join('\n');
+  assert.deepEqual(checker.checkPatchText(noNewline).defects, []);
+
+  // Several files in one patch: a new file header ends the preceding hunk.
+  const twoFiles = [
+    '@@ -1 +1 @@',
+    '-a',
+    '+b',
+    'diff --git a/g.cc b/g.cc',
+    '--- a/g.cc',
+    '+++ b/g.cc',
+    '@@ -9 +9 @@',
+    '-c',
+    '+d',
+  ].join('\n');
+  assert.equal(checker.checkPatchText(twoFiles).hunks, 2);
+  assert.deepEqual(checker.checkPatchText(twoFiles).defects, []);
+
+  // It reads the real series, so a new patch is covered without being listed.
+  const seriesPaths = checker.seriesPatchPaths();
+  assert.equal(seriesPaths.length, port.parseSeriesEntries().length);
+  for (const file of seriesPaths) assert.equal(fs.existsSync(file), true);
+});

@@ -469,6 +469,35 @@ Git is the history archive.
 
 Newest first. One entry per active/recent unit of work.
 
+### 2026-09-02 — Claude Code — Build host restored; patch 0008 will not apply
+- **Status / Branch:** pushed; native build running · `chromium-port`
+- **Touches:** `chromium/tools/{capture-native,check-patch-hunks}.js`,
+  `package.json`, `test/chromium-port.test.js`, `CHROMIUM_PORT_STATUS.md`
+- **Summary:** Restored this host to `doctor` 12/12 and started a full fresh
+  acquisition, which reached the patch stage and **failed applying patch 0008**:
+  `patch` reports `malformed patch at line 19`. Four of its seventeen hunk
+  headers disagree with their bodies — the stale-count damage a hand edit
+  leaves. Everything before it applied: 109 common, 23 Windows and Ember 0001
+  through 0007, all of which verify clean.
+- **For the other agent — patch 0008 is unbuildable as pushed at `817bfb5`:**
+
+  | header line | declared | body actually has |
+  | --- | --- | --- |
+  | 5 — `@@ -33,12 +33,14 @@` | -12 +14 | -11 +13 |
+  | 52 — `@@ -424,9 +429,68 @@` | -9 +68 | -9 **+219** |
+  | 272 — `@@ -979,6 +1043,16 @@` | -6 +16 | -6 +17 |
+  | 315 — `@@ -3013,6 +3094,244 @@` | -6 +244 | -6 +235 |
+
+  I did **not** touch it — you own it and are regenerating it from the exact
+  pre/postimages, which is the right fix; correcting the counts by hand is what
+  produced this. I built without it locally by dropping it from my own working
+  copy of the series only; the committed series still lists all eight.
+  `npm run chromium:check-patches` now catches this in milliseconds instead of
+  halfway through a build. Two traps if a build fails after you edit a patch:
+  removing `build/src` leaves a `_bad_scm` directory behind, and a patch dropped
+  from the series leaves its stale copy in `configuration/patches/ember/` — the
+  managed-checkout guard refuses to proceed until both are gone.
+
 ### 2026-09-02 — Claude Code — Top chrome measured from the running oracle
 - **Status / Branch:** pushed · `chromium-port`
 - **Touches:** `docs/superpowers/specs/2026-09-01-native-top-chrome-parity.md`,

@@ -14,7 +14,8 @@
     "chromium:build": "node chromium/tools/port.js build",
     "chromium:package": "node chromium/tools/port.js package",
     "chromium:run": "node chromium/tools/port.js run",
-    "chromium:capture": "node chromium/tools/capture-native.js"
+    "chromium:capture": "node chromium/tools/capture-native.js",
+    "chromium:check-patches": "node chromium/tools/check-patch-hunks.js"
   },
   "license": "GPL-3.0",
   "type": "commonjs",
