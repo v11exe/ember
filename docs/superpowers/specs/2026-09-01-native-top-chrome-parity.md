@@ -292,3 +292,29 @@ seam where the two rows have to become one. Its relevant members are
 
 None of this has been compiled. It is source reading against the pinned
 revision, recorded so the implementation does not start by rediscovering it.
+
+### The layout constants behind the height
+
+Read from `chrome/browser/ui/layout_constants.cc` in the prepared tree:
+
+```
+kTabstripToolbarOverlap = 1
+kTabHeight              = 34 + kTabstripToolbarOverlap        = 35
+kTabStripPadding        = 6
+kTabStripHeight         = kTabHeight + kTabStripPadding       = 41
+kToolbarButtonHeight    = 34
+kTabCloseButtonSize     = 14 (rounded icons) or 16
+kTabPreTitlePadding     = 8
+```
+
+Ember needs a 32 px bar with a 28 px tab centred in it — measured at y=2, h=28.
+Note the asymmetry to be careful of: `kTabStripHeight` adds `kTabStripPadding`
+**once**, not once per edge, and `kTabHeight` already folds in the toolbar
+overlap. `TabStyle::GetStandardHeight()` returns `kTabStripHeight`, so the
+painted tab and the strip that holds it are not independent knobs. Getting to
+32/28 is a matter of choosing the three constants together and then measuring
+the result against the oracle, not of setting a single height.
+
+`kToolbarButtonHeight` at 34 also exceeds the whole Ember bar, so the toolbar
+buttons have to come down to the oracle's 30×30 icon control in the same slice
+or the row cannot close to 32.
