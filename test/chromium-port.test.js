@@ -822,3 +822,38 @@ test('the tab states the native strip has to reproduce are still the oracle valu
     assert.ok(spec.includes(quoted), `top-chrome spec no longer quotes ${quoted}`);
   }
 });
+
+test('the native capture runner targets the exact oracle viewports', () => {
+  const capture = require('../chromium/tools/capture-native');
+  const manifest = JSON.parse(fs.readFileSync(
+    path.join(ORACLE_ROOT, 'chromium', 'reference', 'electron', '9ae3217', 'manifest.json'),
+    'utf8',
+  ));
+
+  // A native capture is only comparable to the committed reference if it is
+  // taken at the same window size the reference was taken at.
+  for (const viewport of capture.VIEWPORTS) {
+    const reference = manifest.geometry[viewport.name];
+    assert.ok(reference, `oracle manifest has no ${viewport.name} geometry`);
+    assert.deepEqual([viewport.width, viewport.height], reference.viewport,
+      `${viewport.name} capture size drifted from the oracle`);
+  }
+  assert.deepEqual(capture.VIEWPORTS.map((v) => v.name), ['wide', 'medium', 'compact']);
+
+  const parsed = capture.parseArgs(['--out', 'dir', '--port', '9301', '--display-x', '-1060']);
+  assert.equal(parsed.out, 'dir');
+  assert.equal(parsed.port, 9301);
+  assert.equal(parsed.displayX, -1060);
+  assert.throws(() => capture.parseArgs([]), /--out/);
+  assert.throws(() => capture.parseArgs(['--out']), /needs a value/);
+  assert.throws(() => capture.parseArgs(['--out', 'd', '--nope']), /Unknown argument/);
+
+  // Synthetic input is banned in this harness; it must drive CDP instead.
+  const source = fs.readFileSync(
+    path.join(ORACLE_ROOT, 'chromium', 'tools', 'capture-native.js'), 'utf8',
+  );
+  assert.doesNotMatch(source, /SendKeys|keybd_event|mouse_event|Input\.dispatch/);
+  assert.doesNotMatch(source, /no-sandbox/);
+  assert.match(source, /Page\.captureScreenshot/);
+  assert.match(source, /Browser\.close/);
+});
