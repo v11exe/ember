@@ -13,7 +13,8 @@
     "chromium:verify-patches": "node chromium/tools/port.js verify-patches",
     "chromium:build": "node chromium/tools/port.js build",
     "chromium:package": "node chromium/tools/port.js package",
-    "chromium:run": "node chromium/tools/port.js run"
+    "chromium:run": "node chromium/tools/port.js run",
+    "chromium:capture": "node chromium/tools/capture-native.js"
   },
   "license": "GPL-3.0",
   "type": "commonjs",
