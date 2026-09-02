@@ -81,3 +81,15 @@ diff --git a/build.py b/build.py
      # Check if rust-toolchain folder has been populated
      HOST_CPU_IS_64BIT = sys.maxsize > 2**32
      RUST_DIR_DST = source_tree / 'third_party' / 'rust-toolchain'
+@@ -272,9 +331,9 @@ def main():
+         with open(RUST_FLAG_FILE, 'w') as f:
+             subprocess.run([source_tree / 'third_party' / 'rust-toolchain-x64' / 'rustc' / 'bin' / 'rustc.exe', '--version'], stdout=f)
+ 
+-    if not args.ci or not (source_tree / 'out/Default').exists():
++    if not args.ci or not (source_tree / 'out/Default/args.gn').is_file():
+         # Output args.gn
+-        (source_tree / 'out/Default').mkdir(parents=True)
++        (source_tree / 'out/Default').mkdir(parents=True, exist_ok=True)
+         gn_flags = (_ROOT_DIR / 'ungoogled-chromium' / 'flags.gn').read_text(encoding=ENCODING)
+         gn_flags += '\n'
+         windows_flags = (_ROOT_DIR / 'flags.windows.gn').read_text(encoding=ENCODING)
