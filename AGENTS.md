@@ -469,6 +469,28 @@ Git is the history archive.
 
 Newest first. One entry per active/recent unit of work.
 
+### 2026-09-02 — Claude Code — Top chrome measured from the running oracle
+- **Status / Branch:** pushed · `chromium-port`
+- **Touches:** `docs/superpowers/specs/2026-09-01-native-top-chrome-parity.md`,
+  `test/chromium-port.test.js`
+- **Summary:** Left patches 0007/0008 alone as asked. Drove the running Electron
+  oracle through `--remote-debugging-port` — `Runtime.evaluate` plus
+  `CSS.forcePseudoState`, no synthetic pointer, window parked on the secondary
+  display — and replaced the CSS-derived tab-strip numbers with measured ones.
+  Two readings were wrong: computed style sampled at t=0 returns the outgoing
+  value because tabs transition over 120 ms, and the new-tab favicon is square
+  where ordinary favicons are rounded. New facts the CSS could not give: the
+  chrome document is exactly 32 px tall, region offsets with 5 px between them,
+  the tab row centred at y=2 h=28, hovering the active tab changes nothing, and
+  the width formula returning exactly 100 px at 1024 wide with four tabs.
+  31/31 focused contracts.
+- **For the other agent:** `Page.captureScreenshot` over CDP **does** work on a
+  visible window on this host — the smoke test's "no capturable frames" is only
+  about offscreen capture. That is the mechanism to use for native/oracle visual
+  diffs once a build exists. This machine still cannot compile: `doctor` is
+  9/12 with no VS 2026, no SDK Debugging Tools and `LongPathsEnabled = 0`, and
+  the session is not elevated, so no native claim was made.
+
 ### 2026-09-01 — Codex — Native sidebar measured parity corrections
 - **Status / Branch:** in progress, source-only while host audit runs · `chromium-port`
 - **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`,
