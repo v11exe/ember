@@ -141,3 +141,106 @@ identically: back/forward throw the glyph 7 px and swap sides at 38–39 % over
   `dynamicTabMax` is a real layout contract worth keeping.
 - Title fading, the `zZ` sleeping glyph, the orange active border and the
   dynamic width clamp have no Chromium equivalent and are genuine Ember work.
+
+---
+
+## 8. Runtime-verified measurements (2026-09-02)
+
+Everything above section 7 was read out of the source. This section was
+**measured from the running Electron oracle** through `--remote-debugging-port`,
+driving `Runtime.evaluate` and `CSS.forcePseudoState` against the `chrome.html`
+target — no synthetic pointer input, and the window parked on the secondary
+display. Where the two disagree, this section wins.
+
+Two things the source reading got wrong and this pass caught:
+
+- Reading `getComputedStyle` immediately after a class change returns the
+  **outgoing** value, because `.tab` transitions background, border and colour
+  over 120 ms. Every state below was sampled 320 ms after the change.
+- `.tab-favicon` is 16×16 with radius 4, but the new-tab favicon variant is
+  radius **0** (`.tab-favicon.newtab-favicon`).
+
+### The shell document is 32 px tall
+
+The chrome view reported `innerHeight: 32`. The tab strip is laid out inside a
+document exactly as tall as the bar — the native port's equivalent container
+must be given the same height, not a full-window canvas it draws 32 px into.
+
+### Region geometry, measured at `innerWidth: 972`
+
+| Region | x | width | y | height |
+| --- | --- | --- | --- | --- |
+| `.sidebar-header` | 0 | 168 | 0 | 32 |
+| `.top-navigation` | 173 | 92 | 0 | 32 |
+| `.tabstrip` | 270 | 133 | 0 | 32 |
+| `.tabs` | 270 | — | **2** | **28** |
+| `.tab-new` | 373 | 30 | 1 | 30 |
+| `.drag-fill` | 408 | 386 | 0 | 32 |
+| `.top-actions` | 799 | 30 | 1 | 30 |
+| `.window-controls` | 834 | 138 | 0 | 32 |
+
+The 5 px gaps between regions are visible in the offsets (168 → 173, 265 → 270,
+403 → 408, 794 → 799, 829 → 834). `.top-navigation` is 92 = three 30 px buttons
+with two 1 px gaps. The tab row sits at y=2 with height 28, i.e. the 28 px tab
+is centred in the 32 px bar with 2 px above and below. `.window-controls`
+reported `visibility: hidden` while still occupying its 138 px.
+
+### Tab states, settled
+
+| State | Background | Border | Text | Extra |
+| --- | --- | --- | --- | --- |
+| Background | `rgba(255,255,255,.075)` | `rgba(255,255,255,.035)` | `rgba(255,255,255,.70)` | no shadow |
+| Hover | `rgba(255,255,255,.10)` | `rgba(255,255,255,.035)` | `rgba(255,255,255,.86)` | border does not change |
+| Active | `rgba(24,20,19,.82)` | `rgba(255,91,0,.80)` | `rgba(255,255,255,.94)` | `0 0 8px rgba(255,86,0,.25)`, `inset 0 0 8px rgba(255,88,0,.07)` |
+| Active + hover | unchanged from active | unchanged | unchanged | the active rule wins; hovering the current tab changes nothing |
+| Asleep | `rgba(255,255,255,.024)` | `rgba(255,255,255,.024)` | `rgba(255,255,255,.43)` | favicon `grayscale(1)` at `opacity .5` |
+| Dragging | unchanged | unchanged | unchanged | `opacity: .34`, no shadow |
+
+Geometry common to every state: height 28, radius 6, padding 9 left and right,
+column gap 7, font 12.5 px weight 400 in `Segoe UI Variable Text`.
+
+### Close button and title, measured while hovered
+
+- Close button 28×28, radius 6, background `rgba(35,29,27,.96)`, icon colour
+  `rgba(255,255,255,.76)`, `opacity` 1 and `pointer-events: auto` only while
+  hovered. Its right edge sits **6 px** inside the tab's right edge (`right: 5`
+  plus the tab's 1 px border).
+- The title takes `padding-right: 20px` on hover and its mask becomes
+  `linear-gradient(to right, #000 0%, #000 calc(100% - 24px), transparent 100%)`.
+  At rest the fade is 22 px and only applied when the title actually overflows.
+
+### Sleeping glyph
+
+A 16×18 box, colour `rgba(255,255,255,.38)`, font weight 500. `z` is 10 px at
+`left: 1px; bottom: 2px`; `Z` is 12 px at `right: 0; top: 1px`.
+
+### Icon controls
+
+Back/forward/reload and the new-tab button are all 30×30 with radius 6 and a
+transparent background. Their glyphs are 17×17 with `stroke-width: 1.45px` and
+no fill. Navigation glyphs are `rgba(255,255,255,.82)`; the new-tab glyph is
+`rgba(255,255,255,.84)`.
+
+### Dynamic width, verified against the formula
+
+At `innerWidth: 1024` with 4 tabs the strip reported `--tab-max-width: 100px`
+and `--tabstrip-max: 460px`. The formula predicts exactly that:
+
+```
+fixed     = 168 + 92 + 30 + 138 + 40 = 468
+available = 1024 - 468                = 556
+share     = floor((556 - 34 - 96 - 8*3) / 4) = floor(402 / 4) = 100
+stripMax  = max(95, 556 - 96)                                 = 460
+```
+
+At 8 and 14 tabs the share falls below the floor and `--tab-max-width` clamps to
+95. Tabs still render 95 px wide because short titles hit `min-width` first —
+the maximum only bites on long titles.
+
+### Scroll and fades
+
+With 14 tabs: `scrollWidth` 1434 against `clientWidth` 422. The left fade is the
+full 22 px once scrolled, and the right fade is `min(22, overflow - scrollLeft)`
+— measured at 3 px with `scrollLeft: 1009` and an overflow of 1012. One
+dispatched wheel notch advanced `scrollLeft` by roughly one stride, and the
+strip auto-scrolled to reveal each newly opened tab.

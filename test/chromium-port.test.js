@@ -778,3 +778,47 @@ test('the native top-chrome parity spec still matches the Electron oracle it mea
     assert.ok(spec.includes(quoted), `top-chrome parity spec no longer quotes ${quoted}`);
   }
 });
+
+test('the tab states the native strip has to reproduce are still the oracle values', () => {
+  const chromeCss = fs.readFileSync(
+    path.join(ORACLE_ROOT, 'src', 'renderer', 'chrome.css'), 'utf8',
+  );
+
+  // Sampled from the running oracle on 2026-09-02, 320ms after each class
+  // change so the 120ms transitions had finished. Reading these at t=0 returns
+  // the outgoing state, which is how they were mismeasured the first time.
+  assert.equal(cssDeclaration(chromeCss, '.tab', 'background'), 'rgba(255, 255, 255, .075)');
+  assert.equal(cssDeclaration(chromeCss, '.tab', 'border'), '1px solid rgba(255, 255, 255, .035)');
+  assert.equal(cssDeclaration(chromeCss, '.tab', 'color'), 'rgba(255, 255, 255, .70)');
+  assert.equal(cssDeclaration(chromeCss, '.tab', 'font-size'), '12.5px');
+  assert.equal(cssDeclaration(chromeCss, '.tab', 'padding'), '0 9px');
+  assert.equal(cssDeclaration(chromeCss, '.tab', 'gap'), '7px');
+  assert.equal(cssDeclaration(chromeCss, '.tab.active', 'background'), 'rgba(24, 20, 19, .82)');
+  assert.equal(cssDeclaration(chromeCss, '.tab.active', 'border-color'), 'rgba(255, 91, 0, .80)');
+  assert.equal(cssDeclaration(chromeCss, '.tab.active', 'color'), 'rgba(255, 255, 255, .94)');
+  assert.equal(
+    cssDeclaration(chromeCss, '.tab.asleep', 'background'), 'rgba(255, 255, 255, .025)',
+  );
+  assert.equal(cssDeclaration(chromeCss, '.tab.asleep', 'color'), 'rgba(255, 255, 255, .43)');
+  assert.match(chromeCss, /\.tab:hover \{ background: rgba\(255, 255, 255, \.10\)/);
+  assert.match(chromeCss, /\.tab\.dragging \{ opacity: \.34/);
+  // Close button: only present on hover, and inset 5px from the tab's edge.
+  assert.equal(cssDeclaration(chromeCss, '.tab-close', 'width'), '28px');
+  assert.equal(cssDeclaration(chromeCss, '.tab-close', 'right'), '5px');
+  assert.equal(cssDeclaration(chromeCss, '.tab-close', 'opacity'), '0');
+  assert.equal(cssDeclaration(chromeCss, '.tab-close', 'background'), 'rgba(35, 29, 27, .96)');
+  // The sleeping glyph pair.
+  assert.equal(cssDeclaration(chromeCss, '.tab-sleep', 'width'), '16px');
+  assert.equal(cssDeclaration(chromeCss, '.tab-sleep', 'height'), '18px');
+  assert.equal(cssDeclaration(chromeCss, '.tab-sleep', 'color'), 'rgba(255, 255, 255, .38)');
+
+  const spec = fs.readFileSync(
+    path.join(SPECS_ROOT, '2026-09-01-native-top-chrome-parity.md'), 'utf8',
+  );
+  assert.ok(spec.includes('Runtime-verified measurements'),
+    'the runtime measurement section is gone from the top-chrome spec');
+  for (const quoted of ['rgba(24,20,19,.82)', 'rgba(255,91,0,.80)', 'grayscale(1)',
+    'innerHeight: 32', '--tab-max-width: 100px']) {
+    assert.ok(spec.includes(quoted), `top-chrome spec no longer quotes ${quoted}`);
+  }
+});
