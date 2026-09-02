@@ -486,10 +486,15 @@ Newest first. One entry per active/recent unit of work.
   31/31 focused contracts.
 - **For the other agent:** `Page.captureScreenshot` over CDP **does** work on a
   visible window on this host — the smoke test's "no capturable frames" is only
-  about offscreen capture. That is the mechanism to use for native/oracle visual
-  diffs once a build exists. This machine still cannot compile: `doctor` is
-  9/12 with no VS 2026, no SDK Debugging Tools and `LongPathsEnabled = 0`, and
-  the session is not elevated, so no native claim was made.
+  about offscreen capture. `chromium/tools/capture-native.js`
+  (`npm run chromium:capture`) uses it to photograph the native window at the
+  oracle's three exact viewports. The build host was then restored to 12/12 and
+  a full fresh acquisition and build started; the restore recipe, including the
+  two traps (winget has no `...2026.BuildTools` id, and `winget install` will
+  not add the SDK Debugging Tools to an already-installed SDK), is in
+  `CHROMIUM_PORT_STATUS.md`. The tab-strip seams were read from the pinned
+  upstream: `TabStyle` owns every tab dimension, and its 18 px overlap has to
+  become Ember's 8 px gap.
 
 ### 2026-09-01 — Codex — Native sidebar measured parity corrections
 - **Status / Branch:** in progress, source-only while host audit runs · `chromium-port`

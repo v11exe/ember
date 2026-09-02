@@ -404,7 +404,31 @@ Last recorded: 2026-08-31.
   toast rather than by relabelling the button. Focus-to-edit and sidebar
   collapse are not implemented natively at all.
 
-## Build host regression — 2026-09-01 (current blocker)
+## Build host restored — 2026-09-02
+
+The Claude development host is healthy again and `doctor` reports **12/12**.
+What was missing, and what fixed it:
+
+- `LongPathsEnabled` set to `1` (plus `git config --system core.longpaths true`).
+  This was the hard blocker — Chromium cannot even be checked out without it.
+- Visual Studio **Build Tools 2026 18.9.1** installed at
+  `C:\Program Files (x86)\Microsoft Visual Studio8\BuildTools` with
+  `VC.Tools.x86.x64`, `VC.ATLMFC` and the 26100 SDK component. The winget id is
+  `Microsoft.VisualStudio.BuildTools` — there is no `...2026.BuildTools` id.
+- SDK **Debugging Tools 10.0.26100.8249**. `winget install` for the SDK will
+  *not* add this: it sees the SDK already installed and skips the override
+  entirely. The cached installer matching the installed SDK exactly, under
+  `C:\ProgramData\Package Cache\{204d0387-...}\winsdksetup.exe`, run with
+  `/features OptionId.WindowsDesktopDebuggers /quiet /norestart`, does add it.
+- `httplib2==0.22.0` reinstalled.
+
+The external checkout still had to be rebuilt from nothing: `C:\src\ember-chromium`
+had been deleted along with `out/Default` and `.ninja_log`, so this is a full
+fresh acquisition and a complete build, not a resume. `build --resume` refuses
+outright when the source root is missing; the first build on a clean host takes
+no `--resume`.
+
+## Historical build host regression — 2026-09-01
 
 The external checkout and the entire native toolchain are gone from this host.
 No native compile, build, package or runtime probe is possible until they are
