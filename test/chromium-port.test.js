@@ -417,6 +417,11 @@ test('the native Favorites patch persists shortcuts and reuses real Chromium tab
   assert.match(patchText, /https:\/\/www\.youtube\.com\//);
   assert.match(patchText, /https:\/\/calendar\.google\.com\//);
   assert.match(patchText, /GetFavicon\(/);
+  assert.match(patchText, /chrome\/browser\/favicon\/favicon_utils\.h/);
+  assert.match(
+    patchText,
+    /favicon::GetDefaultFavicon\(\)/,
+  );
   assert.match(patchText, /FindEmberFavoriteTab/);
   assert.match(patchText, /IsEmberFavoriteMatch/);
   assert.match(patchText, /GlobalBrowserCollection::GetInstance\(\)->ForEach/);
@@ -439,6 +444,11 @@ test('the native Favorites patch persists shortcuts and reuses real Chromium tab
   assert.match(patchText, /kEmberFavoritePressedScale = 0\.97f/);
   assert.match(patchText, /base::Milliseconds\(130\)/);
   assert.match(patchText, /gfx::Animation::PrefersReducedMotion\(\)/);
+  assert.match(patchText, /UpdateEmberFavoriteOpenStatesForProfile/);
+  assert.match(
+    patchText,
+    /BrowserView::GetBrowserViewForBrowser\(candidate\)/,
+  );
   assert.match(patchText, /gfx::CubicBezier\(0\.25, 0\.1, 0\.25, 1\.0\)/);
   assert.match(
     patchText,

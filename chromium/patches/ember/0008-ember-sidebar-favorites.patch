@@ -1,8 +1,8 @@
 diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
-index 1be1303f55de602ad8744793b864a00ce9940783..a245041f9f1903bd2165769c6a2b517b2454b4c6 100644
+index 1be1303f55de602ad8744793b864a00ce9940783..126468fbb0016594b7e4747934ba64bf305889de 100644
 --- a/chrome/browser/ui/views/frame/browser_view.cc
 +++ b/chrome/browser/ui/views/frame/browser_view.cc
-@@ -33,17 +33,20 @@
+@@ -33,20 +33,24 @@
  #include "base/notreached.h"
  #include "base/scoped_observation.h"
  #include "base/strings/string_number_conversions.h"
@@ -23,7 +23,11 @@ index 1be1303f55de602ad8744793b864a00ce9940783..a245041f9f1903bd2165769c6a2b517b
  #include "chrome/browser/browsing_data/browsing_data_important_sites_util.h"
  #include "chrome/browser/desktop_to_mobile_promos/promos_utils.h"
  #include "chrome/browser/devtools/devtools_ui_controller.h"
-@@ -244,6 +247,8 @@
++#include "chrome/browser/favicon/favicon_utils.h"
+ #include "chrome/browser/devtools/devtools_window.h"
+ #include "chrome/browser/enterprise/data_protection/data_protection_navigation_observer.h"
+ #include "chrome/browser/enterprise/data_protection/data_protection_overlay_view.h"
+@@ -244,6 +248,8 @@
  #include "chrome/grit/generated_resources.h"
  #include "chrome/grit/theme_resources.h"
  #include "components/autofill/core/common/autofill_payments_features.h"
@@ -32,7 +36,7 @@ index 1be1303f55de602ad8744793b864a00ce9940783..a245041f9f1903bd2165769c6a2b517b
  #include "components/collaboration/public/messaging/message.h"
  #include "components/content_settings/core/common/features.h"
  #include "components/enterprise/buildflags/buildflags.h"
-@@ -331,13 +336,18 @@
+@@ -331,13 +337,18 @@
  #include "ui/display/screen.h"
  #include "ui/events/event_utils.h"
  #include "ui/gfx/animation/animation_runner.h"
@@ -51,7 +55,7 @@ index 1be1303f55de602ad8744793b864a00ce9940783..a245041f9f1903bd2165769c6a2b517b
  #include "ui/gfx/scoped_canvas.h"
  #include "ui/gfx/scrollbar_size.h"
  #include "ui/views/accessibility/view_accessibility.h"
-@@ -424,9 +434,223 @@ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(BrowserView,
+@@ -424,9 +435,223 @@ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(BrowserView,
                                        kEmberSidebarAddressElementId);
  DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(BrowserView,
                                        kEmberSidebarCopyLinkElementId);
@@ -275,7 +279,7 @@ index 1be1303f55de602ad8744793b864a00ce9940783..a245041f9f1903bd2165769c6a2b517b
  // The visible height of the shadow above the tabs. Clicks in this area are
  // treated as clicks to the frame, rather than clicks to the tab.
  const int kTabShadowSize = 2;
-@@ -979,6 +1203,17 @@ BrowserView::BrowserView(Browser* browser)
+@@ -979,6 +1204,17 @@ BrowserView::BrowserView(Browser* browser)
      ember_sidebar_copy_link_->SetFocusBehavior(
          views::View::FocusBehavior::ALWAYS);
      ember_sidebar_copy_link_->SetTooltipText(u"Copy link");
@@ -293,7 +297,7 @@ index 1be1303f55de602ad8744793b864a00ce9940783..a245041f9f1903bd2165769c6a2b517b
      UpdateEmberSidebar();
    }
  
-@@ -1199,10 +1434,16 @@ BrowserView::~BrowserView() {
+@@ -1199,10 +1435,16 @@ BrowserView::~BrowserView() {
    // before `RemoveAllChildViews()` is called to avoid dangling.
    browser_widget_ = nullptr;
    main_background_region_ = nullptr;
@@ -310,7 +314,7 @@ index 1be1303f55de602ad8744793b864a00ce9940783..a245041f9f1903bd2165769c6a2b517b
    top_container_ = nullptr;
    web_app_frame_toolbar_ = nullptr;
    web_app_window_title_ = nullptr;
-@@ -2985,6 +3226,7 @@ void BrowserView::UpdateEmberSidebar() {
+@@ -2985,6 +3227,7 @@ void BrowserView::UpdateEmberSidebar() {
    ember_sidebar_copy_link_->SetEnabled(url.is_valid() && !url.is_empty());
    ember_sidebar_copy_feedback_timer_.Stop();
    ResetEmberSidebarCopyFeedback();
@@ -318,7 +322,7 @@ index 1be1303f55de602ad8744793b864a00ce9940783..a245041f9f1903bd2165769c6a2b517b
  }
  
  void BrowserView::CopyEmberSidebarLink() {
-@@ -3013,6 +3255,236 @@ void BrowserView::ResetEmberSidebarCopyFeedback() {
+@@ -3013,6 +3256,255 @@ void BrowserView::ResetEmberSidebarCopyFeedback() {
    ember_sidebar_copy_link_->SetTooltipText(u"Copy link");
  }
  
@@ -473,14 +477,15 @@ index 1be1303f55de602ad8744793b864a00ce9940783..a245041f9f1903bd2165769c6a2b517b
 +    accessible_name += favorite_titles[index];
 +    button->GetViewAccessibility().SetName(accessible_name);
 +    const gfx::Image& favicon = ember_bookmark_model_->GetFavicon(child);
-+    if (!favicon.IsEmpty()) {
-+      const gfx::ImageSkia resized =
-+          gfx::ImageSkiaOperations::CreateResizedImage(
-+              favicon.AsImageSkia(), skia::ImageOperations::RESIZE_BEST,
-+              gfx::Size(19, 19));
-+      button->SetImageModel(views::Button::STATE_NORMAL,
-+                            ui::ImageModel::FromImageSkia(resized));
-+    }
++    const gfx::ImageSkia source_favicon =
++        favicon.IsEmpty() ? *favicon::GetDefaultFavicon().ToImageSkia()
++                          : favicon.AsImageSkia();
++    const gfx::ImageSkia resized =
++        gfx::ImageSkiaOperations::CreateResizedImage(
++            source_favicon, skia::ImageOperations::RESIZE_BEST,
++            gfx::Size(19, 19));
++    button->SetImageModel(views::Button::STATE_NORMAL,
++                          ui::ImageModel::FromImageSkia(resized));
 +
 +    views::LabelButton* button_ptr = row->AddChildView(std::move(button));
 +    ember_favorite_buttons_.push_back(button_ptr);
@@ -535,6 +540,24 @@ index 1be1303f55de602ad8744793b864a00ce9940783..a245041f9f1903bd2165769c6a2b517b
 +  }
 +}
 +
++void BrowserView::UpdateEmberFavoriteOpenStatesForProfile() {
++  Profile* const profile = browser_->profile();
++  GlobalBrowserCollection::GetInstance()->ForEach(
++      [profile](BrowserWindowInterface* candidate) {
++        if (candidate->GetProfile() != profile ||
++            candidate->GetType() != BrowserWindowInterface::TYPE_NORMAL) {
++          return true;
++        }
++        BrowserView* const browser_view =
++            BrowserView::GetBrowserViewForBrowser(candidate);
++        if (browser_view) {
++          browser_view->UpdateEmberFavoriteOpenStates();
++        }
++        return true;
++      },
++      BrowserCollection::Order::kActivation);
++}
++
 +void BrowserView::OpenEmberFavorite(GURL favorite_url) {
 +  if (content::WebContents* existing = FindEmberFavoriteTab(favorite_url)) {
 +    BrowserWindowInterface* target =
@@ -555,25 +578,25 @@ index 1be1303f55de602ad8744793b864a00ce9940783..a245041f9f1903bd2165769c6a2b517b
  void BrowserView::TouchModeChanged() {
  #if BUILDFLAG(IS_CHROMEOS)
    if (ui::TouchUiController::Get()->touch_ui()) {
-@@ -3548,6 +4020,7 @@ void BrowserView::OnTabChangedAt(tabs::TabInterface* tab,
+@@ -3548,6 +4040,7 @@ void BrowserView::OnTabChangedAt(tabs::TabInterface* tab,
                                   int index,
                                   TabChangeType change_type) {
    content::WebContents* contents = tab->GetContents();
-+  UpdateEmberFavoriteOpenStates();
++  UpdateEmberFavoriteOpenStatesForProfile();
  
    if (change_type == TabChangeType::kBlockedOnly) {
      if (auto* container =
-@@ -3571,6 +4044,8 @@ void BrowserView::OnTabStripModelChanged(
+@@ -3571,6 +4064,8 @@ void BrowserView::OnTabStripModelChanged(
      TabStripModel* tab_strip_model,
      const TabStripModelChange& change,
      const TabStripSelectionChange& selection) {
-+  UpdateEmberFavoriteOpenStates();
++  UpdateEmberFavoriteOpenStatesForProfile();
 +
    // When the active tab changes, elements in the omnibox can change, which
    // can change its preferred size. Re-lay-out the toolbar to reflect the
    // possible change.
 diff --git a/chrome/browser/ui/views/frame/browser_view.h b/chrome/browser/ui/views/frame/browser_view.h
-index 28bfaa22d78ebe3bee6d00af312068e1691acabc..2fbf733c2cc2f851fedbd92cf309bc6cf596fc4f 100644
+index 28bfaa22d78ebe3bee6d00af312068e1691acabc..5a111ed61836706d72d9933c624427a6ef883742 100644
 --- a/chrome/browser/ui/views/frame/browser_view.h
 +++ b/chrome/browser/ui/views/frame/browser_view.h
 @@ -39,6 +39,7 @@
@@ -612,7 +635,7 @@ index 28bfaa22d78ebe3bee6d00af312068e1691acabc..2fbf733c2cc2f851fedbd92cf309bc6c
  
    explicit BrowserView(Browser* browser);
    BrowserView(const BrowserView&) = delete;
-@@ -887,6 +895,23 @@ class BrowserView : public BrowserWindow,
+@@ -887,6 +895,24 @@ class BrowserView : public BrowserWindow,
    void UpdateEmberSidebar();
    void CopyEmberSidebarLink();
    void ResetEmberSidebarCopyFeedback();
@@ -622,6 +645,7 @@ index 28bfaa22d78ebe3bee6d00af312068e1691acabc..2fbf733c2cc2f851fedbd92cf309bc6c
 +  const bookmarks::BookmarkNode* GetEmberFavoritesFolder() const;
 +  void RebuildEmberFavorites(bool force = false);
 +  void UpdateEmberFavoriteOpenStates();
++  void UpdateEmberFavoriteOpenStatesForProfile();
 +  content::WebContents* FindEmberFavoriteTab(
 +      const GURL& favorite_url) const;
 +  void OpenEmberFavorite(GURL favorite_url);
@@ -636,7 +660,7 @@ index 28bfaa22d78ebe3bee6d00af312068e1691acabc..2fbf733c2cc2f851fedbd92cf309bc6c
  
    // If the browser is in immersive full screen mode, it will reveal the
    // top container for a short duration. The top container will have the toolbar
-@@ -1147,6 +1172,16 @@ class BrowserView : public BrowserWindow,
+@@ -1147,6 +1173,16 @@ class BrowserView : public BrowserWindow,
    raw_ptr<views::View> ember_sidebar_ = nullptr;
    raw_ptr<views::Label> ember_sidebar_address_ = nullptr;
    raw_ptr<views::LabelButton> ember_sidebar_copy_link_ = nullptr;
