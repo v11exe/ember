@@ -1,8 +1,8 @@
 diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
-index 1be1303..17498c7 100644
+index 1be1303f55de602ad8744793b864a00ce9940783..a245041f9f1903bd2165769c6a2b517b2454b4c6 100644
 --- a/chrome/browser/ui/views/frame/browser_view.cc
 +++ b/chrome/browser/ui/views/frame/browser_view.cc
-@@ -33,12 +33,14 @@
+@@ -33,17 +33,20 @@
  #include "base/notreached.h"
  #include "base/scoped_observation.h"
  #include "base/strings/string_number_conversions.h"
@@ -16,7 +16,6 @@ index 1be1303..17498c7 100644
 +#include "cc/paint/paint_flags.h"
  #include "chrome/app/chrome_command_ids.h"
  #include "chrome/browser/actor/ui/actor_overlay_web_view.h"
-@@ -44,6 +45,7 @@
  #include "chrome/browser/app_mode/app_mode_utils.h"
  #include "chrome/browser/ash/boca/on_task/on_task_locked_controller.h"
  #include "chrome/browser/browser_process.h"
@@ -24,7 +23,7 @@ index 1be1303..17498c7 100644
  #include "chrome/browser/browsing_data/browsing_data_important_sites_util.h"
  #include "chrome/browser/desktop_to_mobile_promos/promos_utils.h"
  #include "chrome/browser/devtools/devtools_ui_controller.h"
-@@ -244,6 +246,8 @@
+@@ -244,6 +247,8 @@
  #include "chrome/grit/generated_resources.h"
  #include "chrome/grit/theme_resources.h"
  #include "components/autofill/core/common/autofill_payments_features.h"
@@ -33,7 +32,9 @@ index 1be1303..17498c7 100644
  #include "components/collaboration/public/messaging/message.h"
  #include "components/content_settings/core/common/features.h"
  #include "components/enterprise/buildflags/buildflags.h"
-@@ -333,10 +338,15 @@
+@@ -331,13 +336,18 @@
+ #include "ui/display/screen.h"
+ #include "ui/events/event_utils.h"
  #include "ui/gfx/animation/animation_runner.h"
 +#include "ui/gfx/animation/linear_animation.h"
 +#include "ui/gfx/animation/tween.h"
@@ -49,7 +50,8 @@ index 1be1303..17498c7 100644
 +#include "ui/gfx/image/image_skia_operations.h"
  #include "ui/gfx/scoped_canvas.h"
  #include "ui/gfx/scrollbar_size.h"
-@@ -424,9 +429,68 @@ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(BrowserView,
+ #include "ui/views/accessibility/view_accessibility.h"
+@@ -424,9 +434,223 @@ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(BrowserView,
                                        kEmberSidebarAddressElementId);
  DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(BrowserView,
                                        kEmberSidebarCopyLinkElementId);
@@ -174,6 +176,10 @@ index 1be1303..17498c7 100644
 +        start_scale_ == target_scale_) {
 +      return;
 +    }
++    if (gfx::Animation::PrefersReducedMotion()) {
++      ApplyTransition(1.0);
++      return;
++    }
 +    transition_.Start();
 +  }
 +
@@ -269,7 +275,7 @@ index 1be1303..17498c7 100644
  // The visible height of the shadow above the tabs. Clicks in this area are
  // treated as clicks to the frame, rather than clicks to the tab.
  const int kTabShadowSize = 2;
-@@ -979,6 +1043,16 @@ BrowserView::BrowserView(Browser* browser)
+@@ -979,6 +1203,17 @@ BrowserView::BrowserView(Browser* browser)
      ember_sidebar_copy_link_->SetFocusBehavior(
          views::View::FocusBehavior::ALWAYS);
      ember_sidebar_copy_link_->SetTooltipText(u"Copy link");
@@ -287,7 +293,7 @@ index 1be1303..17498c7 100644
      UpdateEmberSidebar();
    }
  
-@@ -1199,10 +1273,16 @@ BrowserView::~BrowserView() {
+@@ -1199,10 +1434,16 @@ BrowserView::~BrowserView() {
    // before `RemoveAllChildViews()` is called to avoid dangling.
    browser_widget_ = nullptr;
    main_background_region_ = nullptr;
@@ -304,7 +310,7 @@ index 1be1303..17498c7 100644
    top_container_ = nullptr;
    web_app_frame_toolbar_ = nullptr;
    web_app_window_title_ = nullptr;
-@@ -2985,6 +3065,7 @@ void BrowserView::UpdateEmberSidebar() {
+@@ -2985,6 +3226,7 @@ void BrowserView::UpdateEmberSidebar() {
    ember_sidebar_copy_link_->SetEnabled(url.is_valid() && !url.is_empty());
    ember_sidebar_copy_feedback_timer_.Stop();
    ResetEmberSidebarCopyFeedback();
@@ -312,7 +318,7 @@ index 1be1303..17498c7 100644
  }
  
  void BrowserView::CopyEmberSidebarLink() {
-@@ -3013,6 +3094,244 @@ void BrowserView::ResetEmberSidebarCopyFeedback() {
+@@ -3013,6 +3255,236 @@ void BrowserView::ResetEmberSidebarCopyFeedback() {
    ember_sidebar_copy_link_->SetTooltipText(u"Copy link");
  }
  
@@ -453,9 +459,10 @@ index 1be1303..17498c7 100644
 +          views::BoxLayout::Orientation::kHorizontal, gfx::Insets(), 10));
 +    }
 +
-+    auto button = std::make_unique<EmberFavoriteButton>(
-+        base::BindRepeating(&BrowserView::OpenEmberFavorite,
-+                            weak_ptr_factory_.GetWeakPtr(), child->url()));
++    std::unique_ptr<views::LabelButton> button =
++        std::make_unique<EmberFavoriteButton>(base::BindRepeating(
++            &BrowserView::OpenEmberFavorite, weak_ptr_factory_.GetWeakPtr(),
++            child->url()));
 +    button->SetPreferredSize(
 +        gfx::Size(kEmberFavoriteTileWidth, kEmberFavoriteTileHeight));
 +    button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
@@ -548,7 +555,7 @@ index 1be1303..17498c7 100644
  void BrowserView::TouchModeChanged() {
  #if BUILDFLAG(IS_CHROMEOS)
    if (ui::TouchUiController::Get()->touch_ui()) {
-@@ -3548,6 +3867,7 @@ void BrowserView::OnTabChangedAt(tabs::TabInterface* tab,
+@@ -3548,6 +4020,7 @@ void BrowserView::OnTabChangedAt(tabs::TabInterface* tab,
                                   int index,
                                   TabChangeType change_type) {
    content::WebContents* contents = tab->GetContents();
@@ -556,7 +563,7 @@ index 1be1303..17498c7 100644
  
    if (change_type == TabChangeType::kBlockedOnly) {
      if (auto* container =
-@@ -3571,6 +3891,8 @@ void BrowserView::OnTabStripModelChanged(
+@@ -3571,6 +4044,8 @@ void BrowserView::OnTabStripModelChanged(
      TabStripModel* tab_strip_model,
      const TabStripModelChange& change,
      const TabStripSelectionChange& selection) {
@@ -566,7 +573,7 @@ index 1be1303..17498c7 100644
    // can change its preferred size. Re-lay-out the toolbar to reflect the
    // possible change.
 diff --git a/chrome/browser/ui/views/frame/browser_view.h b/chrome/browser/ui/views/frame/browser_view.h
-index 28bfaa2..2fbf733 100644
+index 28bfaa22d78ebe3bee6d00af312068e1691acabc..2fbf733c2cc2f851fedbd92cf309bc6cf596fc4f 100644
 --- a/chrome/browser/ui/views/frame/browser_view.h
 +++ b/chrome/browser/ui/views/frame/browser_view.h
 @@ -39,6 +39,7 @@

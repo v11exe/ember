@@ -438,10 +438,15 @@ test('the native Favorites patch persists shortcuts and reuses real Chromium tab
   assert.match(patchText, /kEmberFavoriteOpenBorderAlpha = 0x0E/);
   assert.match(patchText, /kEmberFavoritePressedScale = 0\.97f/);
   assert.match(patchText, /base::Milliseconds\(130\)/);
+  assert.match(patchText, /gfx::Animation::PrefersReducedMotion\(\)/);
   assert.match(patchText, /gfx::CubicBezier\(0\.25, 0\.1, 0\.25, 1\.0\)/);
   assert.match(
     patchText,
     /views::LabelButton\(std::move\(callback\), std::u16string\(\)\)/,
+  );
+  assert.match(
+    patchText,
+    /std::unique_ptr<views::LabelButton> button =\s*\+\s*std::make_unique<EmberFavoriteButton>/,
   );
   assert.match(patchText, /SetTooltipText\(favorite_titles\[index\]\)/);
   assert.match(patchText, /SetName\(accessible_name\)/);
