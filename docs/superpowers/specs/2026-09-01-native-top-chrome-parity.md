@@ -244,3 +244,51 @@ full 22 px once scrolled, and the right fade is `min(22, overflow - scrollLeft)`
 — measured at 3 px with `scrollLeft: 1009` and an overflow of 1012. One
 dispatched wheel notch advanced `scrollLeft` by roughly one stride, and the
 strip auto-scrolled to reveal each newly opened tab.
+
+---
+
+## 9. The Chromium seams, read at the pinned commit
+
+Read directly from `chromium/src` at `a96602f3` (the pinned baseline), so the
+next patch can be written against the real upstream rather than guessed at.
+
+### `TabStyle` owns tab geometry
+
+`chrome/browser/ui/tabs/tab_style.{h,cc}` is the single source of every tab
+dimension Chromium paints. At the pinned revision:
+
+| Accessor | Upstream value | Ember target |
+| --- | --- | --- |
+| `GetStandardHeight()` | `GetLayoutConstant(kTabStripHeight)` | **28** |
+| `GetStandardWidth(false)` | `kTabWidth (232) + 2 * bottom radius (12)` = 256 | dynamic, clamped 95…190 |
+| `GetTopCornerRadius()` | 10 | **6** |
+| `GetBottomCornerRadius()` | 12 | **6** |
+| `GetTabOverlap()` | `2 * 12 - (margins 4 + separator 2)` = 18 | **-8** — Ember *separates* tabs by 8 where Chromium overlaps them by 18 |
+| `GetContentsInsets()` | vertical `6 + kTabStripPadding`, horizontal `12 + 8` = 20 | 9 left and right |
+| `GetSeparatorSize()` | 2 × 16 | none — Ember draws a border per tab, not separators between them |
+| `GetMinimumActiveWidth()` / `GetMinimumInactiveWidth()` | derived from the insets | 95 for both |
+
+The overlap sign is the interesting one. Chromium's strip assumes tabs overlap
+so their curved shoulders interlock and a 2 px separator is drawn in the seam.
+Ember's tabs are discrete rounded rectangles with an 8 px gap and their own
+border. Making `GetTabOverlap()` negative is the smallest change that turns
+Chromium's layout arithmetic into Ember's, but every caller that assumes an
+overlap is positive has to be checked before relying on it.
+
+`kTabStripHeight` and `kTabStripPadding` come from
+`chrome/browser/ui/layout_constants.cc`, which is where the 28 px height and
+the vertical centring in the 32 px bar have to originate.
+
+### The single-row problem
+
+`chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc`
+(1,696 lines at this revision) lays out `horizontal_tab_strip_region_view`,
+`toolbar` and `top_container` as separate stacked rows. Ember's bar is one
+32 px row holding navigation buttons, the strip and the actions together, so
+this file — the same one patch 0006 already threads its rail through — is the
+seam where the two rows have to become one. Its relevant members are
+`views().horizontal_tab_strip_region_view`, `views().toolbar` and
+`views().top_container`.
+
+None of this has been compiled. It is source reading against the pinned
+revision, recorded so the implementation does not start by rediscovering it.
