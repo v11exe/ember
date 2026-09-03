@@ -94,8 +94,8 @@ substitution. The download cache was removed only after all hashes/unpacks had
 completed, reclaiming 1.82 GiB without touching source or build output.
 
 `build --resume` exists for this prepared state. It verifies the source HEAD,
-proves all five applied Ember patch postimages by reverse-applying them in an
-isolated 15-file scratch tree, verifies all 18 resource destinations, accepts
+proves all eight applied Ember patch postimages by reverse-applying them in an
+isolated 20-file scratch tree, verifies all 18 resource destinations, accepts
 only known generated state including `.gcs_entries`, and uses the 60 GiB
 prepared-build floor. If a failed GN attempt
 left `out/Default/gn.exe` without `build.ninja`, resume deletes only that partial
@@ -254,7 +254,7 @@ processes retained sandbox flags and shut down normally. Continue with
 profile-backed Favorite tiles on this same rail before changing the real tab
 strip and toolbar.
 
-## Native Favorites source findings (patch eight, unbuilt)
+## Native Favorites result (patch eight, built and runtime-verified)
 
 Chromium already provides everything Ember's Favorite rail needs, so the patch
 adds no storage layer of its own:
@@ -273,24 +273,41 @@ adds no storage layer of its own:
   starts a load when it is absent, which is why the favicon observer matters.
 - Tab reuse goes through `GlobalBrowserCollection` in activation order and
   `TabStripModel::ActivateTabAt`, so Chromium keeps owning tab ownership,
-  activation and focus. `chrome::AddTabAt` is used only when nothing matches.
+  activation and focus. `chrome::AddTabAt` is used only when nothing matches,
+  and open-state refresh is broadcast to every same-profile normal
+  `BrowserView`.
 
 Model mutation during a model notification is the hazard here: seeding runs
 inside a posted task guarded by an `ember_updating_favorites_` reentrancy flag
 and a pending-refresh flag, because `AddFolder`/`AddURL`/`SetNodeMetaInfo` each
 re-enter `BookmarkModelChanged()`.
 
-**None of this has been compiled or run.** The reasoning above is source
-inspection of the pinned tree plus review of the patch, not build evidence.
+The final patch was regenerated from exact patch-0007 pre/postimages after the
+hunk checker found four stale hand-edited counts. Its measured Views surface is
+70×43 per icon-only tile with 10 px gaps, a 7 px radius, exact oracle state
+alphas, and a shared 19×19 cached/fallback favicon path. The final 466-action
+resume compiled `browser_view.obj`, linked the UI library/DLL/executable, and
+produced both packages.
+
+A fresh 900×556 profile then exposed the three accessible controls at
+`(136,172)`, `(216,172)`, and `(136,225)`. Re-invoking Google preserved its CDP
+target identity and total target count. A second native window painted Google's
+open state and activated the original Google HWND without duplicating the tab.
+Clean close/relaunch retained exactly one metadata folder and the same three
+defaults with an unchanged Bookmarks SHA-256. Both launches ended with zero
+matching profile processes. This closes the fixed 2×2 Favorites baseline; native
+add/remove/reorder, configurable capacity, tab drop, empty slots, and the
+satisfaction animation remain future parity work.
 
 ## Next source inspection targets
 
 With the build and practical visible-identity slice proven, continue in this
 order:
 
-1. restore the build host, re-acquire the pinned Chromium tree, and produce the
-   first real compile/build/runtime evidence for the existing patch eight;
-2. compacting and styling Chromium's real horizontal tab strip/top container
+1. correct patch seven's address/Copy visuals to the measured native-sidebar
+   specification while retaining its verified URL, clipboard, accessibility,
+   and feedback behavior;
+2. compact and style Chromium's real horizontal tab strip/top container
    toward the 32 px oracle without replacing its focus, extension, sandbox or
    Windows caption behavior;
 3. deterministic native visual and interaction capture against the locked

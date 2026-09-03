@@ -49,28 +49,23 @@
 - Modify: `chromium/patches/series`
 
 - [x] Generate patch 0008 strictly as the incremental diff from the seven-patch postimage.
-- [x] Two consecutive `prepare` passes — **re-verified 2026-09-01**: both pass with
+- [x] Two consecutive `prepare` passes — **re-verified 2026-09-03**: both pass with
       exactly eight nonduplicated Ember entries in the managed series.
-- [ ] Patch reverse verification — **blocked**: `verify-patches` needs the pinned
-      Chromium source and the external checkout no longer exists on this host.
-- [ ] Run the official build wrapper and regenerate installer/portable packages —
-      **not evidenced**. This box was checked by a previous session but no build
-      output, binary hash or package hash for an eight-patch build was recorded
-      anywhere in the repository, and the same session's `AGENTS.md` entry
-      describes "seven built patches" with patch eight "now implementing".
-      Treat patch 0008 as compiled-and-reviewed at most, never as built.
-- [ ] Record exact `chrome.exe`, `chrome.dll`, installer, and portable ZIP
-      sizes/hashes — nothing to record until the build above actually runs.
+- [x] Patch reverse verification — the final two `prepare` passes and internal
+      `verifyPreparedBuildState` check prove all eight applied postimages in an
+      isolated 20-file scratch tree and all 18 resource destinations.
+- [x] Run the official build wrapper and regenerate installer/portable packages —
+      **2026-09-03**: after a deliberate review checkpoint at 118/583 queued
+      actions, the definitive retained-graph resume completed all 466 remaining
+      compile/link/resource/package actions.
+- [x] Record exact `browser_view.obj`, `chrome.exe`, `chrome.dll`, installer,
+      and portable ZIP sizes/hashes in `CHROMIUM_PORT_STATUS.md`.
 
 ### Task 4: Runtime and regression proof
 
-> **Blocked since 2026-09-01 — build host regressed.** `C:\src\ember-chromium`
-> and its ~15 GiB `out/Default` are gone, and `port.js doctor` now reports
-> 8/12: Visual Studio 2026 has been replaced by VS 2022 Build Tools 17.14, the
-> SDK Debugging Tools are missing, and `LongPathsEnabled` is `0`. httplib2
-> 0.22.0 was reinstalled. Nothing native can be compiled or launched until the
-> toolchain is restored and Chromium is re-acquired and rebuilt from the pinned
-> revision. Everything in A–D below is runtime evidence and stays unchecked.
+> **Completed 2026-09-03.** The host is restored at 12/12, the pinned external
+> checkout and `.ninja_log` are preserved, and the final eight-patch binary has
+> fresh-profile, two-window, persistence, process, and shutdown evidence.
 
 **Files:**
 - Modify: `CHROMIUM_PORT_STATUS.md`
@@ -78,18 +73,20 @@
 - Modify: `chromium/research/UPSTREAM_NOTES.md`
 - Modify: `AGENTS.md`
 
-- [ ] Launch with a fresh isolated profile and use Windows UI Automation to prove the three focusable Favorite controls appear.
-- [ ] Invoke Google twice and prove the second invocation activates the existing matching target without increasing the page-target count.
-- [ ] Close and relaunch the same profile; prove the stored folder/defaults remain exactly once.
-- [ ] Capture the native HWND, inspect the 2x2 rail geometry, verify the normal sandboxed process tree, and prove clean shutdown removes singleton locks.
+- [x] Launch with a fresh isolated profile and use Windows UI Automation to prove the three focusable Favorite controls appear.
+- [x] Invoke Google twice and prove the second invocation activates the existing matching target without increasing the page-target count; repeat from a second same-profile native window and retain the exact target identity.
+- [x] Close and relaunch the same profile; prove the stored folder/defaults remain exactly once and the `Bookmarks` SHA-256 stays unchanged.
+- [x] Capture the native HWND, inspect the 2x2 rail geometry, verify the normal sandboxed process tree, and prove clean shutdown removes singleton locks.
 - [x] Run `npm test`, `npm run smoke`, `npm start`, and `git diff --check` —
       **2026-09-01**: `node --test test/chromium-port.test.js` 28/28;
       `npm test` 411/411; `npm run smoke` PASS in 11.2 s with the same three
       frame-dependent assertions skipped on this no-capturable-frame host;
       `npm start` launched the Electron oracle and was stopped deliberately;
       `git diff --check` clean.
-- [ ] Update the mutable parity ledger without claiming drag/drop, grid settings, removal, or full visual parity.
-- [ ] Fetch, rebase on `origin/main`, rerun the live oracle gate, commit, and push `chromium-port`.
+- [x] Update the mutable parity ledger without claiming drag/drop, grid settings, removal, or full visual parity.
+- [x] Fetch/rebase check against `origin/chromium-port`, rerun the focused gates,
+      commit, and push `chromium-port` — completed 2026-09-03 with no incoming
+      commits at the final synchronization point.
 
 ---
 
@@ -102,38 +99,47 @@ errors, not preferences: `.sidebar-surface` is `padding: 34px 9px 8px`, so the
 rail's content column is exactly `168 - 18 = 150` px wide, the address row is
 33 px tall at y=34, and the grid starts at y=77 after a 10 px gap.
 
-Fold every one of these into patch 0008 itself — they belong to the unfinished
-Favorites unit, not to a new patch — then compile, build and re-run Task 4.
+Fold the tile/grid-owned values below into patch 0008 itself — they belong to
+the Favorites unit, not to a new patch — then compile, build and re-run Task 4.
+The inherited rail padding/address-row placement belongs to patch 0007's
+measured correction; moving that row will carry this grid from its current
+runtime y=52 to the oracle's y=77 without duplicating layout ownership here.
 
-- [ ] Tile width `71` → **70**. Two columns in a 150 px column with a 10 px gap
+- [x] Tile width `71` → **70**. Two columns in a 150 px column with a 10 px gap
       is `(150 - 10) / 2 = 70`.
-- [ ] Grid container height `96` → **98**. The oracle's `--favorite-grid-height`
+- [x] Grid container height `96` → **98**. The oracle's `--favorite-grid-height`
       is 98: 43 + 10 + 43 content inside a 1 px transparent border box.
-- [ ] Tile corner radius `9` → **7** (`.favorite { border-radius: 7px }`). The
+- [x] Tile corner radius `9` → **7** (`.favorite { border-radius: 7px }`). The
       9 px radius belongs to the `.favorites` container, not to a tile.
-- [ ] Resting fill `rgba(255,255,255,.141)` (`0x24`) →
+- [x] Resting fill `rgba(255,255,255,.141)` (`0x24`) →
       **`rgba(255,255,255,.075)`** (`SkColorSetARGB(0x13, 0xFF, 0xFF, 0xFF)`).
-- [ ] Add the missing resting border: 1 px `rgba(255,255,255,.025)`
+- [x] Add the missing resting border: 1 px `rgba(255,255,255,.025)`
       (`SkColorSetARGB(0x06, 0xFF, 0xFF, 0xFF)`).
-- [ ] Replace the invented orange open state. The oracle's `.favorite.is-open`
+- [x] Replace the invented orange open state. The oracle's `.favorite.is-open`
       is background `rgba(255,255,255,.18)` (`0x2E`) with border
       `rgba(255,255,255,.055)` (`0x0E`) — brighter white, no orange, and the
       icon is not recoloured.
-- [ ] **Drop the text label.** `.favorite` is `display: grid; place-items:
+- [x] **Drop the text label.** `.favorite` is `display: grid; place-items:
       center` containing only a 19×19 `object-fit: contain` image. The tiles are
       icon-only; the title belongs to the tooltip and the accessible name, which
       the patch already sets. A `LabelButton` painting the title beside the
       favicon is the single largest visual mismatch in this patch.
-- [ ] Add hover `rgba(255,255,255,.13)` (`0x21`) and a pressed
+- [x] Add hover `rgba(255,255,255,.13)` (`0x21`) and a pressed
       `transform: scale(.97)`, with the oracle's
       `background 130ms ease, transform 130ms ease, border-color 130ms ease`.
-- [ ] Keep what is already right: the 19×19 favicon, the 10 px gap, the 43 px
+- [x] Keep what is already right: the 19×19 favicon, the 10 px gap, the 43 px
       tile height, the 2×2 shape, and the broad-root / exact-path matching —
       the matching rules were checked line by line against
       `sameFavoriteSite()` and `findFavoriteTab()` in `src/shared/favorites.js`
       on 2026-09-01 and are faithful, including `www.` stripping, subdomain
       matching, query/fragment insensitivity and the direct-host-root
       preference.
+
+Final review also required two non-visual correctness fixes in patch 0008:
+uncached bookmarks now paint Chromium's default favicon through the same exact
+19×19 resize path instead of leaving a blank tile, and tab-model changes refresh
+open styling in every same-profile normal native window. Both paths have final
+build and fresh-profile/two-window runtime evidence.
 
 Still deliberately out of scope for this unit, and not to be claimed: dragging
 tabs into Favorites, native add/remove/reorder, configurable grid capacity, the

@@ -154,22 +154,23 @@ the final eight-process run retained the normal sandbox and shut down cleanly.
 Patch eight adds the first Favorite grid. `BrowserView` observes the profile's
 own `BookmarkModel`, finds or creates a metadata-marked `Ember Favorites` folder
 under Other Bookmarks, seeds Google / YouTube / Google Calendar exactly once,
-and paints its first four HTTP(S) children as a 2x2 grid of focusable buttons.
-Activation reuses a matching open tab through `TabStripModel::ActivateTabAt`
-using Ember's broad-root and exact-path rules, and opens a new tab only when
+and paints its first four HTTP(S) children as a 2x2 grid of 70×43 icon-only,
+focusable buttons. Cached and fallback favicons use the same exact 19×19 path.
+Activation searches every same-profile normal native window, reuses a matching
+open tab with Ember's broad-root/exact-path rules, and opens a new tab only when
 nothing matches. Favorites are shortcuts, never a second tab strip.
 
-**Patch eight has never been built or run.** It passes the focused contract
-tests and two idempotent prepares, and that is all the evidence that exists for
-it. As of 2026-09-01 the external checkout is gone from the development host and
-`doctor` reports 8/12, so the next native step is restoring the toolchain and
-performing a full fresh acquisition and build. See the build-host regression
-section of `../CHROMIUM_PORT_STATUS.md`.
+Patch eight is built, packaged, and runtime-verified. A clean profile exposed
+the three defaults through Windows accessibility with exact 10 px grid gaps;
+single- and cross-window invocations retained the same Google renderer target,
+and a close/relaunch retained one folder and one copy of each default without
+changing the bookmark-file hash. The current artifact sizes, SHA-256 values,
+build actions, and HWND evidence are in `../CHROMIUM_PORT_STATUS.md`.
 
-The next UI slice after that is compacting and styling the real top chrome
-toward Ember's 32 px shell. Its measured contract — strip anatomy, tab states,
-the dynamic width formula, wheel physics and the shell material — is extracted
-from the oracle in
+The next bounded UI slice corrects patch seven's address/Copy visuals to the
+measured sidebar contract before compacting and styling the real top chrome
+toward Ember's 32 px shell. The accepted measurements are in
+`../docs/superpowers/specs/2026-09-01-native-sidebar-visual-parity.md` and
 `../docs/superpowers/specs/2026-09-01-native-top-chrome-parity.md`.
 
 To check the Ember patch stack against a pristine checkout of the exact

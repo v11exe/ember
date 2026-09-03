@@ -416,6 +416,10 @@ Before starting:
 
 Before every push:
 
+For native-port work on the shared `chromium-port` branch, substitute
+`origin/chromium-port` for `origin/main` in this block. The `origin/main`
+version remains the rule for ordinary Electron feature branches.
+
 ```bash
 git fetch origin
 git log --oneline HEAD..origin/main
@@ -443,8 +447,10 @@ nearly everything; record it before starting.
 access goes through preload bridges with `contextIsolation: true` and
 `nodeIntegration: false`.
 
-**Code:** `BrowserView` is banned. No `chrome://` pages. Do not copy another
-browser's trademarks, icons, sounds, shaders or proprietary implementation.
+**Code:** Electron's deprecated `BrowserView` is banned; Chromium's native C++
+`BrowserView` is the intended port integration point. No `chrome://` pages in
+the Electron app. Do not copy another browser's trademarks, icons, sounds,
+shaders or proprietary implementation.
 
 **Docs:** `ROADMAP.md` is the detailed numbered source of truth. `README.md`
 contains only the short product description plus meaningful Completed and
@@ -468,6 +474,25 @@ Git is the history archive.
 ## 4. Work Log
 
 Newest first. One entry per active/recent unit of work.
+
+### 2026-09-03 — Codex — Native Favorites final build and runtime proof
+- **Status / Branch:** completed and synchronized · `chromium-port`
+- **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`, `chromium/README.md`,
+  `chromium/research/UPSTREAM_NOTES.md`,
+  `docs/superpowers/plans/2026-08-31-native-chromium-favorites.md`
+- **Summary:** Synchronized with Claude's hunk checker/host restoration and the
+  reboot checkpoint at `c02eca5`, then verified the regenerated patch 0008 in
+  the preserved pinned checkout. The final 466-action resume compiled
+  `browser_view.obj`, linked `chrome.dll`/`chrome.exe`, and produced both
+  packages. Fresh-profile UI Automation measured three 70×43 icon-only tiles
+  with exact 10 px gaps; single- and cross-window invocations reused the same
+  Google target, the second window painted Google's open state, and the
+  persistent folder/defaults remained exactly once with an unchanged Bookmarks
+  hash after relaunch. All launches closed with zero profile processes.
+- **For the other agent:** Patch 0008 is now the built/native-runtime baseline.
+  Keep the external checkout and `.ninja_log`; the next bounded slice is patch
+  0007's measured address/Copy parity correction, followed by the measured real
+  top-chrome work.
 
 ### 2026-09-02 — Claude Code — Build host restored; patch 0008 will not apply
 - **Status / Branch:** pushed; native build running · `chromium-port`
