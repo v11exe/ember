@@ -1,23 +1,32 @@
 diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+index 865d8ad..2f3e85f 100644
 --- a/chrome/browser/ui/views/frame/browser_view.cc
 +++ b/chrome/browser/ui/views/frame/browser_view.cc
-@@ -34,6 +34,7 @@
+@@ -33,11 +33,14 @@
+ #include "base/notreached.h"
  #include "base/scoped_observation.h"
  #include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
  #include "base/strings/stringprintf.h"
 +#include "base/strings/utf_string_conversions.h"
  #include "base/task/sequenced_task_runner.h"
  #include "base/task/single_thread_task_runner.h"
  #include "base/trace_event/trace_event.h"
-@@ -271,6 +272,7 @@
- #include "components/tabs/public/tab_interface.h"
- #include "components/translate/core/browser/language_state.h"
- #include "components/translate/core/browser/translate_manager.h"
-+#include "components/url_formatter/url_formatter.h"
- #include "components/user_education/common/feature_promo/feature_promo_handle.h"
- #include "components/user_education/common/feature_promo/feature_promo_result.h"
- #include "components/user_education/common/help_bubble/help_bubble_factory_registry.h"
-@@ -307,6 +309,8 @@
+ #include "build/build_config.h"
++#include "cc/paint/paint_flags.h"
+ #include "chrome/app/chrome_command_ids.h"
+ #include "chrome/browser/actor/ui/actor_overlay_web_view.h"
+ #include "chrome/browser/app_mode/app_mode_utils.h"
+@@ -99,6 +102,8 @@
+ #include "chrome/browser/ui/fullscreen/browser_window_fullscreen_controller.h"
+ #include "chrome/browser/ui/layout_constants.h"
+ #include "chrome/browser/ui/navigator/browser_navigator.h"
++#include "chrome/browser/ui/omnibox/omnibox_controller.h"
++#include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
+ #include "chrome/browser/ui/omnibox/omnibox_next_features.h"
+ #include "chrome/browser/ui/omnibox/omnibox_popup_view.h"
+ #include "chrome/browser/ui/omnibox/omnibox_view.h"
+@@ -307,6 +312,8 @@
  #include "ui/accessibility/platform/ax_mode_observer.h"
  #include "ui/accessibility/platform/ax_platform.h"
  #include "ui/base/accelerators/accelerator.h"
@@ -26,7 +35,26 @@ diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/v
  #include "ui/base/dragdrop/os_exchange_data.h"
  #include "ui/base/hit_test.h"
  #include "ui/base/l10n/l10n_util.h"
-@@ -339,12 +343,16 @@
+@@ -326,13 +333,18 @@
+ #include "ui/content_accelerators/accelerator_util.h"
+ #include "ui/display/screen.h"
+ #include "ui/events/event_utils.h"
++#include "ui/events/keycodes/keyboard_codes.h"
+ #include "ui/gfx/animation/animation_runner.h"
++#include "ui/gfx/animation/linear_animation.h"
++#include "ui/gfx/animation/tween.h"
+ #include "ui/gfx/canvas.h"
+ #include "ui/gfx/color_utils.h"
++#include "ui/gfx/geometry/cubic_bezier.h"
+ #include "ui/gfx/geometry/outsets.h"
+ #include "ui/gfx/geometry/point.h"
+ #include "ui/gfx/geometry/rect.h"
+ #include "ui/gfx/geometry/rect_conversions.h"
++#include "ui/gfx/geometry/rect_f.h"
+ #include "ui/gfx/geometry/size.h"
+ #include "ui/gfx/scoped_canvas.h"
+ #include "ui/gfx/scrollbar_size.h"
+@@ -340,12 +352,16 @@
  #include "ui/views/accessibility/view_accessibility_utils.h"
  #include "ui/views/animation/compositor_animation_runner.h"
  #include "ui/views/background.h"
@@ -43,7 +71,16 @@ diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/v
  #include "ui/views/layout/fill_layout.h"
  #include "ui/views/view.h"
  #include "ui/views/view_class_properties.h"
-@@ -411,6 +419,11 @@ using content::WebContents;
+@@ -357,6 +373,8 @@
+ #include "ui/views/widget/widget.h"
+ #include "ui/views/window/dialog_delegate.h"
+ #include "ui/views/window/hit_test_utils.h"
++#include "third_party/skia/include/core/SkPath.h"
++#include "third_party/skia/include/core/SkPathBuilder.h"
+ 
+ #if BUILDFLAG(IS_CHROMEOS)
+ #include "ash/constants/ash_switches.h"
+@@ -412,8 +430,362 @@ using content::WebContents;
  using input::NativeWebKeyboardEvent;
  using web_modal::WebContentsModalDialogHost;
  
@@ -54,68 +91,450 @@ diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/v
 +
  namespace {
  
++constexpr int kEmberSidebarTopInset = 34;
++constexpr int kEmberSidebarHorizontalInset = 9;
++constexpr int kEmberSidebarBottomInset = 8;
++constexpr int kEmberSidebarRowSpacing = 10;
++constexpr int kEmberSidebarAddressHeight = 33;
++constexpr float kEmberSidebarAddressRadius = 7.0f;
++constexpr int kEmberSidebarAddressRestingFillAlpha = 0x13;
++constexpr int kEmberSidebarAddressRestingBorderAlpha = 0x06;
++constexpr int kEmberSidebarAddressHoverFillAlpha = 0x21;
++constexpr int kEmberSidebarAddressFocusFillAlpha = 0x2E;
++constexpr int kEmberSidebarAddressFocusBorderAlpha = 0x0E;
++constexpr int kEmberSidebarCopyWidth = 26;
++constexpr int kEmberSidebarCopyGlyphWidth = 12;
++constexpr int kEmberSidebarCopyGlyphHeight = 7;
++constexpr int kEmberSidebarCopyHoverFillAlpha = 0x16;
++constexpr float kEmberSidebarCopyPressedScale = 0.9f;
++constexpr float kEmberSidebarCopyHoverGlyphScale = 1.13f;
++constexpr float kEmberSidebarCopyPressedGlyphScale = 0.84f;
++constexpr int kEmberSidebarCopyRestingGlyphAlpha = 0xEB;
++constexpr int kEmberSidebarCopyToastWidth = 108;
++constexpr int kEmberSidebarCopyToastHeight = 30;
++constexpr base::TimeDelta kEmberSidebarTransitionDuration =
++    base::Milliseconds(130);
++
++std::u16string FormatEmberSidebarUrl(const GURL& url) {
++  std::string display_url = url.spec();
++  size_t scheme_length = 0;
++  if (base::StartsWith(display_url, "http://",
++                       base::CompareCase::INSENSITIVE_ASCII)) {
++    scheme_length = 7;
++  } else if (base::StartsWith(display_url, "https://",
++                              base::CompareCase::INSENSITIVE_ASCII)) {
++    scheme_length = 8;
++  }
++  if (scheme_length > 0) {
++    display_url.erase(0, scheme_length);
++    if (base::StartsWith(display_url, "www.",
++                         base::CompareCase::INSENSITIVE_ASCII)) {
++      display_url.erase(0, 4);
++    }
++  }
++  return base::UTF8ToUTF16(display_url);
++}
++
++class EmberSidebarAddressRow : public views::View,
++                               public gfx::AnimationDelegate {
++ public:
++  EmberSidebarAddressRow()
++      : transition_(kEmberSidebarTransitionDuration,
++                    gfx::LinearAnimation::kDefaultFrameRate,
++                    this) {
++    SetNotifyEnterExitOnChild(true);
++  }
++
++  EmberSidebarAddressRow(const EmberSidebarAddressRow&) = delete;
++  EmberSidebarAddressRow& operator=(const EmberSidebarAddressRow&) = delete;
++  ~EmberSidebarAddressRow() override = default;
++
++  void SetAddressFocused(bool focused) {
++    if (focused_ == focused) {
++      return;
++    }
++    focused_ = focused;
++    StartVisualTransition();
++  }
++
++ protected:
++  void OnMouseEntered(const ui::MouseEvent& event) override {
++    views::View::OnMouseEntered(event);
++    hovered_ = true;
++    StartVisualTransition();
++  }
++
++  void OnMouseExited(const ui::MouseEvent& event) override {
++    views::View::OnMouseExited(event);
++    hovered_ = false;
++    StartVisualTransition();
++  }
++
++  void OnPaintBackground(gfx::Canvas* canvas) override {
++    cc::PaintFlags flags;
++    flags.setAntiAlias(true);
++    flags.setStyle(cc::PaintFlags::kFill_Style);
++    flags.setColor(SkColorSetARGB(current_fill_alpha_, 0xFF, 0xFF, 0xFF));
++    canvas->DrawRoundRect(gfx::RectF(GetLocalBounds()),
++                          kEmberSidebarAddressRadius, flags);
++
++    gfx::RectF border_bounds(GetLocalBounds());
++    border_bounds.Inset(0.5f);
++    flags.setStyle(cc::PaintFlags::kStroke_Style);
++    flags.setStrokeWidth(1.0f);
++    flags.setColor(
++        SkColorSetARGB(current_border_alpha_, 0xFF, 0xFF, 0xFF));
++    canvas->DrawRoundRect(border_bounds,
++                          kEmberSidebarAddressRadius - 0.5f, flags);
++  }
++
++  void AnimationProgressed(const gfx::Animation* animation) override {
++    if (animation == &transition_) {
++      ApplyTransition(animation->GetCurrentValue());
++    }
++  }
++
++  void AnimationEnded(const gfx::Animation* animation) override {
++    if (animation == &transition_) {
++      ApplyTransition(1.0);
++    }
++  }
++
++ private:
++  int TargetFillAlpha() const {
++    if (focused_) {
++      return kEmberSidebarAddressFocusFillAlpha;
++    }
++    return hovered_ ? kEmberSidebarAddressHoverFillAlpha
++                    : kEmberSidebarAddressRestingFillAlpha;
++  }
++
++  int TargetBorderAlpha() const {
++    return focused_ ? kEmberSidebarAddressFocusBorderAlpha
++                    : kEmberSidebarAddressRestingBorderAlpha;
++  }
++
++  void StartVisualTransition() {
++    transition_.Stop();
++    start_fill_alpha_ = current_fill_alpha_;
++    start_border_alpha_ = current_border_alpha_;
++    target_fill_alpha_ = TargetFillAlpha();
++    target_border_alpha_ = TargetBorderAlpha();
++    if (start_fill_alpha_ == target_fill_alpha_ &&
++        start_border_alpha_ == target_border_alpha_) {
++      return;
++    }
++    if (gfx::Animation::PrefersReducedMotion()) {
++      ApplyTransition(1.0);
++      return;
++    }
++    transition_.Start();
++  }
++
++  void ApplyTransition(double value) {
++    static const auto ease = gfx::CubicBezier(0.25, 0.1, 0.25, 1.0);
++    const double eased_value = ease.Solve(value);
++    current_fill_alpha_ = gfx::Tween::IntValueBetween(
++        eased_value, start_fill_alpha_, target_fill_alpha_);
++    current_border_alpha_ = gfx::Tween::IntValueBetween(
++        eased_value, start_border_alpha_, target_border_alpha_);
++    SchedulePaint();
++  }
++
++  bool hovered_ = false;
++  bool focused_ = false;
++  int current_fill_alpha_ = kEmberSidebarAddressRestingFillAlpha;
++  int current_border_alpha_ = kEmberSidebarAddressRestingBorderAlpha;
++  int start_fill_alpha_ = current_fill_alpha_;
++  int start_border_alpha_ = current_border_alpha_;
++  int target_fill_alpha_ = current_fill_alpha_;
++  int target_border_alpha_ = current_border_alpha_;
++  gfx::LinearAnimation transition_;
++};
++
++class EmberSidebarAddressTextfield : public views::Textfield {
++ public:
++  EmberSidebarAddressTextfield(
++      base::RepeatingClosure focus_callback,
++      base::RepeatingClosure blur_callback,
++      base::RepeatingCallback<void(std::u16string)> submit_callback,
++      base::RepeatingClosure cancel_callback)
++      : focus_callback_(std::move(focus_callback)),
++        blur_callback_(std::move(blur_callback)),
++        submit_callback_(std::move(submit_callback)),
++        cancel_callback_(std::move(cancel_callback)) {}
++
++  EmberSidebarAddressTextfield(const EmberSidebarAddressTextfield&) = delete;
++  EmberSidebarAddressTextfield& operator=(
++      const EmberSidebarAddressTextfield&) = delete;
++  ~EmberSidebarAddressTextfield() override = default;
++
++ protected:
++  void OnFocus() override {
++    views::Textfield::OnFocus();
++    focus_callback_.Run();
++  }
++
++  void OnBlur() override {
++    views::Textfield::OnBlur();
++    blur_callback_.Run();
++  }
++
++  bool PreHandleKeyPressed(const ui::KeyEvent& event) override {
++    if (event.key_code() == ui::VKEY_RETURN) {
++      submit_callback_.Run(std::u16string(GetText()));
++      return true;
++    }
++    if (event.key_code() == ui::VKEY_ESCAPE) {
++      cancel_callback_.Run();
++      return true;
++    }
++    return views::Textfield::PreHandleKeyPressed(event);
++  }
++
++ private:
++  base::RepeatingClosure focus_callback_;
++  base::RepeatingClosure blur_callback_;
++  base::RepeatingCallback<void(std::u16string)> submit_callback_;
++  base::RepeatingClosure cancel_callback_;
++};
++
++class EmberSidebarCopyButton : public views::LabelButton {
++ public:
++  explicit EmberSidebarCopyButton(views::Button::PressedCallback callback)
++      : views::LabelButton(std::move(callback), std::u16string()),
++        transition_(kEmberSidebarTransitionDuration,
++                    gfx::LinearAnimation::kDefaultFrameRate,
++                    this) {}
++
++  EmberSidebarCopyButton(const EmberSidebarCopyButton&) = delete;
++  EmberSidebarCopyButton& operator=(const EmberSidebarCopyButton&) = delete;
++  ~EmberSidebarCopyButton() override = default;
++
++ protected:
++  void StateChanged(ButtonState old_state) override {
++    views::LabelButton::StateChanged(old_state);
++    StartVisualTransition();
++  }
++
++  void PaintButtonContents(gfx::Canvas* canvas) override {
++    const float button_width = width() * current_button_scale_;
++    const float button_height = height() * current_button_scale_;
++    const gfx::RectF button_bounds(
++        (width() - button_width) / 2.0f,
++        (height() - button_height) / 2.0f,
++        button_width, button_height);
++
++    cc::PaintFlags flags;
++    flags.setAntiAlias(true);
++    flags.setStyle(cc::PaintFlags::kFill_Style);
++    flags.setColor(SkColorSetARGB(current_fill_alpha_, 0xFF, 0xFF, 0xFF));
++    canvas->DrawRoundRect(button_bounds,
++                          6.0f * current_button_scale_, flags);
++
++    const float glyph_scale =
++        current_button_scale_ * current_glyph_scale_;
++    const float glyph_width = kEmberSidebarCopyGlyphWidth * glyph_scale;
++    const float glyph_height = kEmberSidebarCopyGlyphHeight * glyph_scale;
++    const float x = (width() - glyph_width) / 2.0f;
++    const float y = (height() - glyph_height) / 2.0f;
++    const float scale_x = glyph_width / kEmberSidebarCopyGlyphWidth;
++    const float scale_y = glyph_height / kEmberSidebarCopyGlyphHeight;
++
++    SkPathBuilder glyph;
++    glyph.moveTo(x + 4.6f * scale_x, y + 1.5f * scale_y);
++    glyph.lineTo(x + 2.4f * scale_x, y + 1.5f * scale_y);
++    glyph.cubicTo(x + 0.9f * scale_x, y + 1.5f * scale_y,
++                  x + 0.4f * scale_x, y + 2.6f * scale_y,
++                  x + 0.4f * scale_x, y + 3.5f * scale_y);
++    glyph.cubicTo(x + 0.4f * scale_x, y + 4.4f * scale_y,
++                  x + 0.9f * scale_x, y + 5.5f * scale_y,
++                  x + 2.4f * scale_x, y + 5.5f * scale_y);
++    glyph.lineTo(x + 4.6f * scale_x, y + 5.5f * scale_y);
++    glyph.moveTo(x + 7.4f * scale_x, y + 5.5f * scale_y);
++    glyph.lineTo(x + 9.6f * scale_x, y + 5.5f * scale_y);
++    glyph.cubicTo(x + 11.1f * scale_x, y + 5.5f * scale_y,
++                  x + 11.6f * scale_x, y + 4.4f * scale_y,
++                  x + 11.6f * scale_x, y + 3.5f * scale_y);
++    glyph.cubicTo(x + 11.6f * scale_x, y + 2.6f * scale_y,
++                  x + 11.1f * scale_x, y + 1.5f * scale_y,
++                  x + 9.6f * scale_x, y + 1.5f * scale_y);
++    glyph.lineTo(x + 7.4f * scale_x, y + 1.5f * scale_y);
++    glyph.moveTo(x + 4.3f * scale_x, y + 3.5f * scale_y);
++    glyph.lineTo(x + 7.7f * scale_x, y + 3.5f * scale_y);
++
++    flags.setStyle(cc::PaintFlags::kStroke_Style);
++    flags.setStrokeWidth(1.15f * glyph_scale);
++    flags.setStrokeCap(cc::PaintFlags::kRound_Cap);
++    flags.setColor(
++        SkColorSetARGB(current_glyph_alpha_, 0xFF, 0xFF, 0xFF));
++    canvas->DrawPath(glyph.detach(), flags);
++  }
++
++  void AnimationProgressed(const gfx::Animation* animation) override {
++    if (animation != &transition_) {
++      views::LabelButton::AnimationProgressed(animation);
++      return;
++    }
++    ApplyTransition(animation->GetCurrentValue());
++  }
++
++  void AnimationEnded(const gfx::Animation* animation) override {
++    if (animation == &transition_) {
++      ApplyTransition(1.0);
++    }
++  }
++
++ private:
++  void StartVisualTransition() {
++    transition_.Stop();
++    start_fill_alpha_ = current_fill_alpha_;
++    start_button_scale_ = current_button_scale_;
++    start_glyph_scale_ = current_glyph_scale_;
++    start_glyph_alpha_ = current_glyph_alpha_;
++    const bool hovered =
++        GetState() == STATE_HOVERED || GetState() == STATE_PRESSED;
++    target_fill_alpha_ = hovered ? kEmberSidebarCopyHoverFillAlpha : 0;
++    target_button_scale_ =
++        GetState() == STATE_PRESSED ? kEmberSidebarCopyPressedScale : 1.0f;
++    target_glyph_scale_ =
++        GetState() == STATE_PRESSED
++            ? kEmberSidebarCopyPressedGlyphScale
++            : (hovered ? kEmberSidebarCopyHoverGlyphScale : 1.0f);
++    target_glyph_alpha_ =
++        hovered ? 0xFF : kEmberSidebarCopyRestingGlyphAlpha;
++    if (gfx::Animation::PrefersReducedMotion()) {
++      ApplyTransition(1.0);
++      return;
++    }
++    transition_.Start();
++  }
++
++  void ApplyTransition(double value) {
++    static const auto ease = gfx::CubicBezier(0.2, 0.8, 0.2, 1.0);
++    const double eased_value = ease.Solve(value);
++    current_fill_alpha_ = gfx::Tween::IntValueBetween(
++        eased_value, start_fill_alpha_, target_fill_alpha_);
++    current_button_scale_ = gfx::Tween::FloatValueBetween(
++        eased_value, start_button_scale_, target_button_scale_);
++    current_glyph_scale_ = gfx::Tween::FloatValueBetween(
++        eased_value, start_glyph_scale_, target_glyph_scale_);
++    current_glyph_alpha_ = gfx::Tween::IntValueBetween(
++        eased_value, start_glyph_alpha_, target_glyph_alpha_);
++    SchedulePaint();
++  }
++
++  int current_fill_alpha_ = 0;
++  float current_button_scale_ = 1.0f;
++  float current_glyph_scale_ = 1.0f;
++  int current_glyph_alpha_ = kEmberSidebarCopyRestingGlyphAlpha;
++  int start_fill_alpha_ = current_fill_alpha_;
++  float start_button_scale_ = current_button_scale_;
++  float start_glyph_scale_ = current_glyph_scale_;
++  int start_glyph_alpha_ = current_glyph_alpha_;
++  int target_fill_alpha_ = current_fill_alpha_;
++  float target_button_scale_ = current_button_scale_;
++  float target_glyph_scale_ = current_glyph_scale_;
++  int target_glyph_alpha_ = current_glyph_alpha_;
++  gfx::LinearAnimation transition_;
++};
++
++
  // The visible height of the shadow above the tabs. Clicks in this area are
-@@ -921,5 +934,48 @@ BrowserView::BrowserView(Browser* browser)
+ // treated as clicks to the frame, rather than clicks to the tab.
+ const int kTabShadowSize = 2;
+@@ -924,6 +1296,71 @@ BrowserView::BrowserView(Browser* browser)
+     ember_sidebar_->SetProperty(
          views::kElementIdentifierKey,
          BrowserViewLayoutViews::kEmberSidebarElementId);
 +
 +    ember_sidebar_->SetLayoutManager(std::make_unique<views::BoxLayout>(
-+        views::BoxLayout::Orientation::kVertical, gfx::Insets(8), 8));
-+    auto* address_row =
-+        ember_sidebar_->AddChildView(std::make_unique<views::View>());
-+    address_row->SetPreferredSize(gfx::Size(0, 36));
-+    address_row->SetBackground(views::CreateRoundedRectBackground(
-+        SkColorSetARGB(0x30, 0xFF, 0xFF, 0xFF), 9));
++        views::BoxLayout::Orientation::kVertical,
++        gfx::Insets::TLBR(kEmberSidebarTopInset,
++                          kEmberSidebarHorizontalInset,
++                          kEmberSidebarBottomInset,
++                          kEmberSidebarHorizontalInset),
++        kEmberSidebarRowSpacing));
++    std::unique_ptr<views::View> address_row =
++        std::make_unique<EmberSidebarAddressRow>();
++    ember_sidebar_address_row_ = address_row.get();
++    ember_sidebar_->AddChildView(std::move(address_row));
++    ember_sidebar_address_row_->SetPreferredSize(
++        gfx::Size(0, kEmberSidebarAddressHeight));
 +    auto* address_layout =
-+        address_row->SetLayoutManager(std::make_unique<views::BoxLayout>(
-+            views::BoxLayout::Orientation::kHorizontal,
-+            gfx::Insets::TLBR(0, 10, 0, 4), 4));
++        ember_sidebar_address_row_->SetLayoutManager(
++            std::make_unique<views::BoxLayout>(
++                views::BoxLayout::Orientation::kHorizontal,
++                gfx::Insets::TLBR(0, 9, 0, 0), 0));
 +    address_layout->set_cross_axis_alignment(
-+        views::BoxLayout::CrossAxisAlignment::kCenter);
++        views::BoxLayout::CrossAxisAlignment::kStretch);
 +
-+    ember_sidebar_address_ =
-+        address_row->AddChildView(std::make_unique<views::Label>());
++    std::unique_ptr<views::Textfield> address =
++        std::make_unique<EmberSidebarAddressTextfield>(
++            base::BindRepeating(
++                &BrowserView::OnEmberSidebarAddressFocused,
++                weak_ptr_factory_.GetWeakPtr()),
++            base::BindRepeating(
++                &BrowserView::OnEmberSidebarAddressBlurred,
++                weak_ptr_factory_.GetWeakPtr()),
++            base::BindRepeating(
++                &BrowserView::SubmitEmberSidebarAddress,
++                weak_ptr_factory_.GetWeakPtr()),
++            base::BindRepeating(
++                &BrowserView::CancelEmberSidebarAddressEdit,
++                weak_ptr_factory_.GetWeakPtr()));
++    ember_sidebar_address_ = address.get();
++    ember_sidebar_address_row_->AddChildView(std::move(address));
 +    ember_sidebar_address_->SetProperty(
 +        views::kElementIdentifierKey, kEmberSidebarAddressElementId);
 +    ember_sidebar_address_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-+    ember_sidebar_address_->SetElideBehavior(gfx::ELIDE_MIDDLE);
-+    ember_sidebar_address_->SetEnabledColor(
-+        SkColorSetARGB(0xE6, 0xFF, 0xFF, 0xFF));
++    ember_sidebar_address_->SetBackgroundEnabled(false);
++    ember_sidebar_address_->SetBorder(nullptr);
++    ember_sidebar_address_->SetColor(
++        SkColorSetARGB(0xD1, 0xFF, 0xFF, 0xFF));
++    ember_sidebar_address_->SetFontList(
++        gfx::FontList("Segoe UI, 12px"));
++    ember_sidebar_address_->SetAccessibleName(u"Address");
 +    address_layout->SetFlexForView(ember_sidebar_address_, 1);
 +
-+    ember_sidebar_copy_link_ =
-+        address_row->AddChildView(std::make_unique<views::LabelButton>(
++    std::unique_ptr<views::LabelButton> copy_link =
++        std::make_unique<EmberSidebarCopyButton>(
 +            base::BindRepeating(&BrowserView::CopyEmberSidebarLink,
-+                                weak_ptr_factory_.GetWeakPtr()),
-+            u"Copy"));
++                                weak_ptr_factory_.GetWeakPtr()));
++    ember_sidebar_copy_link_ = copy_link.get();
++    ember_sidebar_address_row_->AddChildView(std::move(copy_link));
 +    ember_sidebar_copy_link_->SetProperty(
 +        views::kElementIdentifierKey, kEmberSidebarCopyLinkElementId);
-+    ember_sidebar_copy_link_->SetEnabledTextColors(
-+        SkColorSetRGB(0xFF, 0xC9, 0x3C));
-+    ember_sidebar_copy_link_->SetBorder(
-+        views::CreateEmptyBorder(gfx::Insets::VH(5, 7)));
-+    ember_sidebar_copy_link_->SetBackground(
-+        views::CreateRoundedRectBackground(
-+            SkColorSetARGB(0x22, 0xFF, 0xC9, 0x3C), 7));
++    ember_sidebar_copy_link_->SetPreferredSize(
++        gfx::Size(kEmberSidebarCopyWidth, kEmberSidebarAddressHeight));
 +    ember_sidebar_copy_link_->SetFocusBehavior(
 +        views::View::FocusBehavior::ALWAYS);
-+    ember_sidebar_copy_link_->SetTooltipText(u"Copy link");
++    ember_sidebar_copy_link_->SetAccessibleName(u"Copy current link");
++    ember_sidebar_copy_link_->SetTooltipText(u"Copy current link");
 +    UpdateEmberSidebar();
    }
  
    top_container_ = AddChildView(std::make_unique<TopContainerView>(this));
-@@ -1139,7 +1195,10 @@ BrowserView::~BrowserView() {
-   // before `RemoveAllChildViews()` is called to avoid dangling.
+@@ -1133,6 +1570,8 @@ BrowserView::~BrowserView() {
+   // Stop the animation timer explicitly here to avoid running it in a nested
+   // message loop, which may run by Browser destructor.
+   loading_animation_timer_.Stop();
++  ember_sidebar_copy_feedback_timer_.Stop();
++  ember_sidebar_copy_toast_.reset();
+ 
+   // Reset autofill bubble handler to make sure it does not out-live toolbar,
+   // since it is responsible for showing autofill related bubbles from toolbar's
+@@ -1144,6 +1583,9 @@ BrowserView::~BrowserView() {
    browser_widget_ = nullptr;
    main_background_region_ = nullptr;
-+  ember_sidebar_copy_feedback_timer_.Stop();
    ember_sidebar_ = nullptr;
++  ember_sidebar_address_row_ = nullptr;
 +  ember_sidebar_address_ = nullptr;
 +  ember_sidebar_copy_link_ = nullptr;
    top_container_ = nullptr;
    web_app_frame_toolbar_ = nullptr;
    web_app_window_title_ = nullptr;
-@@ -1938,6 +1997,7 @@ void BrowserView::OnActiveTabChanged(content::WebContents* old_contents,
+@@ -1952,6 +2394,7 @@ void BrowserView::OnActiveTabChanged(content::WebContents* old_contents,
    }
  
    WebContentsObserver::Observe(new_contents);
@@ -123,7 +542,7 @@ diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/v
  
    // If |contents_container_| already has the correct WebContents, we can save
    // some work.  This also prevents extra events from being reported by the
-@@ -2331,6 +2391,7 @@ void BrowserView::UpdateToolbar(content::WebContents* contents) {
+@@ -2345,6 +2788,7 @@ void BrowserView::UpdateToolbar(content::WebContents* contents) {
    if (toolbar_) {
      toolbar_->Update(contents);
    }
@@ -131,7 +550,7 @@ diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/v
    for (ContentsContainerView* contents_container :
         multi_contents_view_->contents_container_views()) {
      contents_container->mini_toolbar()->UpdateContents();
-@@ -2887,12 +2948,57 @@ void BrowserView::DidFinishNavigation(
+@@ -2901,12 +3345,170 @@ void BrowserView::DidFinishNavigation(
      return;
    }
  
@@ -150,14 +569,76 @@ diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/v
 +
 +  content::WebContents* contents = GetActiveWebContents();
 +  const GURL url = contents ? contents->GetVisibleURL() : GURL();
-+  const std::u16string display_url =
-+      url.is_empty() ? l10n_util::GetStringUTF16(IDS_NEW_TAB)
-+                     : url_formatter::FormatUrl(url);
-+  ember_sidebar_address_->SetText(display_url);
-+  ember_sidebar_address_->SetTooltipText(display_url);
++  if (!ember_sidebar_editing_) {
++    const std::u16string display_url =
++        url.is_empty() ? l10n_util::GetStringUTF16(IDS_NEW_TAB)
++                       : FormatEmberSidebarUrl(url);
++    ember_sidebar_address_->SetText(display_url);
++    ember_sidebar_address_->SetTooltipText(
++        url.is_empty() ? display_url : base::UTF8ToUTF16(url.spec()));
++  }
 +  ember_sidebar_copy_link_->SetEnabled(url.is_valid() && !url.is_empty());
 +  ember_sidebar_copy_feedback_timer_.Stop();
 +  ResetEmberSidebarCopyFeedback();
++}
++
++void BrowserView::OnEmberSidebarAddressFocused() {
++  if (!ember_sidebar_address_ || !ember_sidebar_address_row_) {
++    return;
++  }
++
++  ember_sidebar_editing_ = true;
++  static_cast<EmberSidebarAddressRow*>(ember_sidebar_address_row_.get())
++      ->SetAddressFocused(true);
++  content::WebContents* contents = GetActiveWebContents();
++  const GURL url = contents ? contents->GetVisibleURL() : GURL();
++  ember_sidebar_address_->SetText(
++      url.is_empty() ? l10n_util::GetStringUTF16(IDS_NEW_TAB)
++                     : base::UTF8ToUTF16(url.spec()));
++  ember_sidebar_address_->SelectAll(false);
++}
++
++void BrowserView::OnEmberSidebarAddressBlurred() {
++  ember_sidebar_editing_ = false;
++  if (ember_sidebar_address_row_) {
++    static_cast<EmberSidebarAddressRow*>(ember_sidebar_address_row_.get())
++        ->SetAddressFocused(false);
++  }
++  UpdateEmberSidebar();
++}
++
++void BrowserView::SubmitEmberSidebarAddress(std::u16string text) {
++  LocationBar* location_bar = GetLocationBar();
++  if (!location_bar || text.empty()) {
++    return;
++  }
++  OmniboxView* omnibox_view = location_bar->GetOmniboxView();
++  OmniboxController* omnibox_controller =
++      location_bar->GetOmniboxController();
++  if (!omnibox_view || !omnibox_controller) {
++    return;
++  }
++  omnibox_view->SetUserText(text, false);
++  omnibox_controller->edit_model()->OpenCurrentSelection(
++      base::TimeTicks(), WindowOpenDisposition::CURRENT_TAB,
++      /*via_keyboard=*/true);
++  if (views::FocusManager* focus_manager = GetFocusManager()) {
++    focus_manager->ClearFocus();
++  }
++}
++
++void BrowserView::CancelEmberSidebarAddressEdit() {
++  if (!ember_sidebar_address_) {
++    return;
++  }
++  content::WebContents* contents = GetActiveWebContents();
++  const GURL url = contents ? contents->GetVisibleURL() : GURL();
++  ember_sidebar_address_->SetText(
++      url.is_empty() ? l10n_util::GetStringUTF16(IDS_NEW_TAB)
++                     : base::UTF8ToUTF16(url.spec()));
++  if (views::FocusManager* focus_manager = GetFocusManager()) {
++    focus_manager->ClearFocus();
++  }
 +}
 +
 +void BrowserView::CopyEmberSidebarLink() {
@@ -169,39 +650,93 @@ diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/v
 +
 +  ui::ScopedClipboardWriter(ui::ClipboardBuffer::kCopyPaste)
 +      .WriteText(base::UTF8ToUTF16(url.spec()));
-+  ember_sidebar_copy_link_->SetText(u"Copied");
-+  ember_sidebar_copy_link_->SetTooltipText(u"Link copied");
-+  ember_sidebar_copy_link_->GetViewAccessibility().AnnounceText(u"Link copied");
++  ShowEmberSidebarCopyToast();
++  ember_sidebar_copy_link_->GetViewAccessibility().AnnounceText(u"Copied");
 +  ember_sidebar_copy_feedback_timer_.Start(
 +      FROM_HERE, base::Milliseconds(1200),
 +      base::BindOnce(&BrowserView::ResetEmberSidebarCopyFeedback,
 +                     weak_ptr_factory_.GetWeakPtr()));
 +}
 +
-+void BrowserView::ResetEmberSidebarCopyFeedback() {
-+  if (!ember_sidebar_copy_link_) {
++void BrowserView::ShowEmberSidebarCopyToast() {
++  if (!GetWidget() || !ember_sidebar_ || !ember_sidebar_address_row_) {
 +    return;
 +  }
-+  ember_sidebar_copy_link_->SetText(u"Copy");
-+  ember_sidebar_copy_link_->SetTooltipText(u"Copy link");
++
++  ember_sidebar_copy_toast_.reset();
++  gfx::Rect address_bounds = ember_sidebar_address_row_->GetBoundsInScreen();
++  const gfx::Rect sidebar_bounds = ember_sidebar_->GetBoundsInScreen();
++  views::Widget::InitParams params(
++      views::Widget::InitParams::CLIENT_OWNS_WIDGET,
++      views::Widget::InitParams::TYPE_POPUP);
++  params.name = "EmberSidebarCopyToast";
++  params.parent = GetWidget()->GetNativeView();
++  params.opacity = views::Widget::InitParams::WindowOpacity::kTranslucent;
++  params.shadow_type = views::Widget::InitParams::ShadowType::kNone;
++  params.activatable = views::Widget::InitParams::Activatable::kNo;
++  params.bounds = gfx::Rect(
++      sidebar_bounds.right() + 8, address_bounds.y() + 1,
++      kEmberSidebarCopyToastWidth, kEmberSidebarCopyToastHeight);
++
++  auto toast = std::make_unique<views::Widget>();
++  toast->Init(std::move(params));
++  auto toast_contents = std::make_unique<views::View>();
++  toast_contents->SetPreferredSize(
++      gfx::Size(kEmberSidebarCopyToastWidth, kEmberSidebarCopyToastHeight));
++  toast_contents->SetBackground(views::CreateRoundedRectBackground(
++      SkColorSetARGB(0xFA, 0x0A, 0x2B, 0x1F), 15));
++  toast_contents->SetBorder(views::CreateRoundedRectBorder(
++      1, 15, SkColorSetARGB(0x7A, 0x5C, 0xF2, 0xA1)));
++  auto* toast_layout =
++      toast_contents->SetLayoutManager(std::make_unique<views::BoxLayout>(
++          views::BoxLayout::Orientation::kHorizontal,
++          gfx::Insets::VH(0, 10), 6));
++  toast_layout->set_cross_axis_alignment(
++      views::BoxLayout::CrossAxisAlignment::kCenter);
++
++  auto* mark =
++      toast_contents->AddChildView(std::make_unique<views::Label>(u"\u2713"));
++  mark->SetPreferredSize(gfx::Size(14, 14));
++  mark->SetHorizontalAlignment(gfx::ALIGN_CENTER);
++  mark->SetEnabledColor(SkColorSetRGB(0x9D, 0xFF, 0xC5));
++  mark->SetFontList(gfx::FontList("Segoe UI, Bold 10px"));
++  mark->SetBorder(views::CreateRoundedRectBorder(
++      1, 7, SkColorSetARGB(0x94, 0x83, 0xFF, 0xBE)));
++
++  auto* label = toast_contents->AddChildView(
++      std::make_unique<views::Label>(u"Link copied"));
++  label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++  label->SetEnabledColor(SkColorSetRGB(0xEC, 0xFF, 0xF4));
++  label->SetFontList(gfx::FontList("Segoe UI, Semi-Bold 11px"));
++
++  toast->SetContentsView(std::move(toast_contents));
++  toast->ShowInactive();
++  ember_sidebar_copy_toast_ = std::move(toast);
++}
++
++void BrowserView::ResetEmberSidebarCopyFeedback() {
++  ember_sidebar_copy_toast_.reset();
 +}
 +
  void BrowserView::TouchModeChanged() {
  #if BUILDFLAG(IS_CHROMEOS)
    if (ui::TouchUiController::Get()->touch_ui()) {
 diff --git a/chrome/browser/ui/views/frame/browser_view.h b/chrome/browser/ui/views/frame/browser_view.h
+index 7f36278..e6b280e 100644
 --- a/chrome/browser/ui/views/frame/browser_view.h
 +++ b/chrome/browser/ui/views/frame/browser_view.h
-@@ -116,6 +116,8 @@ enum class Channel;
+@@ -116,7 +116,10 @@ enum class Channel;
  }
  
  namespace views {
-+class Label;
 +class LabelButton;
++class Textfield;
  class WebView;
++class Widget;
  }  // namespace views
  
-@@ -151,6 +153,9 @@ class BrowserView : public BrowserWindow,
+ namespace webapps {
+@@ -151,6 +154,9 @@ class BrowserView : public BrowserWindow,
    // locate this object using just the handle.
    static constexpr char kBrowserViewKey[] = "__BROWSER_VIEW__";
  
@@ -211,23 +746,31 @@ diff --git a/chrome/browser/ui/views/frame/browser_view.h b/chrome/browser/ui/vi
    explicit BrowserView(Browser* browser);
    BrowserView(const BrowserView&) = delete;
    BrowserView& operator=(const BrowserView&) = delete;
-@@ -879,6 +884,10 @@ class BrowserView : public BrowserWindow,
+@@ -879,6 +885,15 @@ class BrowserView : public BrowserWindow,
    // Shared implementation by cut, copy and paste.
    void CutCopyPaste(int command_id);
  
 +  void UpdateEmberSidebar();
++  void OnEmberSidebarAddressFocused();
++  void OnEmberSidebarAddressBlurred();
++  void SubmitEmberSidebarAddress(std::u16string text);
++  void CancelEmberSidebarAddressEdit();
 +  void CopyEmberSidebarLink();
++  void ShowEmberSidebarCopyToast();
 +  void ResetEmberSidebarCopyFeedback();
 +
    // If the browser is in immersive full screen mode, it will reveal the
    // top container for a short duration. The top container will have the toolbar
    // and possibly the tab strip (only in horizontal mode). This is useful for
-@@ -1136,6 +1145,9 @@ class BrowserView : public BrowserWindow,
+@@ -1136,6 +1151,12 @@ class BrowserView : public BrowserWindow,
  
    // The persistent Ember shell rail shown by normal browser windows.
    raw_ptr<views::View> ember_sidebar_ = nullptr;
-+  raw_ptr<views::Label> ember_sidebar_address_ = nullptr;
++  raw_ptr<views::View> ember_sidebar_address_row_ = nullptr;
++  raw_ptr<views::Textfield> ember_sidebar_address_ = nullptr;
 +  raw_ptr<views::LabelButton> ember_sidebar_copy_link_ = nullptr;
++  bool ember_sidebar_editing_ = false;
++  std::unique_ptr<views::Widget> ember_sidebar_copy_toast_;
 +  base::OneShotTimer ember_sidebar_copy_feedback_timer_;
  
    // The view that contains the primary UI (Toolbar, BookmarksBar, InfoBar,

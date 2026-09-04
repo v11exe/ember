@@ -475,6 +475,21 @@ Git is the history archive.
 
 Newest first. One entry per active/recent unit of work.
 
+### 2026-09-04 — Codex — Native sidebar address and Copy parity
+- **Status / Branch:** completed and synchronized · `chromium-port`
+- **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`,
+  `docs/superpowers/plans/2026-09-03-native-sidebar-address-copy-parity.md`,
+  `test/chromium-port.test.js`, `chromium/patches/ember/0007-*.patch`,
+  `chromium/patches/ember/0008-*.patch`
+- **Summary:** Corrected patch 0007 to the measured 33 px editable address row,
+  literal compact/raw URL behavior, 26 px icon-only Copy control and independent
+  confirmation toast; mechanically regenerated Favorites-only patch 0008 on top.
+  The focused object and full native targets built, packages were refreshed, and
+  a proportionate fresh-profile pass proved focus/blur, exact clipboard/toast,
+  Favorite activation and clean shutdown. The next slice is the measured compact
+  native top chrome; keep validation practical for this friends-only port unless
+  an observed problem warrants a deeper matrix.
+
 ### 2026-09-03 — Codex — Native Favorites final build and runtime proof
 - **Status / Branch:** completed and synchronized · `chromium-port`
 - **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`, `chromium/README.md`,

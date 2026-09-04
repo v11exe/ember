@@ -371,7 +371,7 @@ test('the native shell patch reserves Ember geometry around real Chromium conten
   assert.doesNotMatch(patchText, /^\+.*(?:no-sandbox|disable-site-isolation|TabStripModel)/im);
 });
 
-test('the sidebar feature patch reads the active tab and copies its real URL', () => {
+test('the sidebar feature patch matches the measured address and Copy contract', () => {
   const patchText = fs.readFileSync(
     path.join(port.PATCHES_ROOT, 'ember', '0007-ember-sidebar-address-copy-link.patch'),
     'utf8',
@@ -385,10 +385,37 @@ test('the sidebar feature patch reads the active tab and copies its real URL', (
   ]);
   assert.match(patchText, /GetActiveWebContents\(\)/);
   assert.match(patchText, /GetVisibleURL\(\)/);
-  assert.match(patchText, /url_formatter::FormatUrl\(url\)/);
+  assert.match(patchText, /kEmberSidebarTopInset = 34/);
+  assert.match(patchText, /kEmberSidebarHorizontalInset = 9/);
+  assert.match(patchText, /kEmberSidebarRowSpacing = 10/);
+  assert.match(patchText, /kEmberSidebarAddressHeight = 33/);
+  assert.match(patchText, /kEmberSidebarAddressRadius = 7/);
+  assert.match(patchText, /kEmberSidebarCopyWidth = 26/);
+  assert.match(patchText, /kEmberSidebarCopyGlyphWidth = 12/);
+  assert.match(patchText, /kEmberSidebarCopyGlyphHeight = 7/);
+  assert.match(patchText, /kEmberSidebarAddressRestingFillAlpha = 0x13/);
+  assert.match(patchText, /kEmberSidebarAddressRestingBorderAlpha = 0x06/);
+  assert.match(patchText, /kEmberSidebarAddressHoverFillAlpha = 0x21/);
+  assert.match(patchText, /kEmberSidebarAddressFocusFillAlpha = 0x2E/);
+  assert.match(patchText, /kEmberSidebarAddressFocusBorderAlpha = 0x0E/);
+  assert.match(patchText, /SkColorSetARGB\(0xD1, 0xFF, 0xFF, 0xFF\)/);
+  assert.match(patchText, /FormatEmberSidebarUrl/);
+  assert.match(patchText, /"http:\/\/"/);
+  assert.match(patchText, /"https:\/\/"/);
+  assert.match(patchText, /"www\."/);
+  assert.doesNotMatch(patchText, /url_formatter::FormatUrl\(url\)/);
+  assert.match(patchText, /views::Textfield/);
+  assert.match(patchText, /ember_sidebar_editing_/);
+  assert.match(patchText, /OpenCurrentSelection\([\s\S]{0,160}WindowOpenDisposition::CURRENT_TAB/);
+  assert.match(patchText, /SelectAll\(false\)/);
+  assert.match(patchText, /ui::VKEY_ESCAPE/);
+  assert.match(patchText, /EmberSidebarCopyButton/);
+  assert.match(patchText, /ShowEmberSidebarCopyToast/);
+  assert.match(patchText, /std::unique_ptr<views::Widget> ember_sidebar_copy_toast_/);
   assert.match(patchText, /ui::ScopedClipboardWriter\(ui::ClipboardBuffer::kCopyPaste\)/);
   assert.match(patchText, /CopyEmberSidebarLink/);
-  assert.match(patchText, /SetText\(u"Copy"\)/);
+  assert.doesNotMatch(patchText, /SetText\(u"(?:Copy|Copied)"\)/);
+  assert.doesNotMatch(patchText, /LabelButton>[\s\S]{0,200}u"Copy"/);
   assert.doesNotMatch(patchText, /IDS_COPY/);
   assert.match(patchText, /OnActiveTabChanged[\s\S]*UpdateEmberSidebar\(\)/);
   assert.match(patchText, /DidFinishNavigation[\s\S]*UpdateEmberSidebar\(\)/);
