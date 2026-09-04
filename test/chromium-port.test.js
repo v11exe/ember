@@ -51,6 +51,7 @@ test('the Ember patch series is ordered, local, and complete', () => {
     'ember/0006-ember-native-shell-geometry.patch',
     'ember/0007-ember-sidebar-address-copy-link.patch',
     'ember/0008-ember-sidebar-favorites.patch',
+    'ember/0009-ember-compact-top-chrome.patch',
   ]);
   for (const entry of entries) {
     assert.equal(fs.existsSync(path.join(port.PATCHES_ROOT, ...entry.split('/'))), true);
@@ -501,6 +502,48 @@ test('the native Favorites patch persists shortcuts and reuses real Chromium tab
     patchText,
     /^\+.*(?:no-sandbox|disable-site-isolation|WebContents::Create|ChildProcessSecurityPolicy)/im,
   );
+});
+
+test('the compact top-chrome patch keeps native controls in one measured row', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0009-ember-compact-top-chrome.patch'),
+    'utf8',
+  );
+  const touchedFiles = [...patchText.matchAll(/^diff --git a\/(\S+) b\/\S+$/gm)]
+    .map((match) => match[1]);
+
+  assert.deepEqual(touchedFiles, [
+    'chrome/browser/ui/layout_constants.cc',
+    'chrome/browser/ui/tabs/tab_style.cc',
+    'chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc',
+    'chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc',
+    'chrome/browser/ui/views/tabs/tab_style_views.cc',
+    'chrome/browser/ui/views/toolbar/toolbar_view.cc',
+  ]);
+  assert.match(patchText, /kEmberTopChromeHeight = 32/);
+  assert.match(patchText, /kEmberTopChromeTabStripLeading = 102/);
+  assert.match(patchText, /kEmberTopChromeTrailingActions = 70/);
+  assert.match(patchText, /needs_exclusion = ember_sidebar_visible/);
+  assert.match(patchText, /delegate\(\)\.IsBookmarkBarVisible\(\) && !views\(\)\.ember_sidebar/);
+  assert.match(patchText, /LayoutConstant::kTabHeight:[\s\S]{0,100}\+\s+return 28/);
+  assert.match(patchText, /LayoutConstant::kTabStripHeight:[\s\S]{0,140}\+\s+return 32/);
+  assert.match(patchText, /\+\s+return touch_ui \? 48 : 30;/);
+  assert.match(patchText, /\+\s+return touch_ui \? gfx::Insets::VH\(4, 0\) : gfx::Insets::VH\(1, 5\);/);
+  assert.match(patchText, /\+\s+return GetLayoutConstant\(LayoutConstant::kTabHeight\);/);
+  assert.match(patchText, /\+\s+return is_split \? kEmberTabMinimumWidth : kEmberTabWidth;/);
+  assert.equal((patchText.match(/\+\s+return kEmberTabMinimumWidth;/g) || []).length, 2);
+  assert.equal((patchText.match(/\+\s+return 6;/g) || []).length, 2);
+  assert.match(patchText, /\+\s+return -8;/);
+  assert.match(patchText, /\+\s+return gfx::Insets::VH\(6, 9\);/);
+  assert.match(patchText, /SetCrossAxisAlignment\(views::LayoutAlignment::kCenter\)/);
+  assert.match(patchText, /combo_button_->SetVisible\(false\)/);
+  assert.match(patchText, /return gfx::Size\(96, 0\)/);
+  assert.match(patchText, /preferred_size\.set_height\(kEmberTopChromeHeight\)/);
+  assert.match(patchText, /CustomCornersBackground::FrameTheme\(\)/);
+  assert.match(patchText, /location_bar_view_->layer\(\)->SetOpacity\(0\.0f\)/);
+  assert.match(patchText, /avatar_->SetVisible\(false\)/);
+  assert.match(patchText, /SkColorSetARGB\(0xCC, 0xFF, 0x5B, 0x00\)/);
+  assert.doesNotMatch(patchText, /^\+.*(?:no-sandbox|disable-site-isolation|WebContents::Create|new TabStripModel)/im);
 });
 
 test('packaging normalizes pinned artifacts to Ember names without overwriting conflicts', () => {

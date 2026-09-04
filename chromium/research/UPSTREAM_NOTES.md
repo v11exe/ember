@@ -94,8 +94,8 @@ substitution. The download cache was removed only after all hashes/unpacks had
 completed, reclaiming 1.82 GiB without touching source or build output.
 
 `build --resume` exists for this prepared state. It verifies the source HEAD,
-proves all eight applied Ember patch postimages by reverse-applying them in an
-isolated 20-file scratch tree, verifies all 18 resource destinations, accepts
+proves all nine applied Ember patch postimages by reverse-applying them in an
+isolated 25-file scratch tree, verifies all 18 resource destinations, accepts
 only known generated state including `.gcs_entries`, and uses the 60 GiB
 prepared-build floor. If a failed GN attempt
 left `out/Default/gn.exe` without `build.ninja`, resume deletes only that partial
@@ -299,22 +299,37 @@ matching profile processes. This closes the fixed 2×2 Favorites baseline; nativ
 add/remove/reorder, configurable capacity, tab drop, empty slots, and the
 satisfaction animation remain future parity work.
 
+## Compact top chrome result (patch nine, built and runtime-verified)
+
+Chromium keeps the horizontal tab strip under `BrowserView` while the toolbar
+is a child of `TopContainerView`, so the native one-row seam is
+`BrowserViewTabbedLayoutImpl`: give the tab-strip region its measured middle
+bounds, leave the toolbar across the row, and keep the tab strip painted above
+the transparent/non-interactive location-bar spacer. This preserves the real
+`TabStripModel`, Views focus and Windows caption controls instead of introducing
+a second chrome implementation.
+
+Patch nine sets the shared 32/28/30 px layout constants, 95–190 px tab widths,
+8 px separation, 6 px corners, 96 px drag reserve and core Ember tab colours.
+It hides only the duplicate tab-search/avatar controls and native bookmarks bar;
+the real omnibox model remains initialized for the sidebar address field. Six
+focused objects compiled, the final 338-action resume linked and packaged, and
+a fresh 900×556 accessibility pass measured the exact row, invoked Reload/New
+Tab/menu expansion, found no bookmark bar, and closed with zero profile
+processes or singleton files.
+
 ## Next source inspection targets
 
-With the build and practical visible-identity slice proven, continue in this
+With the sidebar, Favorites and compact real top chrome proven, continue in this
 order:
 
-1. correct patch seven's address/Copy visuals to the measured native-sidebar
-   specification while retaining its verified URL, clipboard, accessibility,
-   and feedback behavior;
-2. compact and style Chromium's real horizontal tab strip/top container
-   toward the 32 px oracle without replacing its focus, extension, sandbox or
-   Windows caption behavior;
-3. deterministic native visual and interaction capture against the locked
-   Electron reference manifest.
-4. remaining tab interaction parity in small
-   functioning slices;
-5. signing and deeper installer integration only when distribution hardening is
+1. add the 12 px page radius and bounded native shell material without covering
+   transparent web content or weakening native HWND behavior;
+2. finish the visible title-fade, close-hover, loading, sleeping and motion
+   treatments in small functioning slices;
+3. port the remaining completed Electron tab/lifecycle behavior while keeping
+   Chromium's real profile, renderer and extension systems authoritative;
+4. signing and deeper installer integration only when distribution hardening is
    needed, without blocking the visible UI work.
 
 Do not implement a `ROADMAP.md` feature still marked planned while closing

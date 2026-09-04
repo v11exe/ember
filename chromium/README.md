@@ -167,11 +167,15 @@ and a close/relaunch retained one folder and one copy of each default without
 changing the bookmark-file hash. The current artifact sizes, SHA-256 values,
 build actions, and HWND evidence are in `../CHROMIUM_PORT_STATUS.md`.
 
-The next bounded UI slice corrects patch seven's address/Copy visuals to the
-measured sidebar contract before compacting and styling the real top chrome
-toward Ember's 32 px shell. The accepted measurements are in
-`../docs/superpowers/specs/2026-09-01-native-sidebar-visual-parity.md` and
-`../docs/superpowers/specs/2026-09-01-native-top-chrome-parity.md`.
+Patch nine compacts the real Chromium toolbar and tab strip into Ember's single
+32 px row. It retains native navigation, tabs, New Tab, menu and Windows caption
+controls, while using measured 28 px tabs, 95–190 px widths, 8 px gaps and 6 px
+corners. The stock omnibox stays alive as model backing for Ember's sidebar
+field but no longer paints or accepts events, and the duplicate bookmarks row
+is suppressed. A fresh 900×556 pass invoked Reload, New Tab and the menu through
+Windows accessibility, measured the row, captured the HWND, and shut down
+cleanly. The next bounded slice adds the 12 px page radius and shell material;
+finer tab-state polish follows after the major geometry is in place.
 
 To check the Ember patch stack against a pristine checkout of the exact
 Chromium commit:

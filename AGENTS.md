@@ -475,6 +475,20 @@ Git is the history archive.
 
 Newest first. One entry per active/recent unit of work.
 
+### 2026-09-04 — Codex — Native compact top-chrome geometry
+- **Status / Branch:** completed and synchronized · `chromium-port`
+- **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`,
+  `docs/superpowers/plans/2026-09-04-native-compact-top-chrome.md`,
+  `test/chromium-port.test.js`, `chromium/patches/series`,
+  `chromium/patches/ember/0009-*.patch`
+- **Summary:** Patch 0009 keeps Chromium's real navigation, tab strip, new-tab
+  action, menu, caption plumbing and models in one measured 32 px row, with
+  28 px tabs, 30 px New Tab, 95–190 px widths, 8 px gaps, 6 px corners and the
+  core Ember states. The final pass also suppresses Chromium's duplicate
+  bookmarks row. Six focused objects and both full resumes built; fresh-profile
+  UI Automation/HTTP-CDP proved Reload, New Tab, menu expansion, exact bounds,
+  no bookmark bar and clean shutdown. Page radius/material is the next slice.
+
 ### 2026-09-04 — Codex — Native sidebar address and Copy parity
 - **Status / Branch:** completed and synchronized · `chromium-port`
 - **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`,

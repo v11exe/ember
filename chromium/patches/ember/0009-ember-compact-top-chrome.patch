@@ -1,0 +1,481 @@
+diff --git a/chrome/browser/ui/layout_constants.cc b/chrome/browser/ui/layout_constants.cc
+index d89ceaf..56c4ec6 100644
+--- a/chrome/browser/ui/layout_constants.cc
++++ b/chrome/browser/ui/layout_constants.cc
+@@ -98,14 +98,13 @@ int GetLayoutConstant(LayoutConstant constant) {
+     case LayoutConstant::kTabAlertIndicatorIconWidth:
+       return touch_ui ? 12 : 16;
+     case LayoutConstant::kTabCloseButtonSize:
+-      return touch_ui ? 24 : (features::IsRoundedIconsEnabled() ? 14 : 16);
++      return touch_ui ? 24 : 12;
+     case LayoutConstant::kTabHeight:
+-      return 34 + GetLayoutConstant(LayoutConstant::kTabstripToolbarOverlap);
++      return 28;
+     case LayoutConstant::kTabStripHeight:
+-      return GetLayoutConstant(LayoutConstant::kTabHeight) +
+-             GetLayoutConstant(LayoutConstant::kTabStripPadding);
++      return 32;
+     case LayoutConstant::kTabStripPadding:
+-      return 6;
++      return 2;
+     case LayoutConstant::kTabSeparatorHeight:
+       return touch_ui ? 24 : 20;
+     case LayoutConstant::kTabPreTitlePadding:
+@@ -115,10 +114,10 @@ int GetLayoutConstant(LayoutConstant constant) {
+     case LayoutConstant::kTabstripToolbarOverlap:
+       return 1;
+     case LayoutConstant::kToolbarButtonHeight:
+-      return touch_ui ? 48 : 34;
++      return touch_ui ? 48 : 30;
+     case LayoutConstant::kToolbarButtonIconSize:
+       return touch_ui ? kDefaultTouchableIconSize
+-                      : kDefaultIconSizeChromeRefresh;
++                      : 17;
+     case LayoutConstant::kToolbarDividerCornerRadius:
+       return 1;
+     case LayoutConstant::kToolbarDividerHeight:
+@@ -130,7 +129,7 @@ int GetLayoutConstant(LayoutConstant constant) {
+     case LayoutConstant::kToolbarElementPadding:
+       return touch_ui ? 0 : 4;
+     case LayoutConstant::kToolbarIconDefaultMargin:
+-      return touch_ui ? 0 : 2;
++      return touch_ui ? 0 : 1;
+     case LayoutConstant::kLocationBarMargin:
+       return touch_ui ? 12 : 9;
+     case LayoutConstant::kSidePanelInset:
+@@ -227,7 +226,7 @@ gfx::Insets GetLayoutInsets(LayoutInset inset) {
+       }
+ 
+     case TOOLBAR_INTERIOR_MARGIN:
+-      return touch_ui ? gfx::Insets::VH(4, 0) : gfx::Insets::VH(6, 6);
++      return touch_ui ? gfx::Insets::VH(4, 0) : gfx::Insets::VH(1, 5);
+ 
+     case WEBUI_TAB_STRIP_TOOLBAR_INTERIOR_MARGIN:
+       return gfx::Insets::VH(4, 0);
+diff --git a/chrome/browser/ui/tabs/tab_style.cc b/chrome/browser/ui/tabs/tab_style.cc
+index fbfe095..d040a4d 100644
+--- a/chrome/browser/ui/tabs/tab_style.cc
++++ b/chrome/browser/ui/tabs/tab_style.cc
+@@ -17,37 +17,19 @@
+ 
+ namespace {
+ 
+-// Thickness in DIPs of the separator painted on the left and right edges of
+-// the tab.
+-constexpr int kSeparatorThickness = 2;
+-constexpr int kSeparatorHorizontalMargin = 2;
+-// TODO (crbug.com/40915785): This constant should be in LayoutConstants.
+-constexpr int kSeparatorHeight = 16;
+-
+-// The padding from the top of the tab to the content area.
+-constexpr int kTabVerticalPadding = 6;
+-constexpr int kTabHorizontalPadding = 8;
+-
+-// The standard tab width is 232 DIP, excluding separators and overlap.
+-constexpr int kTabWidth = 232;
++constexpr int kEmberTabWidth = 190;
++constexpr int kEmberTabMinimumWidth = 95;
+ 
+ }  // namespace
+ 
+ TabStyle::~TabStyle() = default;
+ 
+ int TabStyle::GetStandardHeight() const {
+-  return GetLayoutConstant(LayoutConstant::kTabStripHeight);
++  return GetLayoutConstant(LayoutConstant::kTabHeight);
+ }
+ 
+ int TabStyle::GetStandardWidth(const bool is_split) const {
+-  if (is_split) {
+-    // Split tabs appear as half width with one bottom extension. They also must
+-    // include half the tab overlap as the tabs fill the space between them.
+-    return kTabWidth / 2 + GetBottomCornerRadius() + GetTabOverlap() / 2;
+-  } else {
+-    // The full width includes two extensions with the bottom corner radius.
+-    return kTabWidth + 2 * GetBottomCornerRadius();
+-  }
++  return is_split ? kEmberTabMinimumWidth : kEmberTabWidth;
+ }
+ 
+ int TabStyle::GetPinnedWidth(const bool is_split) const {
+@@ -63,53 +45,24 @@ int TabStyle::GetPinnedWidth(const bool is_split) const {
+   return standard_pinned_width;
+ }
+ 
+-int TabStyle::GetMinimumActiveWidth(const bool is_split) const {
+-  const gfx::Insets insets = GetContentsInsets();
+-  // Rounded icons decreased `kTabCloseButtonSize` to less than
+-  // `gfx::kFaviconSize`. We do not want the min size of the
+-  // active tab to change from this, so we set the size large enough
+-  // so that the active tab can always fit the favicon and close button.
+-  static const int min_content_width =
+-      features::IsRoundedIconsEnabled()
+-          ? std::max(gfx::kFaviconSize,
+-                     GetLayoutConstant(LayoutConstant::kTabCloseButtonSize))
+-          : GetLayoutConstant(LayoutConstant::kTabCloseButtonSize);
+-  const int min_active_width =
+-      min_content_width + insets.left() + insets.right();
+-
+-  if (is_split) {
+-    // Only have one set of horizontal padding between tabs in an active split.
+-    return min_active_width - kTabHorizontalPadding / 2;
+-  }
+-
+-  return min_active_width;
++int TabStyle::GetMinimumActiveWidth(const bool /*is_split*/) const {
++  return kEmberTabMinimumWidth;
+ }
+ 
+ int TabStyle::GetMinimumInactiveWidth() const {
+-  // Allow tabs to shrink until they appear to be 16 DIP wide excluding
+-  // outer corners.
+-  constexpr int kInteriorWidth = 16;
+-  // The overlap contains the trailing separator that is part of the interior
+-  // width; avoid double-counting it.
+-  int min_inactive_width =
+-      kInteriorWidth - GetSeparatorSize().width() + GetTabOverlap();
+-
+-  return min_inactive_width;
++  return kEmberTabMinimumWidth;
+ }
+ 
+ int TabStyle::GetTopCornerRadius() const {
+-  return 10;
++  return 6;
+ }
+ 
+ int TabStyle::GetBottomCornerRadius() const {
+-  return 12;
++  return 6;
+ }
+ 
+ int TabStyle::GetTabOverlap() const {
+-  // The overlap removes the width and the margins of the separator.
+-  const float total_separator_width =
+-      GetSeparatorMargins().width() + GetSeparatorSize().width();
+-  return 2 * GetBottomCornerRadius() - total_separator_width;
++  return -8;
+ }
+ 
+ gfx::Size TabStyle::GetPreviewImageSize() const {
+@@ -119,14 +72,11 @@ gfx::Size TabStyle::GetPreviewImageSize() const {
+ }
+ 
+ gfx::Size TabStyle::GetSeparatorSize() const {
+-  return gfx::Size(kSeparatorThickness, kSeparatorHeight);
++  return gfx::Size();
+ }
+ 
+ gfx::Insets TabStyle::GetSeparatorMargins() const {
+-  return gfx::Insets::TLBR(GetLayoutConstant(LayoutConstant::kTabStripPadding),
+-                           kSeparatorHorizontalMargin,
+-                           GetLayoutConstant(LayoutConstant::kTabStripPadding),
+-                           kSeparatorHorizontalMargin);
++  return gfx::Insets();
+ }
+ 
+ int TabStyle::GetSeparatorCornerRadius() const {
+@@ -198,53 +148,22 @@ TabStyle::TabColors TabStyle::CalculateTargetColors(
+ 
+ SkColor TabStyle::GetTabForegroundColor(
+     const bool apparently_active,
+-    const bool frame_active,
+-    const ui::ColorProvider* color_provider) const {
+-  if (!color_provider) {
+-    return gfx::kPlaceholderColor;
+-  }
+-
+-  static constexpr std::array<std::array<ChromeColorIds, 2>, 2> kColorIds = {
+-      {{kColorTabForegroundInactiveFrameInactive,
+-        kColorTabForegroundInactiveFrameActive},
+-       {kColorTabForegroundActiveFrameInactive,
+-        kColorTabForegroundActiveFrameActive}}};
+-
+-  return color_provider->GetColor(kColorIds[apparently_active][frame_active]);
++    const bool /*frame_active*/,
++    const ui::ColorProvider* /*color_provider*/) const {
++  return SkColorSetARGB(apparently_active ? 0xF0 : 0xB3, 0xFF, 0xFF, 0xFF);
+ }
+ 
+ SkColor TabStyle::GetTabBackgroundColor(
+     const TabSelectionState state,
+     const bool hovered,
+-    const bool frame_active,
+-    const ui::ColorProvider* color_provider) const {
+-  if (!color_provider) {
+-    return gfx::kPlaceholderColor;
+-  }
+-
++    const bool /*frame_active*/,
++    const ui::ColorProvider* /*color_provider*/) const {
+   switch (state) {
+-    case TabStyle::TabSelectionState::kActive: {
+-      constexpr std::array<ui::ColorId, 2> kActiveColorIds = {
+-          kColorTabBackgroundActiveFrameInactive,
+-          kColorTabBackgroundActiveFrameActive};
+-      return color_provider->GetColor(kActiveColorIds[frame_active]);
+-    }
+-    case TabStyle::TabSelectionState::kSelected: {
+-      constexpr std::array<std::array<ui::ColorId, 2>, 2> kSelectedColorIds = {
+-          {{kColorTabBackgroundSelectedFrameInactive,
+-            kColorTabBackgroundSelectedFrameActive},
+-           {kColorTabBackgroundSelectedHoverFrameInactive,
+-            kColorTabBackgroundSelectedHoverFrameActive}}};
+-      return color_provider->GetColor(kSelectedColorIds[hovered][frame_active]);
+-    }
+-    case TabStyle::TabSelectionState::kInactive: {
+-      constexpr std::array<std::array<ui::ColorId, 2>, 2> kInactiveColorIds = {
+-          {{kColorTabBackgroundInactiveFrameInactive,
+-            kColorTabBackgroundInactiveFrameActive},
+-           {kColorTabBackgroundInactiveHoverFrameInactive,
+-            kColorTabBackgroundInactiveHoverFrameActive}}};
+-      return color_provider->GetColor(kInactiveColorIds[hovered][frame_active]);
+-    }
++    case TabStyle::TabSelectionState::kActive:
++    case TabStyle::TabSelectionState::kSelected:
++      return SkColorSetARGB(0xD1, 0x18, 0x14, 0x13);
++    case TabStyle::TabSelectionState::kInactive:
++      return SkColorSetARGB(hovered ? 0x1A : 0x13, 0xFF, 0xFF, 0xFF);
+     default:
+       NOTREACHED();
+   }
+@@ -268,11 +187,7 @@ SkColor TabStyle::GetCurrentTabBackgroundColor(
+ }
+ 
+ gfx::Insets TabStyle::GetContentsInsets() const {
+-  return gfx::Insets::TLBR(
+-      kTabVerticalPadding + GetLayoutConstant(LayoutConstant::kTabStripPadding),
+-      GetBottomCornerRadius() + kTabHorizontalPadding,
+-      kTabVerticalPadding + GetLayoutConstant(LayoutConstant::kTabStripPadding),
+-      GetBottomCornerRadius() + kTabHorizontalPadding);
++  return gfx::Insets::VH(6, 9);
+ }
+ 
+ float TabStyle::GetSelectedTabOpacity() const {
+diff --git a/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc b/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
+index 51ba165..a7f1d99 100644
+--- a/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
++++ b/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
+@@ -80,6 +80,8 @@ constexpr int kTabStripRegionInternalPaddingMac = 12;
+ 
+ namespace {
+ 
++constexpr int kEmberTopChromeHeight = 32;
++
+ class FrameGrabHandle : public views::View {
+   METADATA_HEADER(FrameGrabHandle, views::View)
+ 
+@@ -110,7 +112,7 @@ class FrameGrabHandle : public views::View {
+     // is full.
+     // TODO(tbergquist): Define this relative to the NTB insets again.
+     if (base::CommandLine::ForCurrentProcess()->HasSwitch("remove-grab-handle")) return gfx::Size(0, 0);
+-    return gfx::Size(42, 0);
++    return gfx::Size(96, 0);
+   }
+ 
+  private:
+@@ -178,7 +180,8 @@ HorizontalTabStripRegionView::HorizontalTabStripRegionView(
+       kColorTabBackgroundInactiveFrameInactive);
+ 
+   SetLayoutManager(std::make_unique<views::FlexLayout>())
+-      ->SetOrientation(views::LayoutOrientation::kHorizontal);
++      ->SetOrientation(views::LayoutOrientation::kHorizontal)
++      .SetCrossAxisAlignment(views::LayoutAlignment::kCenter);
+ 
+   BrowserWindowInterface* const browser = browser_view->browser();
+ 
+@@ -189,6 +192,7 @@ HorizontalTabStripRegionView::HorizontalTabStripRegionView(
+     combo_button_->SetProperty(views::kCrossAxisAlignmentKey,
+                                views::LayoutAlignment::kCenter);
+     combo_button_->MaybeShowIPH();
++    combo_button_->SetVisible(false);
+   }
+ 
+   if (base::FeatureList::IsEnabled(features::kTabGroupsFocusing)) {
+@@ -457,12 +461,16 @@ gfx::Size HorizontalTabStripRegionView::GetMinimumSize() const {
+   const int max_min_width = 520;
+   tab_strip_min_size.set_width(
+       std::min(max_min_width, tab_strip_min_size.width()));
++  tab_strip_min_size.set_height(kEmberTopChromeHeight);
+   return tab_strip_min_size;
+ }
+ 
+ gfx::Size HorizontalTabStripRegionView::CalculatePreferredSize(
+     const views::SizeBounds& available_size) const {
+-  return GetLayoutManager()->GetPreferredSize(this, available_size);
++  gfx::Size preferred_size =
++      GetLayoutManager()->GetPreferredSize(this, available_size);
++  preferred_size.set_height(kEmberTopChromeHeight);
++  return preferred_size;
+ }
+ 
+ views::View* HorizontalTabStripRegionView::GetDefaultFocusableChild() {
+@@ -614,14 +622,6 @@ bool HorizontalTabStripRegionView::HasLeadingButtons() const {
+ }
+ 
+ void HorizontalTabStripRegionView::UpdateButtonBorders() {
+-  const int extra_vertical_space =
+-      GetLayoutConstant(LayoutConstant::kTabStripHeight) -
+-      GetLayoutConstant(LayoutConstant::kTabstripToolbarOverlap) -
+-      NewTabButton::kButtonSize.height();
+-  const int top_inset = extra_vertical_space / 2;
+-  const int bottom_inset =
+-      extra_vertical_space - top_inset +
+-      GetLayoutConstant(LayoutConstant::kTabstripToolbarOverlap);
+   // The new tab button is placed vertically exactly in the center of the
+   // tabstrip. Extend the border of the button such that it extends to the top
+   // of the tabstrip bounds. This is essential to ensure it is targetable on the
+@@ -635,7 +635,7 @@ void HorizontalTabStripRegionView::UpdateButtonBorders() {
+   // definitely isn't what we want in the scrolling case, so this naive approach
+   // should be improved, likely by taking the scroll state of the tabstrip into
+   // account.
+-  const auto border_insets = gfx::Insets::TLBR(top_inset, 0, bottom_inset, 0);
++  const auto border_insets = gfx::Insets(1);
+   if (tab_strip_action_container_) {
+     tab_strip_action_container_->UpdateButtonBorders(border_insets);
+   }
+diff --git a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+index 734905f..7d6668a 100644
+--- a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
++++ b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+@@ -59,6 +59,9 @@ constexpr int kVerticalTabsGrabHandleSize = 40;
+ // Ember keeps its persistent shell outside Chromium's real browser contents.
+ constexpr int kEmberSidebarWidth = 168;
+ constexpr int kEmberPageInset = 8;
++constexpr int kEmberTopChromeHeight = 32;
++constexpr int kEmberTopChromeTabStripLeading = 102;
++constexpr int kEmberTopChromeTrailingActions = 70;
+ 
+ // Maximum portion of the window a "size-restricted" contents-height side panel
+ // can take up. This is not the only limit on side panel size.
+@@ -720,9 +723,18 @@ BrowserViewTabbedLayoutImpl::CalculateProposedLayout(
+       const int leading_margin = GetHorizontalTabStripLeadingMargin(params);
+       tabstrip_bounds = GetBoundsWithExclusion(
+           params, views().horizontal_tab_strip_region_view, leading_margin);
+-      params.SetTop(tabstrip_bounds.bottom() -
++      if (ember_sidebar_visible) {
++        tabstrip_bounds.Inset(gfx::Insets::TLBR(
++            0, kEmberTopChromeTabStripLeading, 0,
++            kEmberTopChromeTrailingActions));
++        tabstrip_bounds.set_height(kEmberTopChromeHeight);
++      }
++      params.SetTop(
++          ember_sidebar_visible
++              ? tabstrip_bounds.y()
++              : tabstrip_bounds.bottom() -
+                     GetLayoutConstant(LayoutConstant::kTabstripToolbarOverlap));
+-      needs_exclusion = false;
++      needs_exclusion = ember_sidebar_visible;
+     }
+     layout.AddChild(views().horizontal_tab_strip_region_view, tabstrip_bounds,
+                     layout_data_->tab_strip_type == TabStripType::kHorizontal);
+@@ -1319,7 +1331,8 @@ gfx::Rect BrowserViewTabbedLayoutImpl::CalculateTopContainerLayout(
+   }
+ 
+   // Lay out the bookmarks bar if one is present.
+-  const bool bookmarks_visible = delegate().IsBookmarkBarVisible();
++  const bool bookmarks_visible =
++      delegate().IsBookmarkBarVisible() && !views().ember_sidebar;
+   if (IsParentedTo(views().bookmark_bar, views().top_container)) {
+     const gfx::Rect bookmarks_bounds(
+         params.visual_client_area.x(), params.visual_client_area.y(),
+diff --git a/chrome/browser/ui/views/tabs/tab_style_views.cc b/chrome/browser/ui/views/tabs/tab_style_views.cc
+index ed475c0..65b7500 100644
+--- a/chrome/browser/ui/views/tabs/tab_style_views.cc
++++ b/chrome/browser/ui/views/tabs/tab_style_views.cc
+@@ -811,42 +811,13 @@ float TabStyleViewsImpl::GetHoverOpacity() const {
+ }
+ 
+ int TabStyleViewsImpl::GetStrokeThickness() const {
+-  std::optional<tab_groups::TabGroupId> group = tab_->group();
+-  if (group.has_value() && tab_->IsActive()) {
+-    return TabGroupUnderline::kStrokeThickness;
+-  }
+-
+-  if (tab_->IsActive()) {
+-    return tab_->controller()->GetStrokeThickness();
+-  }
+-
+-  return 0;
++  return 1;
+ }
+ 
+ bool TabStyleViewsImpl::ShouldPaintTabBackgroundColor(
+-    TabStyle::TabSelectionState selection_state,
+-    bool has_custom_background) const {
+-  // In the active and selected cases, always paint the tab background. The fill
+-  // image may be transparent.
+-  if (selection_state == TabStyle::TabSelectionState::kActive ||
+-      selection_state == TabStyle::TabSelectionState::kSelected) {
+-    return true;
+-  }
+-
+-  // In the inactive case, the fill image is guaranteed to be opaque, so it's
+-  // not necessary to paint the background when there is one.
+-  if (has_custom_background) {
+-    return false;
+-  }
+-
+-  // In glass frame we will not show a background for inactive tabs.
+-  // But we will have a hover effect.
+-  if (features::IsGlassFrameEnabled()) {
+-    return false;
+-  }
+-
+-  return tab_->GetThemeProvider()->GetDisplayProperty(
+-      ThemeProperties::SHOULD_FILL_BACKGROUND_TAB_COLOR);
++    TabStyle::TabSelectionState /*selection_state*/,
++    bool /*has_custom_background*/) const {
++  return true;
+ }
+ 
+ SkColor TabStyleViewsImpl::GetTabSeparatorColor() const {
+@@ -892,11 +863,9 @@ void TabStyleViewsImpl::PaintTabBackground(gfx::Canvas* canvas,
+ 
+   PaintTabBackgroundFill(canvas, hovered, fill_id);
+ 
+-  const auto* widget = tab_->GetWidget();
+-  DCHECK(widget);
+-  const SkColor tab_stroke_color = widget->GetColorProvider()->GetColor(
+-      tab_->GetWidget()->ShouldPaintAsActive() ? kColorTabStrokeFrameActive
+-                                               : kColorTabStrokeFrameInactive);
++  const SkColor tab_stroke_color =
++      tab_->IsActive() ? SkColorSetARGB(0xCC, 0xFF, 0x5B, 0x00)
++                       : SkColorSetARGB(0x09, 0xFF, 0xFF, 0xFF);
+ 
+   PaintBackgroundStroke(canvas, group_color.value_or(tab_stroke_color));
+   PaintSeparators(canvas);
+diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.cc b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+index b98a506..ad629c2 100644
+--- a/chrome/browser/ui/views/toolbar/toolbar_view.cc
++++ b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+@@ -348,7 +348,7 @@ void ToolbarView::Init() {
+   if (display_mode_ == DisplayMode::kNormal) {
+     SetBackground(std::make_unique<CustomCornersBackground>(
+         *this, *browser_view_,
+-        /*primary_color=*/CustomCornersBackground::ToolbarTheme(),
++        /*primary_color=*/CustomCornersBackground::FrameTheme(),
+         /*corner_color=*/CustomCornersBackground::FrameTheme()));
+   } else if (display_mode_ == DisplayMode::kCustomTab) {
+     custom_tab_bar_ =
+@@ -628,10 +628,20 @@ void ToolbarView::Init() {
+ 
+   if (location_bar_view_) {
+     location_bar_view_->Init();
++    if (display_mode_ == DisplayMode::kNormal) {
++      location_bar_view_->SetPaintToLayer();
++      location_bar_view_->layer()->SetOpacity(0.0f);
++      location_bar_view_->SetCanProcessEventsWithinSubtree(false);
++      location_bar_view_->SetPreferredSize(gfx::Size(0, 30));
++    }
+   } else {
+     toolbar_webview_->GetLocationBar()->Init(toolbar_webview_.get());
+   }
+ 
++  if (display_mode_ == DisplayMode::kNormal && avatar_) {
++    avatar_->SetVisible(false);
++  }
++
+   show_forward_button_.Init(
+       prefs::kShowForwardButton, prefs,
+       base::BindRepeating(&ToolbarView::OnShowForwardButtonChanged,
