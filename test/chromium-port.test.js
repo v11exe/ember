@@ -52,6 +52,8 @@ test('the Ember patch series is ordered, local, and complete', () => {
     'ember/0007-ember-sidebar-address-copy-link.patch',
     'ember/0008-ember-sidebar-favorites.patch',
     'ember/0009-ember-compact-top-chrome.patch',
+    'ember/0010-ember-rounded-page-surface.patch',
+    'ember/0011-ember-shared-shell-material.patch',
   ]);
   for (const entry of entries) {
     assert.equal(fs.existsSync(path.join(port.PATCHES_ROOT, ...entry.split('/'))), true);

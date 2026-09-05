@@ -7,3 +7,5 @@ ember/0006-ember-native-shell-geometry.patch
 ember/0007-ember-sidebar-address-copy-link.patch
 ember/0008-ember-sidebar-favorites.patch
 ember/0009-ember-compact-top-chrome.patch
+ember/0010-ember-rounded-page-surface.patch
+ember/0011-ember-shared-shell-material.patch

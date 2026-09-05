@@ -176,6 +176,10 @@ test/                          node:test contracts/integration fixtures
   `Page.captureScreenshot` photographs it alone. SendKeys/`keybd_event` go to
   whatever window has focus — they steal the developer's keyboard, and they
   stop arriving at all once anything else takes foreground.
+- **Browser tests stay visible on the user's second monitor (PL288H).** On the
+  current host it is the non-primary display left of the main screen, with
+  bounds `-1920,224,1920×1080`. Re-enumerate displays after a topology change and
+  position test windows there explicitly; do not put them over the main screen.
 - `updateTabMetrics()` cancels the pending pass when it is called again, and a
   new tab is followed by a run of state emits. Anything that must happen after
   the widths settle has to survive being superseded — keep it as state (an id,
@@ -474,6 +478,29 @@ Git is the history archive.
 ## 4. Work Log
 
 Newest first. One entry per active/recent unit of work.
+
+### 2026-09-05 — Codex — Native shared shell material
+- **Status / Branch:** in progress · `chromium-port`
+- **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`,
+  `test/chromium-port.test.js`, `chromium/patches/series`,
+  `chromium/patches/ember/0011-*.patch`
+- **Summary:** Port the measured shell gradient through Chromium's existing
+  `ThemedBackground`, aligned to one BrowserView coordinate system for the
+  sidebar, toolbar and page inset. Paint only the shell around the native page
+  clip. Preserve normal HWND composition and use a focused compile/capture pass.
+
+### 2026-09-04 — Codex — Native rounded page surface
+- **Status / Branch:** in progress · `chromium-port`
+- **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`,
+  `docs/superpowers/plans/2026-09-04-native-rounded-page-surface.md`,
+  `test/chromium-port.test.js`, `chromium/patches/series`,
+  `chromium/patches/ember/0010-*.patch`
+- **Summary:** Add the oracle's 12 px page radius through Chromium's existing
+  `MultiContentsView`/`ContentsContainerView` clipping path. Keep the current
+  8 px frame-painted inset as the bounded shell surface and explicitly remove
+  the radius in fullscreen; no overlay windows, renderer recreation or custom
+  security path. One focused object build and one practical native capture are
+  the acceptance pass.
 
 ### 2026-09-04 — Codex — Native compact top-chrome geometry
 - **Status / Branch:** completed and synchronized · `chromium-port`

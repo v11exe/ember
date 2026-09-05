@@ -1,0 +1,28 @@
+diff --git a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+index 7d6668a..497652a 100644
+--- a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
++++ b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+@@ -59,6 +59,7 @@ constexpr int kVerticalTabsGrabHandleSize = 40;
+ // Ember keeps its persistent shell outside Chromium's real browser contents.
+ constexpr int kEmberSidebarWidth = 168;
+ constexpr int kEmberPageInset = 8;
++constexpr float kEmberPageCornerRadius = 12.0f;
+ constexpr int kEmberTopChromeHeight = 32;
+ constexpr int kEmberTopChromeTabStripLeading = 102;
+ constexpr int kEmberTopChromeTrailingActions = 70;
+@@ -1196,10 +1197,12 @@ BrowserViewTabbedLayoutImpl::CalculateProposedLayout(
+     }
+   }
+ 
+-  if (features::IsGlassFrameEnabled()) {
++  if (features::IsGlassFrameEnabled() || views().ember_sidebar) {
+     gfx::RoundedCornersF content_corners;
+-    if (layout_data_->tab_strip_type == TabStripType::kVertical &&
+-        !is_fullscreen(layout_data_->window_state)) {
++    if (ember_sidebar_visible) {
++      content_corners = gfx::RoundedCornersF(kEmberPageCornerRadius);
++    } else if (layout_data_->tab_strip_type == TabStripType::kVertical &&
++               !is_fullscreen(layout_data_->window_state)) {
+       // Note that this will set a lower leading corner on the multi contents
+       // view even if there's a shadow box, but since the curve is effectively
+       // the same this will not produce a visual bug.
