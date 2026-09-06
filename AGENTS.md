@@ -485,7 +485,7 @@ Git is the history archive.
 Newest first. One entry per active/recent unit of work.
 
 ### 2026-09-06 — Codex — Native top-bar density correction
-- **Status / Branch:** completed, synchronization pending · `chromium-port`
+- **Status / Branch:** completed and synchronized · `chromium-port`
 - **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`,
   `docs/superpowers/{specs,plans}/2026-09-06-native-top-bar-density-*`,
   `test/chromium-port.test.js`, `chromium/patches/series`,
