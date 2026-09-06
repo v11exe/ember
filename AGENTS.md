@@ -484,6 +484,18 @@ Git is the history archive.
 
 Newest first. One entry per active/recent unit of work.
 
+### 2026-09-06 — Codex — Native top-bar density correction
+- **Status / Branch:** in progress · `chromium-port`
+- **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`,
+  `docs/superpowers/{specs,plans}/2026-09-06-native-top-bar-density-*`,
+  `test/chromium-port.test.js`, `chromium/patches/series`,
+  `chromium/patches/ember/0013-*.patch`
+- **Summary:** Remove the erroneous native page inset above and beside the
+  contents while retaining the oracle's 8 px right/bottom frame. This makes the
+  visible top band exactly 32 px, shifts the navigation/tab cluster 8 px into
+  its measured Electron position, removes the false separator band, and restores
+  a continuous sidebar/top material junction without replacing Chromium Views.
+
 ### 2026-09-06 — Codex — Native top-bar completion
 - **Status / Branch:** completed and synchronized · `chromium-port`
 - **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`,
