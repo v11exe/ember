@@ -10,3 +10,4 @@ ember/0009-ember-compact-top-chrome.patch
 ember/0010-ember-rounded-page-surface.patch
 ember/0011-ember-shared-shell-material.patch
 ember/0012-ember-finish-top-bar.patch
+ember/0013-ember-tighten-top-bar-density.patch

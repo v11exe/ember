@@ -55,6 +55,7 @@ test('the Ember patch series is ordered, local, and complete', () => {
     'ember/0010-ember-rounded-page-surface.patch',
     'ember/0011-ember-shared-shell-material.patch',
     'ember/0012-ember-finish-top-bar.patch',
+    'ember/0013-ember-tighten-top-bar-density.patch',
   ]);
   for (const entry of entries) {
     assert.equal(fs.existsSync(path.join(port.PATCHES_ROOT, ...entry.split('/'))), true);
@@ -547,6 +548,31 @@ test('the compact top-chrome patch keeps native controls in one measured row', (
   assert.match(patchText, /avatar_->SetVisible\(false\)/);
   assert.match(patchText, /SkColorSetARGB\(0xCC, 0xFF, 0x5B, 0x00\)/);
   assert.doesNotMatch(patchText, /^\+.*(?:no-sandbox|disable-site-isolation|WebContents::Create|new TabStripModel)/im);
+});
+
+test('the top-bar density patch removes false bands and caps the row at 32 px', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0013-ember-tighten-top-bar-density.patch'),
+    'utf8',
+  );
+  const touchedFiles = [...patchText.matchAll(/^diff --git a\/(\S+) b\/\S+$/gm)]
+    .map((match) => match[1]);
+
+  assert.deepEqual(touchedFiles, [
+    'chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc',
+  ]);
+  assert.match(
+    patchText,
+    /gfx::Insets::TLBR\(0, 0, kEmberPageInset, kEmberPageInset\)/,
+  );
+  assert.match(patchText, /params\.Inset\(content_insets\)/);
+  assert.match(patchText, /unclipped_contents_region\.Inset\(content_insets\)/);
+  assert.match(
+    patchText,
+    /SetShouldShowTopSeparator\([\s\S]{0,100}\+\s+separator_info\.multi_contents_separator && !ember_sidebar_visible\)/,
+  );
+  assert.match(patchText, /toolbar_bounds\.set_height\(kEmberTopChromeHeight\)/);
+  assert.doesNotMatch(patchText, /^\+.*kEmberSidebarWidth/m);
 });
 
 test('packaging normalizes pinned artifacts to Ember names without overwriting conflicts', () => {

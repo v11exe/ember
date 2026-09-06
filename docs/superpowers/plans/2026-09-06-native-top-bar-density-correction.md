@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Remove the erroneous top/left native content inset so Chromium matches Ember's measured 32 px Electron top bar and compact control positions.
+**Goal:** Remove the erroneous top/left native content inset, separator and one-pixel toolbar overshoot so Chromium matches Ember's measured 32 px Electron top bar.
 
-**Architecture:** Add patch 0013 on top of the existing native Chromium patch stack. Change only `BrowserViewTabbedLayoutImpl` so Ember normal windows retain the 8 px right/bottom frame but place contents directly against the 168 px sidebar and 32 px top row; preserve all native Chromium controls and lifecycle owners.
+**Architecture:** Add patch 0013 on top of the existing native Chromium patch stack. Change only `BrowserViewTabbedLayoutImpl` so Ember normal windows retain the 8 px right/bottom frame, suppress the redundant contents separator, cap the toolbar at 32 px and place contents directly against the 168 px sidebar and 32 px top row; preserve all native Chromium controls and lifecycle owners.
 
 **Tech Stack:** CommonJS `node:test`, ordered Chromium patch files, Chromium C++/Views, Ninja, Windows UI Automation/CDP.
 
@@ -25,7 +25,9 @@ Read patch 0013, assert that its only touched file is
 `chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc`, and
 assert that it replaces the uniform inset with
 `gfx::Insets::TLBR(0, 0, kEmberPageInset, kEmberPageInset)` while continuing to
-inset both `params` and `unclipped_contents_region`.
+inset both `params` and `unclipped_contents_region`. Assert that normal Ember
+layout suppresses `multi_contents_separator` and caps `toolbar_bounds` at
+`kEmberTopChromeHeight`.
 
 - [ ] **Step 3: Verify RED**
 
@@ -49,6 +51,9 @@ const gfx::Insets content_insets =
 ```
 
 Do not modify the two consumers of `content_insets`.
+
+For the normal Ember/sidebar layout, disable the native top separator and cap
+`toolbar_bounds` at `kEmberTopChromeHeight`.
 
 - [ ] **Step 2: Append patch 0013 to `chromium/patches/series`**
 

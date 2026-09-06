@@ -1,0 +1,46 @@
+diff --git a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+--- a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
++++ b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+@@ -1088,9 +1088,9 @@ BrowserViewTabbedLayoutImpl::CalculateProposedLayout(
+   // Top separator is unnecessary when already in the shadow box; this is
+   // especially obvious in split view, where turning the separator off provides
+   // the required top padding.
+   const auto& separator_info = layout_data_->separator_info;
+   views().multi_contents_view->SetShouldShowTopSeparator(
+-      separator_info.multi_contents_separator);
++      separator_info.multi_contents_separator && !ember_sidebar_visible);
+ 
+   // Updating the top, left and right insets for contents container view when
+   // in split view. This is dependent on a number of other browser states.
+@@ -1122,9 +1122,10 @@ BrowserViewTabbedLayoutImpl::CalculateProposedLayout(
+   views().multi_contents_view->SetIsAnimatingContent(
+       side_panel_is_animating || vertical_tab_strip_animation.current_motion);
+ 
+   if (ember_sidebar_visible) {
+-    const gfx::Insets content_insets(kEmberPageInset);
++    const gfx::Insets content_insets =
++        gfx::Insets::TLBR(0, 0, kEmberPageInset, kEmberPageInset);
+     params.Inset(content_insets);
+     unclipped_contents_region.Inset(content_insets);
+   }
+ 
+@@ -1297,6 +1298,8 @@ gfx::Rect BrowserViewTabbedLayoutImpl::CalculateTopContainerLayout(
+     BrowserLayoutParams params,
+     bool needs_exclusion) const {
+   const int original_top = params.visual_client_area.y();
++  const bool ember_sidebar_visible =
++      views().ember_sidebar && !is_fullscreen(layout_data_->window_state);
+ 
+   if (IsParentedTo(views().horizontal_tab_strip_region_view,
+                    views().top_container)) {
+@@ -1327,7 +1330,10 @@ gfx::Rect BrowserViewTabbedLayoutImpl::CalculateTopContainerLayout(
+               : gfx::Rect(params.visual_client_area.x(),
+                           params.visual_client_area.y(),
+                           params.visual_client_area.width(),
+                           views().toolbar->GetPreferredSize().height());
++      if (ember_sidebar_visible) {
++        toolbar_bounds.set_height(kEmberTopChromeHeight);
++      }
+       params.SetTop(toolbar_bounds.bottom());
+       needs_exclusion = false;
+     }

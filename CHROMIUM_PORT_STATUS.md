@@ -3,7 +3,7 @@
 Last updated: 2026-09-06 on branch `chromium-port`.
 
 **Read this first:** the pinned external checkout and incremental build graph are
-preserved at `C:\src\ember-chromium`. Patches 0006–0012 now provide the built,
+preserved at `C:\src\ember-chromium`. Patches 0006–0013 now provide the built,
 runtime-verified native shell baseline: sidebar/address/Copy/Favorites, compact
 top chrome, rounded page clipping, shared material and the completed top bar.
 Preserve that checkout and its `.ninja_log`. Work is paused after the top-bar
@@ -37,7 +37,7 @@ follow an upstream branch.
   Electron compatibility shim.
 - A safe Node CLI for baseline inspection, environment diagnosis, pinned config
   preparation, patch verification, build, packaging, and isolated-profile run.
-- Twelve ordered upstream Chromium patches covering Ember product strings, install
+- Thirteen ordered upstream Chromium patches covering Ember product strings, install
   and profile paths, URL scheme, HTML/PDF ProgIDs, registry/policy roots,
   archive names, installer log name, stable product GUID, Ember-owned toast,
   elevator and tracing class CLSIDs, and an Ember-specific AppContainer SID
@@ -50,7 +50,7 @@ follow an upstream branch.
   interaction with independent confirmation feedback;
   the eighth adds a bookmark-backed 2x2 Favorite grid. Patches 0009–0012 add the
   measured 32 px top band, 12 px native page clip, continuous Ember shell
-  material and final tab/action treatments. All twelve patches have compile and
+  material, final tab/action treatments and the exact 32 px content junction. All thirteen patches have compile and
   practical runtime evidence.
 - A deterministic 18-file Ember branding overlay for the Windows executable,
   scaled raster logos, About artwork, shared WebUI SVGs, and generated ICO. The
@@ -75,10 +75,10 @@ follow an upstream branch.
 
 | Subsystem | State | Current evidence / remaining work |
 | --- | --- | --- |
-| Reproducible source and build architecture | **Healthy prepared checkout** | The pinned acquisition contains 109 common, 23 Windows, and all twelve Ember patches. The 2026-09-06 prepared-state check verified applied postimages in an isolated 31-file tree and all 18 resources. The external checkout, `out/Default`, and `.ninja_log` remain preserved at `C:\src\ember-chromium`. The wrapper's 60 GiB free-space guard currently blocks a packaging resume at 51 GiB, but focused Ninja compilation/linking remains healthy; reproducibility on a second clean host remains untested. |
+| Reproducible source and build architecture | **Healthy prepared checkout** | The pinned acquisition contains 109 common, 23 Windows, and all thirteen Ember patches. The 2026-09-06 prepared-state check verified applied postimages in an isolated 31-file tree and all 18 resources. The external checkout, `out/Default`, and `.ninja_log` remain preserved at `C:\src\ember-chromium`. The wrapper's 60 GiB free-space guard currently blocks a packaging resume at 51 GiB, but focused Ninja compilation/linking remains healthy; reproducibility on a second clean host remains untested. |
 | Product and Windows installer identity | **Practical baseline complete** | `chrome.exe`/`chrome.dll` report product `Ember`; live window/HWND titles, About/version content, Settings About title, accessibility/default-browser/relaunch strings, deterministic package filenames, executable/HWND icons, About art, Settings toolbar logo, and the About-menu glyph are Ember-owned. Direct PE and live HWND extraction prove the icon path rather than relying on shell cache. The stable Chrome UA and CDP `Chrome/...` token remain intentional for compatibility. The executable name stays upstream and artifacts remain unsigned; deep installer registry/toast/COM/upgrade/uninstall/coexistence testing is deferred for this friends-only build while UI parity is prioritized. Interface/type-library IDs remain unchanged unless IDL plus every persisted x86/x64/arm64 MIDL output can be regenerated together. |
 | Native Windows top-level window | **Partial** | A responding normal 1570×796 HWND now owns the first Ember shell geometry while retaining the real browser/renderer/GPU/utility process tree. Caption hit testing, Snap Layouts, DWM corners, minimise/restore animation, DPI changes and multi-monitor behavior still need focused tests. |
-| Native C++/Views shell | **Partial — seven native slices built** | Patches 0006–0008 provide the 168 px rail, 8 px page inset, measured address/Copy row and persistent bookmark-backed Favorite grid. Patches 0009–0012 provide the unified 32 px native top row, suppress the duplicate bookmarks row, apply the native 12 px page clip, paint one aligned shell material and finish the measured tab/action treatments. All seven are built and practically runtime-verified; other Electron surfaces remain to port. |
+| Native C++/Views shell | **Partial — eight native slices built** | Patches 0006–0008 provide the 168 px rail, measured address/Copy row and persistent bookmark-backed Favorite grid. Patches 0009–0013 provide the unified 32 px native top row, suppress duplicate rows/separators, apply the native 12 px page clip and 8 px right/bottom frame, paint one aligned shell material and finish the measured tab/action treatments. All eight are built and practically runtime-verified; other Electron surfaces remain to port. |
 | Tabs and navigation | **Partial — visible top bar complete** | Chromium's real `TabStripModel`, `TabStrip`, navigation buttons, New Tab, Extensions action and caption controls occupy the measured band. Ordinary tabs are 28 px rounded pills in the 32 px strip, content-sized from 95–190 px with exact 8 px gaps; close is hover/focus-only, title tails fade, New Tab is a transparent 30×30 square control, and the stock app-menu/divider are absent. Fresh-profile PL288H evidence proves multi-tab bounds, New Tab creation and native Extensions-menu expansion. Loading/sleeping treatments, wheel-physics parity, bangs, internal URLs and completed Electron lifecycle behavior remain to port. |
 | Favorites/sidebar/Copy Link | **Partial — corrected baseline live** | The 33 px native address row shows Ember's literal scheme/`www.`-stripped display, reveals the exact URL on focus, restores the compact display on blur, and routes submission through Chromium's real omnibox model. Its 26 px icon-only Copy control writes the exact active visible URL, announces success and shows an independent 1.2-second toast without shifting Favorites. The built 2x2 grid persists the three oracle defaults, paints 70×43 icon-only controls with 19 px images, and reuses matching native tabs. Grid capacity settings, native add/remove/reorder, tab drops and the satisfaction animation remain Electron-only. |
 | Profiles, history, downloads, bookmarks, settings, session restore | **Not started** | Must map Ember behavior onto Chromium Profile/Browser/TabStripModel and native storage/lifecycle systems with normal/private isolation. |
@@ -87,7 +87,7 @@ follow an upstream branch.
 | Internal pages and protocol | **Not started** | New tab, settings, history, downloads, bookmarks, unreachable/archive flows, and any retained `ember://` routing need native Chromium integration and security review. |
 | Bounded overlays and material | **Partial — shell material live** | The main native shell now paints one aligned Ember material behind the sidebar, toolbar and rounded page inset. Upload, conversion, context menu, Ctrl+Tab, archive, extension popup and related focus/capture behavior still need native equivalents. |
 | Security and privacy model | **Partial** | The isolated runtime used Chromium's browser broker plus GPU, renderer and utility roles with no `--no-sandbox`; real HTTPS navigation succeeded. Windows token/AppContainer, site isolation, permissions, private profiles, telemetry/network defaults, crash reporting, update trust and extension boundaries still require focused audits. |
-| Packaging and distribution | **Development packages built; refresh pending** | The last packaged nine-patch baseline emits a 197,394,012-byte portable ZIP (`2F4EB251…D1EA`) and 126,794,240-byte installer (`53A1B9D3…C760`) as deterministic `ember_151.0.7922.173-1.1_*_x64` artifacts. Patches 0010–0012 are built and runtime-verified in `out/Default` but not repackaged because the wrapper's prepared-build free-space gate now reports 51 GiB versus 60 GiB required. Binaries remain unsigned and release-scale integration is deferred. |
+| Packaging and distribution | **Development packages built; refresh pending** | The last packaged nine-patch baseline emits a 197,394,012-byte portable ZIP (`2F4EB251…D1EA`) and 126,794,240-byte installer (`53A1B9D3…C760`) as deterministic `ember_151.0.7922.173-1.1_*_x64` artifacts. Patches 0010–0013 are built and runtime-verified in `out/Default` but not repackaged because the wrapper's prepared-build free-space gate now reports 51 GiB versus 60 GiB required. Binaries remain unsigned and release-scale integration is deferred. |
 | Automated native parity harness | **Partial** | The Electron references are present and `chromium/tools/capture-native.js` records wide/medium/compact native captures through CDP. The latest practical pass combined Windows UI Automation geometry/actionability, CDP target identities, a direct HWND capture and graceful shutdown. Broader native lifecycle coverage is intentionally deferred until a feature exposes a real need. |
 | Electron oracle | **Passing baseline capture** | Electron 43.4.1 produced the checked-in offline reference set. Existing Electron source is intentionally retained. |
 
@@ -579,6 +579,28 @@ Last recorded: 2026-08-31.
   was placed at `-1870,274,1570×796` on PL288H and visually confirmed before
   the test process was closed; its external capture is
   `electron-start-pl288h-final-20260906.png`.
+
+### 2026-09-06 native top-bar density correction
+
+- **Reference refresh:** the restored Electron app was launched normally and
+  captured on PL288H at `-1870,274,1570×796`. Its page begins at local y=32;
+  material samples at y=30–31 match the native shell closely, so the shared
+  gradient was preserved. The working capture is
+  `electron-live-topbar-reference-pl288h-20260906.png` outside the repository.
+- **Implementation:** patch 0013 removes only the erroneous top/left content
+  inset, retaining the 8 px right/bottom frame. It also suppresses Chromium's
+  redundant one-pixel contents separator for the normal Ember layout and caps
+  `ToolbarView` at `kEmberTopChromeHeight` after runtime measurement exposed its
+  unconstrained 33 px preferred height.
+- **Build/runtime:** the touched layout object, native UI library and
+  `chrome.dll` linked successfully. A fresh-profile PL288H run measured
+  `ToolbarView` 32 px, `HorizontalTabStripRegionView` 32 px, New Tab 30×30,
+  Extensions 28×28 and `MultiContentsView` beginning at local y=32 with no
+  separator object. CDP exercised page focus/click behavior. The final capture
+  is `runtime-topbar-density-32px-final-pl288h-20260906.png` outside the repo.
+- **Verification:** patch 0013 is contract-tested for its single upstream file,
+  right/bottom-only inset, separator suppression and 32 px toolbar cap. Final
+  repository gate results are recorded after the synchronized run below.
 
 ## Build host restored — 2026-09-02, reverified 2026-09-03
 
