@@ -180,6 +180,11 @@ test/                          node:test contracts/integration fixtures
   current host it is the non-primary display left of the main screen, with
   bounds `-1920,224,1920×1080`. Re-enumerate displays after a topology change and
   position test windows there explicitly; do not put them over the main screen.
+- The native horizontal tab strip must retain Chromium's hidden
+  `TabStripComboButton`: `BrowserView::UpdateTabSearchBubbleHost()` owns a live
+  lifecycle dependency on it. Keep the host hidden and require `GetVisible()`
+  before reserving its leading margin; deleting it crashes during first-window
+  construction.
 - `updateTabMetrics()` cancels the pending pass when it is called again, and a
   new tab is followed by a run of state emits. Anything that must happen after
   the widths settle has to survive being superseded — keep it as state (an id,
@@ -479,18 +484,35 @@ Git is the history archive.
 
 Newest first. One entry per active/recent unit of work.
 
+### 2026-09-06 — Codex — Native top-bar completion
+- **Status / Branch:** completed and synchronized · `chromium-port`
+- **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`,
+  `test/chromium-port.test.js`, `chromium/patches/series`,
+  `chromium/patches/ember/0012-*.patch`
+- **Summary:** Finish the visible top bar before beginning another port slice.
+  Replace Chrome-shaped tab footprints with the measured 28 px Ember pills,
+  size tabs from their real title content within 95–190 px, reveal the close
+  control only on tab hover/focus, restore the square 30 px New Tab treatment,
+  and expose Chromium's real Extensions menu as the sole trailing action.
+  Ten focused objects and the native DLL/executable targets compile. Fresh-profile
+  PL288H captures prove exact measured bounds and states; UI Automation/CDP prove
+  New Tab, and the real Extensions action expands Chromium's native menu. The
+  hidden tab-search host remains alive without consuming visible margin.
+
 ### 2026-09-05 — Codex — Native shared shell material
-- **Status / Branch:** in progress · `chromium-port`
+- **Status / Branch:** completed and synchronized · `chromium-port`
 - **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`,
   `test/chromium-port.test.js`, `chromium/patches/series`,
   `chromium/patches/ember/0011-*.patch`
 - **Summary:** Port the measured shell gradient through Chromium's existing
   `ThemedBackground`, aligned to one BrowserView coordinate system for the
   sidebar, toolbar and page inset. Paint only the shell around the native page
-  clip. Preserve normal HWND composition and use a focused compile/capture pass.
+  clip. The focused native objects/DLL built and a PL288H capture verified one
+  continuous material behind the sidebar, toolbar and rounded page inset while
+  retaining the normal HWND.
 
 ### 2026-09-04 — Codex — Native rounded page surface
-- **Status / Branch:** in progress · `chromium-port`
+- **Status / Branch:** completed and synchronized · `chromium-port`
 - **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`,
   `docs/superpowers/plans/2026-09-04-native-rounded-page-surface.md`,
   `test/chromium-port.test.js`, `chromium/patches/series`,
@@ -499,8 +521,9 @@ Newest first. One entry per active/recent unit of work.
   `MultiContentsView`/`ContentsContainerView` clipping path. Keep the current
   8 px frame-painted inset as the bounded shell surface and explicitly remove
   the radius in fullscreen; no overlay windows, renderer recreation or custom
-  security path. One focused object build and one practical native capture are
-  the acceptance pass.
+  security path. The focused object and native executable built; normal,
+  fullscreen and restored PL288H captures plus page interaction verified the
+  radius lifecycle.
 
 ### 2026-09-04 — Codex — Native compact top-chrome geometry
 - **Status / Branch:** completed and synchronized · `chromium-port`
@@ -514,7 +537,8 @@ Newest first. One entry per active/recent unit of work.
   core Ember states. The final pass also suppresses Chromium's duplicate
   bookmarks row. Six focused objects and both full resumes built; fresh-profile
   UI Automation/HTTP-CDP proved Reload, New Tab, menu expansion, exact bounds,
-  no bookmark bar and clean shutdown. Page radius/material is the next slice.
+  no bookmark bar and clean shutdown. Patches 0010–0012 subsequently completed
+  page radius, shared material and the final measured top-bar treatments.
 
 ### 2026-09-04 — Codex — Native sidebar address and Copy parity
 - **Status / Branch:** completed and synchronized · `chromium-port`

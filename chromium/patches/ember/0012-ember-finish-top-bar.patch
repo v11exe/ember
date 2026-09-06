@@ -1,0 +1,407 @@
+diff --git a/chrome/browser/ui/layout_constants.cc b/chrome/browser/ui/layout_constants.cc
+index 56c4ec6..b06f254 100644
+--- a/chrome/browser/ui/layout_constants.cc
++++ b/chrome/browser/ui/layout_constants.cc
+@@ -108,7 +108,7 @@ int GetLayoutConstant(LayoutConstant constant) {
+     case LayoutConstant::kTabSeparatorHeight:
+       return touch_ui ? 24 : 20;
+     case LayoutConstant::kTabPreTitlePadding:
+-      return 8;
++      return 7;
+     case LayoutConstant::kTabStackDistance:
+       return touch_ui ? 4 : 6;
+     case LayoutConstant::kTabstripToolbarOverlap:
+diff --git a/chrome/browser/ui/tabs/tab_style.cc b/chrome/browser/ui/tabs/tab_style.cc
+index d040a4d..c367606 100644
+--- a/chrome/browser/ui/tabs/tab_style.cc
++++ b/chrome/browser/ui/tabs/tab_style.cc
+@@ -25,7 +25,7 @@ constexpr int kEmberTabMinimumWidth = 95;
+ TabStyle::~TabStyle() = default;
+ 
+ int TabStyle::GetStandardHeight() const {
+-  return GetLayoutConstant(LayoutConstant::kTabHeight);
++  return GetLayoutConstant(LayoutConstant::kTabStripHeight);
+ }
+ 
+ int TabStyle::GetStandardWidth(const bool is_split) const {
+@@ -134,7 +134,9 @@ TabStyle::TabColors TabStyle::CalculateTargetColors(
+     const bool frame_active,
+     const ui::ColorProvider* color_provider) const {
+   const SkColor foreground_color =
+-      GetTabForegroundColor(apparently_active, frame_active, color_provider);
++      apparently_active
++          ? SkColorSetARGB(0xF0, 0xFF, 0xFF, 0xFF)
++          : SkColorSetARGB(hovered ? 0xDB : 0xB3, 0xFF, 0xFF, 0xFF);
+   const SkColor background_color =
+       GetTabBackgroundColor(state, hovered, frame_active, color_provider);
+   const ui::ColorId focus_ring_color =
+diff --git a/chrome/browser/ui/views/extensions/extensions_toolbar_desktop.cc b/chrome/browser/ui/views/extensions/extensions_toolbar_desktop.cc
+index 01e0e68..d6b27c3 100644
+--- a/chrome/browser/ui/views/extensions/extensions_toolbar_desktop.cc
++++ b/chrome/browser/ui/views/extensions/extensions_toolbar_desktop.cc
+@@ -143,8 +143,8 @@ ExtensionsToolbarDesktop::ExtensionsToolbarDesktop(Browser* browser,
+   SetProperty(views::kElementIdentifierKey,
+               kToolbarExtensionsContainerElementId);
+ 
+-  // The container shouldn't show unless / until we have extensions available.
+-  SetVisible(false);
++  // Ember reserves this one action in the normal top bar from first launch.
++  SetVisible(display_mode_ == DisplayMode::kNormal);
+ 
+   // So we only get enter/exit messages when the mouse enters/exits the whole
+   // container, even if it is entering/exiting a specific toolbar action view,
+@@ -996,8 +996,17 @@ void ExtensionsToolbarDesktop::UpdateContainerVisibility() {
+ }
+ 
+ bool ExtensionsToolbarDesktop::ShouldContainerBeVisible() const {
+-  if (base::CommandLine::ForCurrentProcess()->HasSwitch("hide-extensions-menu"))
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++          "hide-extensions-menu")) {
+     return false;
++  }
++
++  // Ember keeps one real Extensions action in the top bar even for a fresh
++  // profile. It opens Chromium's native extensions menu and becomes useful as
++  // soon as the first extension is installed without moving the tab strip.
++  if (display_mode_ == DisplayMode::kNormal) {
++    return true;
++  }
+ 
+   // The container (and extensions-menu button) should not be visible if we have
+   // no extensions.
+diff --git a/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc b/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
+index a7f1d99..814e70b 100644
+--- a/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
++++ b/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
+@@ -396,12 +396,11 @@ void HorizontalTabStripRegionView::Layout(PassKey) {
+ 
+     // The y position is measured from the bottom of the tabstrip, and then
+     // padding and button height are removed.
+-    int x = tab_strip_->bounds().right() -
+-            TabStyle::Get()->GetBottomCornerRadius() +
+-            GetLayoutConstant(LayoutConstant::kTabStripPadding) +
+-            GetLayoutConstant(LayoutConstant::kNewTabButtonLeadingMargin);
++    constexpr int kEmberTabGap = 8;
++    const int x = tab_strip_->bounds().right() + kEmberTabGap;
+ 
+-    gfx::Point button_new_position = gfx::Point(x, GetInsets().top());
++    const gfx::Point button_new_position(x,
++                                         (height() - button_size.height()) / 2);
+     gfx::Rect button_new_bounds = gfx::Rect(button_new_position, button_size);
+ 
+     // If the tabsearch button is before the tabstrip container, then manually
+@@ -674,9 +673,9 @@ void HorizontalTabStripRegionView::UpdateTabStripMargin() {
+     // account for extra spacing.
+     button_to_paint_to_layer->SetProperty(views::kViewIgnoredByLayoutKey, true);
+ 
++    constexpr int kEmberTabGap = 8;
+     tab_strip_right_margin =
+-        button_to_paint_to_layer->GetPreferredSize().width() +
+-        GetLayoutConstant(LayoutConstant::kTabStripPadding);
++        button_to_paint_to_layer->GetPreferredSize().width() + kEmberTabGap;
+   }
+ 
+   // If the tab search button is before the tab strip, it also overlaps the
+@@ -693,10 +692,11 @@ void HorizontalTabStripRegionView::UpdateTabStripMargin() {
+         GetLayoutConstant(LayoutConstant::kTabStripPadding);
+   }
+ 
+-  if (combo_button_ && ((combo_button_->start_button() &&
+-                         combo_button_->start_button()->GetVisible()) ||
+-                        (combo_button_->end_button() &&
+-                         combo_button_->end_button()->GetVisible()))) {
++  if (combo_button_ && combo_button_->GetVisible() &&
++      ((combo_button_->start_button() &&
++        combo_button_->start_button()->GetVisible()) ||
++       (combo_button_->end_button() &&
++        combo_button_->end_button()->GetVisible()))) {
+     combo_button_->SetPaintToLayer();
+     combo_button_->layer()->SetFillsBoundsOpaquely(false);
+     combo_button_->SetProperty(views::kViewIgnoredByLayoutKey, true);
+diff --git a/chrome/browser/ui/views/tabs/new_tab_button.cc b/chrome/browser/ui/views/tabs/new_tab_button.cc
+index 7846867..497a1db 100644
+--- a/chrome/browser/ui/views/tabs/new_tab_button.cc
++++ b/chrome/browser/ui/views/tabs/new_tab_button.cc
+@@ -67,11 +67,7 @@ void NewTabButton::ShowContextMenuForViewImpl(
+ }
+ 
+ void NewTabButton::UpdateBackground() {
+-  if (features::IsGlassFrameEnabled()) {
+-    SetBackground(views::CreateSolidBackground(SK_ColorTRANSPARENT));
+-    return;
+-  }
+-  TabStripControlButton::UpdateBackground();
++  SetBackground(views::CreateSolidBackground(SK_ColorTRANSPARENT));
+ }
+ 
+ NewTabButtonMenuModel::NewTabButtonMenuModel(BrowserWindowInterface* browser)
+diff --git a/chrome/browser/ui/views/tabs/tab.cc b/chrome/browser/ui/views/tabs/tab.cc
+index 4ca1718..20e8237 100644
+--- a/chrome/browser/ui/views/tabs/tab.cc
++++ b/chrome/browser/ui/views/tabs/tab.cc
+@@ -111,6 +111,8 @@ constexpr int kPinnedTabExtraWidthToRenderAsNormal = 30;
+ // indicator when `extra_alert_indicator_padding_` is true.
+ constexpr int kTabAlertIndicatorCloseButtonPaddingAdjustmentTouchUI = 8;
+ constexpr int kTabAlertIndicatorCloseButtonPaddingAdjustment = 4;
++constexpr int kEmberTabMinimumWidth = 95;
++constexpr int kEmberTabMaximumWidth = 190;
+ 
+ bool g_show_hover_card_on_mouse_hover = true;
+ 
+@@ -184,9 +186,7 @@ class Tab::TabCloseButtonObserver : public views::ViewObserver {
+   void OnViewFocused(views::View* observed_view) override {
+     controller_->UpdateHoverCard(
+         tab_, TabSlotController::HoverCardUpdateType::kFocus);
+-    if (features::IsTabStripDeclutterEnabled()) {
+-      tab_->InvalidateLayout();
+-    }
++    tab_->InvalidateLayout();
+   }
+ 
+   void OnViewBlurred(views::View* observed_view) override {
+@@ -195,9 +195,7 @@ class Tab::TabCloseButtonObserver : public views::ViewObserver {
+       controller_->UpdateHoverCard(
+           nullptr, TabSlotController::HoverCardUpdateType::kFocus);
+     }
+-    if (features::IsTabStripDeclutterEnabled()) {
+-      tab_->InvalidateLayout();
+-    }
++    tab_->InvalidateLayout();
+   }
+ 
+   base::ScopedObservation<views::View, views::ViewObserver>
+@@ -398,7 +396,9 @@ void Tab::Layout(PassKey) {
+   const int after_title_padding =
+       GetLayoutConstant(LayoutConstant::kTabAfterTitlePadding);
+ 
+-  int close_x = contents_rect.right();
++  // Ember's hover close surface sits six DIPs inside the painted pill. The
++  // visible icon still follows Chromium's accessibility-aware button model.
++  int close_x = contents_rect.right() - 5;
+   if (showing_close_button_) {
+     // The visible size is the button's hover shape size. The actual size
+     // includes the border insets for the button.
+@@ -784,9 +784,7 @@ void Tab::OnFocus() {
+   controller_->TabKeyboardFocusChangedTo(tab_handle_.Get());
+   controller_->UpdateHoverCard(this,
+                                TabSlotController::HoverCardUpdateType::kFocus);
+-  if (features::IsTabStripDeclutterEnabled()) {
+-    InvalidateLayout();
+-  }
++  InvalidateLayout();
+ }
+ 
+ void Tab::OnBlur() {
+@@ -798,9 +796,7 @@ void Tab::OnBlur() {
+     controller_->UpdateHoverCard(
+         nullptr, TabSlotController::HoverCardUpdateType::kFocus);
+   }
+-  if (features::IsTabStripDeclutterEnabled()) {
+-    InvalidateLayout();
+-  }
++  InvalidateLayout();
+ }
+ 
+ void Tab::OnThemeChanged() {
+@@ -813,10 +809,19 @@ TabSlotView::ViewType Tab::GetTabSlotViewType() const {
+ }
+ 
+ TabSizeInfo Tab::GetTabSizeInfo() const {
++  int standard_width = tab_style()->GetContentsInsets().width() +
++                       title_->GetPreferredSize().width();
++  if (data().should_display_favicon) {
++    standard_width += gfx::kFaviconSize +
++                      GetLayoutConstant(LayoutConstant::kTabPreTitlePadding);
++  }
++  standard_width =
++      std::clamp(standard_width, kEmberTabMinimumWidth, kEmberTabMaximumWidth);
+   return {tab_style()->GetPinnedWidth(split().has_value()),
+           tab_style()->GetMinimumActiveWidth(split().has_value()),
+           tab_style()->GetMinimumInactiveWidth(),
+-          tab_style()->GetStandardWidth(split().has_value())};
++          split().has_value() ? tab_style()->GetStandardWidth(/*is_split=*/true)
++                              : standard_width};
+ }
+ 
+ void Tab::SetGroup(std::optional<tab_groups::TabGroupId> group) {
+@@ -1110,8 +1115,8 @@ void Tab::UpdateIconVisibility() {
+     // browser scenarios.
+     showing_close_button_ = should_show_close_button;
+ #else
+-    // Close button is shown on active tabs regardless of the size.
+-    showing_close_button_ = true;
++    showing_close_button_ = mouse_hovered_ || HasFocus() ||
++                            (close_button_ && close_button_->HasFocus());
+ #endif  // BUILDFLAG(IS_CHROMEOS)
+     if (base::CommandLine::ForCurrentProcess()->HasSwitch("hide-tab-close-buttons")) {
+       showing_close_button_ = false;
+@@ -1170,16 +1175,13 @@ void Tab::UpdateIconVisibility() {
+       available_width -= favicon_width;
+     }
+ 
+-    const bool is_decluttered =
+-        features::IsTabStripDeclutterEnabled() &&
+-        available_width <= TabStyle::kTabStripDeclutterMaxTabWidthForCloseHide;
+     showing_close_button_ =
+         !base::CommandLine::ForCurrentProcess()->HasSwitch("hide-tab-close-buttons") &&
+ #if BUILDFLAG(IS_CHROMEOS)
+         should_show_close_button &&
+ #endif
+         large_enough_for_close_button &&
+-        (!is_decluttered || mouse_hovered_ || HasFocus() ||
++        (mouse_hovered_ || HasFocus() ||
+          (close_button_ && close_button_->HasFocus()));
+     if (showing_close_button_) {
+       available_width -= close_button_width;
+@@ -1342,6 +1344,7 @@ void Tab::OnTabDataChanged(TabChangeType tab_change_type,
+   did_title_change = title != old_title;
+   if (did_title_change) {
+     title_->SetText(title);
++    PreferredSizeChanged();
+   }
+ 
+   const bool did_alert_state_change = previous_alert_state != data_.alert_state;
+diff --git a/chrome/browser/ui/views/tabs/tab/tab_close_button.cc b/chrome/browser/ui/views/tabs/tab/tab_close_button.cc
+index b18fcb0..c9f283e 100644
+--- a/chrome/browser/ui/views/tabs/tab/tab_close_button.cc
++++ b/chrome/browser/ui/views/tabs/tab/tab_close_button.cc
+@@ -22,6 +22,7 @@
+ #include "ui/gfx/image/image_skia_operations.h"
+ #include "ui/views/accessibility/view_accessibility.h"
+ #include "ui/views/animation/ink_drop.h"
++#include "ui/views/background.h"
+ #include "ui/views/controls/focus_ring.h"
+ #include "ui/views/controls/highlight_path_generator.h"
+ #include "ui/views/property_effects.h"
+@@ -36,7 +37,7 @@ namespace {
+ gfx::Size GetButtonSize() {
+   // The close button is larger than the icon inside to provide a larger hit
+   // target.
+-  constexpr int kButtonPadding = 12;
++  constexpr int kButtonPadding = 16;
+   const int icon_size = GetLayoutConstant(LayoutConstant::kTabCloseButtonSize);
+   const int button_size = icon_size + kButtonPadding;
+   return gfx::Size(button_size, button_size);
+@@ -77,7 +78,8 @@ TabCloseButton::TabCloseButton(PressedCallback pressed_callback,
+   // TODO(http://crbug.com/40120351): Make ink drops in RTL work the same way as
+   // focus rings.
+   auto ink_drop_highlight_path =
+-      std::make_unique<views::CircleHighlightPathGenerator>(gfx::Insets());
++      std::make_unique<views::RoundRectHighlightPathGenerator>(gfx::Insets(),
++                                                               6);
+   ink_drop_highlight_path->set_use_contents_bounds(true);
+   ink_drop_highlight_path->set_use_mirrored_rect(true);
+   views::HighlightPathGenerator::Install(this,
+@@ -87,10 +89,14 @@ TabCloseButton::TabCloseButton(PressedCallback pressed_callback,
+   // TODO(http://crbug.com/40120351): Once this bug is solved and explicit
+   // mirroring for ink drops is not needed, we can combine these two.
+   auto ring_highlight_path =
+-      std::make_unique<views::CircleHighlightPathGenerator>(gfx::Insets());
++      std::make_unique<views::RoundRectHighlightPathGenerator>(gfx::Insets(),
++                                                               6);
+   ring_highlight_path->set_use_contents_bounds(true);
+   views::FocusRing::Get(this)->SetPathGenerator(std::move(ring_highlight_path));
+ 
++  SetBackground(views::CreateRoundedRectBackground(
++      SkColorSetARGB(0xF5, 0x23, 0x1D, 0x1B), 6));
++
+   UpdateIcon();
+ }
+ 
+diff --git a/chrome/browser/ui/views/tabs/tab_strip_control_button.cc b/chrome/browser/ui/views/tabs/tab_strip_control_button.cc
+index 5fe1597..fe13144 100644
+--- a/chrome/browser/ui/views/tabs/tab_strip_control_button.cc
++++ b/chrome/browser/ui/views/tabs/tab_strip_control_button.cc
+@@ -59,8 +59,8 @@ class ControlButtonHighlightPathGenerator
+ };
+ }  // namespace
+ 
+-const int TabStripControlButton::kIconSize = 16;
++const int TabStripControlButton::kIconSize = 17;
+ const gfx::Size TabStripControlButton::kButtonSize{28, 28};
+ 
+ TabStripControlButton::TabStripControlButton(
+     BrowserWindowInterface* browser_window_interface,
+@@ -193,7 +193,7 @@ void TabStripControlButton::UpdateIcon() {
+ }
+ 
+ int TabStripControlButton::GetCornerRadius() const {
+-  return TabStripControlButton::kButtonSize.width() / 2;
++  return 6;
+ }
+ 
+ int TabStripControlButton::GetFlatCornerRadius() const {
+diff --git a/chrome/browser/ui/views/tabs/tab_style_views.cc b/chrome/browser/ui/views/tabs/tab_style_views.cc
+index 65b7500..4bc9984 100644
+--- a/chrome/browser/ui/views/tabs/tab_style_views.cc
++++ b/chrome/browser/ui/views/tabs/tab_style_views.cc
+@@ -195,6 +195,40 @@ SkPath TabStyleViewsImpl::GetPath(TabStyle::PathType path_type,
+   gfx::RectF aligned_bounds =
+       ScaleAndAlignBounds(tab()->bounds(), scale, stroke_thickness);
+ 
++  // Ember tabs are detached rounded pills. Chromium's standard active path
++  // grows shoulders into neighbouring tabs, but that turns Ember's measured
++  // eight-DIP gap into a visibly larger void. Keep split tabs on Chromium's
++  // specialized path and use the same pill footprint for every ordinary state.
++  if (!tab()->split().has_value()) {
++    const bool hit_test = path_type == TabStyle::PathType::kHitTest;
++    const float stroke_inset =
++        hit_test ? 0.0f : 0.5f * stroke_thickness * scale;
++    const float top =
++        aligned_bounds.y() +
++        (hit_test
++             ? 0.0f
++             : GetLayoutConstant(LayoutConstant::kTabStripPadding) * scale) +
++        stroke_inset;
++    const float bottom =
++        hit_test ? aligned_bounds.bottom()
++                 : top + GetLayoutConstant(LayoutConstant::kTabHeight) * scale -
++                       (2.0f * stroke_inset);
++    const SkRect pill_bounds =
++        SkRect::MakeLTRB(aligned_bounds.x() + stroke_inset, top,
++                         aligned_bounds.right() - stroke_inset, bottom);
++    const float radius = tab_style()->GetTopCornerRadius() * scale;
++    SkPathBuilder path;
++    path.addRRect(SkRRect::MakeRectXY(pill_bounds, radius, radius));
++
++    gfx::PointF origin(tab()->origin());
++    origin.Scale(scale);
++    path.offset(-origin.x(), -origin.y());
++    if (flags.render_units == TabStyle::RenderUnits::kDips && scale != 1.0f) {
++      path.transform(SkMatrix::Scale(1.0f / scale, 1.0f / scale));
++    }
++    return path.detach();
++  }
++
+   // Calculate the corner radii. Note that corner radius is based on original
+   // tab width (in DIP), not our new, scaled-and-aligned bounds.
+   float content_corner_radius =
+diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.cc b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+index ad629c2..7d62aa9 100644
+--- a/chrome/browser/ui/views/toolbar/toolbar_view.cc
++++ b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+@@ -496,6 +496,7 @@ void ToolbarView::Init() {
+ 
+   if (toolbar_divider) {
+     toolbar_divider_ = AddChildView(std::move(toolbar_divider));
++    toolbar_divider_->SetVisible(false);
+   }
+ 
+   if (!features::IsWebUIPinnedToolbarActionsEnabled()) {
+@@ -611,6 +612,7 @@ void ToolbarView::Init() {
+         l10n_util::GetStringUTF16(IDS_APPMENU_TOOLTIP));
+     app_menu_button->SetID(VIEW_ID_APP_MENU);
+     app_menu_button_ = AddChildView(std::move(app_menu_button));
++    app_menu_button_->SetVisible(false);
+   }
+ 
+   if (base::FeatureList::IsEnabled(contextual_tasks::kContextualTasks) &&
+@@ -1672,7 +1674,7 @@ void ToolbarView::LayoutCommon() {
+ 
+   if (toolbar_divider_ && extensions_container_) {
+     views::ManualLayoutUtil(layout_manager_)
+-        .SetViewHidden(toolbar_divider_, !extensions_container_->GetVisible());
++        .SetViewHidden(toolbar_divider_, true);
+   }
+   // Cast button visibility is controlled externally.
+ }
