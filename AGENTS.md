@@ -484,6 +484,36 @@ Git is the history archive.
 
 Newest first. One entry per active/recent unit of work.
 
+### 2026-09-09 — Codex — EmberGlass corrective acceptance
+- **Status / Branch:** bounded overlay acceptance and full native target complete; native build remains on `chromium-port`
+- **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`, native capture/debug
+  tooling, `test/chromium-port.test.js`, `chromium/patches/ember/0014+`,
+  `chromium/patches/series`, external pinned Chromium postimages
+- **Summary:** Patch 0017 replaces the unavailable generic JPEG decoder with
+  Chromium's registered decoder, removes the blue fallback, cleans visible
+  mnemonics/focus rings, and restores the approved liquid-glass pixels in actual
+  HWND captures. Patches 0018–0020 finish the Opera-style carousel, compact
+  menu geometry, layered anti-banded shadow, eligible tab/New Tab/extension
+  action menu adoption, final-card hit-testing, immediate Ctrl-release commit,
+  screen-space menu anchoring, and the Extensions popup's one-shot captured
+  EmberGlass backdrop. More than 1,200 debugger-driven Ctrl+Tab cycles did not
+  reproduce the reported release crash; the final PL288H runtime pass also
+  produced native HWND captures and an actual motion recording. The definitive
+  full `chrome` target completed 333/333 pending actions through `chrome.exe`,
+  and three consecutive clean-profile Electron smoke retries passed.
+
+### 2026-09-06 — Codex — Native reusable EmberGlass overlays
+- **Status / Branch:** completed · `chromium-port`
+- **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`,
+  `docs/superpowers/plans/2026-09-06-native-ember-glass.md`,
+  `test/chromium-port.test.js`, `chromium/resources`,
+  `chromium/patches/series`, `chromium/patches/ember/0014-0016`
+- **Summary:** Port the approved adaptive native Skia PoC into reusable cached
+  C++/Views glass panels, then use it for model-backed webpage context menus and
+  the MRU Ctrl+Tab switcher without changing the accepted shell geometry. Focused
+  objects and the full bounded `chrome` target compile; CDP capture and clean
+  shutdown pass, with HWND-level visual capture explicitly limited by CDP scope.
+
 ### 2026-09-06 — Codex — Native top-bar density correction
 - **Status / Branch:** completed and synchronized · `chromium-port`
 - **Touches:** `AGENTS.md`, `CHROMIUM_PORT_STATUS.md`,

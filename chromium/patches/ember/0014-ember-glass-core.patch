@@ -1,0 +1,744 @@
+diff --git a/chrome/app/theme/chrome_unscaled_resources.grd b/chrome/app/theme/chrome_unscaled_resources.grd
+index fe78c61..2bb7fa7 100644
+--- a/chrome/app/theme/chrome_unscaled_resources.grd
++++ b/chrome/app/theme/chrome_unscaled_resources.grd
+@@ -14,6 +14,7 @@
+   </outputs>
+   <release seq="1">
+     <includes>
++      <include name="IDR_EMBER_GLASS_DISPLACEMENT" file="chromium/ember_glass_displacement.jpg" type="BINDATA" />
+       <if expr="is_linux">
+         <then>
+           <include name="IDR_PRODUCT_LOGO_64" file="${branding_path_component}/linux/product_logo_64.png" type="BINDATA" />
+diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
+index b2da6e9..2b19092 100644
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -3962,6 +3962,10 @@ static_library("ui") {
+       "views/frame/browser_native_widget.h",
+       "views/frame/browser_native_widget_factory.cc",
+       "views/frame/browser_native_widget_factory.h",
++      "views/ember/ember_glass_material.cc",
++      "views/ember/ember_glass_material.h",
++      "views/ember/ember_glass_view.cc",
++      "views/ember/ember_glass_view.h",
+       "views/frame/browser_root_view.cc",
+       "views/frame/browser_view.cc",
+       "views/frame/browser_view.h",
+diff --git a/chrome/browser/ui/views/ember/ember_glass_material.cc b/chrome/browser/ui/views/ember/ember_glass_material.cc
+new file mode 100644
+index 0000000..9787b43
+--- /dev/null
++++ b/chrome/browser/ui/views/ember/ember_glass_material.cc
+@@ -0,0 +1,421 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/views/ember/ember_glass_material.h"
++
++#include <algorithm>
++#include <cmath>
++#include <cstdint>
++#include <vector>
++
++#include "base/memory/ref_counted_memory.h"
++#include "chrome/grit/chrome_unscaled_resources.h"
++#include "third_party/skia/include/codec/SkCodec.h"
++#include "third_party/skia/include/core/SkCanvas.h"
++#include "third_party/skia/include/core/SkColor.h"
++#include "third_party/skia/include/core/SkData.h"
++#include "third_party/skia/include/core/SkImage.h"
++#include "third_party/skia/include/core/SkImageInfo.h"
++#include "third_party/skia/include/core/SkSamplingOptions.h"
++#include "ui/base/resource/resource_bundle.h"
++
++namespace ember {
++namespace {
++
++struct Rgba8 {
++  uint8_t r = 0;
++  uint8_t g = 0;
++  uint8_t b = 0;
++  uint8_t a = 255;
++};
++
++Rgba8 Unpack(SkColor color) {
++  return {static_cast<uint8_t>(SkColorGetR(color)),
++          static_cast<uint8_t>(SkColorGetG(color)),
++          static_cast<uint8_t>(SkColorGetB(color)),
++          static_cast<uint8_t>(SkColorGetA(color))};
++}
++
++SkColor Pack(const Rgba8& pixel) {
++  return SkColorSetARGB(pixel.a, pixel.r, pixel.g, pixel.b);
++}
++
++Rgba8 Lerp(const Rgba8& from, const Rgba8& to, float amount) {
++  auto channel = [amount](uint8_t a, uint8_t b) {
++    return static_cast<uint8_t>(std::clamp(
++        static_cast<float>(a) +
++            (static_cast<float>(b) - static_cast<float>(a)) * amount,
++        0.0f, 255.0f));
++  };
++  return {channel(from.r, to.r), channel(from.g, to.g),
++          channel(from.b, to.b), channel(from.a, to.a)};
++}
++
++Rgba8 SampleBilinear(const SkBitmap& bitmap, float x, float y) {
++  x = std::clamp(x, 0.0f, static_cast<float>(bitmap.width() - 1));
++  y = std::clamp(y, 0.0f, static_cast<float>(bitmap.height() - 1));
++  const int x0 = static_cast<int>(std::floor(x));
++  const int y0 = static_cast<int>(std::floor(y));
++  const int x1 = std::min(x0 + 1, bitmap.width() - 1);
++  const int y1 = std::min(y0 + 1, bitmap.height() - 1);
++  const float tx = x - x0;
++  const float ty = y - y0;
++  return Lerp(Lerp(Unpack(bitmap.getColor(x0, y0)),
++                   Unpack(bitmap.getColor(x1, y0)), tx),
++              Lerp(Unpack(bitmap.getColor(x0, y1)),
++                   Unpack(bitmap.getColor(x1, y1)), tx),
++              ty);
++}
++
++void BoxBlurPass(const std::vector<Rgba8>& source,
++                 std::vector<Rgba8>* destination,
++                 int width,
++                 int height,
++                 int radius,
++                 bool horizontal) {
++  if (radius <= 0) {
++    *destination = source;
++    return;
++  }
++  destination->assign(source.size(), {});
++  const int window = radius * 2 + 1;
++  if (horizontal) {
++    for (int y = 0; y < height; ++y) {
++      int red = 0, green = 0, blue = 0, alpha = 0;
++      auto pixel_at = [&](int x) -> const Rgba8& {
++        x = std::clamp(x, 0, width - 1);
++        return source[static_cast<size_t>(y) * width + x];
++      };
++      for (int offset = -radius; offset <= radius; ++offset) {
++        const Rgba8& pixel = pixel_at(offset);
++        red += pixel.r;
++        green += pixel.g;
++        blue += pixel.b;
++        alpha += pixel.a;
++      }
++      for (int x = 0; x < width; ++x) {
++        (*destination)[static_cast<size_t>(y) * width + x] = {
++            static_cast<uint8_t>(red / window),
++            static_cast<uint8_t>(green / window),
++            static_cast<uint8_t>(blue / window),
++            static_cast<uint8_t>(alpha / window)};
++        const Rgba8& outgoing = pixel_at(x - radius);
++        const Rgba8& incoming = pixel_at(x + radius + 1);
++        red += incoming.r - outgoing.r;
++        green += incoming.g - outgoing.g;
++        blue += incoming.b - outgoing.b;
++        alpha += incoming.a - outgoing.a;
++      }
++    }
++    return;
++  }
++  for (int x = 0; x < width; ++x) {
++    int red = 0, green = 0, blue = 0, alpha = 0;
++    auto pixel_at = [&](int y) -> const Rgba8& {
++      y = std::clamp(y, 0, height - 1);
++      return source[static_cast<size_t>(y) * width + x];
++    };
++    for (int offset = -radius; offset <= radius; ++offset) {
++      const Rgba8& pixel = pixel_at(offset);
++      red += pixel.r;
++      green += pixel.g;
++      blue += pixel.b;
++      alpha += pixel.a;
++    }
++    for (int y = 0; y < height; ++y) {
++      (*destination)[static_cast<size_t>(y) * width + x] = {
++          static_cast<uint8_t>(red / window),
++          static_cast<uint8_t>(green / window),
++          static_cast<uint8_t>(blue / window),
++          static_cast<uint8_t>(alpha / window)};
++      const Rgba8& outgoing = pixel_at(y - radius);
++      const Rgba8& incoming = pixel_at(y + radius + 1);
++      red += incoming.r - outgoing.r;
++      green += incoming.g - outgoing.g;
++      blue += incoming.b - outgoing.b;
++      alpha += incoming.a - outgoing.a;
++    }
++  }
++}
++
++void BlurBitmapCpu(SkBitmap* bitmap, float blur_pixels) {
++  const int width = bitmap->width();
++  const int height = bitmap->height();
++  std::vector<Rgba8> first(static_cast<size_t>(width) * height);
++  for (int y = 0; y < height; ++y) {
++    for (int x = 0; x < width; ++x) {
++      first[static_cast<size_t>(y) * width + x] =
++          Unpack(bitmap->getColor(x, y));
++    }
++  }
++  const int radius = std::clamp(
++      static_cast<int>(std::round(blur_pixels * 0.58f)), 0, 32);
++  std::vector<Rgba8> second;
++  std::vector<Rgba8> third;
++  BoxBlurPass(first, &second, width, height, radius, true);
++  BoxBlurPass(second, &third, width, height, radius, false);
++  BoxBlurPass(third, &second, width, height, radius / 2, true);
++  BoxBlurPass(second, &third, width, height, radius / 2, false);
++  for (int y = 0; y < height; ++y) {
++    for (int x = 0; x < width; ++x) {
++      *bitmap->getAddr32(x, y) =
++          Pack(third[static_cast<size_t>(y) * width + x]);
++    }
++  }
++}
++
++void SaturateBitmapCpu(SkBitmap* bitmap, float percent) {
++  const float saturation = percent / 100.0f;
++  for (int y = 0; y < bitmap->height(); ++y) {
++    for (int x = 0; x < bitmap->width(); ++x) {
++      Rgba8 pixel = Unpack(bitmap->getColor(x, y));
++      const float luma =
++          0.2126f * pixel.r + 0.7152f * pixel.g + 0.0722f * pixel.b;
++      auto channel = [luma, saturation](uint8_t value) {
++        return static_cast<uint8_t>(std::clamp(
++            luma + (static_cast<float>(value) - luma) * saturation,
++            0.0f, 255.0f));
++      };
++      pixel.r = channel(pixel.r);
++      pixel.g = channel(pixel.g);
++      pixel.b = channel(pixel.b);
++      *bitmap->getAddr32(x, y) = Pack(pixel);
++    }
++  }
++}
++
++float AverageBitmapLuminance(const SkBitmap& bitmap) {
++  double total = 0.0;
++  int samples = 0;
++  for (int y = 0; y < bitmap.height(); y += 4) {
++    for (int x = 0; x < bitmap.width(); x += 4) {
++      const Rgba8 pixel = Unpack(bitmap.getColor(x, y));
++      total += 0.2126 * pixel.r / 255.0 + 0.7152 * pixel.g / 255.0 +
++               0.0722 * pixel.b / 255.0;
++      ++samples;
++    }
++  }
++  return samples ? static_cast<float>(total / samples) : 0.0f;
++}
++
++void ApplyBrightBackdropTreatment(SkBitmap* bitmap, float luminance) {
++  const float amount =
++      std::clamp(0.10f + (luminance - 0.80f) * 0.30f, 0.10f, 0.16f);
++  constexpr Rgba8 kBrightTint{72, 78, 88, 255};
++  for (int y = 0; y < bitmap->height(); ++y) {
++    for (int x = 0; x < bitmap->width(); ++x) {
++      *bitmap->getAddr32(x, y) =
++          Pack(Lerp(Unpack(bitmap->getColor(x, y)), kBrightTint, amount));
++    }
++  }
++}
++
++SkRect CoverSourceRect(float source_width,
++                       float source_height,
++                       float target_width,
++                       float target_height) {
++  const float source_aspect = source_width / source_height;
++  const float target_aspect = target_width / target_height;
++  if (source_aspect > target_aspect) {
++    const float width = source_height * target_aspect;
++    return SkRect::MakeXYWH((source_width - width) * 0.5f, 0.0f, width,
++                            source_height);
++  }
++  const float height = source_width / target_aspect;
++  return SkRect::MakeXYWH(0.0f, (source_height - height) * 0.5f,
++                          source_width, height);
++}
++
++}  // namespace
++
++EmberGlassMaterial::EmberGlassMaterial() = default;
++EmberGlassMaterial::~EmberGlassMaterial() = default;
++
++EmberGlassParams EmberGlassMaterial::ParamsForPreset(
++    EmberGlassPreset preset) {
++  EmberGlassParams params;
++  switch (preset) {
++    case EmberGlassPreset::kMenu:
++      params.corner_radius = 18.0f;
++      break;
++    case EmberGlassPreset::kCtrlTab:
++      params.corner_radius = 24.0f;
++      break;
++    case EmberGlassPreset::kPopover:
++      params.corner_radius = 22.0f;
++      break;
++    case EmberGlassPreset::kCompactButton:
++      params.corner_radius = 14.0f;
++      break;
++    case EmberGlassPreset::kCard:
++      break;
++  }
++  return params;
++}
++
++bool EmberGlassMaterial::EnsureDisplacementMap() {
++  if (!displacement_map_.empty()) {
++    return true;
++  }
++  base::RefCountedMemory* bytes =
++      ui::ResourceBundle::GetSharedInstance().LoadDataResourceBytes(
++          IDR_EMBER_GLASS_DISPLACEMENT);
++  if (!bytes || !bytes->size()) {
++    return false;
++  }
++  sk_sp<SkData> data = SkData::MakeWithoutCopy(bytes->front(), bytes->size());
++  std::unique_ptr<SkCodec> codec = SkCodec::MakeFromData(std::move(data));
++  if (!codec) {
++    return false;
++  }
++  const SkImageInfo info = SkImageInfo::MakeN32Premul(
++      codec->dimensions().width(), codec->dimensions().height());
++  if (!displacement_map_.tryAllocPixels(info)) {
++    return false;
++  }
++  const SkCodec::Result result = codec->getPixels(
++      info, displacement_map_.getPixels(), displacement_map_.rowBytes());
++  if (result != SkCodec::kSuccess && result != SkCodec::kIncompleteInput) {
++    displacement_map_.reset();
++    return false;
++  }
++  displacement_map_.setImmutable();
++  return true;
++}
++
++const SkBitmap* EmberGlassMaterial::ScaledDisplacement(
++    const gfx::Size& size) {
++  const std::pair<int, int> cache_key{size.width(), size.height()};
++  auto existing = scaled_displacement_cache_.find(cache_key);
++  if (existing != scaled_displacement_cache_.end()) {
++    return &existing->second;
++  }
++  if (!EnsureDisplacementMap()) {
++    return nullptr;
++  }
++  SkBitmap scaled;
++  if (!scaled.tryAllocPixels(
++          SkImageInfo::MakeN32Premul(size.width(), size.height()))) {
++    return nullptr;
++  }
++  SkCanvas canvas(scaled);
++  const SkRect source = CoverSourceRect(
++      displacement_map_.width(), displacement_map_.height(), size.width(),
++      size.height());
++  canvas.drawImageRect(displacement_map_.asImage(), source,
++                       SkRect::MakeWH(size.width(), size.height()),
++                       SkSamplingOptions(SkFilterMode::kLinear), nullptr,
++                       SkCanvas::kStrict_SrcRectConstraint);
++  scaled.setImmutable();
++  return &scaled_displacement_cache_.emplace(cache_key, scaled).first->second;
++}
++
++const EmberGlassPanel* EmberGlassMaterial::RenderPanel(
++    const SkBitmap& backdrop,
++    const gfx::Rect& source_rect,
++    uint64_t backdrop_generation,
++    EmberGlassPreset preset) {
++  if (backdrop.empty() || source_rect.IsEmpty()) {
++    return nullptr;
++  }
++  const EmberGlassCacheKey key{backdrop_generation, source_rect, preset};
++  auto cached = panel_cache_.find(key);
++  if (cached != panel_cache_.end()) {
++    return &cached->second;
++  }
++
++  SkBitmap source;
++  if (!source.tryAllocPixels(SkImageInfo::MakeN32Premul(
++          source_rect.width(), source_rect.height()))) {
++    return nullptr;
++  }
++  SkCanvas source_canvas(source);
++  source_canvas.drawImageRect(
++      backdrop.asImage(), SkRect::MakeXYWH(source_rect.x(), source_rect.y(),
++                                           source_rect.width(),
++                                           source_rect.height()),
++      SkRect::MakeWH(source_rect.width(), source_rect.height()),
++      SkSamplingOptions(SkFilterMode::kLinear), nullptr,
++      SkCanvas::kStrict_SrcRectConstraint);
++
++  const float backdrop_luminance = AverageBitmapLuminance(source);
++  const bool bright_backdrop = backdrop_luminance >= 0.80f;
++  const EmberGlassParams params = ParamsForPreset(preset);
++  const float blur_pixels = 4.0f + params.blur_amount * 32.0f;
++  BlurBitmapCpu(&source, blur_pixels);
++  SaturateBitmapCpu(&source, params.saturation);
++
++  const SkBitmap* displacement = ScaledDisplacement(source_rect.size());
++  if (!displacement) {
++    return nullptr;
++  }
++  SkBitmap result;
++  if (!result.tryAllocPixels(SkImageInfo::MakeN32Premul(
++          source_rect.width(), source_rect.height()))) {
++    return nullptr;
++  }
++  const float red_scale = -params.displacement_scale;
++  const float green_scale =
++      params.displacement_scale * (-1.0f - params.aberration * 0.05f);
++  const float blue_scale =
++      params.displacement_scale * (-1.0f - params.aberration * 0.10f);
++  for (int y = 0; y < source_rect.height(); ++y) {
++    for (int x = 0; x < source_rect.width(); ++x) {
++      const Rgba8 map_pixel = Unpack(displacement->getColor(x, y));
++      const float displacement_x = map_pixel.r / 255.0f - 0.5f;
++      const float displacement_y = map_pixel.b / 255.0f - 0.5f;
++      const Rgba8 red_sample = SampleBilinear(
++          source, x + displacement_x * red_scale,
++          y + displacement_y * red_scale);
++      const Rgba8 green_sample = SampleBilinear(
++          source, x + displacement_x * green_scale,
++          y + displacement_y * green_scale);
++      const Rgba8 blue_sample = SampleBilinear(
++          source, x + displacement_x * blue_scale,
++          y + displacement_y * blue_scale);
++      *result.getAddr32(x, y) =
++          Pack({red_sample.r, green_sample.g, blue_sample.b, 255});
++    }
++  }
++
++  SkBitmap softened;
++  if (softened.tryAllocPixels(SkImageInfo::MakeN32Premul(
++          source_rect.width(), source_rect.height()))) {
++    for (int y = 0; y < source_rect.height(); ++y) {
++      for (int x = 0; x < source_rect.width(); ++x) {
++        const Rgba8 center = Unpack(result.getColor(x, y));
++        const Rgba8 left = Unpack(result.getColor(std::max(0, x - 1), y));
++        const Rgba8 right = Unpack(
++            result.getColor(std::min(source_rect.width() - 1, x + 1), y));
++        const Rgba8 up = Unpack(result.getColor(x, std::max(0, y - 1)));
++        const Rgba8 down = Unpack(
++            result.getColor(x, std::min(source_rect.height() - 1, y + 1)));
++        auto mix = [](uint8_t c, uint8_t l, uint8_t r, uint8_t u,
++                      uint8_t d) {
++          return static_cast<uint8_t>(0.80f * c +
++                                      0.05f * (l + r + u + d));
++        };
++        *softened.getAddr32(x, y) =
++            Pack({mix(center.r, left.r, right.r, up.r, down.r),
++                  mix(center.g, left.g, right.g, up.g, down.g),
++                  mix(center.b, left.b, right.b, up.b, down.b), 255});
++      }
++    }
++    result = softened;
++  }
++  if (bright_backdrop) {
++    ApplyBrightBackdropTreatment(&result, backdrop_luminance);
++  }
++  result.setImmutable();
++  ++render_count_;
++  return &panel_cache_
++              .emplace(key, EmberGlassPanel{result, bright_backdrop})
++              .first->second;
++}
++
++void EmberGlassMaterial::Invalidate() {
++  panel_cache_.clear();
++}
++
++}  // namespace ember
+diff --git a/chrome/browser/ui/views/ember/ember_glass_material.h b/chrome/browser/ui/views/ember/ember_glass_material.h
+new file mode 100644
+index 0000000..d367dcd
+--- /dev/null
++++ b/chrome/browser/ui/views/ember/ember_glass_material.h
+@@ -0,0 +1,88 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_GLASS_MATERIAL_H_
++#define CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_GLASS_MATERIAL_H_
++
++#include <cstddef>
++#include <cstdint>
++#include <map>
++#include <tuple>
++#include <utility>
++
++#include "third_party/skia/include/core/SkBitmap.h"
++#include "ui/gfx/geometry/rect.h"
++#include "ui/gfx/geometry/size.h"
++
++namespace ember {
++
++enum class EmberGlassPreset {
++  kCard,
++  kMenu,
++  kCtrlTab,
++  kPopover,
++  kCompactButton,
++};
++
++struct EmberGlassParams {
++  float displacement_scale = 200.0f;
++  float blur_amount = 1.0f;
++  float saturation = 140.0f;
++  float aberration = 2.0f;
++  float elasticity = 0.0f;
++  float corner_radius = 32.0f;
++};
++
++struct EmberGlassCacheKey {
++  uint64_t backdrop_generation = 0;
++  gfx::Rect source_rect;
++  EmberGlassPreset preset = EmberGlassPreset::kCard;
++
++  bool operator<(const EmberGlassCacheKey& other) const {
++    return std::tuple(backdrop_generation, source_rect.x(), source_rect.y(),
++                      source_rect.width(), source_rect.height(), preset) <
++           std::tuple(other.backdrop_generation, other.source_rect.x(),
++                      other.source_rect.y(), other.source_rect.width(),
++                      other.source_rect.height(), other.preset);
++  }
++};
++
++struct EmberGlassPanel {
++  SkBitmap bitmap;
++  bool bright_backdrop = false;
++};
++
++// Turns a one-shot compositor snapshot into reusable cached panel pixels. The
++// approved EmberGlass displacement/blur/saturation graph is evaluated only
++// when the backdrop generation, panel geometry, or preset changes.
++class EmberGlassMaterial {
++ public:
++  EmberGlassMaterial();
++  EmberGlassMaterial(const EmberGlassMaterial&) = delete;
++  EmberGlassMaterial& operator=(const EmberGlassMaterial&) = delete;
++  ~EmberGlassMaterial();
++
++  const EmberGlassPanel* RenderPanel(const SkBitmap& backdrop,
++                                     const gfx::Rect& source_rect,
++                                     uint64_t backdrop_generation,
++                                     EmberGlassPreset preset);
++  void Invalidate();
++
++  size_t RenderCountForTesting() const { return render_count_; }
++
++  static EmberGlassParams ParamsForPreset(EmberGlassPreset preset);
++
++ private:
++  bool EnsureDisplacementMap();
++  const SkBitmap* ScaledDisplacement(const gfx::Size& size);
++
++  SkBitmap displacement_map_;
++  std::map<std::pair<int, int>, SkBitmap> scaled_displacement_cache_;
++  std::map<EmberGlassCacheKey, EmberGlassPanel> panel_cache_;
++  size_t render_count_ = 0;
++};
++
++}  // namespace ember
++
++#endif  // CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_GLASS_MATERIAL_H_
+diff --git a/chrome/browser/ui/views/ember/ember_glass_view.cc b/chrome/browser/ui/views/ember/ember_glass_view.cc
+new file mode 100644
+index 0000000..714e505
+--- /dev/null
++++ b/chrome/browser/ui/views/ember/ember_glass_view.cc
+@@ -0,0 +1,138 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/views/ember/ember_glass_view.h"
++
++#include <algorithm>
++
++#include "cc/paint/paint_canvas.h"
++#include "cc/paint/paint_flags.h"
++#include "cc/paint/paint_image.h"
++#include "third_party/skia/include/core/SkCanvas.h"
++#include "third_party/skia/include/core/SkImage.h"
++#include "third_party/skia/include/core/SkPaint.h"
++#include "third_party/skia/include/core/SkRRect.h"
++#include "third_party/skia/include/core/SkSamplingOptions.h"
++#include "ui/compositor/layer.h"
++#include "ui/gfx/canvas.h"
++
++namespace ember {
++
++EmberGlassView::EmberGlassView(EmberGlassPreset preset) : preset_(preset) {
++  SetPaintToLayer();
++  layer()->SetFillsBoundsOpaquely(false);
++}
++
++EmberGlassView::~EmberGlassView() = default;
++
++void EmberGlassView::SetPanel(const EmberGlassPanel& panel) {
++  panel_bitmap_ = panel.bitmap;
++  bright_backdrop_ = panel.bright_backdrop;
++  SchedulePaint();
++}
++
++gfx::Rect EmberGlassView::GetPanelBounds() const {
++  gfx::Rect bounds = GetLocalBounds();
++  bounds.Inset(kShadowMargin);
++  return bounds;
++}
++
++SkColor EmberGlassView::PrimaryTextColor() const {
++  return bright_backdrop_ ? SkColorSetRGB(31, 34, 39)
++                          : SkColorSetARGB(235, 255, 255, 255);
++}
++
++SkColor EmberGlassView::SecondaryTextColor() const {
++  return bright_backdrop_ ? SkColorSetRGB(86, 91, 98)
++                          : SkColorSetARGB(170, 255, 255, 255);
++}
++
++SkColor EmberGlassView::InteractionFill(bool selected) const {
++  if (bright_backdrop_) {
++    return SkColorSetARGB(selected ? 48 : 34, 31, 34, 39);
++  }
++  return SkColorSetARGB(selected ? 38 : 30, 255, 255, 255);
++}
++
++SkColor EmberGlassView::InteractionRim(bool selected) const {
++  if (bright_backdrop_) {
++    return SkColorSetARGB(selected ? 92 : 70, 31, 34, 39);
++  }
++  return SkColorSetARGB(selected ? 78 : 55, 255, 255, 255);
++}
++
++void EmberGlassView::OnPaintBackground(gfx::Canvas* canvas) {
++  const gfx::Rect panel_bounds = GetPanelBounds();
++  const EmberGlassParams params = EmberGlassMaterial::ParamsForPreset(preset_);
++  const SkRect panel_rect = SkRect::MakeXYWH(
++      panel_bounds.x(), panel_bounds.y(), panel_bounds.width(),
++      panel_bounds.height());
++  cc::PaintCanvas* sk_canvas = canvas->sk_canvas();
++
++  constexpr int kShadowLayers = 12;
++  for (int i = kShadowLayers; i >= 1; --i) {
++    const float t = static_cast<float>(i) / kShadowLayers;
++    const float spread = 1.5f + t * 15.0f;
++    const float y_offset = 5.0f + t * 8.0f;
++    const float falloff = 1.0f - t;
++    const float alpha = (bright_backdrop_ ? 24.0f : 17.0f) *
++                        (0.35f + falloff * falloff * 0.65f);
++    cc::PaintFlags shadow;
++    shadow.setAntiAlias(true);
++    shadow.setColor(SkColorSetARGB(
++        static_cast<U8CPU>(std::clamp(alpha, 0.0f, 255.0f)), 0, 0, 0));
++    const SkRect shadow_rect =
++        panel_rect.makeOffset(0.0f, y_offset).makeOutset(spread, spread);
++    sk_canvas->drawRoundRect(shadow_rect, params.corner_radius + spread,
++                             params.corner_radius + spread, shadow);
++  }
++
++  if (!panel_bitmap_.empty()) {
++    sk_canvas->save();
++    sk_canvas->clipRRect(SkRRect::MakeRectXY(
++        panel_rect, params.corner_radius, params.corner_radius), true);
++    sk_canvas->drawImageRect(
++        cc::PaintImage::CreateFromBitmap(panel_bitmap_),
++        SkRect::MakeWH(panel_bitmap_.width(), panel_bitmap_.height()),
++        panel_rect, SkSamplingOptions(SkFilterMode::kLinear), nullptr,
++        SkCanvas::kStrict_SrcRectConstraint);
++    sk_canvas->restore();
++  } else {
++    cc::PaintFlags fallback;
++    fallback.setAntiAlias(true);
++    fallback.setColor(SkColorSetARGB(232, 65, 72, 84));
++    sk_canvas->drawRoundRect(panel_rect, params.corner_radius,
++                             params.corner_radius, fallback);
++  }
++
++  cc::PaintFlags outer_rim;
++  outer_rim.setAntiAlias(true);
++  outer_rim.setStyle(cc::PaintFlags::kStroke_Style);
++  outer_rim.setStrokeWidth(1.0f);
++  outer_rim.setColor(SkColorSetARGB(104, 255, 255, 255));
++  sk_canvas->drawRoundRect(panel_rect.makeInset(0.5f, 0.5f),
++                           params.corner_radius - 0.5f,
++                           params.corner_radius - 0.5f, outer_rim);
++
++  cc::PaintFlags inset_rim;
++  inset_rim.setAntiAlias(true);
++  inset_rim.setStyle(cc::PaintFlags::kStroke_Style);
++  inset_rim.setStrokeWidth(1.0f);
++  inset_rim.setColor(SkColorSetARGB(38, 255, 255, 255));
++  sk_canvas->drawRoundRect(panel_rect.makeInset(1.75f, 1.75f),
++                           params.corner_radius - 1.75f,
++                           params.corner_radius - 1.75f, inset_rim);
++  if (bright_backdrop_) {
++    cc::PaintFlags dark_inner_rim;
++    dark_inner_rim.setAntiAlias(true);
++    dark_inner_rim.setStyle(cc::PaintFlags::kStroke_Style);
++    dark_inner_rim.setStrokeWidth(1.0f);
++    dark_inner_rim.setColor(SkColorSetARGB(24, 0, 0, 0));
++    sk_canvas->drawRoundRect(panel_rect.makeInset(2.75f, 2.75f),
++                             params.corner_radius - 2.75f,
++                             params.corner_radius - 2.75f, dark_inner_rim);
++  }
++}
++
++}  // namespace ember
+diff --git a/chrome/browser/ui/views/ember/ember_glass_view.h b/chrome/browser/ui/views/ember/ember_glass_view.h
+new file mode 100644
+index 0000000..bea1a10
+--- /dev/null
++++ b/chrome/browser/ui/views/ember/ember_glass_view.h
+@@ -0,0 +1,46 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_GLASS_VIEW_H_
++#define CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_GLASS_VIEW_H_
++
++#include "chrome/browser/ui/views/ember/ember_glass_material.h"
++#include "third_party/skia/include/core/SkBitmap.h"
++#include "third_party/skia/include/core/SkColor.h"
++#include "ui/views/view.h"
++
++namespace ember {
++
++// Native Views surface for a cached EmberGlass panel. The panel pixels are
++// stable while child labels/icons and lightweight interaction layers repaint.
++class EmberGlassView : public views::View {
++ public:
++  static constexpr int kShadowMargin = 18;
++
++  explicit EmberGlassView(EmberGlassPreset preset);
++  EmberGlassView(const EmberGlassView&) = delete;
++  EmberGlassView& operator=(const EmberGlassView&) = delete;
++  ~EmberGlassView() override;
++
++  void SetPanel(const EmberGlassPanel& panel);
++  gfx::Rect GetPanelBounds() const;
++  bool bright_backdrop() const { return bright_backdrop_; }
++
++  SkColor PrimaryTextColor() const;
++  SkColor SecondaryTextColor() const;
++  SkColor InteractionFill(bool selected) const;
++  SkColor InteractionRim(bool selected) const;
++
++  // views::View:
++  void OnPaintBackground(gfx::Canvas* canvas) override;
++
++ private:
++  EmberGlassPreset preset_;
++  SkBitmap panel_bitmap_;
++  bool bright_backdrop_ = false;
++};
++
++}  // namespace ember
++
++#endif  // CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_GLASS_VIEW_H_

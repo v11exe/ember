@@ -1,0 +1,761 @@
+diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
+index 2b19092..9c98743 100644
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -3964,6 +3964,8 @@ static_library("ui") {
+       "views/frame/browser_native_widget_factory.h",
+       "views/ember/ember_glass_material.cc",
+       "views/ember/ember_glass_material.h",
++      "views/ember/ember_glass_overlay_controller.cc",
++      "views/ember/ember_glass_overlay_controller.h",
+       "views/ember/ember_glass_view.cc",
+       "views/ember/ember_glass_view.h",
+       "views/frame/browser_root_view.cc",
+diff --git a/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
+new file mode 100644
+index 0000000..42d410c
+--- /dev/null
++++ b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
+@@ -0,0 +1,509 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/views/ember/ember_glass_overlay_controller.h"
++
++#include <algorithm>
++#include <utility>
++
++#include "base/functional/bind.h"
++#include "base/task/bind_post_task.h"
++#include "base/time/time.h"
++#include "cc/paint/paint_canvas.h"
++#include "cc/paint/paint_flags.h"
++#include "chrome/browser/ui/views/ember/ember_glass_view.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
++#include "components/viz/common/frame_sinks/copy_output_result.h"
++#include "content/public/browser/browser_thread.h"
++#include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/render_widget_host_view.h"
++#include "content/public/browser/web_contents.h"
++#include "third_party/skia/include/core/SkRRect.h"
++#include "ui/accessibility/ax_enums.mojom.h"
++#include "ui/base/accelerators/accelerator.h"
++#include "ui/base/models/image_model.h"
++#include "ui/base/models/menu_model.h"
++#include "ui/compositor/layer.h"
++#include "ui/events/event.h"
++#include "ui/events/keycodes/keyboard_codes.h"
++#include "ui/gfx/canvas.h"
++#include "ui/views/border.h"
++#include "ui/views/controls/button/label_button.h"
++#include "ui/views/controls/separator.h"
++
++namespace ember {
++namespace {
++
++constexpr int kMenuWidth = 296;
++constexpr int kMenuRowHeight = 36;
++constexpr int kMenuSeparatorHeight = 9;
++constexpr int kMenuInset = 8;
++
++float EaseOut(float value) {
++  const float inverse = 1.0f - value;
++  return 1.0f - inverse * inverse * inverse;
++}
++
++class EmberGlassMenuRow : public views::LabelButton {
++ public:
++  EmberGlassMenuRow(
++      size_t model_index,
++      base::RepeatingCallback<void(size_t, float)> hover_callback,
++      base::RepeatingCallback<void(size_t, const ui::Event&)> press_callback,
++      const std::u16string& label)
++      : views::LabelButton(
++            base::BindRepeating(
++                [](base::RepeatingCallback<void(size_t, const ui::Event&)>
++                       callback,
++                   size_t index, const ui::Event& event) {
++                  callback.Run(index, event);
++                },
++                press_callback, model_index),
++            label),
++        model_index_(model_index),
++        hover_callback_(std::move(hover_callback)) {
++    SetHorizontalAlignment(gfx::ALIGN_LEFT);
++    SetImageLabelSpacing(10);
++    SetBorder(views::CreateEmptyBorder(gfx::Insets::VH(0, 12)));
++    SetFocusBehavior(FocusBehavior::ALWAYS);
++    GetViewAccessibility().SetRole(ax::mojom::Role::kMenuItem);
++    GetViewAccessibility().SetName(label);
++  }
++
++  void OnMouseEntered(const ui::MouseEvent& event) override {
++    views::LabelButton::OnMouseEntered(event);
++    hover_callback_.Run(model_index_, static_cast<float>(y()));
++    RequestFocus();
++  }
++
++  bool OnKeyPressed(const ui::KeyEvent& event) override {
++    EmberGlassOverlayController* controller =
++        static_cast<EmberGlassOverlayController*>(parent()->parent());
++    return controller ? controller->OnKeyPressed(event)
++                      : views::LabelButton::OnKeyPressed(event);
++  }
++
++ private:
++  size_t model_index_;
++  base::RepeatingCallback<void(size_t, float)> hover_callback_;
++};
++
++}  // namespace
++
++class EmberGlassMenuPanel : public EmberGlassView {
++ public:
++  explicit EmberGlassMenuPanel(EmberGlassOverlayController* controller)
++      : EmberGlassView(EmberGlassPreset::kMenu), controller_(controller) {
++    GetViewAccessibility().SetRole(ax::mojom::Role::kMenu);
++    GetViewAccessibility().SetName(u"Page menu");
++  }
++
++  void OnPaintBackground(gfx::Canvas* canvas) override {
++    EmberGlassView::OnPaintBackground(canvas);
++    if (!controller_->IsShowingContextMenu()) {
++      return;
++    }
++    const gfx::Rect panel = GetPanelBounds();
++    const float row_y = controller_->MenuHighlightY();
++    cc::PaintFlags fill;
++    fill.setAntiAlias(true);
++    fill.setColor(InteractionFill(false));
++    const SkRect highlight = SkRect::MakeXYWH(
++        panel.x() + kMenuInset, row_y, panel.width() - kMenuInset * 2,
++        kMenuRowHeight);
++    canvas->sk_canvas()->drawRoundRect(highlight, 10.0f, 10.0f, fill);
++    cc::PaintFlags rim;
++    rim.setAntiAlias(true);
++    rim.setStyle(cc::PaintFlags::kStroke_Style);
++    rim.setStrokeWidth(1.0f);
++    rim.setColor(InteractionRim(false));
++    canvas->sk_canvas()->drawRoundRect(highlight.makeInset(0.5f, 0.5f),
++                                        9.5f, 9.5f, rim);
++  }
++
++ private:
++  raw_ptr<EmberGlassOverlayController> controller_;
++};
++
++EmberGlassOverlayController::EmberGlassOverlayController(
++    BrowserView* browser_view)
++    : browser_view_(browser_view),
++      hover_animation_(base::Milliseconds(160), 60, this) {
++  SetVisible(false);
++  SetPaintToLayer();
++  layer()->SetFillsBoundsOpaquely(false);
++  std::unique_ptr<views::View> menu_panel =
++      std::make_unique<EmberGlassMenuPanel>(this);
++  menu_panel_ = static_cast<EmberGlassMenuPanel*>(menu_panel.get());
++  AddChildView(std::move(menu_panel));
++  menu_panel_->SetVisible(false);
++}
++
++EmberGlassOverlayController::~EmberGlassOverlayController() {
++  CloseContextMenu(false);
++}
++
++void EmberGlassOverlayController::ShowMenu(
++    ui::MenuModel* model,
++    const gfx::Point& page_point) {
++  CloseContextMenu(false);
++  if (!model || model->GetItemCount() == 0) {
++    return;
++  }
++  model->MenuWillShow();
++  menu_stack_.push_back(model->AsWeakPtr());
++  RebuildMenu(model);
++  menu_panel_rect_ = ClampToOverlayBounds(page_point, menu_panel_rect_.size());
++  gfx::Rect panel_with_shadow = menu_panel_rect_;
++  panel_with_shadow.Inset(-EmberGlassView::kShadowMargin);
++  menu_panel_->SetBoundsRect(panel_with_shadow);
++  menu_panel_->SetVisible(true);
++  SetVisible(true);
++  backdrop_snapshot_.reset();
++  ++backdrop_generation_;
++  CaptureBackdrop(backdrop_generation_);
++  if (!menu_rows_.empty()) {
++    menu_rows_[selected_visible_index_]->RequestFocus();
++  }
++}
++
++void EmberGlassOverlayController::CancelContextMenu(
++    const ui::MenuModel* model) {
++  if (!menu_stack_.empty() && menu_stack_.front().get() == model) {
++    CloseContextMenu(true);
++  }
++}
++
++bool EmberGlassOverlayController::IsShowingContextMenu() const {
++  return GetVisible() && menu_panel_->GetVisible() && !menu_stack_.empty();
++}
++
++bool EmberGlassOverlayController::OnMousePressed(
++    const ui::MouseEvent& event) {
++  if (IsShowingContextMenu() && !menu_panel_rect_.Contains(event.location())) {
++    CloseContextMenu(true);
++    return true;
++  }
++  return views::View::OnMousePressed(event);
++}
++
++bool EmberGlassOverlayController::OnKeyPressed(const ui::KeyEvent& event) {
++  if (!IsShowingContextMenu()) {
++    return false;
++  }
++  if (visible_model_indices_.empty()) {
++    return event.key_code() == ui::VKEY_ESCAPE
++               ? (CloseContextMenu(true), true)
++               : false;
++  }
++  switch (event.key_code()) {
++    case ui::VKEY_ESCAPE:
++      CloseContextMenu(true);
++      return true;
++    case ui::VKEY_UP:
++      MoveSelection(-1);
++      return true;
++    case ui::VKEY_DOWN:
++      MoveSelection(1);
++      return true;
++    case ui::VKEY_RIGHT:
++      OpenSubmenu(visible_model_indices_[selected_visible_index_]);
++      return true;
++    case ui::VKEY_LEFT:
++      CloseSubmenu();
++      return true;
++    case ui::VKEY_RETURN:
++    case ui::VKEY_SPACE:
++      ActivateMenuItem(visible_model_indices_[selected_visible_index_],
++                       event.flags());
++      return true;
++    default:
++      return false;
++  }
++}
++
++void EmberGlassOverlayController::Layout(PassKey) {
++  if (!menu_panel_rect_.IsEmpty()) {
++    gfx::Rect bounds = menu_panel_rect_;
++    bounds.Inset(-EmberGlassView::kShadowMargin);
++    menu_panel_->SetBoundsRect(bounds);
++  }
++}
++
++void EmberGlassOverlayController::AnimationProgressed(
++    const gfx::Animation* animation) {
++  menu_panel_->SchedulePaint();
++}
++
++gfx::Rect EmberGlassOverlayController::ClampToOverlayBounds(
++    const gfx::Point& origin,
++    const gfx::Size& panel_size) const {
++  gfx::Rect available = GetLocalBounds();
++  available.Inset(EmberGlassView::kShadowMargin);
++  const int x = std::clamp(origin.x(), available.x(),
++                           std::max(available.x(),
++                                    available.right() - panel_size.width()));
++  const int y = std::clamp(origin.y(), available.y(),
++                           std::max(available.y(),
++                                    available.bottom() - panel_size.height()));
++  return gfx::Rect(gfx::Point(x, y), panel_size);
++}
++
++void EmberGlassOverlayController::RebuildMenu(ui::MenuModel* model) {
++  menu_panel_->RemoveAllChildViews();
++  menu_rows_.clear();
++  visible_model_indices_.clear();
++  int y = EmberGlassView::kShadowMargin + kMenuInset;
++  for (size_t index = 0; index < model->GetItemCount(); ++index) {
++    if (!model->IsVisibleAt(index)) {
++      continue;
++    }
++    const ui::MenuModel::ItemType type = model->GetTypeAt(index);
++    if (type == ui::MenuModel::TYPE_SEPARATOR) {
++      auto separator = std::make_unique<views::Separator>();
++      separator->SetBounds(EmberGlassView::kShadowMargin + 12, y + 4,
++                           kMenuWidth - 24, 1);
++      menu_panel_->AddChildView(std::move(separator));
++      y += kMenuSeparatorHeight;
++      continue;
++    }
++    std::u16string label = model->GetLabelAt(index);
++    if ((type == ui::MenuModel::TYPE_CHECK ||
++         type == ui::MenuModel::TYPE_RADIO) &&
++        model->IsItemCheckedAt(index)) {
++      label = u"✓  " + label;
++    }
++    ui::Accelerator accelerator;
++    if (model->GetAcceleratorAt(index, &accelerator)) {
++      label += u"    " + accelerator.GetShortcutText();
++    }
++    if (model->GetSubmenuModelAt(index)) {
++      label += u"    ›";
++    }
++    auto row = std::make_unique<EmberGlassMenuRow>(
++        index,
++        base::BindRepeating(&EmberGlassOverlayController::HoverMenuItem,
++                            weak_ptr_factory_.GetWeakPtr()),
++        base::BindRepeating(
++            [](base::WeakPtr<EmberGlassOverlayController> controller,
++               size_t item, const ui::Event& event) {
++              if (controller) {
++                controller->ActivateMenuItem(item, event.flags());
++              }
++            },
++            weak_ptr_factory_.GetWeakPtr()),
++        label);
++    row->SetEnabled(model->IsEnabledAt(index));
++    const ui::ImageModel icon = model->GetIconAt(index);
++    if (!icon.IsEmpty()) {
++      row->SetImageModel(views::Button::STATE_NORMAL, icon);
++    }
++    row->SetBounds(EmberGlassView::kShadowMargin + kMenuInset, y,
++                   kMenuWidth - kMenuInset * 2, kMenuRowHeight);
++    views::View* row_ptr = row.get();
++    menu_panel_->AddChildView(
++        std::unique_ptr<views::View>(std::move(row)));
++    menu_rows_.push_back(row_ptr);
++    visible_model_indices_.push_back(index);
++    y += kMenuRowHeight;
++  }
++  selected_visible_index_ = 0;
++  while (selected_visible_index_ + 1 < visible_model_indices_.size() &&
++         !model->IsEnabledAt(
++             visible_model_indices_[selected_visible_index_])) {
++    ++selected_visible_index_;
++  }
++  const int panel_height =
++      y - EmberGlassView::kShadowMargin + kMenuInset;
++  menu_panel_rect_.set_size(gfx::Size(kMenuWidth, panel_height));
++  highlight_from_y_ = highlight_to_y_ =
++      menu_rows_.empty() ? 0.0f
++                         : static_cast<float>(
++                               menu_rows_[selected_visible_index_]->y());
++  UpdateMenuColors();
++}
++
++void EmberGlassOverlayController::ActivateMenuItem(size_t model_index,
++                                                   int event_flags) {
++  ui::MenuModel* model =
++      menu_stack_.empty() ? nullptr : menu_stack_.back().get();
++  if (!model || !model->IsEnabledAt(model_index)) {
++    return;
++  }
++  if (model->GetSubmenuModelAt(model_index)) {
++    OpenSubmenu(model_index);
++    return;
++  }
++  model->ActivatedAt(model_index, event_flags);
++  CloseContextMenu(true);
++}
++
++void EmberGlassOverlayController::HoverMenuItem(size_t model_index,
++                                                float target_y) {
++  const auto found = std::find(visible_model_indices_.begin(),
++                               visible_model_indices_.end(), model_index);
++  if (found == visible_model_indices_.end()) {
++    return;
++  }
++  selected_visible_index_ = found - visible_model_indices_.begin();
++  highlight_from_y_ = MenuHighlightY();
++  highlight_to_y_ = target_y;
++  hover_animation_.Stop();
++  hover_animation_.Start();
++}
++
++void EmberGlassOverlayController::OpenSubmenu(size_t model_index) {
++  ui::MenuModel* model =
++      menu_stack_.empty() ? nullptr : menu_stack_.back().get();
++  ui::MenuModel* submenu =
++      model ? model->GetSubmenuModelAt(model_index) : nullptr;
++  if (!submenu) {
++    return;
++  }
++  submenu->MenuWillShow();
++  menu_stack_.push_back(submenu->AsWeakPtr());
++  RebuildMenu(submenu);
++  menu_panel_rect_ =
++      ClampToOverlayBounds(menu_panel_rect_.origin(), menu_panel_rect_.size());
++  gfx::Rect bounds = menu_panel_rect_;
++  bounds.Inset(-EmberGlassView::kShadowMargin);
++  menu_panel_->SetBoundsRect(bounds);
++  if (!backdrop_snapshot_.empty()) {
++    if (const EmberGlassPanel* panel = material_.RenderPanel(
++            backdrop_snapshot_, menu_panel_rect_, backdrop_generation_,
++            EmberGlassPreset::kMenu)) {
++      menu_panel_->SetPanel(*panel);
++      UpdateMenuColors();
++    }
++  }
++  if (!menu_rows_.empty()) {
++    menu_rows_[selected_visible_index_]->RequestFocus();
++  }
++}
++
++void EmberGlassOverlayController::CloseSubmenu() {
++  if (menu_stack_.size() <= 1) {
++    return;
++  }
++  if (ui::MenuModel* model = menu_stack_.back().get()) {
++    model->MenuWillClose();
++  }
++  menu_stack_.pop_back();
++  if (ui::MenuModel* parent = menu_stack_.back().get()) {
++    RebuildMenu(parent);
++    menu_panel_rect_ = ClampToOverlayBounds(menu_panel_rect_.origin(),
++                                            menu_panel_rect_.size());
++    gfx::Rect bounds = menu_panel_rect_;
++    bounds.Inset(-EmberGlassView::kShadowMargin);
++    menu_panel_->SetBoundsRect(bounds);
++    if (!backdrop_snapshot_.empty()) {
++      if (const EmberGlassPanel* panel = material_.RenderPanel(
++              backdrop_snapshot_, menu_panel_rect_, backdrop_generation_,
++              EmberGlassPreset::kMenu)) {
++        menu_panel_->SetPanel(*panel);
++        UpdateMenuColors();
++      }
++    }
++  }
++}
++
++void EmberGlassOverlayController::MoveSelection(int delta) {
++  ui::MenuModel* model =
++      menu_stack_.empty() ? nullptr : menu_stack_.back().get();
++  if (!model || menu_rows_.empty()) {
++    return;
++  }
++  size_t candidate = selected_visible_index_;
++  do {
++    candidate = (candidate + menu_rows_.size() + delta) % menu_rows_.size();
++  } while (candidate != selected_visible_index_ &&
++           !model->IsEnabledAt(visible_model_indices_[candidate]));
++  selected_visible_index_ = candidate;
++  HoverMenuItem(visible_model_indices_[candidate],
++                static_cast<float>(menu_rows_[candidate]->y()));
++  menu_rows_[candidate]->RequestFocus();
++}
++
++void EmberGlassOverlayController::CloseContextMenu(
++    bool restore_page_focus) {
++  hover_animation_.Stop();
++  for (auto model = menu_stack_.rbegin(); model != menu_stack_.rend(); ++model) {
++    if (model->get()) {
++      model->get()->MenuWillClose();
++    }
++  }
++  menu_stack_.clear();
++  visible_model_indices_.clear();
++  menu_rows_.clear();
++  menu_panel_->RemoveAllChildViews();
++  menu_panel_->SetVisible(false);
++  SetVisible(false);
++  backdrop_snapshot_.reset();
++  material_.Invalidate();
++  if (restore_page_focus && browser_view_->GetActiveWebContents()) {
++    browser_view_->GetActiveWebContents()->Focus();
++  }
++}
++
++void EmberGlassOverlayController::CaptureBackdrop(uint64_t generation) {
++  content::WebContents* web_contents = browser_view_->GetActiveWebContents();
++  content::RenderFrameHost* frame =
++      web_contents ? web_contents->GetPrimaryMainFrame() : nullptr;
++  content::RenderWidgetHostView* view = frame ? frame->GetView() : nullptr;
++  if (!view) {
++    return;
++  }
++  auto on_bitmap = base::BindPostTask(
++      content::GetUIThreadTaskRunner({}),
++      base::BindOnce(&EmberGlassOverlayController::OnBackdropCaptured,
++                     weak_ptr_factory_.GetWeakPtr(), generation));
++  view->CopyFromSurface(
++      gfx::Rect(), size(), base::Milliseconds(250),
++      base::BindOnce(
++          [](base::OnceCallback<void(SkBitmap)> ready,
++             const content::CopyFromSurfaceResult& result) {
++            std::move(ready).Run(result.has_value() ? result->bitmap
++                                                    : SkBitmap());
++          },
++          std::move(on_bitmap)));
++}
++
++void EmberGlassOverlayController::OnBackdropCaptured(uint64_t generation,
++                                                     SkBitmap bitmap) {
++  if (!IsShowingContextMenu() || generation != backdrop_generation_ ||
++      bitmap.empty()) {
++    return;
++  }
++  backdrop_snapshot_ = bitmap;
++  const EmberGlassPanel* panel = material_.RenderPanel(
++      backdrop_snapshot_, menu_panel_rect_, generation,
++      EmberGlassPreset::kMenu);
++  if (!panel) {
++    return;
++  }
++  menu_panel_->SetPanel(*panel);
++  UpdateMenuColors();
++}
++
++void EmberGlassOverlayController::UpdateMenuColors() {
++  for (views::View* view : menu_rows_) {
++    auto* row = static_cast<views::LabelButton*>(view);
++    row->SetEnabledTextColors(menu_panel_->PrimaryTextColor());
++    row->SetTextColor(views::Button::STATE_DISABLED,
++                      SkColorSetA(menu_panel_->SecondaryTextColor(), 110));
++  }
++  menu_panel_->SchedulePaint();
++}
++
++float EmberGlassOverlayController::MenuHighlightY() const {
++  if (!hover_animation_.is_animating()) {
++    return highlight_to_y_;
++  }
++  const float progress =
++      EaseOut(static_cast<float>(hover_animation_.GetCurrentValue()));
++  return highlight_from_y_ +
++         (highlight_to_y_ - highlight_from_y_) * progress;
++}
++
++}  // namespace ember
+diff --git a/chrome/browser/ui/views/ember/ember_glass_overlay_controller.h b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.h
+new file mode 100644
+index 0000000..4aeb6ee
+--- /dev/null
++++ b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.h
+@@ -0,0 +1,93 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_GLASS_OVERLAY_CONTROLLER_H_
++#define CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_GLASS_OVERLAY_CONTROLLER_H_
++
++#include <cstddef>
++#include <cstdint>
++#include <vector>
++
++#include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
++#include "chrome/browser/ui/views/ember/ember_glass_material.h"
++#include "third_party/skia/include/core/SkBitmap.h"
++#include "ui/gfx/animation/animation_delegate.h"
++#include "ui/gfx/animation/linear_animation.h"
++#include "ui/gfx/geometry/point.h"
++#include "ui/gfx/geometry/rect.h"
++#include "ui/views/view.h"
++
++class BrowserView;
++
++namespace ui {
++class KeyEvent;
++class MenuModel;
++class MouseEvent;
++}  // namespace ui
++
++namespace ember {
++
++class EmberGlassMenuPanel;
++
++// One BrowserView-owned native overlay host shared by EmberGlass consumers.
++// Context-menu capture is one-shot per opening; pointer movement only advances
++// the cheap highlight animation over the cached glass panel.
++class EmberGlassOverlayController : public views::View,
++                                    public gfx::AnimationDelegate {
++ public:
++  explicit EmberGlassOverlayController(BrowserView* browser_view);
++  EmberGlassOverlayController(const EmberGlassOverlayController&) = delete;
++  EmberGlassOverlayController& operator=(
++      const EmberGlassOverlayController&) = delete;
++  ~EmberGlassOverlayController() override;
++
++  void ShowMenu(ui::MenuModel* model, const gfx::Point& page_point);
++  void CancelContextMenu(const ui::MenuModel* model);
++  bool IsShowingContextMenu() const;
++
++  // views::View:
++  bool OnMousePressed(const ui::MouseEvent& event) override;
++  bool OnKeyPressed(const ui::KeyEvent& event) override;
++  void Layout(PassKey) override;
++
++  // gfx::AnimationDelegate:
++  void AnimationProgressed(const gfx::Animation* animation) override;
++
++ private:
++  friend class EmberGlassMenuPanel;
++
++  gfx::Rect ClampToOverlayBounds(const gfx::Point& origin,
++                                 const gfx::Size& panel_size) const;
++  void RebuildMenu(ui::MenuModel* model);
++  void ActivateMenuItem(size_t model_index, int event_flags);
++  void HoverMenuItem(size_t model_index, float target_y);
++  void OpenSubmenu(size_t model_index);
++  void CloseSubmenu();
++  void MoveSelection(int delta);
++  void CloseContextMenu(bool restore_page_focus);
++  void CaptureBackdrop(uint64_t generation);
++  void OnBackdropCaptured(uint64_t generation, SkBitmap bitmap);
++  void UpdateMenuColors();
++  float MenuHighlightY() const;
++
++  raw_ptr<BrowserView> browser_view_;
++  raw_ptr<EmberGlassMenuPanel> menu_panel_ = nullptr;
++  EmberGlassMaterial material_;
++  std::vector<base::WeakPtr<ui::MenuModel>> menu_stack_;
++  std::vector<size_t> visible_model_indices_;
++  std::vector<raw_ptr<views::View>> menu_rows_;
++  size_t selected_visible_index_ = 0;
++  gfx::Rect menu_panel_rect_;
++  SkBitmap backdrop_snapshot_;
++  uint64_t backdrop_generation_ = 0;
++  float highlight_from_y_ = 0.0f;
++  float highlight_to_y_ = 0.0f;
++  gfx::LinearAnimation hover_animation_;
++  base::WeakPtrFactory<EmberGlassOverlayController> weak_ptr_factory_{this};
++};
++
++}  // namespace ember
++
++#endif  // CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_GLASS_OVERLAY_CONTROLLER_H_
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+index 2313ce8..06f844c 100644
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -156,6 +156,7 @@
+ #include "chrome/browser/ui/views/frame/browser_native_widget.h"
+ #include "chrome/browser/ui/views/frame/browser_widget.h"
+ #include "chrome/browser/ui/views/frame/contents_container_view.h"
++#include "chrome/browser/ui/views/ember/ember_glass_overlay_controller.h"
+ #include "chrome/browser/ui/views/frame/contents_layout_manager.h"
+ #include "chrome/browser/ui/views/frame/contents_separator.h"
+ #include "chrome/browser/ui/views/frame/custom_floating_corner.h"
+@@ -1643,6 +1644,13 @@ BrowserView::BrowserView(Browser* browser)
+ 
+   contents_container_ = AddChildView(std::move(contents_container));
+   set_contents_view(contents_container_);
++  if (browser_->is_type_normal()) {
++    auto overlay =
++        std::make_unique<ember::EmberGlassOverlayController>(this);
++    ember_glass_overlay_ = overlay.get();
++    contents_container_->AddChildView(
++        std::unique_ptr<views::View>(std::move(overlay)));
++  }
+ 
+   // InfoBarContainer needs to be added as a child here for drop-shadow, but
+   // needs to come after toolbar in focus order (see EnsureFocusOrder()).
+@@ -1898,6 +1906,19 @@ BrowserView* BrowserView::GetBrowserViewForBrowser(
+   return GetBrowserViewForNativeWindow(browser->GetWindow()->GetNativeWindow());
+ }
+ 
++void BrowserView::ShowEmberContextMenu(ui::MenuModel* model,
++                                       const gfx::Point& page_point) {
++  if (ember_glass_overlay_) {
++    ember_glass_overlay_->ShowMenu(model, page_point);
++  }
++}
++
++void BrowserView::CancelEmberContextMenu(const ui::MenuModel* model) {
++  if (ember_glass_overlay_) {
++    ember_glass_overlay_->CancelContextMenu(model);
++  }
++}
++
+ // static
+ void BrowserView::SetDisableRevealerDelayForTesting(bool disable) {
+   g_disable_revealer_delay_for_testing = disable;
+@@ -5830,6 +5851,10 @@ void BrowserView::Layout(PassKey) {
+ 
+   LayoutSuperclass<views::View>(this);
+ 
++  if (ember_glass_overlay_) {
++    ember_glass_overlay_->SetBoundsRect(contents_container_->GetLocalBounds());
++  }
++
+   // TODO(jamescook): Why was this in the middle of layout code?
+   toolbar_->location_bar()->UpdateFocusBehavior(IsToolbarVisible());
+   GetFrameView()->UpdateMinimumSize();
+diff --git a/chrome/browser/ui/views/frame/browser_view.h b/chrome/browser/ui/views/frame/browser_view.h
+index b8f4256..82dbc12 100644
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -114,9 +114,14 @@ class VerticalTabStripStateController;
+ }  // namespace tabs
+ 
+ namespace ui {
++class MenuModel;
+ class NativeTheme;
+ }  // namespace ui
+ 
++namespace ember {
++class EmberGlassOverlayController;
++}  // namespace ember
++
+ namespace version_info {
+ enum class Channel;
+ }
+@@ -276,6 +281,10 @@ class BrowserView : public BrowserWindow,
+   // Container for the web contents.
+   views::View* contents_container() { return contents_container_; }
+ 
++  void ShowEmberContextMenu(ui::MenuModel* model,
++                            const gfx::Point& page_point);
++  void CancelEmberContextMenu(const ui::MenuModel* model);
++
+   views::View* main_shadow_overlay() { return main_shadow_overlay_; }
+ 
+   SidePanel* side_panel() { return side_panel_; }
+@@ -1298,6 +1307,7 @@ class BrowserView : public BrowserWindow,
+ 
+   // Handled by ContentsLayoutManager.
+   raw_ptr<views::View> contents_container_ = nullptr;
++  raw_ptr<ember::EmberGlassOverlayController> ember_glass_overlay_ = nullptr;
+ 
+   // The view responsible for housing the contents of the vertical tab strip.
+   raw_ptr<VerticalTabStripRegionView> vertical_tab_strip_region_view_ = nullptr;
+diff --git a/chrome/browser/ui/views/renderer_context_menu/render_view_context_menu_views.cc b/chrome/browser/ui/views/renderer_context_menu/render_view_context_menu_views.cc
+index 625e3b9..735ded8 100644
+--- a/chrome/browser/ui/views/renderer_context_menu/render_view_context_menu_views.cc
++++ b/chrome/browser/ui/views/renderer_context_menu/render_view_context_menu_views.cc
+@@ -131,7 +131,16 @@ RenderViewContextMenuViews::RenderViewContextMenuViews(
+   set_toolkit_delegate(std::move(delegate));
+ }
+ 
+-RenderViewContextMenuViews::~RenderViewContextMenuViews() = default;
++RenderViewContextMenuViews::~RenderViewContextMenuViews() {
++  Browser* browser =
++      GetBrowser() ? GetBrowser()->GetBrowserForMigrationOnly() : nullptr;
++  if (browser) {
++    if (BrowserView* browser_view =
++            BrowserView::GetBrowserViewForBrowser(browser)) {
++      browser_view->CancelEmberContextMenu(&menu_model_);
++    }
++  }
++}
+ 
+ // static
+ RenderViewContextMenuViews* RenderViewContextMenuViews::Create(
+@@ -390,6 +399,16 @@ void RenderViewContextMenuViews::Show() {
+     return;
+   }
+ 
++  Browser* browser =
++      GetBrowser() ? GetBrowser()->GetBrowserForMigrationOnly() : nullptr;
++  BrowserView* browser_view =
++      browser ? BrowserView::GetBrowserViewForBrowser(browser) : nullptr;
++  if (browser_view) {
++    browser_view->ShowEmberContextMenu(
++        &menu_model_, gfx::Point(params().x, params().y));
++    return;
++  }
++
+   // Convert from target window coordinates to root window coordinates.
+   gfx::Point screen_point(params().x, params().y);
+   aura::Window* target_window = GetActiveNativeView();

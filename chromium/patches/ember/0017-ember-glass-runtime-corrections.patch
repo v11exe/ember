@@ -1,0 +1,120 @@
+diff --git a/chrome/browser/ui/views/ember/ember_glass_material.cc b/chrome/browser/ui/views/ember/ember_glass_material.cc
+index 9787b43..f501c62 100644
+--- a/chrome/browser/ui/views/ember/ember_glass_material.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_material.cc
+@@ -11,14 +11,13 @@
+ 
+ #include "base/memory/ref_counted_memory.h"
+ #include "chrome/grit/chrome_unscaled_resources.h"
+-#include "third_party/skia/include/codec/SkCodec.h"
+ #include "third_party/skia/include/core/SkCanvas.h"
+ #include "third_party/skia/include/core/SkColor.h"
+-#include "third_party/skia/include/core/SkData.h"
+ #include "third_party/skia/include/core/SkImage.h"
+ #include "third_party/skia/include/core/SkImageInfo.h"
+ #include "third_party/skia/include/core/SkSamplingOptions.h"
+ #include "ui/base/resource/resource_bundle.h"
++#include "ui/gfx/codec/jpeg_codec.h"
+ 
+ namespace ember {
+ namespace {
+@@ -264,20 +263,8 @@ bool EmberGlassMaterial::EnsureDisplacementMap() {
+   if (!bytes || !bytes->size()) {
+     return false;
+   }
+-  sk_sp<SkData> data = SkData::MakeWithoutCopy(bytes->front(), bytes->size());
+-  std::unique_ptr<SkCodec> codec = SkCodec::MakeFromData(std::move(data));
+-  if (!codec) {
+-    return false;
+-  }
+-  const SkImageInfo info = SkImageInfo::MakeN32Premul(
+-      codec->dimensions().width(), codec->dimensions().height());
+-  if (!displacement_map_.tryAllocPixels(info)) {
+-    return false;
+-  }
+-  const SkCodec::Result result = codec->getPixels(
+-      info, displacement_map_.getPixels(), displacement_map_.rowBytes());
+-  if (result != SkCodec::kSuccess && result != SkCodec::kIncompleteInput) {
+-    displacement_map_.reset();
++  displacement_map_ = gfx::JPEGCodec::Decode(*bytes);
++  if (displacement_map_.isNull()) {
+     return false;
+   }
+   displacement_map_.setImmutable();
+diff --git a/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
+index c4e5a5a..7ff3a9a 100644
+--- a/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
+@@ -32,9 +32,12 @@
+ #include "ui/events/event.h"
+ #include "ui/events/keycodes/keyboard_codes.h"
+ #include "ui/gfx/canvas.h"
++#include "ui/gfx/text_utils.h"
+ #include "ui/views/border.h"
+ #include "ui/views/controls/button/label_button.h"
++#include "ui/views/controls/focus_ring.h"
+ #include "ui/views/controls/separator.h"
++#include "url/gurl.h"
+ 
+ namespace ember {
+ namespace {
+@@ -79,6 +82,8 @@ class EmberGlassMenuRow : public views::LabelButton {
+     SetImageLabelSpacing(10);
+     SetBorder(views::CreateEmptyBorder(gfx::Insets::VH(0, 12)));
+     SetFocusBehavior(FocusBehavior::ALWAYS);
++    views::FocusRing::Get(this)->SetHasFocusPredicate(
++        base::BindRepeating([](const views::View*) { return false; }));
+     GetViewAccessibility().SetRole(ax::mojom::Role::kMenuItem);
+     GetViewAccessibility().SetName(label);
+   }
+@@ -409,7 +414,7 @@ void EmberGlassOverlayController::RebuildMenu(ui::MenuModel* model) {
+       y += kMenuSeparatorHeight;
+       continue;
+     }
+-    std::u16string label = model->GetLabelAt(index);
++    std::u16string label = gfx::RemoveAccelerator(model->GetLabelAt(index));
+     if ((type == ui::MenuModel::TYPE_CHECK ||
+          type == ui::MenuModel::TYPE_RADIO) &&
+         model->IsItemCheckedAt(index)) {
+@@ -684,9 +689,13 @@ void EmberGlassOverlayController::RebuildCtrlTabCards() {
+     const std::u16string title =
+         contents && !contents->GetTitle().empty() ? contents->GetTitle()
+                                                   : u"New Tab";
+-    const std::u16string domain =
+-        contents ? base::UTF8ToUTF16(contents->GetLastCommittedURL().host())
+-                 : std::u16string();
++    std::u16string domain;
++    if (contents) {
++      const GURL& url = contents->GetLastCommittedURL();
++      if (url.SchemeIsHTTPOrHTTPS()) {
++        domain = base::UTF8ToUTF16(url.host());
++      }
++    }
+     std::u16string label = title;
+     if (!domain.empty()) {
+       label += u"\n" + domain;
+@@ -706,5 +715,7 @@ void EmberGlassOverlayController::RebuildCtrlTabCards() {
+     card->SetEnabledTextColors(switcher_panel_->PrimaryTextColor());
+     card->SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
++    views::FocusRing::Get(card.get())->SetHasFocusPredicate(
++        base::BindRepeating([](const views::View*) { return false; }));
+     card->GetViewAccessibility().SetRole(ax::mojom::Role::kTab);
+     card->GetViewAccessibility().SetName(title);
+     card->GetViewAccessibility().SetIsSelected(
+diff --git a/chrome/browser/ui/views/ember/ember_glass_view.cc b/chrome/browser/ui/views/ember/ember_glass_view.cc
+index 714e505..409a718 100644
+--- a/chrome/browser/ui/views/ember/ember_glass_view.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_view.cc
+@@ -98,12 +98,6 @@ void EmberGlassView::OnPaintBackground(gfx::Canvas* canvas) {
+         panel_rect, SkSamplingOptions(SkFilterMode::kLinear), nullptr,
+         SkCanvas::kStrict_SrcRectConstraint);
+     sk_canvas->restore();
+-  } else {
+-    cc::PaintFlags fallback;
+-    fallback.setAntiAlias(true);
+-    fallback.setColor(SkColorSetARGB(232, 65, 72, 84));
+-    sk_canvas->drawRoundRect(panel_rect, params.corner_radius,
+-                             params.corner_radius, fallback);
+   }
+ 
+   cc::PaintFlags outer_rim;

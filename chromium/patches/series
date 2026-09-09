@@ -11,3 +11,10 @@ ember/0010-ember-rounded-page-surface.patch
 ember/0011-ember-shared-shell-material.patch
 ember/0012-ember-finish-top-bar.patch
 ember/0013-ember-tighten-top-bar-density.patch
+ember/0014-ember-glass-core.patch
+ember/0015-ember-glass-context-menu.patch
+ember/0016-ember-glass-ctrl-tab.patch
+ember/0017-ember-glass-runtime-corrections.patch
+ember/0018-ember-glass-overlay-refinements.patch
+ember/0019-ember-glass-menu-adoption.patch
+ember/0020-ember-glass-runtime-followups.patch

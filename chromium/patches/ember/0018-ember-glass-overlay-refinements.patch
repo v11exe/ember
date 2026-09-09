@@ -1,0 +1,978 @@
+diff --git a/chrome/browser/ui/views/ember/ember_glass_material.cc b/chrome/browser/ui/views/ember/ember_glass_material.cc
+index f501c62..ca0e774 100644
+--- a/chrome/browser/ui/views/ember/ember_glass_material.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_material.cc
+@@ -236,7 +236,7 @@ EmberGlassParams EmberGlassMaterial::ParamsForPreset(
+   EmberGlassParams params;
+   switch (preset) {
+     case EmberGlassPreset::kMenu:
+-      params.corner_radius = 18.0f;
++      params.corner_radius = 12.0f;
+       break;
+     case EmberGlassPreset::kCtrlTab:
+       params.corner_radius = 24.0f;
+diff --git a/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
+index 7ff3a9a..4f53dff 100644
+--- a/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
+@@ -5,8 +5,10 @@
+ #include "chrome/browser/ui/views/ember/ember_glass_overlay_controller.h"
+ 
+ #include <algorithm>
++#include <cmath>
+ #include <utility>
+ 
++#include "base/callback_list.h"
+ #include "base/functional/bind.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/task/bind_post_task.h"
+@@ -15,8 +17,9 @@
+ #include "cc/paint/paint_flags.h"
+ #include "chrome/browser/ui/views/ember/ember_glass_view.h"
+ #include "chrome/browser/ui/views/frame/browser_view.h"
+-#include "chrome/browser/ui/tab_ui_helper.h"
++#include "chrome/browser/ui/tabs/tab_data.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/browser/ui/views/tabs/hovercard/tab_hover_card_thumbnail_observer.h"
+ #include "components/viz/common/frame_sinks/copy_output_result.h"
+ #include "content/public/browser/browser_thread.h"
+ #include "content/public/browser/render_frame_host.h"
+@@ -32,20 +35,42 @@
+ #include "ui/events/event.h"
+ #include "ui/events/keycodes/keyboard_codes.h"
+ #include "ui/gfx/canvas.h"
++#include "ui/gfx/geometry/insets.h"
++#include "ui/gfx/image/image_skia_operations.h"
+ #include "ui/gfx/text_utils.h"
++#include "ui/gfx/geometry/transform.h"
+ #include "ui/views/border.h"
++#include "ui/views/controls/button/button.h"
+ #include "ui/views/controls/button/label_button.h"
+ #include "ui/views/controls/focus_ring.h"
++#include "ui/views/controls/image_view.h"
++#include "ui/views/controls/label.h"
+ #include "ui/views/controls/separator.h"
+ #include "url/gurl.h"
+ 
+ namespace ember {
+ namespace {
+ 
+-constexpr int kMenuWidth = 296;
+-constexpr int kMenuRowHeight = 36;
+-constexpr int kMenuSeparatorHeight = 9;
+-constexpr int kMenuInset = 8;
++constexpr int kMenuMinWidth = 148;
++constexpr int kMenuMaxWidth = 420;
++constexpr int kMenuRowHeight = 30;
++constexpr int kMenuSeparatorHeight = 7;
++constexpr int kMenuInset = 7;
++constexpr int kMenuHorizontalPadding = 10;
++constexpr int kMenuIconColumnWidth = 24;
++constexpr int kMenuAcceleratorGap = 18;
++constexpr int kMenuSubmenuWidth = 14;
++constexpr int kSwitcherCardWidth = 236;
++constexpr int kSwitcherPreviewHeight = 133;
++constexpr int kSwitcherFooterHeight = 45;
++constexpr int kSwitcherCardHeight =
++    kSwitcherPreviewHeight + kSwitcherFooterHeight;
++constexpr int kSwitcherCardGap = 12;
++constexpr int kSwitcherInset = 12;
++constexpr int kSwitcherMaxViewportWidth = 1080;
++constexpr base::TimeDelta kSwitcherOpenDuration = base::Milliseconds(160);
++constexpr base::TimeDelta kSwitcherSlideDuration = base::Milliseconds(190);
++constexpr base::TimeDelta kSwitcherCloseDuration = base::Milliseconds(145);
+ 
+ float EaseOut(float value) {
+   const float inverse = 1.0f - value;
+@@ -66,7 +91,10 @@ class EmberGlassMenuRow : public views::LabelButton {
+       size_t model_index,
+       base::RepeatingCallback<void(size_t, float)> hover_callback,
+       base::RepeatingCallback<void(size_t, const ui::Event&)> press_callback,
+-      const std::u16string& label)
++      const std::u16string& label,
++      const std::u16string& accelerator,
++      bool has_submenu,
++      bool reserve_icon_column)
+       : views::LabelButton(
+             base::BindRepeating(
+                 [](base::RepeatingCallback<void(size_t, const ui::Event&)>
+@@ -77,10 +105,19 @@ class EmberGlassMenuRow : public views::LabelButton {
+                 press_callback, model_index),
+             label),
+         model_index_(model_index),
+-        hover_callback_(std::move(hover_callback)) {
++        hover_callback_(std::move(hover_callback)),
++        reserve_icon_column_(reserve_icon_column),
++        has_submenu_(has_submenu) {
+     SetHorizontalAlignment(gfx::ALIGN_LEFT);
+-    SetImageLabelSpacing(10);
+-    SetBorder(views::CreateEmptyBorder(gfx::Insets::VH(0, 12)));
++    SetImageLabelSpacing(8);
++    accelerator_label_ = AddChildView(
++        std::make_unique<views::Label>(accelerator));
++    accelerator_label_->SetHorizontalAlignment(gfx::ALIGN_RIGHT);
++    if (has_submenu_) {
++      submenu_label_ = AddChildView(std::make_unique<views::Label>(u"›"));
++      submenu_label_->SetHorizontalAlignment(gfx::ALIGN_RIGHT);
++    }
++    UpdateContentInsets();
+     SetFocusBehavior(FocusBehavior::ALWAYS);
+     views::FocusRing::Get(this)->SetHasFocusPredicate(
+         base::BindRepeating([](const views::View*) { return false; }));
+@@ -101,9 +138,200 @@ class EmberGlassMenuRow : public views::LabelButton {
+                       : views::LabelButton::OnKeyPressed(event);
+   }
+ 
++  gfx::Size CalculatePreferredSize(
++      const views::SizeBounds& available_size) const override {
++    int width = kMenuHorizontalPadding * 2 + label()->GetPreferredSize().width();
++    if (reserve_icon_column_) {
++      width += kMenuIconColumnWidth;
++    }
++    if (!accelerator_label_->GetText().empty()) {
++      width += kMenuAcceleratorGap +
++               accelerator_label_->GetPreferredSize().width();
++    }
++    if (has_submenu_) {
++      width += kMenuSubmenuWidth;
++    }
++    return gfx::Size(width, kMenuRowHeight);
++  }
++
++  views::ProposedLayout CalculateProposedLayout(
++      const views::SizeBounds& size_bounds) const override {
++    views::ProposedLayout layouts =
++        views::LabelButton::CalculateProposedLayout(size_bounds);
++    int trailing_x = layouts.host_size.width() - kMenuHorizontalPadding;
++    if (submenu_label_) {
++      layouts.child_layouts.emplace_back(
++          submenu_label_.get(), true,
++          gfx::Rect(trailing_x - kMenuSubmenuWidth, 0, kMenuSubmenuWidth,
++                    layouts.host_size.height()),
++          views::SizeBounds());
++      trailing_x -= kMenuSubmenuWidth;
++    }
++    if (!accelerator_label_->GetText().empty()) {
++      const int accelerator_width =
++          accelerator_label_->GetPreferredSize().width();
++      layouts.child_layouts.emplace_back(
++          accelerator_label_.get(), true,
++          gfx::Rect(trailing_x - accelerator_width, 0, accelerator_width,
++                    layouts.host_size.height()),
++          views::SizeBounds());
++    }
++    return layouts;
++  }
++
++  void SetMenuTextColors(SkColor primary, SkColor secondary) {
++    SetEnabledTextColors(primary);
++    SetTextColor(views::Button::STATE_DISABLED, SkColorSetA(secondary, 110));
++    accelerator_label_->SetEnabledColor(secondary);
++    if (submenu_label_) {
++      submenu_label_->SetEnabledColor(secondary);
++    }
++  }
++
+  private:
++  void UpdateContentInsets() {
++    int trailing = kMenuHorizontalPadding;
++    if (!accelerator_label_->GetText().empty()) {
++      trailing += kMenuAcceleratorGap +
++                  accelerator_label_->GetPreferredSize().width();
++    }
++    if (has_submenu_) {
++      trailing += kMenuSubmenuWidth;
++    }
++    const int leading = kMenuHorizontalPadding +
++                        (reserve_icon_column_ ? kMenuIconColumnWidth : 0);
++    SetBorder(views::CreateEmptyBorder(
++        gfx::Insets::TLBR(0, leading, 0, trailing)));
++  }
++
+   size_t model_index_;
+   base::RepeatingCallback<void(size_t, float)> hover_callback_;
++  raw_ptr<views::Label> accelerator_label_ = nullptr;
++  raw_ptr<views::Label> submenu_label_ = nullptr;
++  bool reserve_icon_column_ = false;
++  bool has_submenu_ = false;
++};
++
++class EmberGlassSwitcherCard : public views::Button {
++ public:
++  EmberGlassSwitcherCard(
++      size_t entry_index,
++      tabs::TabInterface* tab,
++      base::RepeatingCallback<void(size_t, const ui::Event&)> press_callback)
++      : views::Button(base::BindRepeating(
++            [](base::RepeatingCallback<void(size_t, const ui::Event&)>
++                   callback,
++               size_t index, const ui::Event& event) {
++              callback.Run(index, event);
++            },
++            std::move(press_callback), entry_index)),
++        entry_index_(entry_index) {
++    const tabs::TabData data = tabs::TabData::FromTabInterface(tab);
++    title_ = data.title.empty() ? u"New Tab" : data.title;
++
++    preview_ = AddChildView(std::make_unique<views::ImageView>());
++    preview_->SetHorizontalAlignment(views::ImageView::Alignment::kCenter);
++    preview_->SetVerticalAlignment(views::ImageView::Alignment::kCenter);
++    preview_->SetImageSize(
++        gfx::Size(kSwitcherCardWidth, kSwitcherPreviewHeight));
++    preview_->SetCornerRadius(8);
++
++    favicon_ = AddChildView(std::make_unique<views::ImageView>());
++    favicon_->SetImageSize(gfx::Size(16, 16));
++    if (!data.favicon.IsEmpty()) {
++      favicon_->SetImage(data.favicon);
++    }
++
++    title_label_ =
++        AddChildView(std::make_unique<views::Label>(title_));
++    title_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++    title_label_->SetElideBehavior(gfx::ELIDE_TAIL);
++    title_label_->SetFontList(
++        title_label_->font_list().DeriveWithSizeDelta(-1));
++
++    SetFocusBehavior(FocusBehavior::ALWAYS);
++    views::FocusRing::Get(this)->SetHasFocusPredicate(
++        base::BindRepeating([](const views::View*) { return false; }));
++    SetTooltipText(title_);
++    GetViewAccessibility().SetRole(ax::mojom::Role::kTab);
++    GetViewAccessibility().SetName(title_);
++
++    thumbnail_subscription_ = thumbnail_observer_.AddCallback(
++        base::BindRepeating(&EmberGlassSwitcherCard::OnThumbnailAvailable,
++                            base::Unretained(this)));
++    thumbnail_observer_.Observe(data.thumbnail);
++  }
++
++  EmberGlassSwitcherCard(const EmberGlassSwitcherCard&) = delete;
++  EmberGlassSwitcherCard& operator=(const EmberGlassSwitcherCard&) = delete;
++  ~EmberGlassSwitcherCard() override = default;
++
++  size_t entry_index() const { return entry_index_; }
++
++  void SetSelected(bool selected) {
++    selected_ = selected;
++    GetViewAccessibility().SetIsSelected(selected);
++    SchedulePaint();
++  }
++
++  void SetGlassColors(SkColor primary, SkColor secondary) {
++    title_label_->SetEnabledColor(selected_ ? primary : secondary);
++  }
++
++  gfx::Size CalculatePreferredSize(
++      const views::SizeBounds& available_size) const override {
++    return gfx::Size(kSwitcherCardWidth, kSwitcherCardHeight);
++  }
++
++  void Layout(PassKey) override {
++    preview_->SetBounds(0, 0, kSwitcherCardWidth, kSwitcherPreviewHeight);
++    const int footer_y = kSwitcherPreviewHeight;
++    favicon_->SetBounds(10, footer_y + 14, 16, 16);
++    title_label_->SetBounds(34, footer_y, kSwitcherCardWidth - 44,
++                            kSwitcherFooterHeight);
++  }
++
++  void OnPaintBackground(gfx::Canvas* canvas) override {
++    cc::PaintFlags fill;
++    fill.setAntiAlias(true);
++    fill.setColor(SkColorSetARGB(selected_ ? 26 : 18, 0, 0, 0));
++    canvas->DrawRoundRect(gfx::RectF(0, 0, kSwitcherCardWidth,
++                                     kSwitcherPreviewHeight),
++                          8.0f, fill);
++    cc::PaintFlags rim;
++    rim.setAntiAlias(true);
++    rim.setStyle(cc::PaintFlags::kStroke_Style);
++    rim.setStrokeWidth(1.0f);
++    rim.setColor(SkColorSetARGB(selected_ ? 72 : 32, 255, 255, 255));
++    canvas->DrawRoundRect(
++        gfx::RectF(0.5f, 0.5f, kSwitcherCardWidth - 1.0f,
++                   kSwitcherPreviewHeight - 1.0f),
++        7.5f, rim);
++  }
++
++ private:
++  void OnThumbnailAvailable(TabHoverCardThumbnailObserver* observer,
++                            gfx::ImageSkia thumbnail) {
++    if (thumbnail.isNull()) {
++      return;
++    }
++    gfx::ImageSkia cropped =
++        gfx::ImageSkiaOperations::CreateCroppedCenteredRoundRectImage(
++            gfx::Size(kSwitcherCardWidth, kSwitcherPreviewHeight), 8,
++            thumbnail);
++    preview_->SetImage(ui::ImageModel::FromImageSkia(cropped));
++    preview_->SetImageSize(
++        gfx::Size(kSwitcherCardWidth, kSwitcherPreviewHeight));
++  }
++
++  const size_t entry_index_;
++  std::u16string title_;
++  raw_ptr<views::ImageView> preview_ = nullptr;
++  raw_ptr<views::ImageView> favicon_ = nullptr;
++  raw_ptr<views::Label> title_label_ = nullptr;
++  bool selected_ = false;
++  TabHoverCardThumbnailObserver thumbnail_observer_;
++  base::CallbackListSubscription thumbnail_subscription_;
+ };
+ 
+ }  // namespace
+@@ -129,14 +357,14 @@ class EmberGlassMenuPanel : public EmberGlassView {
+     const SkRect highlight = SkRect::MakeXYWH(
+         panel.x() + kMenuInset, row_y, panel.width() - kMenuInset * 2,
+         kMenuRowHeight);
+-    canvas->sk_canvas()->drawRoundRect(highlight, 10.0f, 10.0f, fill);
++    canvas->sk_canvas()->drawRoundRect(highlight, 7.0f, 7.0f, fill);
+     cc::PaintFlags rim;
+     rim.setAntiAlias(true);
+     rim.setStyle(cc::PaintFlags::kStroke_Style);
+     rim.setStrokeWidth(1.0f);
+     rim.setColor(InteractionRim(false));
+     canvas->sk_canvas()->drawRoundRect(highlight.makeInset(0.5f, 0.5f),
+-                                        9.5f, 9.5f, rim);
++                                        6.5f, 6.5f, rim);
+   }
+ 
+  private:
+@@ -158,19 +386,19 @@ class EmberGlassSwitcherPanel : public EmberGlassView {
+     }
+     const gfx::Rect panel = GetPanelBounds();
+     const SkRect selection = SkRect::MakeXYWH(
+-        controller_->CtrlTabHighlightX(), panel.y() + 12.0f, 176.0f,
+-        152.0f);
++        controller_->CtrlTabHighlightX(), panel.y() + kSwitcherInset,
++        kSwitcherCardWidth, kSwitcherCardHeight);
+     cc::PaintFlags fill;
+     fill.setAntiAlias(true);
+     fill.setColor(InteractionFill(true));
+-    canvas->sk_canvas()->drawRoundRect(selection, 16.0f, 16.0f, fill);
++    canvas->sk_canvas()->drawRoundRect(selection, 12.0f, 12.0f, fill);
+     cc::PaintFlags rim;
+     rim.setAntiAlias(true);
+     rim.setStyle(cc::PaintFlags::kStroke_Style);
+     rim.setStrokeWidth(1.0f);
+     rim.setColor(InteractionRim(true));
+     canvas->sk_canvas()->drawRoundRect(selection.makeInset(0.5f, 0.5f),
+-                                        15.5f, 15.5f, rim);
++                                        11.5f, 11.5f, rim);
+   }
+ 
+  private:
+@@ -181,7 +409,8 @@ EmberGlassOverlayController::EmberGlassOverlayController(
+     BrowserView* browser_view)
+     : browser_view_(browser_view),
+       hover_animation_(base::Milliseconds(160), 60, this),
+-      switcher_animation_(base::Milliseconds(200), 60, this) {
++      switcher_animation_(kSwitcherSlideDuration, 60, this),
++      switcher_visibility_animation_(kSwitcherOpenDuration, 60, this) {
+   SetVisible(false);
+   SetPaintToLayer();
+   layer()->SetFillsBoundsOpaquely(false);
+@@ -270,20 +499,32 @@ void EmberGlassOverlayController::ShowCtrlTab(
+   backdrop_snapshot_.reset();
+   ++backdrop_generation_;
+   CaptureBackdrop(backdrop_generation_);
++  ctrl_tab_closing_ = false;
++  restore_page_focus_after_close_ = false;
++  if (gfx::Animation::PrefersReducedMotion()) {
++    ApplyCtrlTabVisibility(1.0f);
++  } else {
++    switcher_visibility_animation_.SetDuration(kSwitcherOpenDuration);
++    switcher_visibility_animation_.Start();
++  }
+ }
+ 
+ void EmberGlassOverlayController::AdvanceCtrlTab(bool reverse) {
+-  if (!IsShowingCtrlTab() || ctrl_tab_entries_.empty()) {
++  if (!IsShowingCtrlTab() || ctrl_tab_entries_.empty() ||
++      ctrl_tab_closing_) {
+     return;
+   }
+-  switcher_from_x_ = CtrlTabHighlightX();
+   selected_ctrl_tab_index_ =
+       (selected_ctrl_tab_index_ + ctrl_tab_entries_.size() +
+        (reverse ? -1 : 1)) %
+       ctrl_tab_entries_.size();
+-  RebuildCtrlTabCards();
+-  switcher_animation_.Stop();
+-  switcher_animation_.Start();
++  for (views::View* view : ctrl_tab_cards_) {
++    auto* card = static_cast<EmberGlassSwitcherCard*>(view);
++    card->SetSelected(card->entry_index() == selected_ctrl_tab_index_);
++    card->SetGlassColors(switcher_panel_->PrimaryTextColor(),
++                         switcher_panel_->SecondaryTextColor());
++  }
++  RetargetCtrlTabStrip();
+ }
+ 
+ void EmberGlassOverlayController::CommitCtrlTab() {
+@@ -294,17 +535,17 @@ void EmberGlassOverlayController::CommitCtrlTab() {
+   tabs::TabInterface* selected =
+       ctrl_tab_entries_[selected_ctrl_tab_index_];
+   const int index = ctrl_tab_model_->GetIndexOfTab(selected);
+-  CloseCtrlTab(false);
+   if (index != TabStripModel::kNoTab) {
+     ctrl_tab_model_->ActivateTabAt(index);
+   }
+   if (browser_view_->GetActiveWebContents()) {
+     browser_view_->GetActiveWebContents()->Focus();
+   }
++  BeginCtrlTabClose(false);
+ }
+ 
+ void EmberGlassOverlayController::CancelCtrlTab() {
+-  CloseCtrlTab(true);
++  BeginCtrlTabClose(true);
+ }
+ 
+ bool EmberGlassOverlayController::IsShowingCtrlTab() const {
+@@ -378,7 +619,26 @@ void EmberGlassOverlayController::AnimationProgressed(
+   if (animation == &hover_animation_) {
+     menu_panel_->SchedulePaint();
+   } else if (animation == &switcher_animation_) {
++    ApplyCtrlTabStripOffset(CurrentCtrlTabStripOffset());
+     switcher_panel_->SchedulePaint();
++  } else if (animation == &switcher_visibility_animation_) {
++    const float raw = static_cast<float>(animation->GetCurrentValue());
++    ApplyCtrlTabVisibility(ctrl_tab_closing_ ? 1.0f - EaseInOut(raw)
++                                             : EaseOut(raw));
++  }
++}
++
++void EmberGlassOverlayController::AnimationEnded(
++    const gfx::Animation* animation) {
++  if (animation == &switcher_animation_) {
++    ApplyCtrlTabStripOffset(switcher_strip_to_x_);
++  } else if (animation == &switcher_visibility_animation_) {
++    if (ctrl_tab_closing_) {
++      const bool restore_focus = restore_page_focus_after_close_;
++      CloseCtrlTab(restore_focus);
++    } else {
++      ApplyCtrlTabVisibility(1.0f);
++    }
+   }
+ }
+ 
+@@ -400,7 +660,20 @@ void EmberGlassOverlayController::RebuildMenu(ui::MenuModel* model) {
+   menu_panel_->RemoveAllChildViews();
+   menu_rows_.clear();
+   visible_model_indices_.clear();
++  std::vector<raw_ptr<views::Separator>> separators;
++  bool reserve_icon_column = false;
++  for (size_t index = 0; index < model->GetItemCount(); ++index) {
++    if (!model->IsVisibleAt(index) ||
++        model->GetTypeAt(index) == ui::MenuModel::TYPE_SEPARATOR) {
++      continue;
++    }
++    const ui::MenuModel::ItemType type = model->GetTypeAt(index);
++    reserve_icon_column |= !model->GetIconAt(index).IsEmpty() ||
++                           type == ui::MenuModel::TYPE_CHECK ||
++                           type == ui::MenuModel::TYPE_RADIO;
++  }
+   int y = EmberGlassView::kShadowMargin + kMenuInset;
++  int preferred_row_width = kMenuMinWidth - kMenuInset * 2;
+   for (size_t index = 0; index < model->GetItemCount(); ++index) {
+     if (!model->IsVisibleAt(index)) {
+       continue;
+@@ -408,9 +681,11 @@ void EmberGlassOverlayController::RebuildMenu(ui::MenuModel* model) {
+     const ui::MenuModel::ItemType type = model->GetTypeAt(index);
+     if (type == ui::MenuModel::TYPE_SEPARATOR) {
+       auto separator = std::make_unique<views::Separator>();
+-      separator->SetBounds(EmberGlassView::kShadowMargin + 12, y + 4,
+-                           kMenuWidth - 24, 1);
++      views::Separator* separator_ptr = separator.get();
+       menu_panel_->AddChildView(std::move(separator));
++      separators.push_back(separator_ptr);
++      separator_ptr->SetBounds(EmberGlassView::kShadowMargin + 10, y + 3,
++                               1, 1);
+       y += kMenuSeparatorHeight;
+       continue;
+     }
+@@ -421,12 +696,11 @@ void EmberGlassOverlayController::RebuildMenu(ui::MenuModel* model) {
+       label = u"✓  " + label;
+     }
+     ui::Accelerator accelerator;
++    std::u16string accelerator_text;
+     if (model->GetAcceleratorAt(index, &accelerator)) {
+-      label += u"    " + accelerator.GetShortcutText();
+-    }
+-    if (model->GetSubmenuModelAt(index)) {
+-      label += u"    ›";
++      accelerator_text = accelerator.GetShortcutText();
+     }
++    const bool has_submenu = model->GetSubmenuModelAt(index) != nullptr;
+     auto row = std::make_unique<EmberGlassMenuRow>(
+         index,
+         base::BindRepeating(&EmberGlassOverlayController::HoverMenuItem,
+@@ -439,14 +713,16 @@ void EmberGlassOverlayController::RebuildMenu(ui::MenuModel* model) {
+               }
+             },
+             weak_ptr_factory_.GetWeakPtr()),
+-        label);
++        label, accelerator_text, has_submenu, reserve_icon_column);
+     row->SetEnabled(model->IsEnabledAt(index));
+     const ui::ImageModel icon = model->GetIconAt(index);
+     if (!icon.IsEmpty()) {
+       row->SetImageModel(views::Button::STATE_NORMAL, icon);
+     }
+-    row->SetBounds(EmberGlassView::kShadowMargin + kMenuInset, y,
+-                   kMenuWidth - kMenuInset * 2, kMenuRowHeight);
++    preferred_row_width =
++        std::max(preferred_row_width, row->GetPreferredSize().width());
++    row->SetBounds(EmberGlassView::kShadowMargin + kMenuInset, y, 1,
++                   kMenuRowHeight);
+     views::View* row_ptr = row.get();
+     menu_panel_->AddChildView(
+         std::unique_ptr<views::View>(std::move(row)));
+@@ -454,6 +730,15 @@ void EmberGlassOverlayController::RebuildMenu(ui::MenuModel* model) {
+     visible_model_indices_.push_back(index);
+     y += kMenuRowHeight;
+   }
++  const int panel_width = std::clamp(preferred_row_width + kMenuInset * 2,
++                                     kMenuMinWidth, kMenuMaxWidth);
++  for (views::View* row : menu_rows_) {
++    row->SetBounds(row->x(), row->y(), panel_width - kMenuInset * 2,
++                   kMenuRowHeight);
++  }
++  for (views::Separator* separator : separators) {
++    separator->SetBounds(separator->x(), separator->y(), panel_width - 20, 1);
++  }
+   selected_visible_index_ = 0;
+   while (selected_visible_index_ + 1 < visible_model_indices_.size() &&
+          !model->IsEnabledAt(
+@@ -462,7 +747,7 @@ void EmberGlassOverlayController::RebuildMenu(ui::MenuModel* model) {
+   }
+   const int panel_height =
+       y - EmberGlassView::kShadowMargin + kMenuInset;
+-  menu_panel_rect_.set_size(gfx::Size(kMenuWidth, panel_height));
++  menu_panel_rect_.set_size(gfx::Size(panel_width, panel_height));
+   highlight_from_y_ = highlight_to_y_ =
+       menu_rows_.empty() ? 0.0f
+                          : static_cast<float>(
+@@ -636,8 +921,9 @@ void EmberGlassOverlayController::OnBackdropCaptured(uint64_t generation,
+     if (panel) {
+       switcher_panel_->SetPanel(*panel);
+       for (views::View* view : ctrl_tab_cards_) {
+-        static_cast<views::LabelButton*>(view)->SetEnabledTextColors(
+-            switcher_panel_->PrimaryTextColor());
++        static_cast<EmberGlassSwitcherCard*>(view)->SetGlassColors(
++            switcher_panel_->PrimaryTextColor(),
++            switcher_panel_->SecondaryTextColor());
+       }
+       switcher_panel_->SchedulePaint();
+     }
+@@ -646,10 +932,9 @@ void EmberGlassOverlayController::OnBackdropCaptured(uint64_t generation,
+ 
+ void EmberGlassOverlayController::UpdateMenuColors() {
+   for (views::View* view : menu_rows_) {
+-    auto* row = static_cast<views::LabelButton*>(view);
+-    row->SetEnabledTextColors(menu_panel_->PrimaryTextColor());
+-    row->SetTextColor(views::Button::STATE_DISABLED,
+-                      SkColorSetA(menu_panel_->SecondaryTextColor(), 110));
++    auto* row = static_cast<EmberGlassMenuRow*>(view);
++    row->SetMenuTextColors(menu_panel_->PrimaryTextColor(),
++                           menu_panel_->SecondaryTextColor());
+   }
+   menu_panel_->SchedulePaint();
+ }
+@@ -667,40 +952,43 @@ float EmberGlassOverlayController::MenuHighlightY() const {
+ void EmberGlassOverlayController::RebuildCtrlTabCards() {
+   switcher_panel_->RemoveAllChildViews();
+   ctrl_tab_cards_.clear();
+-  const size_t displayed_count = std::min<size_t>(4, ctrl_tab_entries_.size());
+-  if (selected_ctrl_tab_index_ < displayed_count) {
+-    displayed_ctrl_tab_start_ = 0;
+-  } else {
+-    displayed_ctrl_tab_start_ = std::min(
+-        selected_ctrl_tab_index_ - displayed_count + 1,
+-        ctrl_tab_entries_.size() - displayed_count);
+-  }
+-  const int panel_width = 20 + static_cast<int>(displayed_count) * 185;
+-  switcher_panel_rect_.set_size(gfx::Size(panel_width, 176));
+-  const size_t selected_slot =
+-      selected_ctrl_tab_index_ - displayed_ctrl_tab_start_;
+-  switcher_to_x_ = EmberGlassView::kShadowMargin + 12.0f +
+-                   static_cast<float>(selected_slot) * 185.0f;
+-
+-  for (size_t slot = 0; slot < displayed_count; ++slot) {
+-    const size_t entry_index = displayed_ctrl_tab_start_ + slot;
++  const int card_stride = kSwitcherCardWidth + kSwitcherCardGap;
++  const int strip_width =
++      static_cast<int>(ctrl_tab_entries_.size()) * card_stride -
++      kSwitcherCardGap;
++  const int available_width = std::max(
++      kSwitcherCardWidth, width() - EmberGlassView::kShadowMargin * 2 - 96);
++  const int viewport_width =
++      std::min(strip_width,
++               std::min(kSwitcherMaxViewportWidth, available_width));
++  switcher_panel_rect_.set_size(
++      gfx::Size(viewport_width + kSwitcherInset * 2,
++                kSwitcherCardHeight + kSwitcherInset * 2));
++
++  auto viewport = std::make_unique<views::View>();
++  switcher_viewport_ = viewport.get();
++  switcher_viewport_->SetPaintToLayer();
++  switcher_viewport_->layer()->SetFillsBoundsOpaquely(false);
++  switcher_viewport_->layer()->SetMasksToBounds(true);
++  switcher_viewport_->SetBounds(EmberGlassView::kShadowMargin + kSwitcherInset,
++                                EmberGlassView::kShadowMargin + kSwitcherInset,
++                                viewport_width, kSwitcherCardHeight);
++  switcher_viewport_->layer()->SetClipRect(
++      switcher_viewport_->GetLocalBounds());
++  switcher_panel_->AddChildView(std::move(viewport));
++
++  auto strip = std::make_unique<views::View>();
++  switcher_strip_ = strip.get();
++  switcher_strip_->SetPaintToLayer();
++  switcher_strip_->layer()->SetFillsBoundsOpaquely(false);
++  switcher_strip_->SetBounds(0, 0, strip_width, kSwitcherCardHeight);
++  switcher_viewport_->AddChildView(std::move(strip));
++
++  for (size_t entry_index = 0; entry_index < ctrl_tab_entries_.size();
++       ++entry_index) {
+     tabs::TabInterface* tab = ctrl_tab_entries_[entry_index];
+-    content::WebContents* contents = tab ? tab->GetContents() : nullptr;
+-    const std::u16string title =
+-        contents && !contents->GetTitle().empty() ? contents->GetTitle()
+-                                                  : u"New Tab";
+-    std::u16string domain;
+-    if (contents) {
+-      const GURL& url = contents->GetLastCommittedURL();
+-      if (url.SchemeIsHTTPOrHTTPS()) {
+-        domain = base::UTF8ToUTF16(url.host());
+-      }
+-    }
+-    std::u16string label = title;
+-    if (!domain.empty()) {
+-      label += u"\n" + domain;
+-    }
+-    auto card = std::make_unique<views::LabelButton>(
++    auto card = std::make_unique<EmberGlassSwitcherCard>(
++        entry_index, tab,
+         base::BindRepeating(
+             [](base::WeakPtr<EmberGlassOverlayController> controller,
+                size_t index, const ui::Event&) {
+@@ -708,36 +996,105 @@ void EmberGlassOverlayController::RebuildCtrlTabCards() {
+                 controller->SelectCtrlTabCard(index);
+               }
+             },
+-            weak_ptr_factory_.GetWeakPtr(), entry_index),
+-        label);
+-    card->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+-    card->SetBorder(views::CreateEmptyBorder(gfx::Insets::VH(10, 9)));
+-    card->SetImageLabelSpacing(8);
+-    card->SetEnabledTextColors(switcher_panel_->PrimaryTextColor());
+-    card->SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
+-    views::FocusRing::Get(card.get())->SetHasFocusPredicate(
+-        base::BindRepeating([](const views::View*) { return false; }));
+-    card->GetViewAccessibility().SetRole(ax::mojom::Role::kTab);
+-    card->GetViewAccessibility().SetName(title);
+-    card->GetViewAccessibility().SetIsSelected(
+-        entry_index == selected_ctrl_tab_index_);
+-    if (TabUIHelper* helper = TabUIHelper::From(tab)) {
+-      const ui::ImageModel favicon = helper->GetFavicon();
+-      if (!favicon.IsEmpty()) {
+-        card->SetImageModel(views::Button::STATE_NORMAL, favicon);
+-      }
+-    }
+-    card->SetBounds(EmberGlassView::kShadowMargin + 12 +
+-                        static_cast<int>(slot) * 185,
+-                    EmberGlassView::kShadowMargin + 12, 176, 152);
++            weak_ptr_factory_.GetWeakPtr()));
++    card->SetSelected(entry_index == selected_ctrl_tab_index_);
++    card->SetGlassColors(switcher_panel_->PrimaryTextColor(),
++                         switcher_panel_->SecondaryTextColor());
++    card->SetBounds(static_cast<int>(entry_index) * card_stride, 0,
++                    kSwitcherCardWidth, kSwitcherCardHeight);
+     views::View* card_ptr = card.get();
+-    switcher_panel_->AddChildView(
++    switcher_strip_->AddChildView(
+         std::unique_ptr<views::View>(std::move(card)));
+     ctrl_tab_cards_.push_back(card_ptr);
+   }
++  switcher_strip_from_x_ = switcher_strip_to_x_ =
++      TargetCtrlTabStripOffset();
++  ApplyCtrlTabStripOffset(switcher_strip_to_x_);
+   switcher_panel_->SchedulePaint();
+ }
+ 
++void EmberGlassOverlayController::RetargetCtrlTabStrip() {
++  switcher_strip_from_x_ = CurrentCtrlTabStripOffset();
++  switcher_strip_to_x_ = TargetCtrlTabStripOffset();
++  switcher_animation_.Stop();
++  if (gfx::Animation::PrefersReducedMotion() ||
++      std::abs(switcher_strip_to_x_ - switcher_strip_from_x_) < 0.5f) {
++    ApplyCtrlTabStripOffset(switcher_strip_to_x_);
++    return;
++  }
++  switcher_animation_.SetDuration(kSwitcherSlideDuration);
++  switcher_animation_.Start();
++}
++
++float EmberGlassOverlayController::CurrentCtrlTabStripOffset() const {
++  if (!switcher_animation_.is_animating()) {
++    return switcher_strip_x_;
++  }
++  const float progress =
++      EaseInOut(static_cast<float>(switcher_animation_.GetCurrentValue()));
++  return switcher_strip_from_x_ +
++         (switcher_strip_to_x_ - switcher_strip_from_x_) * progress;
++}
++
++float EmberGlassOverlayController::TargetCtrlTabStripOffset() const {
++  if (!switcher_viewport_ || ctrl_tab_entries_.empty()) {
++    return 0.0f;
++  }
++  const int card_stride = kSwitcherCardWidth + kSwitcherCardGap;
++  const int strip_width =
++      static_cast<int>(ctrl_tab_entries_.size()) * card_stride -
++      kSwitcherCardGap;
++  const float centered =
++      (switcher_viewport_->width() - kSwitcherCardWidth) / 2.0f -
++      static_cast<float>(selected_ctrl_tab_index_ * card_stride);
++  return std::clamp(centered,
++                    static_cast<float>(switcher_viewport_->width() -
++                                       strip_width),
++                    0.0f);
++}
++
++void EmberGlassOverlayController::ApplyCtrlTabStripOffset(float offset) {
++  switcher_strip_x_ = offset;
++  if (!switcher_strip_) {
++    return;
++  }
++  gfx::Transform transform;
++  transform.Translate(offset, 0.0f);
++  switcher_strip_->layer()->SetTransform(transform);
++}
++
++void EmberGlassOverlayController::BeginCtrlTabClose(
++    bool restore_page_focus) {
++  if (!IsShowingCtrlTab() || ctrl_tab_closing_) {
++    return;
++  }
++  ctrl_tab_closing_ = true;
++  restore_page_focus_after_close_ = restore_page_focus;
++  switcher_visibility_animation_.Stop();
++  if (gfx::Animation::PrefersReducedMotion()) {
++    CloseCtrlTab(restore_page_focus);
++    return;
++  }
++  switcher_visibility_animation_.SetDuration(kSwitcherCloseDuration);
++  switcher_visibility_animation_.Start();
++}
++
++void EmberGlassOverlayController::ApplyCtrlTabVisibility(float progress) {
++  if (!switcher_panel_ || !switcher_panel_->layer()) {
++    return;
++  }
++  const float clamped = std::clamp(progress, 0.0f, 1.0f);
++  switcher_panel_->layer()->SetOpacity(clamped);
++  const float scale = 0.985f + clamped * 0.015f;
++  const float center_x = switcher_panel_->width() / 2.0f;
++  const float center_y = switcher_panel_->height() / 2.0f;
++  gfx::Transform transform;
++  transform.Translate(center_x, center_y + (1.0f - clamped) * 6.0f);
++  transform.Scale(scale);
++  transform.Translate(-center_x, -center_y);
++  switcher_panel_->layer()->SetTransform(transform);
++}
++
+ void EmberGlassOverlayController::SelectCtrlTabCard(size_t entry_index) {
+   if (entry_index >= ctrl_tab_entries_.size()) {
+     return;
+@@ -748,9 +1105,14 @@ void EmberGlassOverlayController::SelectCtrlTabCard(size_t entry_index) {
+ 
+ void EmberGlassOverlayController::CloseCtrlTab(bool restore_page_focus) {
+   switcher_animation_.Stop();
++  ctrl_tab_closing_ = false;
++  restore_page_focus_after_close_ = false;
++  switcher_visibility_animation_.Stop();
+   ctrl_tab_cards_.clear();
+   ctrl_tab_entries_.clear();
+   ctrl_tab_model_ = nullptr;
++  switcher_viewport_ = nullptr;
++  switcher_strip_ = nullptr;
+   switcher_panel_->RemoveAllChildViews();
+   switcher_panel_->SetVisible(false);
+   SetVisible(false);
+@@ -762,12 +1124,12 @@ void EmberGlassOverlayController::CloseCtrlTab(bool restore_page_focus) {
+ }
+ 
+ float EmberGlassOverlayController::CtrlTabHighlightX() const {
+-  if (!switcher_animation_.is_animating()) {
+-    return switcher_to_x_;
++  if (!switcher_viewport_) {
++    return 0.0f;
+   }
+-  const float progress =
+-      EaseInOut(static_cast<float>(switcher_animation_.GetCurrentValue()));
+-  return switcher_from_x_ + (switcher_to_x_ - switcher_from_x_) * progress;
++  return static_cast<float>(switcher_viewport_->x()) + switcher_strip_x_ +
++         static_cast<float>(selected_ctrl_tab_index_ *
++                            (kSwitcherCardWidth + kSwitcherCardGap));
+ }
+ 
+ }  // namespace ember
+diff --git a/chrome/browser/ui/views/ember/ember_glass_overlay_controller.h b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.h
+index f6884bb..1a552b4 100644
+--- a/chrome/browser/ui/views/ember/ember_glass_overlay_controller.h
++++ b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.h
+@@ -73,6 +73,7 @@ class EmberGlassOverlayController : public views::View,
+ 
+   // gfx::AnimationDelegate:
+   void AnimationProgressed(const gfx::Animation* animation) override;
++  void AnimationEnded(const gfx::Animation* animation) override;
+ 
+  private:
+   friend class EmberGlassMenuPanel;
+@@ -92,6 +93,12 @@ class EmberGlassOverlayController : public views::View,
+   void UpdateMenuColors();
+   float MenuHighlightY() const;
+   void RebuildCtrlTabCards();
++  void RetargetCtrlTabStrip();
++  float CurrentCtrlTabStripOffset() const;
++  float TargetCtrlTabStripOffset() const;
++  void ApplyCtrlTabStripOffset(float offset);
++  void BeginCtrlTabClose(bool restore_page_focus);
++  void ApplyCtrlTabVisibility(float progress);
+   void SelectCtrlTabCard(size_t entry_index);
+   void CloseCtrlTab(bool restore_page_focus);
+   float CtrlTabHighlightX() const;
+@@ -113,12 +120,17 @@ class EmberGlassOverlayController : public views::View,
+   raw_ptr<TabStripModel> ctrl_tab_model_ = nullptr;
+   std::vector<raw_ptr<tabs::TabInterface>> ctrl_tab_entries_;
+   std::vector<raw_ptr<views::View>> ctrl_tab_cards_;
++  raw_ptr<views::View> switcher_viewport_ = nullptr;
++  raw_ptr<views::View> switcher_strip_ = nullptr;
+   size_t selected_ctrl_tab_index_ = 0;
+-  size_t displayed_ctrl_tab_start_ = 0;
+   gfx::Rect switcher_panel_rect_;
+-  float switcher_from_x_ = 0.0f;
+-  float switcher_to_x_ = 0.0f;
++  float switcher_strip_from_x_ = 0.0f;
++  float switcher_strip_to_x_ = 0.0f;
++  float switcher_strip_x_ = 0.0f;
++  bool ctrl_tab_closing_ = false;
++  bool restore_page_focus_after_close_ = false;
+   gfx::LinearAnimation switcher_animation_;
++  gfx::LinearAnimation switcher_visibility_animation_;
+   base::WeakPtrFactory<EmberGlassOverlayController> weak_ptr_factory_{this};
+ };
+ 
+diff --git a/chrome/browser/ui/views/ember/ember_glass_view.cc b/chrome/browser/ui/views/ember/ember_glass_view.cc
+index 409a718..e73069e 100644
+--- a/chrome/browser/ui/views/ember/ember_glass_view.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_view.cc
+@@ -4,8 +4,6 @@
+ 
+ #include "chrome/browser/ui/views/ember/ember_glass_view.h"
+ 
+-#include <algorithm>
+-
+ #include "cc/paint/paint_canvas.h"
+ #include "cc/paint/paint_flags.h"
+ #include "cc/paint/paint_image.h"
+@@ -16,6 +14,9 @@
+ #include "third_party/skia/include/core/SkSamplingOptions.h"
+ #include "ui/compositor/layer.h"
+ #include "ui/gfx/canvas.h"
++#include "ui/gfx/geometry/vector2d.h"
++#include "ui/gfx/shadow_value.h"
++#include "ui/gfx/skia_paint_util.h"
+ 
+ namespace ember {
+ 
+@@ -50,14 +51,18 @@ SkColor EmberGlassView::SecondaryTextColor() const {
+ 
+ SkColor EmberGlassView::InteractionFill(bool selected) const {
+   if (bright_backdrop_) {
+-    return SkColorSetARGB(selected ? 48 : 34, 31, 34, 39);
++    return SkColorSetARGB(selected ? 50 : 40, 31, 34, 39);
+   }
+   return SkColorSetARGB(selected ? 38 : 30, 255, 255, 255);
+ }
+ 
+ SkColor EmberGlassView::InteractionRim(bool selected) const {
++  if (preset_ == EmberGlassPreset::kMenu) {
++    return bright_backdrop_ ? SkColorSetARGB(36, 31, 34, 39)
++                            : SkColorSetARGB(26, 255, 255, 255);
++  }
+   if (bright_backdrop_) {
+-    return SkColorSetARGB(selected ? 92 : 70, 31, 34, 39);
++    return SkColorSetARGB(selected ? 72 : 48, 31, 34, 39);
+   }
+   return SkColorSetARGB(selected ? 78 : 55, 255, 255, 255);
+ }
+@@ -70,23 +75,18 @@ void EmberGlassView::OnPaintBackground(gfx::Canvas* canvas) {
+       panel_bounds.height());
+   cc::PaintCanvas* sk_canvas = canvas->sk_canvas();
+ 
+-  constexpr int kShadowLayers = 12;
+-  for (int i = kShadowLayers; i >= 1; --i) {
+-    const float t = static_cast<float>(i) / kShadowLayers;
+-    const float spread = 1.5f + t * 15.0f;
+-    const float y_offset = 5.0f + t * 8.0f;
+-    const float falloff = 1.0f - t;
+-    const float alpha = (bright_backdrop_ ? 24.0f : 17.0f) *
+-                        (0.35f + falloff * falloff * 0.65f);
+-    cc::PaintFlags shadow;
+-    shadow.setAntiAlias(true);
+-    shadow.setColor(SkColorSetARGB(
+-        static_cast<U8CPU>(std::clamp(alpha, 0.0f, 255.0f)), 0, 0, 0));
+-    const SkRect shadow_rect =
+-        panel_rect.makeOffset(0.0f, y_offset).makeOutset(spread, spread);
+-    sk_canvas->drawRoundRect(shadow_rect, params.corner_radius + spread,
+-                             params.corner_radius + spread, shadow);
+-  }
++  const gfx::ShadowValues shadows = {
++      gfx::ShadowValue(gfx::Vector2d(0, 2), 6.0f,
++                       SkColorSetARGB(bright_backdrop_ ? 48 : 42, 0, 0, 0)),
++      gfx::ShadowValue(gfx::Vector2d(0, 10), 28.0f,
++                       SkColorSetARGB(bright_backdrop_ ? 38 : 30, 0, 0, 0)),
++  };
++  cc::PaintFlags shadow;
++  shadow.setAntiAlias(true);
++  shadow.setColor(SK_ColorTRANSPARENT);
++  shadow.setLooper(gfx::CreateShadowDrawLooper(shadows));
++  sk_canvas->drawRoundRect(panel_rect, params.corner_radius,
++                           params.corner_radius, shadow);
+ 
+   if (!panel_bitmap_.empty()) {
+     sk_canvas->save();
+@@ -104,7 +104,8 @@ void EmberGlassView::OnPaintBackground(gfx::Canvas* canvas) {
+   outer_rim.setAntiAlias(true);
+   outer_rim.setStyle(cc::PaintFlags::kStroke_Style);
+   outer_rim.setStrokeWidth(1.0f);
+-  outer_rim.setColor(SkColorSetARGB(104, 255, 255, 255));
++  outer_rim.setColor(SkColorSetARGB(
++      preset_ == EmberGlassPreset::kMenu ? 62 : 104, 255, 255, 255));
+   sk_canvas->drawRoundRect(panel_rect.makeInset(0.5f, 0.5f),
+                            params.corner_radius - 0.5f,
+                            params.corner_radius - 0.5f, outer_rim);
+@@ -113,7 +114,8 @@ void EmberGlassView::OnPaintBackground(gfx::Canvas* canvas) {
+   inset_rim.setAntiAlias(true);
+   inset_rim.setStyle(cc::PaintFlags::kStroke_Style);
+   inset_rim.setStrokeWidth(1.0f);
+-  inset_rim.setColor(SkColorSetARGB(38, 255, 255, 255));
++  inset_rim.setColor(SkColorSetARGB(
++      preset_ == EmberGlassPreset::kMenu ? 24 : 38, 255, 255, 255));
+   sk_canvas->drawRoundRect(panel_rect.makeInset(1.75f, 1.75f),
+                            params.corner_radius - 1.75f,
+                            params.corner_radius - 1.75f, inset_rim);
+diff --git a/chrome/browser/ui/views/ember/ember_glass_view.h b/chrome/browser/ui/views/ember/ember_glass_view.h
+index bea1a10..5946231 100644
+--- a/chrome/browser/ui/views/ember/ember_glass_view.h
++++ b/chrome/browser/ui/views/ember/ember_glass_view.h
+@@ -16,7 +16,7 @@ namespace ember {
+ // stable while child labels/icons and lightweight interaction layers repaint.
+ class EmberGlassView : public views::View {
+  public:
+-  static constexpr int kShadowMargin = 18;
++  static constexpr int kShadowMargin = 24;
+ 
+   explicit EmberGlassView(EmberGlassPreset preset);
+   EmberGlassView(const EmberGlassView&) = delete;

@@ -72,6 +72,10 @@
     {
       "source": "branding/about-logo-200.png",
       "destination": "components/resources/default_200_percent/chromium/product_logo_white.png"
+    },
+    {
+      "source": "glass/displacement-map.jpg",
+      "destination": "chrome/app/theme/chromium/ember_glass_displacement.jpg"
     }
   ]
 }

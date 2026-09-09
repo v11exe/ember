@@ -1,13 +1,76 @@
 # Ember native Chromium port status
 
-Last updated: 2026-09-06 on branch `chromium-port`.
+Last updated: 2026-09-09 on branch `chromium-port`.
 
 **Read this first:** the pinned external checkout and incremental build graph are
-preserved at `C:\src\ember-chromium`. Patches 0006–0013 now provide the built,
-runtime-verified native shell baseline: sidebar/address/Copy/Favorites, compact
-top chrome, rounded page clipping, shared material and the completed top bar.
-Preserve that checkout and its `.ninja_log`. Work is paused after the top-bar
-slice at the user's request; do not begin another slice until asked.
+preserved at `C:\src\ember-chromium`. Patches 0006–0020 now provide the built
+native shell plus the reusable EmberGlass material, context menu, Ctrl+Tab and
+eligible browser-bubble overlays. Patch 0017 fixes the production JPEG
+displacement-map decoder and removes the temporary blue fallback without
+changing the approved glass graph. Preserve that checkout and its `.ninja_log`.
+
+## 2026-09-09 EmberGlass overlay acceptance checkpoint
+
+- Patches 0018–0020 complete the bounded visual slice. Ctrl+Tab uses 236×133
+  real thumbnails with a compact footer, partial neighboring cards, cached
+  material, and transform-based 160/190/145 ms open/slide/close motion. The
+  last card now receives hover through transform-aware panel hit-testing;
+  Ctrl key-up commits the hovered tab in one release; reverse and overflow
+  remain on the same MRU path.
+- Page, tab, New Tab and extension-action context menus share measured compact
+  geometry (content width, 30 px rows, 7 px separators, 12 px radius) and the
+  layered contact/ambient Skia shadow. Tab-menu screen coordinates are converted
+  at the overlay boundary, so the menu opens at the actual cursor origin.
+- The Extensions popup is now captured once from the active renderer and passed
+  through `EmberGlassMaterial`'s existing cached displacement/blur/saturation
+  path. A patterned-page HWND capture visibly blurs/displaces the bands through
+  both header and contents; no compositor-only sharp-transparency fallback is
+  used.
+- Native runtime evidence on the secondary PL288H display (`-1920,224,
+  1920×1080`) includes `final-ctrl-tab-last-card-hover-fixed.png`,
+  `final-ctrl-tab-last-card-committed.png`,
+  `final-tab-context-menu-at-cursor.png`,
+  `final-extensions-menu-root-glass.png`, and the actual browser-chrome motion
+  recording `final-ctrl-tab-motion-foreground.mp4` with its contact sheet.
+  The tested window was `1570×796` at `GetDpiForWindow() == 96` (100% DPI).
+- Verification: `node chromium/tools/check-patch-hunks.js` passes all 20 patch
+  files and 24 hunks in 0020; `node --test test/chromium-port.test.js` passes
+  42/42; `git diff --check` passes; directly affected objects and `chrome.dll`
+  link pass after 0020. The definitive incremental full-target command used the
+  installed VS 2026 `Hostx64\x64` directory on `PATH`; Ninja's long dependency
+  and PDB resource-allowlist preparation then completed normally, followed by
+  all 333 pending actions and the final `chrome.exe` link. The repository build
+  wrapper's resume gate remains below its 60 GiB prepared-build free-space
+  threshold, so this non-clean direct Ninja completion preserved the checkout
+  and build graph. `npm test` passes 425/425, `npm start` launches the Electron
+  oracle, and three consecutive clean-profile `npm run smoke` retries pass
+  (12.1 s, 19.1 s, and 10.5 s; frame-dependent checks retain the host's explicit
+  no-frame skip). No startup code change was needed.
+- Remaining visual difference from the Opera GX reference: Ember retains its
+  native 236 px card proportion and captured EmberGlass material, so its strip
+  is slightly more restrained and less wide than Opera's branded presentation;
+  interaction timing and carousel semantics now match the requested behavior.
+
+## 2026-09-07 EmberGlass corrective runtime checkpoint
+
+- The reported gray/blue transparent panels were traced to
+  `SkCodec::MakeFromData()` failing to decode the packaged JPEG displacement map
+  in the browser process. Patch 0017 uses Chromium's registered
+  `gfx::JPEGCodec`, removes the fixed `ARGB(232,65,72,84)` fallback body, strips
+  menu mnemonics from visible labels, suppresses redundant blue focus rings,
+  and omits non-HTTP(S) scheme strings from switcher subtitles.
+- Focused material/view/controller objects and a diagnostic-free `chrome.dll`
+  linked successfully. Actual HWND captures at
+  `artifacts/native-capture/corrective/page-menu-decoder-fix.png`,
+  `page-menu-label-focus-fix.png`, and `ctrl-tab-cdp-held.png` prove the restored
+  displaced, blurred EmberGlass pixels in native browser chrome.
+- Repeated debugger stress covered more than 1,200 forward/reverse Ctrl+Tab
+  cycles at 0–180 ms delays plus closing a candidate tab while the switcher was
+  held. No access violation, DCHECK, or Ctrl-release crash reproduced, so no
+  speculative lifecycle change was made. The existing commit-on-release path
+  remains intact.
+- That corrective checkpoint is superseded by the maintained 20-patch stack
+  recorded above; the accepted backdrop algorithm remains frozen.
 
 This is the mutable handoff and parity ledger for the native Chromium fork. For
 this friends-only port, each slice gets compile evidence and a practical native
@@ -85,10 +148,10 @@ follow an upstream branch.
 | Hibernation | **Not started** | Must preserve every current blocker and cached-thumbnail/scroll/history contract using native renderer lifecycle controls. |
 | Extensions | **Not started** | Final port must use Chromium's real extension system, Web Store install path, profiles, actions/popups, permissions, service workers, and lifecycle—not Electron extension emulation. |
 | Internal pages and protocol | **Not started** | New tab, settings, history, downloads, bookmarks, unreachable/archive flows, and any retained `ember://` routing need native Chromium integration and security review. |
-| Bounded overlays and material | **Partial — shell material live** | The main native shell now paints one aligned Ember material behind the sidebar, toolbar and rounded page inset. Upload, conversion, context menu, Ctrl+Tab, archive, extension popup and related focus/capture behavior still need native equivalents. |
+| Bounded overlays and material | **Partial — bounded EmberGlass acceptance complete** | Patches 0014–0020 provide the reusable Skia EmberGlass material (approved displacement math, generation/size/preset caches and layered shadow), model-backed page/tab/New Tab/extension-action context menus, the MRU Ctrl+Tab carousel with one-shot capture and Ctrl-release commit, and the captured/refraction-backed Extensions popup. Focused objects and `chrome.dll` link; PL288H HWND captures and a native motion recording verify the requested slice. Upload, conversion and archive overlays remain unported; exhaustive accessibility/focus matrices remain deferred. |
 | Security and privacy model | **Partial** | The isolated runtime used Chromium's browser broker plus GPU, renderer and utility roles with no `--no-sandbox`; real HTTPS navigation succeeded. Windows token/AppContainer, site isolation, permissions, private profiles, telemetry/network defaults, crash reporting, update trust and extension boundaries still require focused audits. |
 | Packaging and distribution | **Development packages built; refresh pending** | The last packaged nine-patch baseline emits a 197,394,012-byte portable ZIP (`2F4EB251…D1EA`) and 126,794,240-byte installer (`53A1B9D3…C760`) as deterministic `ember_151.0.7922.173-1.1_*_x64` artifacts. Patches 0010–0013 are built and runtime-verified in `out/Default` but not repackaged because the wrapper's prepared-build free-space gate now reports 51 GiB versus 60 GiB required. Binaries remain unsigned and release-scale integration is deferred. |
-| Automated native parity harness | **Partial** | The Electron references are present and `chromium/tools/capture-native.js` records wide/medium/compact native captures through CDP. The latest practical pass combined Windows UI Automation geometry/actionability, CDP target identities, a direct HWND capture and graceful shutdown. Broader native lifecycle coverage is intentionally deferred until a feature exposes a real need. |
+| Automated native parity harness | **Partial** | The Electron references are present and `chromium/tools/capture-native.js` records wide/medium/compact native captures through CDP (`artifacts/native-capture/`). The 2026-09-06 pass built `chrome.exe`, launched an isolated profile on the PL288H bounds, captured all three target sizes, and shut down cleanly. CDP `Page.captureScreenshot` is page-target scoped (the probe is the expected green page), so HWND-level chrome pixel comparison and broader lifecycle coverage remain deferred until a native-screen capture path is available. |
 | Electron oracle | **Passing baseline capture** | Electron 43.4.1 produced the checked-in offline reference set. Existing Electron source is intentionally retained. |
 
 ## Fidelity contract extracted from the oracle

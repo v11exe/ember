@@ -1,0 +1,509 @@
+diff --git a/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
+index 502aded..23e78bb 100644
+--- a/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
+@@ -217,7 +217,8 @@ class EmberGlassSwitcherCard : public views::Button {
+   EmberGlassSwitcherCard(
+       size_t entry_index,
+       tabs::TabInterface* tab,
+-      base::RepeatingCallback<void(size_t, const ui::Event&)> press_callback)
++      base::RepeatingCallback<void(size_t, const ui::Event&)> press_callback,
++      base::RepeatingCallback<void(size_t)> hover_callback)
+       : views::Button(base::BindRepeating(
+             [](base::RepeatingCallback<void(size_t, const ui::Event&)>
+                    callback,
+@@ -225,7 +226,8 @@ class EmberGlassSwitcherCard : public views::Button {
+               callback.Run(index, event);
+             },
+             std::move(press_callback), entry_index)),
+-        entry_index_(entry_index) {
++        entry_index_(entry_index),
++        hover_callback_(std::move(hover_callback)) {
+     const tabs::TabData data = tabs::TabData::FromTabInterface(tab);
+     title_ = data.title.empty() ? u"New Tab" : data.title;
+ 
+@@ -309,6 +311,11 @@ class EmberGlassSwitcherCard : public views::Button {
+         7.5f, rim);
+   }
+ 
++  void OnMouseEntered(const ui::MouseEvent& event) override {
++    views::Button::OnMouseEntered(event);
++    hover_callback_.Run(entry_index_);
++  }
++
+  private:
+   void OnThumbnailAvailable(TabHoverCardThumbnailObserver* observer,
+                             gfx::ImageSkia thumbnail) {
+@@ -330,6 +337,7 @@ class EmberGlassSwitcherCard : public views::Button {
+   raw_ptr<views::ImageView> favicon_ = nullptr;
+   raw_ptr<views::Label> title_label_ = nullptr;
+   bool selected_ = false;
++  base::RepeatingCallback<void(size_t)> hover_callback_;
+   TabHoverCardThumbnailObserver thumbnail_observer_;
+   base::CallbackListSubscription thumbnail_subscription_;
+ };
+@@ -401,6 +409,16 @@ class EmberGlassSwitcherPanel : public EmberGlassView {
+                                         11.5f, 11.5f, rim);
+   }
+ 
++  void OnMouseMoved(const ui::MouseEvent& event) override {
++    EmberGlassView::OnMouseMoved(event);
++    controller_->HoverCtrlTabAtPoint(event.location());
++  }
++
++  bool OnMousePressed(const ui::MouseEvent& event) override {
++    controller_->ActivateCtrlTabAtPoint(event.location());
++    return true;
++  }
++
+  private:
+   raw_ptr<EmberGlassOverlayController> controller_;
+ };
+@@ -973,6 +991,7 @@ void EmberGlassOverlayController::RebuildCtrlTabCards() {
+   auto viewport = std::make_unique<views::View>();
+   switcher_viewport_ = viewport.get();
+   switcher_viewport_->SetPaintToLayer();
++  switcher_viewport_->SetCanProcessEventsWithinSubtree(false);
+   switcher_viewport_->layer()->SetFillsBoundsOpaquely(false);
+   switcher_viewport_->layer()->SetMasksToBounds(true);
+   switcher_viewport_->SetBounds(EmberGlassView::kShadowMargin + kSwitcherInset,
+@@ -997,6 +1016,15 @@ void EmberGlassOverlayController::RebuildCtrlTabCards() {
+         base::BindRepeating(
+             [](base::WeakPtr<EmberGlassOverlayController> controller,
+                size_t index, const ui::Event&) {
++              if (controller) {
++                controller->SelectCtrlTabCard(index);
++                controller->CommitCtrlTab();
++              }
++            },
++            weak_ptr_factory_.GetWeakPtr()),
++        base::BindRepeating(
++            [](base::WeakPtr<EmberGlassOverlayController> controller,
++               size_t index) {
+               if (controller) {
+                 controller->SelectCtrlTabCard(index);
+               }
+@@ -1101,11 +1129,49 @@ void EmberGlassOverlayController::ApplyCtrlTabVisibility(float progress) {
+ }
+ 
+ void EmberGlassOverlayController::SelectCtrlTabCard(size_t entry_index) {
+-  if (entry_index >= ctrl_tab_entries_.size()) {
++  if (entry_index >= ctrl_tab_entries_.size() || ctrl_tab_closing_) {
+     return;
+   }
+   selected_ctrl_tab_index_ = entry_index;
+-  CommitCtrlTab();
++  for (views::View* view : ctrl_tab_cards_) {
++    auto* card = static_cast<EmberGlassSwitcherCard*>(view);
++    card->SetSelected(card->entry_index() == selected_ctrl_tab_index_);
++    card->SetGlassColors(switcher_panel_->PrimaryTextColor(),
++                         switcher_panel_->SecondaryTextColor());
++  }
++  RetargetCtrlTabStrip();
++}
++
++void EmberGlassOverlayController::HoverCtrlTabAtPoint(
++    const gfx::Point& panel_point) {
++  if (!switcher_viewport_ || ctrl_tab_entries_.empty() || ctrl_tab_closing_ ||
++      !switcher_viewport_->bounds().Contains(panel_point)) {
++    return;
++  }
++  const float strip_x = static_cast<float>(panel_point.x() -
++                                           switcher_viewport_->x()) -
++                          CurrentCtrlTabStripOffset();
++  const int card_stride = kSwitcherCardWidth + kSwitcherCardGap;
++  if (strip_x < 0.0f) {
++    return;
++  }
++  const size_t entry_index = static_cast<size_t>(strip_x / card_stride);
++  const float within_card = strip_x - entry_index * card_stride;
++  if (entry_index < ctrl_tab_entries_.size() &&
++      within_card < kSwitcherCardWidth) {
++    SelectCtrlTabCard(entry_index);
++  }
++}
++
++void EmberGlassOverlayController::ActivateCtrlTabAtPoint(
++    const gfx::Point& panel_point) {
++  const size_t prior_selection = selected_ctrl_tab_index_;
++  HoverCtrlTabAtPoint(panel_point);
++  if (selected_ctrl_tab_index_ != prior_selection ||
++      (switcher_viewport_ &&
++       switcher_viewport_->bounds().Contains(panel_point))) {
++    CommitCtrlTab();
++  }
+ }
+ 
+ void EmberGlassOverlayController::CloseCtrlTab(bool restore_page_focus) {
+diff --git a/chrome/browser/ui/views/ember/ember_glass_overlay_controller.h b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.h
+index 76e2022..9e82363 100644
+--- a/chrome/browser/ui/views/ember/ember_glass_overlay_controller.h
++++ b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.h
+@@ -102,6 +102,8 @@ class EmberGlassOverlayController : public views::View,
+   void ApplyCtrlTabStripOffset(float offset);
+   void BeginCtrlTabClose(bool restore_page_focus);
+   void ApplyCtrlTabVisibility(float progress);
++  void HoverCtrlTabAtPoint(const gfx::Point& panel_point);
++  void ActivateCtrlTabAtPoint(const gfx::Point& panel_point);
+   void SelectCtrlTabCard(size_t entry_index);
+   void CloseCtrlTab(bool restore_page_focus);
+   float CtrlTabHighlightX() const;
+diff --git a/chrome/browser/ui/views/ember/ember_glass_view.cc b/chrome/browser/ui/views/ember/ember_glass_view.cc
+index e73069e..87b85d8 100644
+--- a/chrome/browser/ui/views/ember/ember_glass_view.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_view.cc
+@@ -4,9 +4,23 @@
+ 
+ #include "chrome/browser/ui/views/ember/ember_glass_view.h"
+ 
++#include <algorithm>
++#include <memory>
++#include <utility>
++
++#include "base/check.h"
++#include "base/functional/bind.h"
++#include "base/task/bind_post_task.h"
++#include "base/time/time.h"
+ #include "cc/paint/paint_canvas.h"
+ #include "cc/paint/paint_flags.h"
+ #include "cc/paint/paint_image.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
++#include "components/viz/common/frame_sinks/copy_output_result.h"
++#include "content/public/browser/browser_thread.h"
++#include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/render_widget_host_view.h"
++#include "content/public/browser/web_contents.h"
+ #include "third_party/skia/include/core/SkCanvas.h"
+ #include "third_party/skia/include/core/SkImage.h"
+ #include "third_party/skia/include/core/SkPaint.h"
+@@ -14,11 +28,117 @@
+ #include "third_party/skia/include/core/SkSamplingOptions.h"
+ #include "ui/compositor/layer.h"
+ #include "ui/gfx/canvas.h"
++#include "ui/gfx/geometry/rounded_corners_f.h"
+ #include "ui/gfx/geometry/vector2d.h"
+ #include "ui/gfx/shadow_value.h"
+ #include "ui/gfx/skia_paint_util.h"
++#include "ui/views/background.h"
++#include "ui/views/border.h"
++#include "ui/views/bubble/bubble_dialog_delegate_view.h"
++#include "ui/views/view_tracker.h"
+ 
+ namespace ember {
++namespace {
++
++constexpr float kBubbleCornerRadius = 14.0f;
++
++class EmberGlassBitmapBackground : public views::Background {
++ public:
++  explicit EmberGlassBitmapBackground(SkBitmap bitmap)
++      : bitmap_(std::move(bitmap)) {}
++
++  void Paint(gfx::Canvas* canvas, views::View* view) const override {
++    cc::PaintCanvas* paint_canvas = canvas->sk_canvas();
++    const SkRect bounds = gfx::RectToSkRect(view->GetLocalBounds());
++    paint_canvas->save();
++    paint_canvas->clipRRect(
++        SkRRect::MakeRectXY(bounds, kBubbleCornerRadius, kBubbleCornerRadius),
++        true);
++    paint_canvas->drawImageRect(
++        cc::PaintImage::CreateFromBitmap(bitmap_),
++        SkRect::MakeWH(bitmap_.width(), bitmap_.height()), bounds,
++        SkSamplingOptions(SkFilterMode::kLinear), nullptr,
++        SkCanvas::kStrict_SrcRectConstraint);
++    paint_canvas->restore();
++  }
++
++ private:
++  const SkBitmap bitmap_;
++};
++
++void OnBubbleBackdropCaptured(std::unique_ptr<views::ViewTracker> tracker,
++                              gfx::Rect source_rect,
++                              SkBitmap bitmap) {
++  views::View* surface = tracker->view();
++  if (!surface || bitmap.empty()) {
++    return;
++  }
++  source_rect.set_x(std::clamp(source_rect.x(), 0,
++                               std::max(0, bitmap.width() - source_rect.width())));
++  source_rect.set_y(std::clamp(source_rect.y(), 0,
++                               std::max(0, bitmap.height() - source_rect.height())));
++  source_rect.set_width(std::min(source_rect.width(), bitmap.width()));
++  source_rect.set_height(std::min(source_rect.height(), bitmap.height()));
++  EmberGlassMaterial material;
++  const EmberGlassPanel* panel = material.RenderPanel(
++      bitmap, source_rect, 1, EmberGlassPreset::kPopover);
++  if (!panel) {
++    return;
++  }
++  surface->SetBackground(
++      std::make_unique<EmberGlassBitmapBackground>(panel->bitmap));
++  surface->SchedulePaint();
++}
++
++}  // namespace
++
++void ConfigureEmberGlassBubble(views::View* surface,
++                               views::BubbleDialogDelegate* bubble) {
++  CHECK(surface);
++  CHECK(bubble);
++  bubble->SetBackgroundColor(SK_ColorTRANSPARENT);
++  surface->SetPaintToLayer();
++  surface->layer()->SetFillsBoundsOpaquely(false);
++  surface->layer()->SetRoundedCornerRadius(
++      gfx::RoundedCornersF(kBubbleCornerRadius));
++  surface->layer()->SetIsFastRoundedCorner(true);
++  surface->SetBackground(views::CreateRoundedRectBackground(
++      SkColorSetARGB(104, 28, 31, 38), kBubbleCornerRadius, 1));
++  surface->SetBorder(views::CreateRoundedRectBorder(
++      1, kBubbleCornerRadius, SkColorSetARGB(62, 255, 255, 255)));
++}
++
++void CaptureEmberGlassBubbleBackdrop(BrowserView* browser_view,
++                                     views::View* surface) {
++  content::WebContents* web_contents =
++      browser_view ? browser_view->GetActiveWebContents() : nullptr;
++  content::RenderFrameHost* frame =
++      web_contents ? web_contents->GetPrimaryMainFrame() : nullptr;
++  content::RenderWidgetHostView* renderer_view = frame ? frame->GetView() : nullptr;
++  if (!renderer_view || !surface || surface->size().IsEmpty()) {
++    return;
++  }
++  const gfx::Rect renderer_bounds = renderer_view->GetViewBounds();
++  const gfx::Rect bubble_bounds = surface->GetBoundsInScreen();
++  const gfx::Vector2d offset =
++      bubble_bounds.origin() - renderer_bounds.origin();
++  gfx::Rect source_rect(offset.x(), offset.y(), bubble_bounds.width(),
++                        bubble_bounds.height());
++  auto ready = base::BindPostTask(
++      content::GetUIThreadTaskRunner({}),
++      base::BindOnce(&OnBubbleBackdropCaptured,
++                     std::make_unique<views::ViewTracker>(surface),
++                     source_rect));
++  renderer_view->CopyFromSurface(
++      gfx::Rect(), renderer_bounds.size(), base::Milliseconds(250),
++      base::BindOnce(
++          [](base::OnceCallback<void(SkBitmap)> callback,
++             const content::CopyFromSurfaceResult& result) {
++            std::move(callback).Run(result.has_value() ? result->bitmap
++                                                       : SkBitmap());
++          },
++          std::move(ready)));
++}
+ 
+ EmberGlassView::EmberGlassView(EmberGlassPreset preset) : preset_(preset) {
+   SetPaintToLayer();
+diff --git a/chrome/browser/ui/views/ember/ember_glass_view.h b/chrome/browser/ui/views/ember/ember_glass_view.h
+index 5946231..733bb0c 100644
+--- a/chrome/browser/ui/views/ember/ember_glass_view.h
++++ b/chrome/browser/ui/views/ember/ember_glass_view.h
+@@ -10,8 +10,24 @@
+ #include "third_party/skia/include/core/SkColor.h"
+ #include "ui/views/view.h"
+ 
++class BrowserView;
++
++namespace views {
++class BubbleDialogDelegate;
++}
++
+ namespace ember {
+ 
++// Applies the shared translucent EmberGlass treatment to a native bubble while
++// preserving the bubble's existing child hierarchy and command plumbing.
++void ConfigureEmberGlassBubble(views::View* surface,
++                               views::BubbleDialogDelegate* bubble);
++
++// Captures the active renderer once and replaces the translucent placeholder
++// with the same cached/refraction material used by Ember's other overlays.
++void CaptureEmberGlassBubbleBackdrop(BrowserView* browser_view,
++                                     views::View* surface);
++
+ // Native Views surface for a cached EmberGlass panel. The panel pixels are
+ // stable while child labels/icons and lightweight interaction layers repaint.
+ class EmberGlassView : public views::View {
+diff --git a/chrome/browser/ui/views/extensions/extension_context_menu_controller.cc b/chrome/browser/ui/views/extensions/extension_context_menu_controller.cc
+index c98489d..698cb3e 100644
+--- a/chrome/browser/ui/views/extensions/extension_context_menu_controller.cc
++++ b/chrome/browser/ui/views/extensions/extension_context_menu_controller.cc
+@@ -58,12 +58,10 @@ void ExtensionContextMenuController::ShowContextMenuForViewImpl(
+                                            parent->GetNativeWindow())
+                                      : nullptr;
+   if (browser_view) {
+-    gfx::Point local_point = point;
+-    views::View::ConvertPointFromScreen(browser_view, &local_point);
+     observer_->OnContextMenuShown();
+     // The destructor synchronously cancels this model before `this` can die.
+-    browser_view->ShowEmberContextMenu(
+-        menu_model, local_point,
++    browser_view->ShowEmberContextMenuAtScreenPoint(
++        menu_model, point,
+         base::BindOnce(&ExtensionContextMenuController::OnMenuClosed,
+                        base::Unretained(this)));
+     ember_browser_view_ = browser_view;
+diff --git a/chrome/browser/ui/views/extensions/extensions_menu_coordinator.cc b/chrome/browser/ui/views/extensions/extensions_menu_coordinator.cc
+index e8696d5..8f546f2 100644
+--- a/chrome/browser/ui/views/extensions/extensions_menu_coordinator.cc
++++ b/chrome/browser/ui/views/extensions/extensions_menu_coordinator.cc
+@@ -13,7 +13,9 @@
+ #include "chrome/browser/ui/extensions/extensions_menu_view_model.h"
+ #include "chrome/browser/ui/ui_features.h"
+ #include "chrome/browser/ui/views/chrome_layout_provider.h"
++#include "chrome/browser/ui/views/ember/ember_glass_view.h"
+ #include "chrome/browser/ui/views/extensions/extensions_menu_delegate_desktop.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "extensions/browser/permissions_manager.h"
+ #include "extensions/common/extension_features.h"
+ #include "ui/base/mojom/dialog_button.mojom.h"
+@@ -46,10 +48,17 @@ void ExtensionsMenuCoordinator::Show(
+       CreateExtensionsMenuBubbleDialogDelegate(anchor,
+                                                extensions_container_views);
+ 
+-  views::BubbleDialogDelegate::CreateBubbleDeprecated(
++  auto* bubble_delegate_ptr = bubble_delegate.get();
++  views::Widget* widget = views::BubbleDialogDelegate::CreateBubbleDeprecated(
+       std::move(bubble_delegate),
+-      views::Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET)
+-      ->Show();
++      views::Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET);
++  widget->Show();
++  ember::ConfigureEmberGlassBubble(widget->GetRootView(),
++                                   bubble_delegate_ptr);
++  ember::CaptureEmberGlassBubbleBackdrop(
++      BrowserView::GetBrowserViewForBrowser(
++          browser_->GetBrowserForMigrationOnly()),
++      widget->GetRootView());
+ }
+ 
+ void ExtensionsMenuCoordinator::Hide() {
+@@ -98,6 +107,7 @@ ExtensionsMenuCoordinator::CreateExtensionsMenuBubbleDialogDelegate(
+ 
+   auto* bubble_contents = bubble_delegate->SetContentsView(
+       views::Builder<views::View>().SetUseDefaultFillLayout(true).Build());
++  ember::ConfigureEmberGlassBubble(bubble_contents, bubble_delegate.get());
+   bubble_view_observation_.Observe(bubble_contents);
+   bubble_tracker_.SetView(bubble_contents);
+ 
+diff --git a/chrome/browser/ui/views/extensions/extensions_menu_view.cc b/chrome/browser/ui/views/extensions/extensions_menu_view.cc
+index 00803aa..51ebe8b 100644
+--- a/chrome/browser/ui/views/extensions/extensions_menu_view.cc
++++ b/chrome/browser/ui/views/extensions/extensions_menu_view.cc
+@@ -22,9 +22,11 @@
+ #include "chrome/browser/ui/views/chrome_layout_provider.h"
+ #include "chrome/browser/ui/views/chrome_typography.h"
+ #include "chrome/browser/ui/views/controls/hover_button.h"
++#include "chrome/browser/ui/views/ember/ember_glass_view.h"
+ #include "chrome/browser/ui/views/extensions/extension_action_delegate_desktop.h"
+ #include "chrome/browser/ui/views/extensions/extensions_container_views.h"
+ #include "chrome/browser/ui/views/extensions/extensions_menu_item_view.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/grit/generated_resources.h"
+ #include "components/vector_icons/vector_icons.h"
+ #include "extensions/common/extension_features.h"
+@@ -123,6 +125,7 @@ ExtensionsMenuView::ExtensionsMenuView(
+       views::DISTANCE_BUBBLE_PREFERRED_WIDTH));
+   SetLayoutManager(std::make_unique<views::BoxLayout>(
+       views::BoxLayout::Orientation::kVertical));
++  ember::ConfigureEmberGlassBubble(this, this);
+   Populate();
+ }
+ 
+@@ -524,6 +527,10 @@ views::Widget* ExtensionsMenuView::ShowBubble(
+   views::Widget* widget =
+       views::BubbleDialogDelegateView::CreateBubble(g_extensions_dialog);
+   widget->Show();
++  ember::ConfigureEmberGlassBubble(widget->GetRootView(), g_extensions_dialog);
++  ember::CaptureEmberGlassBubbleBackdrop(
++      BrowserView::GetBrowserViewForBrowser(browser->GetBrowserForMigrationOnly()),
++      widget->GetRootView());
+   return widget;
+ }
+ 
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+index ec9fba7..15c67e2 100644
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -1915,6 +1915,19 @@ void BrowserView::ShowEmberContextMenu(ui::MenuModel* model,
+   }
+ }
+ 
++void BrowserView::ShowEmberContextMenuAtScreenPoint(
++    ui::MenuModel* model,
++    const gfx::Point& screen_point,
++    base::OnceClosure menu_closed_callback) {
++  if (!ember_glass_overlay_) {
++    return;
++  }
++  gfx::Point overlay_point = screen_point;
++  views::View::ConvertPointFromScreen(ember_glass_overlay_, &overlay_point);
++  ember_glass_overlay_->ShowMenu(model, overlay_point,
++                                 std::move(menu_closed_callback));
++}
++
+ void BrowserView::CancelEmberContextMenu(const ui::MenuModel* model) {
+   if (ember_glass_overlay_) {
+     ember_glass_overlay_->CancelContextMenu(model);
+@@ -4281,6 +4294,13 @@ content::KeyboardEventProcessingResult BrowserView::PreHandleKeyboardEvent(
+     return content::KeyboardEventProcessingResult::NOT_HANDLED;
+   }
+ 
++  if (event.GetType() == blink::WebInputEvent::Type::kKeyUp &&
++      event.windows_key_code == ui::VKEY_CONTROL && ember_glass_overlay_ &&
++      ember_glass_overlay_->IsShowingCtrlTab()) {
++    CommitEmberCtrlTabSwitcher();
++    return content::KeyboardEventProcessingResult::HANDLED;
++  }
++
+   views::FocusManager* focus_manager = GetFocusManager();
+   DCHECK(focus_manager);
+ 
+diff --git a/chrome/browser/ui/views/frame/browser_view.h b/chrome/browser/ui/views/frame/browser_view.h
+index 96df550..51e98dd 100644
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -285,6 +285,10 @@ class BrowserView : public BrowserWindow,
+                             const gfx::Point& page_point,
+                             base::OnceClosure menu_closed_callback =
+                                 base::OnceClosure());
++  void ShowEmberContextMenuAtScreenPoint(
++      ui::MenuModel* model,
++      const gfx::Point& screen_point,
++      base::OnceClosure menu_closed_callback = base::OnceClosure());
+   void CancelEmberContextMenu(const ui::MenuModel* model);
+   void ShowEmberCtrlTabSwitcher(bool reverse);
+   void CommitEmberCtrlTabSwitcher();
+diff --git a/chrome/browser/ui/views/tabs/browser_tab_strip_controller.cc b/chrome/browser/ui/views/tabs/browser_tab_strip_controller.cc
+index b4b6080..d326e60 100644
+--- a/chrome/browser/ui/views/tabs/browser_tab_strip_controller.cc
++++ b/chrome/browser/ui/views/tabs/browser_tab_strip_controller.cc
+@@ -522,10 +522,8 @@ void BrowserTabStripController::ShowContextMenuForTab(
+   context_menu_controller_->LoadModel(
+       std::move(model), menu_model_factory_->AsTabMenuModel(model_ptr));
+ 
+-  gfx::Point local_point = p;
+-  views::View::ConvertPointFromScreen(browser_view_, &local_point);
+-  browser_view_->ShowEmberContextMenu(
+-      context_menu_controller_->GetMenuModel(), local_point);
++  browser_view_->ShowEmberContextMenuAtScreenPoint(
++      context_menu_controller_->GetMenuModel(), p);
+   base::UmaHistogramEnumeration("TabStrip.Tab.Views.ActivationAction",
+                                 TabActivationTypes::kContextMenu);
+ }
+diff --git a/chrome/browser/ui/views/tabs/new_tab_button.cc b/chrome/browser/ui/views/tabs/new_tab_button.cc
+index aabdda2..19330be 100644
+--- a/chrome/browser/ui/views/tabs/new_tab_button.cc
++++ b/chrome/browser/ui/views/tabs/new_tab_button.cc
+@@ -69,10 +69,8 @@ void NewTabButton::ShowContextMenuForViewImpl(
+     }
+     context_menu_model_ = std::make_unique<NewTabButtonMenuModel>(browser_);
+     if (browser_view) {
+-      gfx::Point local_point = point;
+-      views::View::ConvertPointFromScreen(browser_view, &local_point);
+-      browser_view->ShowEmberContextMenu(context_menu_model_.get(),
+-                                         local_point);
++      browser_view->ShowEmberContextMenuAtScreenPoint(
++          context_menu_model_.get(), point);
+       return;
+     }
+ 

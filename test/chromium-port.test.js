@@ -56,6 +56,13 @@ test('the Ember patch series is ordered, local, and complete', () => {
     'ember/0011-ember-shared-shell-material.patch',
     'ember/0012-ember-finish-top-bar.patch',
     'ember/0013-ember-tighten-top-bar-density.patch',
+    'ember/0014-ember-glass-core.patch',
+    'ember/0015-ember-glass-context-menu.patch',
+    'ember/0016-ember-glass-ctrl-tab.patch',
+    'ember/0017-ember-glass-runtime-corrections.patch',
+    'ember/0018-ember-glass-overlay-refinements.patch',
+    'ember/0019-ember-glass-menu-adoption.patch',
+    'ember/0020-ember-glass-runtime-followups.patch',
   ]);
   for (const entry of entries) {
     assert.equal(fs.existsSync(path.join(port.PATCHES_ROOT, ...entry.split('/'))), true);
@@ -230,8 +237,8 @@ test('the visible product patch brands window, About, accessibility, and default
 
 test('the native resource overlay is path-safe and carries valid Ember raster and ICO assets', () => {
   const manifest = port.readResourceManifest();
-  assert.equal(manifest.files.length, 18);
-  assert.equal(new Set(manifest.files.map((item) => item.destination)).size, 18);
+  assert.equal(manifest.files.length, 19);
+  assert.equal(new Set(manifest.files.map((item) => item.destination)).size, 19);
   assert.match(port.resourceOverlayHash(manifest), /^[0-9a-f]{64}$/);
   assert.equal(
     manifest.files.some((item) => item.destination.endsWith('/chromium/win/chromium.ico')),
@@ -240,6 +247,20 @@ test('the native resource overlay is path-safe and carries valid Ember raster an
   assert.equal(
     manifest.files.filter((item) => item.destination.includes('components/resources/')).length,
     4,
+  );
+  const displacement = manifest.files.find(
+    (item) => item.destination.endsWith('/chromium/ember_glass_displacement.jpg'),
+  );
+  assert.ok(displacement, 'the exact Standard displacement map is in the owned overlay');
+  assert.equal(
+    fs.readFileSync(path.join(port.RESOURCES_ROOT, ...displacement.source.split('/'))).length,
+    4451,
+  );
+  assert.equal(
+    require('node:crypto').createHash('sha256')
+      .update(fs.readFileSync(path.join(port.RESOURCES_ROOT, ...displacement.source.split('/'))))
+      .digest('hex'),
+    '6945d824fd543cb4bb080cf5a58460f29b17a661719ca10ccc718d953bfd7af6',
   );
 
   const dimensions = new Map([
@@ -573,6 +594,167 @@ test('the top-bar density patch removes false bands and caps the row at 32 px', 
   );
   assert.match(patchText, /toolbar_bounds\.set_height\(kEmberTopChromeHeight\)/);
   assert.doesNotMatch(patchText, /^\+.*kEmberSidebarWidth/m);
+});
+
+test('EmberGlass core preserves the approved PoC math and cached panel architecture', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0014-ember-glass-core.patch'),
+    'utf8',
+  );
+
+  assert.match(patchText, /struct EmberGlassParams/);
+  assert.match(patchText, /displacement_scale = 200\.0f/);
+  assert.match(patchText, /blur_amount = 1\.0f/);
+  assert.match(patchText, /saturation = 140\.0f/);
+  assert.match(patchText, /aberration = 2\.0f/);
+  assert.match(patchText, /4\.0f \+ params\.blur_amount \* 32\.0f/);
+  assert.match(patchText, /red_scale = -params\.displacement_scale/);
+  assert.match(patchText, /-1\.0f - params\.aberration \* 0\.05f/);
+  assert.match(patchText, /-1\.0f - params\.aberration \* 0\.10f/);
+  assert.match(patchText, /map_pixel\.r/);
+  assert.match(patchText, /map_pixel\.b/);
+  assert.match(patchText, /red_sample\.r, green_sample\.g, blue_sample\.b/);
+  assert.match(patchText, /backdrop_luminance >= 0\.80f/);
+  assert.match(patchText, /0\.10f \+ \(luminance - 0\.80f\) \* 0\.30f/);
+  assert.match(patchText, /Rgba8 kBrightTint\{72, 78, 88, 255\}/);
+  assert.match(patchText, /EmberGlassCacheKey/);
+  assert.match(patchText, /scaled_displacement_cache_/);
+  assert.match(patchText, /RenderCountForTesting/);
+  assert.match(patchText, /IDR_EMBER_GLASS_DISPLACEMENT/);
+  assert.doesNotMatch(patchText, /GDI\+|WebView|React|SetBackgroundBlur/);
+});
+
+test('the EmberGlass context menu keeps Chromium models and isolates hover animation', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0015-ember-glass-context-menu.patch'),
+    'utf8',
+  );
+
+  assert.match(patchText, /ui::MenuModel/);
+  assert.match(patchText, /GetTypeAt/);
+  assert.match(patchText, /IsEnabledAt/);
+  assert.match(patchText, /IsItemCheckedAt/);
+  assert.match(patchText, /GetSubmenuModelAt/);
+  assert.match(patchText, /ActivatedAt/);
+  assert.match(patchText, /MenuWillShow/);
+  assert.match(patchText, /MenuWillClose/);
+  assert.match(patchText, /CopyFromSurface/);
+  assert.match(patchText, /base::Milliseconds\(160\)/);
+  assert.match(patchText, /EaseOut/);
+  assert.match(patchText, /ClampToOverlayBounds/);
+  assert.match(patchText, /ax::mojom::Role::kMenuItem/);
+  assert.match(patchText, /ShowEmberContextMenu/);
+  assert.doesNotMatch(patchText, /HMENU|CreateWindow|RenderFrameHost.*ExecuteJavaScript/);
+});
+
+test('the native EmberGlass Ctrl+Tab switcher defers activation until Ctrl release', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0016-ember-glass-ctrl-tab.patch'),
+    'utf8',
+  );
+
+  assert.match(patchText, /IDC_SELECT_NEXT_TAB/);
+  assert.match(patchText, /IDC_SELECT_PREVIOUS_TAB/);
+  assert.match(patchText, /KeyState::RELEASED/);
+  assert.match(patchText, /VKEY_CONTROL/);
+  assert.match(patchText, /ShowEmberCtrlTabSwitcher/);
+  assert.match(patchText, /CommitEmberCtrlTabSwitcher/);
+  assert.match(patchText, /CancelEmberCtrlTabSwitcher/);
+  assert.match(patchText, /ActivateTabAt/);
+  assert.match(patchText, /base::Milliseconds\(200\)/);
+  assert.match(patchText, /EaseInOut/);
+  assert.match(patchText, /GetTitle\(\)/);
+  assert.match(patchText, /GetFavicon\(\)/);
+  assert.doesNotMatch(patchText, /chrome::SelectNextTab|chrome::SelectPreviousTab/);
+});
+
+test('the EmberGlass corrective patch decodes its JPEG map and never paints the blue fallback', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0017-ember-glass-runtime-corrections.patch'),
+    'utf8',
+  );
+
+  assert.match(patchText, /gfx::JPEGCodec::Decode/);
+  assert.match(patchText, /ui\/gfx\/codec\/jpeg_codec\.h/);
+  assert.doesNotMatch(patchText, /^\+.*SkCodec::MakeFromData/m);
+  assert.doesNotMatch(
+    patchText,
+    /^\+.*SkColorSetARGB\(232,\s*65,\s*72,\s*84\)/m,
+  );
+  assert.match(patchText, /gfx::RemoveAccelerator/);
+  assert.match(patchText, /SetHasFocusPredicate/);
+  assert.match(patchText, /SchemeIsHTTPOrHTTPS/);
+});
+
+test('the EmberGlass overlay refinement keeps glass cached while tightening menus and motion', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0018-ember-glass-overlay-refinements.patch'),
+    'utf8',
+  );
+  const additions = patchText.split(/\r?\n/)
+    .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
+    .join('\n');
+
+  assert.match(patchText, /TabHoverCardThumbnailObserver/);
+  assert.match(patchText, /tabs::TabData::FromTabInterface/);
+  assert.match(patchText, /SetClipRect/);
+  assert.match(patchText, /kSwitcherOpenDuration = base::Milliseconds\(160\)/);
+  assert.match(patchText, /kSwitcherSlideDuration = base::Milliseconds\(190\)/);
+  assert.match(patchText, /kSwitcherCloseDuration = base::Milliseconds\(145\)/);
+  assert.match(patchText, /RetargetCtrlTabStrip/);
+  assert.match(patchText, /kMenuRowHeight = 30/);
+  assert.match(patchText, /GetPreferredSize/);
+  assert.match(patchText, /accelerator_label_/);
+  assert.match(patchText, /gfx::CreateShadowDrawLooper/);
+  assert.match(patchText, /gfx::ShadowValue\(gfx::Vector2d\(0, 2\), 6\.0f/);
+  assert.match(patchText, /gfx::ShadowValue\(gfx::Vector2d\(0, 10\), 28\.0f/);
+  assert.doesNotMatch(additions, /kShadowLayers = 12/);
+  assert.doesNotMatch(additions, /RenderPanel\([^\n]*animation/i);
+});
+
+test('eligible native browser context menus share EmberGlass without replacing their models', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0019-ember-glass-menu-adoption.patch'),
+    'utf8',
+  );
+  const touchedFiles = [...patchText.matchAll(/^diff --git a\/(\S+) b\/\S+$/gm)]
+    .map((match) => match[1]);
+
+  assert.match(patchText, /BrowserTabStripController::ShowContextMenuForTab/);
+  assert.match(patchText, /NewTabButton::ShowContextMenuForViewImpl/);
+  assert.match(patchText, /ExtensionContextMenuController::ShowContextMenuForViewImpl/);
+  assert.match(patchText, /ShowEmberContextMenu/);
+  assert.match(patchText, /GetMenuModel\(\)/);
+  assert.match(patchText, /ember_menu_model_ = menu_model/);
+  assert.match(patchText, /menu_closed_callback_/);
+  assert.match(patchText, /CancelEmberContextMenu/);
+  assert.match(patchText, /ConvertPointFromScreen/);
+  assert.doesNotMatch(patchText, /^\+.*(?:Security|PermissionPrompt|SystemMenu)/m);
+  assert.ok(touchedFiles.every((file) => file.startsWith('chrome/browser/ui/views/')));
+});
+
+test('EmberGlass runtime follow-ups commit hovered tabs and anchor chrome menus locally', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0020-ember-glass-runtime-followups.patch'),
+    'utf8',
+  );
+
+  assert.match(patchText, /void OnMouseEntered\(const ui::MouseEvent& event\) override/);
+  assert.match(patchText, /SelectCtrlTabCard\(index\)/);
+  assert.match(patchText, /event\.windows_key_code == ui::VKEY_CONTROL/);
+  assert.match(patchText, /blink::WebInputEvent::Type::kKeyUp/);
+  assert.match(patchText, /ShowEmberContextMenuAtScreenPoint/);
+  assert.match(patchText, /ConvertPointFromScreen\(ember_glass_overlay_/);
+  assert.match(patchText, /ConfigureEmberGlassBubble/);
+  assert.match(patchText, /CaptureEmberGlassBubbleBackdrop/);
+  assert.match(patchText, /EmberGlassMaterial/);
+  assert.match(patchText, /GetRootView/);
+  assert.match(patchText, /ExtensionsMenuView/);
+  assert.match(patchText, /ExtensionsMenuCoordinator/);
+  assert.doesNotMatch(
+    patchText,
+    /^\+.*ConvertPointFromScreen\(browser_view/m,
+  );
 });
 
 test('packaging normalizes pinned artifacts to Ember names without overwriting conflicts', () => {
