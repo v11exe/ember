@@ -29,10 +29,10 @@ the state or measurement path that produced the report:
 
 Verification: `node chromium/tools/check-patch-hunks.js` passes all 24 patches;
 the focused browser-chrome contracts pass (44/44); and all nine affected native
-objects compile. The final DLL link was refused
-because a running `chrome.exe` currently holds `chrome.dll`; no browser process
-was terminated to force the link. Native mouse-driven screenshots remain
-pending, so this entry records source/build evidence without claiming visual
+objects compile. The full native target then completed with
+`[334/334] LINK chrome.exe chrome.exe.pdb`; a clean-profile startup of that
+exact executable also succeeded. Native mouse-driven screenshots remain
+pending, so this entry records build/startup evidence without claiming visual
 acceptance. The address-field, Favorites, Web Store, extension-install and
 other menu-glass reports are unchanged and remain separate work.
 

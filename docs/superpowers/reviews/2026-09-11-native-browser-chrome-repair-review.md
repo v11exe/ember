@@ -82,12 +82,11 @@ and drop, and Favorites grid settings explicitly incomplete.
 
 - [x] `node chromium/tools/check-patch-hunks.js` passes all 24 patches.
 - [x] Focused `test/chromium-port.test.js` contracts pass.
-- [ ] Direct native `chrome.dll` link is blocked by permission denied while a
-  running `chrome.exe` holds the output; all nine affected objects compile.
+- [x] Direct native target completes `[334/334] LINK chrome.exe
+  chrome.exe.pdb`; a clean-profile startup of the rebuilt executable succeeds.
 - [x] Clean-profile native launch succeeds and the idle browser shell is
   captured on the secondary display.
 - [ ] Native mouse-driven hover/menu screenshots for all six paths remain
   pending because the available UI surface did not expose native Views input;
-  the changed states are covered by the focused source contracts and affected
-  object compilation. The final DLL link is blocked by the running browser's
-  file lock.
+  the changed states are covered by the focused source contracts, full native
+  link, and clean-profile startup.

@@ -483,7 +483,7 @@ Git is the history archive.
 ## 4. Work Log
 
 ### 2026-09-11 — Codex — Native browser-chrome corrective pass
-- **Status / Branch:** four targeted regressions corrected; affected objects compile; final DLL link held by a running browser · `chromium-port`
+- **Status / Branch:** four targeted regressions corrected and full native target linked · `chromium-port`
 - **Touches:** tab foreground fallback, close-button hover tracking, split-view
   glass-row measurement, extensions Manage-button states, patch 0024, port
   contracts and status/review ledgers
@@ -491,8 +491,8 @@ Git is the history archive.
   close X's hover state explicit without disabling ink-drop behavior, budgets
   split-view rows from measured trailing content, and gives the extensions
   Manage button matching enabled/disabled text and icon states. Patch hunks and
-  focused contracts pass; the nine affected objects compile, while `chrome.dll`
-  cannot be relinked until the currently running `chrome.exe` releases it.
+  focused contracts pass; the nine affected objects compile, the full target
+  links at `[334/334]`, and a clean-profile startup succeeds.
 
 ### 2026-09-11 — Codex — Native browser-chrome cleanup
 - **Status / Branch:** six narrow foreground/sizing fixes applied and linked · `chromium-port`
