@@ -9,6 +9,30 @@ eligible browser-bubble overlays. Patch 0017 fixes the production JPEG
 displacement-map decoder and removes the temporary blue fallback without
 changing the approved glass graph. Preserve that checkout and its `.ninja_log`.
 
+## 2026-09-11 Browser-chrome parity follow-up — incomplete
+
+The following issues were reported during review and are intentionally tracked
+as open rather than implied complete:
+
+- Tab title text is faded even when the tab is not hovered; it should use the
+  muted treatment only during hover.
+- The tab close `X` has no clear hover-state feedback.
+- Several browser menus still use non-Ember surfaces instead of liquid glass,
+  including the shortcut-removed toast, microphone permission bubble, tab
+  preview, older tab context menus, split-view menu and extensions popup.
+- Liquid-glass submenus do not inherit the main menu's automatic sizing, so
+  submenu labels are frequently truncated with `...`.
+- Menu icons do not change colour with their text on hover/selection.
+- The extensions menu lacks the expected colour-changing text and icons.
+- Dragging a tab over the Favorites rail does not add it to Favorites.
+- Settings does not expose the Electron parity controls for Favorites columns
+  and rows, and the persisted grid dimensions cannot currently be changed.
+
+These reports leave the browser-chrome, liquid-glass menu coverage, Favorites
+drop interaction, and Favorites grid settings features incomplete for the
+native port. The supplied screenshots are review references, not acceptance
+evidence of a completed implementation.
+
 ## 2026-09-11 Ember browser-chrome repair review run — unfinished
 
 - Patch 0022 contains the current repair attempt for compact close-button

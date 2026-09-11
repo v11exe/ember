@@ -34,6 +34,24 @@ Patch: `chromium/patches/ember/0022-ember-browser-chrome-repair.patch`
   TypeScript failures before the changed test objects run.
 - [ ] Full `npm test` and `npm run smoke` are still pending for this review run.
 
+## Additional open parity issues reported after the initial handoff
+
+- [ ] Tab title text is faded while idle; muted text should be hover-only.
+- [ ] The tab close `X` lacks a clear hover state.
+- [ ] Shortcut-removed toast, microphone permission bubble, tab preview,
+  split-view menu, older tab context menus, and extensions popup still lack the
+  approved liquid-glass treatment.
+- [ ] Liquid-glass submenus need automatic width sizing; labels currently end
+  in ellipses too often.
+- [ ] Menu icons need to follow text colour changes on hover/selection.
+- [ ] Extensions menu text and icons need the same colour-changing states.
+- [ ] Dragging a tab over the Favorites rail does not create a Favorite.
+- [ ] Native settings do not expose Favorites grid columns/rows, so the grid
+  dimensions cannot be changed as in the Electron version.
+
+These reports keep browser-chrome parity, menu glass coverage, Favorites drag
+and drop, and Favorites grid settings explicitly incomplete.
+
 ## Verification recorded so far
 
 - [x] `node chromium/tools/check-patch-hunks.js` passes all 22 patches.
