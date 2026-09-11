@@ -482,6 +482,16 @@ Git is the history archive.
 
 ## 4. Work Log
 
+### 2026-09-11 — Codex — Native browser-chrome cleanup
+- **Status / Branch:** six narrow foreground/sizing fixes applied and linked · `chromium-port`
+- **Touches:** tab title/close states, sidebar address hover ownership, shared
+  glass-menu sizing/icon states, extensions menu foreground states,
+  `chromium/patches/ember/0023`, port contracts and ledger
+- **Summary:** Patch 0023 fixes idle title contrast, compact close hover,
+  duplicate address hover ink drop, submenu elision, generic menu icon state
+  colours and extensions-menu text/icon colours. The pinned `chrome` target
+  completed `[334/334]`; a clean-profile native launch was captured for review.
+
 ### 2026-09-11 — Codex — Native browser-chrome repair pass
 - **Status / Branch:** root-cause investigation in progress · `chromium-port`
 - **Touches:** native tab/split-tab chrome, omnibox/navigation controls, URL presentation, Web Store navigation policy, port tests/ledger

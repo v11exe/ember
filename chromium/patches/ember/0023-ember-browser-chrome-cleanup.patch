@@ -1,0 +1,409 @@
+diff --git a/chrome/browser/ui/tabs/tab_style.cc b/chrome/browser/ui/tabs/tab_style.cc
+index c367606..78dad34 100644
+--- a/chrome/browser/ui/tabs/tab_style.cc
++++ b/chrome/browser/ui/tabs/tab_style.cc
+@@ -136,7 +136,9 @@ TabStyle::TabColors TabStyle::CalculateTargetColors(
+   const SkColor foreground_color =
+       apparently_active
+           ? SkColorSetARGB(0xF0, 0xFF, 0xFF, 0xFF)
+-          : SkColorSetARGB(hovered ? 0xDB : 0xB3, 0xFF, 0xFF, 0xFF);
++          // Ember uses the muted foreground only while the inactive tab is
++          // being hovered. Idle tabs remain legible at normal strength.
++          : SkColorSetARGB(hovered ? 0xDB : 0xF0, 0xFF, 0xFF, 0xFF);
+   const SkColor background_color =
+       GetTabBackgroundColor(state, hovered, frame_active, color_provider);
+   const ui::ColorId focus_ring_color =
+diff --git a/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
+index e280827..fc30348 100644
+--- a/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
+@@ -54,7 +54,7 @@ namespace ember {
+ namespace {
+ 
+ constexpr int kMenuMinWidth = 148;
+-constexpr int kMenuMaxWidth = 420;
++constexpr int kMenuMaxWidth = 560;
+ constexpr int kMenuRowHeight = 30;
+ constexpr int kMenuSeparatorHeight = 7;
+ constexpr int kMenuInset = 7;
+@@ -110,6 +110,7 @@ class EmberGlassMenuRow : public views::LabelButton {
+         has_submenu_(has_submenu) {
+     SetHorizontalAlignment(gfx::ALIGN_LEFT);
+     this->label()->SetFontList(FontForStyle(TextStyle::kMenu));
++    this->label()->SetElideBehavior(gfx::NO_ELIDE);
+     SetImageLabelSpacing(8);
+     accelerator_label_ = AddChildView(
+         std::make_unique<views::Label>(accelerator));
+@@ -181,13 +182,35 @@ class EmberGlassMenuRow : public views::LabelButton {
+     return layouts;
+   }
+ 
+-  void SetMenuTextColors(SkColor primary, SkColor secondary) {
+-    SetEnabledTextColors(primary);
++  void SetMenuIcon(const ui::ImageModel& icon) {
++    icon_model_ = icon;
++    SetImageModel(views::Button::STATE_NORMAL, icon_model_);
++  }
++
++  void SetMenuTextColors(SkColor primary, SkColor secondary, bool selected) {
++    const SkColor foreground = selected ? primary : secondary;
++    SetTextColor(views::Button::STATE_NORMAL, foreground);
++    SetTextColor(views::Button::STATE_HOVERED, primary);
++    SetTextColor(views::Button::STATE_PRESSED, primary);
+     SetTextColor(views::Button::STATE_DISABLED, SkColorSetA(secondary, 110));
+-    accelerator_label_->SetEnabledColor(secondary);
++    accelerator_label_->SetEnabledColor(selected ? primary : secondary);
+     if (submenu_label_) {
+-      submenu_label_->SetEnabledColor(secondary);
++      submenu_label_->SetEnabledColor(selected ? primary : secondary);
+     }
++    if (!icon_model_.IsVectorIcon()) {
++      return;
++    }
++
++    const ui::VectorIconModel model = icon_model_.GetVectorIcon();
++    const gfx::VectorIcon* icon = model.vector_icon();
++    const auto image_for = [icon, model](SkColor color) {
++      return ui::ImageModel::FromVectorIcon(*icon, color, model.icon_size());
++    };
++    SetImageModel(views::Button::STATE_NORMAL, image_for(foreground));
++    SetImageModel(views::Button::STATE_HOVERED, image_for(primary));
++    SetImageModel(views::Button::STATE_PRESSED, image_for(primary));
++    SetImageModel(views::Button::STATE_DISABLED,
++                  image_for(SkColorSetA(secondary, 110)));
+   }
+ 
+  private:
+@@ -210,6 +233,7 @@ class EmberGlassMenuRow : public views::LabelButton {
+   base::RepeatingCallback<void(size_t, float)> hover_callback_;
+   raw_ptr<views::Label> accelerator_label_ = nullptr;
+   raw_ptr<views::Label> submenu_label_ = nullptr;
++  ui::ImageModel icon_model_;
+   bool reserve_icon_column_ = false;
+   bool has_submenu_ = false;
+ };
+@@ -736,7 +760,7 @@ void EmberGlassOverlayController::RebuildMenu(ui::MenuModel* model) {
+     row->SetEnabled(model->IsEnabledAt(index));
+     const ui::ImageModel icon = model->GetIconAt(index);
+     if (!icon.IsEmpty()) {
+-      row->SetImageModel(views::Button::STATE_NORMAL, icon);
++      row->SetMenuIcon(icon);
+     }
+     preferred_row_width =
+         std::max(preferred_row_width, row->GetPreferredSize().width());
+@@ -959,10 +983,12 @@ void EmberGlassOverlayController::OnBackdropCaptured(uint64_t generation,
+ }
+ 
+ void EmberGlassOverlayController::UpdateMenuColors() {
+-  for (views::View* view : menu_rows_) {
++  for (size_t index = 0; index < menu_rows_.size(); ++index) {
++    views::View* view = menu_rows_[index];
+     auto* row = static_cast<EmberGlassMenuRow*>(view);
+     row->SetMenuTextColors(menu_panel_->PrimaryTextColor(),
+-                           menu_panel_->SecondaryTextColor());
++                           menu_panel_->SecondaryTextColor(),
++                           index == selected_visible_index_);
+   }
+   menu_panel_->SchedulePaint();
+ }
+diff --git a/chrome/browser/ui/views/extensions/extensions_menu_entry_view.cc b/chrome/browser/ui/views/extensions/extensions_menu_entry_view.cc
+index 405cb0f..a1866a6 100644
+--- a/chrome/browser/ui/views/extensions/extensions_menu_entry_view.cc
++++ b/chrome/browser/ui/views/extensions/extensions_menu_entry_view.cc
+@@ -28,6 +28,39 @@
+ 
+ namespace {
+ 
++ui::ImageModel RecolorMenuIcon(const ui::ImageModel& image,
++                               ui::ColorId color_id) {
++  if (!image.IsVectorIcon()) {
++    return image;
++  }
++  const ui::VectorIconModel model = image.GetVectorIcon();
++  return ui::ImageModel::FromVectorIcon(*model.vector_icon(), color_id,
++                                        model.icon_size());
++}
++
++void ConfigureMenuButtonForeground(HoverButton* button) {
++  button->SetTextColor(views::Button::STATE_NORMAL,
++                       kColorExtensionsMenuSecondaryText);
++  button->SetTextColor(views::Button::STATE_HOVERED,
++                       kColorExtensionsMenuText);
++  button->SetTextColor(views::Button::STATE_PRESSED,
++                       kColorExtensionsMenuText);
++  button->SetTextColor(views::Button::STATE_DISABLED,
++                       ui::kColorLabelForegroundDisabled);
++}
++
++void ConfigureMenuButtonIcon(HoverButton* button,
++                             const ui::ImageModel& image) {
++  button->SetImageModel(views::Button::STATE_NORMAL,
++                        RecolorMenuIcon(image, kColorExtensionsMenuSecondaryText));
++  button->SetImageModel(views::Button::STATE_HOVERED,
++                        RecolorMenuIcon(image, kColorExtensionsMenuText));
++  button->SetImageModel(views::Button::STATE_PRESSED,
++                        RecolorMenuIcon(image, kColorExtensionsMenuText));
++  button->SetImageModel(views::Button::STATE_DISABLED,
++                        RecolorMenuIcon(image, ui::kColorLabelForegroundDisabled));
++}
++
+ views::Builder<HoverButton> GetSitePermissionsButtonBuilder(
+     views::Button::PressedCallback callback,
+     bool is_enterprise,
+@@ -40,6 +73,12 @@ views::Builder<HoverButton> GetSitePermissionsButtonBuilder(
+           std::make_unique<HoverButton>(std::move(callback), std::u16string()))
+           .SetLabelStyle(views::style::STYLE_BODY_5)
+           .SetEnabledTextColors(kColorExtensionsMenuSecondaryText)
++          .SetTextColor(views::Button::STATE_NORMAL,
++                        kColorExtensionsMenuSecondaryText)
++          .SetTextColor(views::Button::STATE_HOVERED,
++                        kColorExtensionsMenuText)
++          .SetTextColor(views::Button::STATE_PRESSED,
++                        kColorExtensionsMenuText)
+           .SetTextColor(views::Button::ButtonState::STATE_DISABLED,
+                         kColorExtensionsMenuSecondaryText)
+           .SetImageLabelSpacing(button_icon_label_spacing)
+@@ -59,7 +98,14 @@ views::Builder<HoverButton> GetSitePermissionsButtonBuilder(
+                            features::IsRoundedIconsEnabled()
+                                ? vector_icons::kDomainIcon
+                                : vector_icons::kBusinessChromeRefreshOldIcon,
+-                           kColorExtensionMenuIcon, small_icon_size));
++                           kColorExtensionsMenuSecondaryText, small_icon_size));
++    button_builder.SetImageModel(
++        views::Button::ButtonState::STATE_HOVERED,
++        ui::ImageModel::FromVectorIcon(
++            features::IsRoundedIconsEnabled()
++                ? vector_icons::kDomainIcon
++                : vector_icons::kBusinessChromeRefreshOldIcon,
++            kColorExtensionsMenuText, small_icon_size));
+   } else {
+     // Add right-aligned arrow icon for non-enterprise extensions when the
+     // button is not disabled.
+@@ -67,10 +113,24 @@ views::Builder<HoverButton> GetSitePermissionsButtonBuilder(
+         features::IsRoundedIconsEnabled()
+             ? vector_icons::kKeyboardArrowRightFlippableIcon
+             : vector_icons::kSubmenuArrowChromeRefreshOldIcon,
+-        kColorExtensionMenuIcon, small_icon_size);
++        kColorExtensionsMenuSecondaryText, small_icon_size);
+ 
+     button_builder.SetHorizontalAlignment(gfx::ALIGN_RIGHT)
+         .SetImageModel(views::Button::ButtonState::STATE_NORMAL, arrow_icon)
++        .SetImageModel(
++            views::Button::ButtonState::STATE_HOVERED,
++            ui::ImageModel::FromVectorIcon(
++                features::IsRoundedIconsEnabled()
++                    ? vector_icons::kKeyboardArrowRightFlippableIcon
++                    : vector_icons::kSubmenuArrowChromeRefreshOldIcon,
++                kColorExtensionsMenuText, small_icon_size))
++        .SetImageModel(
++            views::Button::ButtonState::STATE_PRESSED,
++            ui::ImageModel::FromVectorIcon(
++                features::IsRoundedIconsEnabled()
++                    ? vector_icons::kKeyboardArrowRightFlippableIcon
++                    : vector_icons::kSubmenuArrowChromeRefreshOldIcon,
++                kColorExtensionsMenuText, small_icon_size))
+         .SetImageModel(views::Button::ButtonState::STATE_DISABLED,
+                        ui::ImageModel());
+   }
+@@ -131,6 +191,12 @@ ExtensionsMenuEntryView::ExtensionsMenuEntryView(
+                       .SetTitleTextStyle(views::style::STYLE_BODY_3_EMPHASIS,
+                                          ui::kColorDialogBackground,
+                                          kColorExtensionsMenuText)
++                      .SetTextColor(views::Button::STATE_NORMAL,
++                                    kColorExtensionsMenuSecondaryText)
++                      .SetTextColor(views::Button::STATE_HOVERED,
++                                    kColorExtensionsMenuText)
++                      .SetTextColor(views::Button::STATE_PRESSED,
++                                    kColorExtensionsMenuText)
+                       .SetProperty(views::kFlexBehaviorKey,
+                                    views::FlexSpecification(
+                                        views::LayoutOrientation::kHorizontal,
+@@ -252,7 +318,8 @@ void ExtensionsMenuEntryView::Update(
+ 
+ void ExtensionsMenuEntryView::UpdateActionButton(
+     const ExtensionsMenuViewModel::ControlState& button_state) {
+-  action_button_->SetImageModel(views::Button::STATE_NORMAL, button_state.icon);
++  ConfigureMenuButtonForeground(action_button_);
++  ConfigureMenuButtonIcon(action_button_, button_state.icon);
+   action_button_->SetText(button_state.text);
+   action_button_->SetTooltipText(button_state.tooltip_text);
+   action_button_->SetAccessibleName(button_state.accessible_name);
+@@ -282,7 +349,11 @@ void ExtensionsMenuEntryView::UpdateContextMenuButton(
+   auto three_dot_icon = ui::ImageModel::FromVectorIcon(
+       features::IsRoundedIconsEnabled() ? kMoreVertIcon
+                                         : kBrowserToolsChromeRefreshOldIcon,
+-      kColorExtensionMenuIcon, icon_size);
++      kColorExtensionsMenuSecondaryText, icon_size);
++  auto three_dot_hover_icon = ui::ImageModel::FromVectorIcon(
++      features::IsRoundedIconsEnabled() ? kMoreVertIcon
++                                        : kBrowserToolsChromeRefreshOldIcon,
++      kColorExtensionsMenuText, icon_size);
+ 
+   // Show a pin button for the context menu normal state icon when the action is
+   // pinned in the toolbar. All other states should look, and behave, the same.
+@@ -291,12 +362,12 @@ void ExtensionsMenuEntryView::UpdateContextMenuButton(
+       button_state.is_on
+           ? ui::ImageModel::FromVectorIcon(
+                 features::IsRoundedIconsEnabled() ? kKeepIcon : kKeepOldIcon,
+-                kColorExtensionMenuIcon, icon_size)
++                kColorExtensionsMenuSecondaryText, icon_size)
+           : three_dot_icon);
+   context_menu_button_->SetImageModel(views::Button::STATE_HOVERED,
+-                                      three_dot_icon);
++                                      three_dot_hover_icon);
+   context_menu_button_->SetImageModel(views::Button::STATE_PRESSED,
+-                                      three_dot_icon);
++                                      three_dot_hover_icon);
+   context_menu_button_->GetViewAccessibility().SetName(
+       button_state.accessible_name);
+ }
+diff --git a/chrome/browser/ui/views/extensions/extensions_menu_main_page_view.cc b/chrome/browser/ui/views/extensions/extensions_menu_main_page_view.cc
+index 929c726..8290efb 100644
+--- a/chrome/browser/ui/views/extensions/extensions_menu_main_page_view.cc
++++ b/chrome/browser/ui/views/extensions/extensions_menu_main_page_view.cc
+@@ -636,21 +636,39 @@ ExtensionsMenuMainPageView::CreateWebstoreButtonBuilder() {
+ 
+ views::Builder<HoverButton>
+ ExtensionsMenuMainPageView::CreateManageButtonBuilder() {
+-  return views::Builder<HoverButton>(
+-             std::make_unique<HoverButton>(
+-                 base::BindRepeating(
+-                     [](BrowserWindowInterface* browser) {
+-                       base::RecordAction(
+-                           base::UserMetricsAction("Extensions.Menu."
+-                                                   "ExtensionsSettingsOpened"));
+-                       chrome::ShowExtensions(browser);
+-                     },
+-                     browser_),
+-                 ui::ImageModel::FromVectorIcon(
+-                     features::IsRoundedIconsEnabled()
+-                         ? vector_icons::kSettingsIcon
+-                         : vector_icons::kSettingsChromeRefreshOldIcon),
+-                 l10n_util::GetStringUTF16(IDS_MANAGE_EXTENSIONS)))
++  const auto settings_icon = ui::ImageModel::FromVectorIcon(
++      features::IsRoundedIconsEnabled() ? vector_icons::kSettingsIcon
++                                        : vector_icons::kSettingsChromeRefreshOldIcon,
++      kColorExtensionsMenuSecondaryText);
++  return views::Builder<HoverButton>(std::make_unique<HoverButton>(
++             base::BindRepeating(
++                 [](BrowserWindowInterface* browser) {
++                   base::RecordAction(
++                       base::UserMetricsAction("Extensions.Menu."
++                                               "ExtensionsSettingsOpened"));
++                   chrome::ShowExtensions(browser);
++                 },
++                 browser_),
++             settings_icon,
++             l10n_util::GetStringUTF16(IDS_MANAGE_EXTENSIONS)))
++      .SetTextColor(views::Button::STATE_NORMAL,
++                    kColorExtensionsMenuSecondaryText)
++      .SetTextColor(views::Button::STATE_HOVERED, kColorExtensionsMenuText)
++      .SetTextColor(views::Button::STATE_PRESSED, kColorExtensionsMenuText)
++      .SetImageModel(
++          views::Button::STATE_HOVERED,
++          ui::ImageModel::FromVectorIcon(
++              features::IsRoundedIconsEnabled()
++                  ? vector_icons::kSettingsIcon
++                  : vector_icons::kSettingsChromeRefreshOldIcon,
++              kColorExtensionsMenuText))
++      .SetImageModel(
++          views::Button::STATE_PRESSED,
++          ui::ImageModel::FromVectorIcon(
++              features::IsRoundedIconsEnabled()
++                  ? vector_icons::kSettingsIcon
++                  : vector_icons::kSettingsChromeRefreshOldIcon,
++              kColorExtensionsMenuText))
+       .SetProperty(views::kElementIdentifierKey,
+                    kExtensionsMenuManageExtensionsElementId);
+ }
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+index 74109d3..bffc4ab 100644
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -360,6 +360,7 @@
+ #include "ui/views/accessibility/view_accessibility.h"
+ #include "ui/views/accessibility/view_accessibility_utils.h"
+ #include "ui/views/animation/compositor_animation_runner.h"
++#include "ui/views/animation/ink_drop.h"
+ #include "ui/views/background.h"
+ #include "ui/views/border.h"
+ #include "ui/views/bubble/bubble_dialog_delegate_view.h"
+@@ -605,7 +606,12 @@ class EmberSidebarAddressTextfield : public views::Textfield {
+       : focus_callback_(std::move(focus_callback)),
+         blur_callback_(std::move(blur_callback)),
+         submit_callback_(std::move(submit_callback)),
+-        cancel_callback_(std::move(cancel_callback)) {}
++        cancel_callback_(std::move(cancel_callback)) {
++    // The parent address row owns the single hover surface. Textfield's
++    // default InkDrop otherwise paints a second, text-local hover treatment.
++    views::InkDrop::Get(this)->SetMode(
++        views::InkDropHost::InkDropMode::OFF);
++  }
+ 
+   EmberSidebarAddressTextfield(const EmberSidebarAddressTextfield&) = delete;
+   EmberSidebarAddressTextfield& operator=(
+diff --git a/chrome/browser/ui/views/tabs/tab/tab_close_button.cc b/chrome/browser/ui/views/tabs/tab/tab_close_button.cc
+index 2ae57f2..40b1d92 100644
+--- a/chrome/browser/ui/views/tabs/tab/tab_close_button.cc
++++ b/chrome/browser/ui/views/tabs/tab/tab_close_button.cc
+@@ -6,6 +6,7 @@
+ 
+ #include <memory>
+ 
++#include "cc/paint/paint_flags.h"
+ #include "chrome/app/vector_icons/vector_icons.h"
+ #include "chrome/browser/ui/layout_constants.h"
+ #include "chrome/browser/ui/views/tabs/tab.h"
+@@ -35,6 +36,8 @@
+ 
+ namespace {
+ constexpr int kEmberCloseVisualInset = 6;
++constexpr int kEmberCloseHoverAlpha = 0x26;
++constexpr int kEmberClosePressedAlpha = 0x3A;
+ 
+ gfx::Size GetButtonSize() {
+   // The close button is larger than the icon inside to provide a larger hit
+@@ -63,6 +66,9 @@ TabCloseButton::TabCloseButton(PressedCallback pressed_callback,
+   views::InkDrop::Get(this)->SetMode(views::InkDropHost::InkDropMode::ON);
+   views::InkDrop::Get(this)->SetHighlightOpacity(0.16f);
+   views::InkDrop::Get(this)->SetVisibleOpacity(0.14f);
++  // Ember paints the compact hover surface below explicitly so the larger
++  // hit target never becomes a large native ink-drop pill.
++  views::InkDrop::Get(this)->SetMode(views::InkDropHost::InkDropMode::OFF);
+ 
+   SetImageCentered(true);
+ 
+@@ -171,6 +177,21 @@ void TabCloseButton::RemoveLayerFromRegions(ui::Layer* old_layer) {
+   image_container_view()->DestroyLayer();
+ }
+ 
++void TabCloseButton::PaintButtonContents(gfx::Canvas* canvas) {
++  if (GetState() == STATE_HOVERED || GetState() == STATE_PRESSED) {
++    cc::PaintFlags fill;
++    fill.setAntiAlias(true);
++    fill.setColor(SkColorSetA(
++        colors_.foreground_color,
++        GetState() == STATE_PRESSED ? kEmberClosePressedAlpha
++                                    : kEmberCloseHoverAlpha));
++    gfx::RectF hover_bounds(GetContentsBounds());
++    hover_bounds.Inset(kEmberCloseVisualInset);
++    canvas->DrawRoundRect(hover_bounds, 4.0f, fill);
++  }
++  views::LabelButton::PaintButtonContents(canvas);
++}
++
+ gfx::Size TabCloseButton::CalculatePreferredSize(
+     const views::SizeBounds& available_size) const {
+   return GetButtonSize();
+diff --git a/chrome/browser/ui/views/tabs/tab/tab_close_button.h b/chrome/browser/ui/views/tabs/tab/tab_close_button.h
+index 2dce587..9034885 100644
+--- a/chrome/browser/ui/views/tabs/tab/tab_close_button.h
++++ b/chrome/browser/ui/views/tabs/tab/tab_close_button.h
+@@ -41,6 +41,7 @@ class TabCloseButton : public views::LabelButton,
+   void SetColors(TabStyle::TabColors colors);
+ 
+   // views::LabelButton:
++  void PaintButtonContents(gfx::Canvas* canvas) override;
+   View* GetTooltipHandlerForPoint(const gfx::Point& point) override;
+   bool OnMousePressed(const ui::MouseEvent& event) override;
+   void OnMouseReleased(const ui::MouseEvent& event) override;

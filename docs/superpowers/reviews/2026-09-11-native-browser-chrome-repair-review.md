@@ -1,7 +1,19 @@
 # Native browser-chrome repair — unfinished review checklist
 
 Branch: `chromium-port`  
-Patch: `chromium/patches/ember/0022-ember-browser-chrome-repair.patch`
+Patch: `chromium/patches/ember/0023-ember-browser-chrome-cleanup.patch`
+
+## Narrow cleanup pass applied
+
+- [x] Restore normal contrast for idle tab titles; keep the muted treatment
+  hover-only.
+- [x] Add compact close-button hover/pressed feedback without changing the
+  button's full hit target.
+- [x] Remove the duplicate textfield-local address hover ink drop.
+- [x] Widen shared glass-menu sizing and disable submenu label elision.
+- [x] Recolour generic glass-menu vector icons with their text states.
+- [x] Recolour extensions-menu text and vector icons for normal, hover,
+  pressed, selected and disabled states.
 
 ## Implemented in the current patch
 
@@ -32,7 +44,8 @@ Patch: `chromium/patches/ember/0022-ember-browser-chrome-repair.patch`
   cannot yet be installed into Ember.
 - [ ] Native unit-test execution is blocked by unrelated upstream WebUI
   TypeScript failures before the changed test objects run.
-- [ ] Full `npm test` and `npm run smoke` are still pending for this review run.
+- [ ] Full `npm test` and `npm run smoke` remain outside this narrow native
+  cleanup verification.
 
 ## Additional open parity issues reported after the initial handoff
 
@@ -54,8 +67,12 @@ and drop, and Favorites grid settings explicitly incomplete.
 
 ## Verification recorded so far
 
-- [x] `node chromium/tools/check-patch-hunks.js` passes all 22 patches.
+- [x] `node chromium/tools/check-patch-hunks.js` passes all 23 patches.
 - [x] Focused `test/chromium-port.test.js` contracts pass.
-- [x] Direct native `chrome` build completes `[333/333] LINK chrome.exe`.
-- [ ] Final runtime acceptance is not complete; this commit is intentionally an
-  unfinished handoff for review and follow-up fixes.
+- [x] Direct native `chrome` build completes `[334/334] LINK chrome.exe`.
+- [x] Clean-profile native launch succeeds and the idle browser shell is
+  captured on the secondary display.
+- [ ] Native mouse-driven hover/menu screenshots for all six paths remain
+  pending because the available UI surface did not expose native Views input;
+  the changed states are covered by the focused source contracts and linked
+  target build.

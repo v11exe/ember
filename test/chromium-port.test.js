@@ -65,6 +65,7 @@ test('the Ember patch series is ordered, local, and complete', () => {
     'ember/0020-ember-glass-runtime-followups.patch',
     'ember/0021-ember-typography-glass-motion.patch',
     'ember/0022-ember-browser-chrome-repair.patch',
+    'ember/0023-ember-browser-chrome-cleanup.patch',
   ]);
   for (const entry of entries) {
     assert.equal(fs.existsSync(path.join(port.PATCHES_ROOT, ...entry.split('/'))), true);
@@ -793,6 +794,27 @@ test('the browser-chrome repair joins split tabs and preserves native browser st
   assert.doesNotMatch(additions, /clients2\.google\.com|chromewebstore\.googleapis\.com/);
   assert.ok(!touchedFiles.includes('net/url_request/url_request.cc'));
   assert.doesNotMatch(additions, /disable-site-isolation|no-sandbox|SafeBrowsing/);
+});
+
+test('the browser-chrome cleanup repairs six foreground and sizing states', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0023-ember-browser-chrome-cleanup.patch'),
+    'utf8',
+  );
+  const additions = patchText.split(/\r?\n/)
+    .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
+    .join('\n');
+
+  assert.match(additions, /hovered \? 0xDB : 0xF0/);
+  assert.match(additions, /PaintButtonContents/);
+  assert.match(additions, /kEmberCloseHoverAlpha/);
+  assert.match(additions, /InkDropMode::OFF/);
+  assert.match(additions, /SetElideBehavior\(gfx::NO_ELIDE\)/);
+  assert.match(additions, /SetMenuIcon/);
+  assert.match(additions, /SetMenuTextColors\(SkColor primary, SkColor secondary, bool selected\)/);
+  assert.match(additions, /SetTextColor\(views::Button::STATE_HOVERED/);
+  assert.match(additions, /SetImageModel\(views::Button::STATE_HOVERED/);
+  assert.match(additions, /kColorExtensionsMenuSecondaryText/);
 });
 
 test('packaging normalizes pinned artifacts to Ember names without overwriting conflicts', () => {

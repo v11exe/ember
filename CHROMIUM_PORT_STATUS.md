@@ -9,6 +9,31 @@ eligible browser-bubble overlays. Patch 0017 fixes the production JPEG
 displacement-map decoder and removes the temporary blue fallback without
 changing the approved glass graph. Preserve that checkout and its `.ninja_log`.
 
+## 2026-09-11 Browser-chrome cleanup pass — six fixes applied
+
+Patch 0023 (`ember/0023-ember-browser-chrome-cleanup.patch`) addresses the
+narrow foreground/sizing issues from the follow-up review:
+
+- inactive tab titles retain normal contrast; the muted alpha is now hover-only;
+- the tab close button paints a compact, visible hover/pressed surface without
+  enlarging its hit target;
+- the sidebar address textfield no longer paints a second text-local hover
+  surface over the parent address-row treatment;
+- shared glass submenus allow their labels to size to content instead of
+  eliding at the old narrow maximum;
+- generic glass-menu vector icons follow the same normal, hover, selected and
+  disabled foreground states as their labels;
+- the extensions menu now applies the same state colours to row text, arrows,
+  settings, enterprise, pin and overflow icons.
+
+Verification: `ninja -C out\\Default chrome -j 6` completed the pinned native
+target at `[334/334] LINK chrome.exe chrome.exe.pdb`; patch-hunk validation and
+the focused Chromium-port contracts pass. A clean-profile `chrome.exe` launch
+also succeeded on the secondary display and produced a native shell capture.
+Hover/menu interaction checks remain limited to the six changed paths; the
+Forward, Web Store destination, extension-install, Favorites drag/settings and
+broader menu-glass reports remain separate open work.
+
 ## 2026-09-11 Browser-chrome parity follow-up — incomplete
 
 The following issues were reported during review and are intentionally tracked

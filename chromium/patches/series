@@ -20,3 +20,4 @@ ember/0019-ember-glass-menu-adoption.patch
 ember/0020-ember-glass-runtime-followups.patch
 ember/0021-ember-typography-glass-motion.patch
 ember/0022-ember-browser-chrome-repair.patch
+ember/0023-ember-browser-chrome-cleanup.patch
