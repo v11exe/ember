@@ -3,11 +3,38 @@
 Last updated: 2026-09-11 on branch `chromium-port`.
 
 **Read this first:** the pinned external checkout and incremental build graph are
-preserved at `C:\src\ember-chromium`. Patches 0006–0022 now provide the built
+preserved at `C:\src\ember-chromium`. Patches 0006–0024 now provide the built
 native shell plus the reusable EmberGlass material, context menu, Ctrl+Tab and
 eligible browser-bubble overlays. Patch 0017 fixes the production JPEG
 displacement-map decoder and removes the temporary blue fallback without
 changing the approved glass graph. Preserve that checkout and its `.ninja_log`.
+
+## 2026-09-11 Browser-chrome corrective pass — four targeted fixes
+
+Patch 0024 (`ember/0024-ember-browser-chrome-corrective.patch`) fixes the four
+regressions that remained after the previous cleanup pass. Each change addresses
+the state or measurement path that produced the report:
+
+- split-view glass rows now budget the measured label plus trailing controls,
+  so disabling ellipsis is backed by enough panel/row width instead of merely
+  exposing physically clipped text;
+- the legacy inactive-tab foreground path now uses the same normal-strength
+  alpha as the target-colour path, so idle titles are not faded before hover;
+- the close button tracks real pointer enter/exit/capture-loss explicitly while
+  retaining Chromium's ink-drop machinery, making the X's compact hover state
+  visible without changing its hit target;
+- the extensions Manage button establishes enabled text-state colours and a
+  disabled settings-icon model, keeping its icon and label in the same state
+  palette.
+
+Verification: `node chromium/tools/check-patch-hunks.js` passes all 24 patches;
+the focused browser-chrome contracts pass (44/44); and all nine affected native
+objects compile. The final DLL link was refused
+because a running `chrome.exe` currently holds `chrome.dll`; no browser process
+was terminated to force the link. Native mouse-driven screenshots remain
+pending, so this entry records source/build evidence without claiming visual
+acceptance. The address-field, Favorites, Web Store, extension-install and
+other menu-glass reports are unchanged and remain separate work.
 
 ## 2026-09-11 Browser-chrome cleanup pass — six fixes applied
 
@@ -39,16 +66,10 @@ broader menu-glass reports remain separate open work.
 The following issues were reported during review and are intentionally tracked
 as open rather than implied complete:
 
-- Tab title text is faded even when the tab is not hovered; it should use the
-  muted treatment only during hover.
-- The tab close `X` has no clear hover-state feedback.
 - Several browser menus still use non-Ember surfaces instead of liquid glass,
   including the shortcut-removed toast, microphone permission bubble, tab
   preview, older tab context menus, split-view menu and extensions popup.
-- Liquid-glass submenus do not inherit the main menu's automatic sizing, so
-  submenu labels are frequently truncated with `...`.
 - Menu icons do not change colour with their text on hover/selection.
-- The extensions menu lacks the expected colour-changing text and icons.
 - Dragging a tab over the Favorites rail does not add it to Favorites.
 - Settings does not expose the Electron parity controls for Favorites columns
   and rows, and the persisted grid dimensions cannot currently be changed.

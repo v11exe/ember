@@ -482,6 +482,18 @@ Git is the history archive.
 
 ## 4. Work Log
 
+### 2026-09-11 — Codex — Native browser-chrome corrective pass
+- **Status / Branch:** four targeted regressions corrected; affected objects compile; final DLL link held by a running browser · `chromium-port`
+- **Touches:** tab foreground fallback, close-button hover tracking, split-view
+  glass-row measurement, extensions Manage-button states, patch 0024, port
+  contracts and status/review ledgers
+- **Summary:** Patch 0024 fixes the remaining idle-title alpha path, makes the
+  close X's hover state explicit without disabling ink-drop behavior, budgets
+  split-view rows from measured trailing content, and gives the extensions
+  Manage button matching enabled/disabled text and icon states. Patch hunks and
+  focused contracts pass; the nine affected objects compile, while `chrome.dll`
+  cannot be relinked until the currently running `chrome.exe` releases it.
+
 ### 2026-09-11 — Codex — Native browser-chrome cleanup
 - **Status / Branch:** six narrow foreground/sizing fixes applied and linked · `chromium-port`
 - **Touches:** tab title/close states, sidebar address hover ownership, shared

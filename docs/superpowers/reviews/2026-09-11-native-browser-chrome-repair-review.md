@@ -1,7 +1,18 @@
 # Native browser-chrome repair — unfinished review checklist
 
 Branch: `chromium-port`  
-Patch: `chromium/patches/ember/0023-ember-browser-chrome-cleanup.patch`
+Patch: `chromium/patches/ember/0024-ember-browser-chrome-corrective.patch` (on top of 0023)
+
+## Corrective pass applied
+
+- [x] Give split-view glass rows a measured trailing-content budget so labels
+  are not physically clipped after elision is disabled.
+- [x] Correct the remaining legacy inactive-tab foreground path so idle titles
+  retain normal contrast and only hover can apply the muted treatment.
+- [x] Track close-button pointer enter/exit/capture-loss explicitly while
+  retaining ink-drop behavior, restoring a clear compact X hover state.
+- [x] Establish the extensions Manage button's enabled text palette and its
+  disabled settings-icon model so icon and label states change together.
 
 ## Narrow cleanup pass applied
 
@@ -49,15 +60,17 @@ Patch: `chromium/patches/ember/0023-ember-browser-chrome-cleanup.patch`
 
 ## Additional open parity issues reported after the initial handoff
 
-- [ ] Tab title text is faded while idle; muted text should be hover-only.
-- [ ] The tab close `X` lacks a clear hover state.
+- [x] Tab title text is no longer faded while idle; muted text remains
+  hover-only in both foreground paths.
+- [x] The tab close `X` now has an explicit compact hover state.
 - [ ] Shortcut-removed toast, microphone permission bubble, tab preview,
   split-view menu, older tab context menus, and extensions popup still lack the
   approved liquid-glass treatment.
-- [ ] Liquid-glass submenus need automatic width sizing; labels currently end
-  in ellipses too often.
+- [x] Liquid-glass submenus now reserve measured trailing content width; the
+  split-view rows no longer rely on a no-ellipsis setting alone.
 - [ ] Menu icons need to follow text colour changes on hover/selection.
-- [ ] Extensions menu text and icons need the same colour-changing states.
+- [x] Extensions menu text and settings icon now share enabled/hover/pressed/
+  disabled colour states.
 - [ ] Dragging a tab over the Favorites rail does not create a Favorite.
 - [ ] Native settings do not expose Favorites grid columns/rows, so the grid
   dimensions cannot be changed as in the Electron version.
@@ -67,12 +80,14 @@ and drop, and Favorites grid settings explicitly incomplete.
 
 ## Verification recorded so far
 
-- [x] `node chromium/tools/check-patch-hunks.js` passes all 23 patches.
+- [x] `node chromium/tools/check-patch-hunks.js` passes all 24 patches.
 - [x] Focused `test/chromium-port.test.js` contracts pass.
-- [x] Direct native `chrome` build completes `[334/334] LINK chrome.exe`.
+- [ ] Direct native `chrome.dll` link is blocked by permission denied while a
+  running `chrome.exe` holds the output; all nine affected objects compile.
 - [x] Clean-profile native launch succeeds and the idle browser shell is
   captured on the secondary display.
 - [ ] Native mouse-driven hover/menu screenshots for all six paths remain
   pending because the available UI surface did not expose native Views input;
-  the changed states are covered by the focused source contracts and linked
-  target build.
+  the changed states are covered by the focused source contracts and affected
+  object compilation. The final DLL link is blocked by the running browser's
+  file lock.

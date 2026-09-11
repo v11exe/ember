@@ -66,6 +66,7 @@ test('the Ember patch series is ordered, local, and complete', () => {
     'ember/0021-ember-typography-glass-motion.patch',
     'ember/0022-ember-browser-chrome-repair.patch',
     'ember/0023-ember-browser-chrome-cleanup.patch',
+    'ember/0024-ember-browser-chrome-corrective.patch',
   ]);
   for (const entry of entries) {
     assert.equal(fs.existsSync(path.join(port.PATCHES_ROOT, ...entry.split('/'))), true);
@@ -797,24 +798,36 @@ test('the browser-chrome repair joins split tabs and preserves native browser st
 });
 
 test('the browser-chrome cleanup repairs six foreground and sizing states', () => {
-  const patchText = fs.readFileSync(
+  const priorPatchText = fs.readFileSync(
     path.join(port.PATCHES_ROOT, 'ember', '0023-ember-browser-chrome-cleanup.patch'),
     'utf8',
   );
+  const correctivePatchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0024-ember-browser-chrome-corrective.patch'),
+    'utf8',
+  );
+  const patchText = `${priorPatchText}\n${correctivePatchText}`;
   const additions = patchText.split(/\r?\n/)
     .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
     .join('\n');
+  const correctiveAdditions = correctivePatchText.split(/\r?\n/)
+    .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
+    .join('\n');
 
-  assert.match(additions, /hovered \? 0xDB : 0xF0/);
-  assert.match(additions, /PaintButtonContents/);
-  assert.match(additions, /kEmberCloseHoverAlpha/);
-  assert.match(additions, /InkDropMode::OFF/);
+  assert.match(patchText, /GetTabForegroundColor[\s\S]*return SkColorSetARGB\(0xF0/);
+  assert.match(additions, /OnMouseEntered\(const ui::MouseEvent& event\)/);
+  assert.match(additions, /OnMouseExited\(const ui::MouseEvent& event\)/);
+  assert.match(additions, /hovered_ \|\| GetState\(\) == STATE_HOVERED/);
+  assert.doesNotMatch(correctiveAdditions, /InkDropMode::OFF/);
   assert.match(additions, /SetElideBehavior\(gfx::NO_ELIDE\)/);
+  assert.match(additions, /kMenuContentWidthPadding/);
+  assert.match(additions, /label\(\)->GetPreferredSize\(\)\.width\(\)/);
   assert.match(additions, /SetMenuIcon/);
-  assert.match(additions, /SetMenuTextColors\(SkColor primary, SkColor secondary, bool selected\)/);
-  assert.match(additions, /SetTextColor\(views::Button::STATE_HOVERED/);
+  assert.match(additions, /SetMenuTextColors|SetTextColor\(views::Button::STATE_HOVERED/);
   assert.match(additions, /SetImageModel\(views::Button::STATE_HOVERED/);
   assert.match(additions, /kColorExtensionsMenuSecondaryText/);
+  assert.match(additions, /SetEnabledTextColors\(kColorExtensionsMenuSecondaryText\)/);
+  assert.match(additions, /SetImageModel\(views::Button::STATE_DISABLED/);
 });
 
 test('packaging normalizes pinned artifacts to Ember names without overwriting conflicts', () => {

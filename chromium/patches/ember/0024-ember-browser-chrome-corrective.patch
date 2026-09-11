@@ -1,0 +1,177 @@
+diff --git a/chrome/browser/ui/tabs/tab_style.cc b/chrome/browser/ui/tabs/tab_style.cc
+index 78dad34..c709e07 100644
+--- a/chrome/browser/ui/tabs/tab_style.cc
++++ b/chrome/browser/ui/tabs/tab_style.cc
+@@ -151,10 +151,12 @@ TabStyle::TabColors TabStyle::CalculateTargetColors(
+ }
+ 
+ SkColor TabStyle::GetTabForegroundColor(
+-    const bool apparently_active,
++    const bool /*apparently_active*/,
+     const bool /*frame_active*/,
+     const ui::ColorProvider* /*color_provider*/) const {
+-  return SkColorSetARGB(apparently_active ? 0xF0 : 0xB3, 0xFF, 0xFF, 0xFF);
++  // Keep the inactive tab foreground at normal strength. The only muted
++  // title treatment is the explicit hover target in CalculateTargetColors().
++  return SkColorSetARGB(0xF0, 0xFF, 0xFF, 0xFF);
+ }
+ 
+ SkColor TabStyle::GetTabBackgroundColor(
+diff --git a/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
+index fc30348..9923d2e 100644
+--- a/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
+@@ -59,6 +59,10 @@ constexpr int kMenuRowHeight = 30;
+ constexpr int kMenuSeparatorHeight = 7;
+ constexpr int kMenuInset = 7;
+ constexpr int kMenuHorizontalPadding = 10;
++// The custom row layout positions the accelerator/submenu labels outside the
++// LabelButton's default measurement. Preserve that trailing content budget
++// when the panel width is derived from the widest label.
++constexpr int kMenuContentWidthPadding = 16;
+ constexpr int kMenuIconColumnWidth = 24;
+ constexpr int kMenuAcceleratorGap = 18;
+ constexpr int kMenuSubmenuWidth = 14;
+@@ -143,7 +147,8 @@ class EmberGlassMenuRow : public views::LabelButton {
+ 
+   gfx::Size CalculatePreferredSize(
+       const views::SizeBounds& available_size) const override {
+-    int width = kMenuHorizontalPadding * 2 + label()->GetPreferredSize().width();
++    const int label_width = label()->GetPreferredSize().width();
++    int width = kMenuHorizontalPadding * 2 + label_width;
+     if (reserve_icon_column_) {
+       width += kMenuIconColumnWidth;
+     }
+@@ -773,8 +778,9 @@ void EmberGlassOverlayController::RebuildMenu(ui::MenuModel* model) {
+     visible_model_indices_.push_back(index);
+     y += kMenuRowHeight;
+   }
+-  const int panel_width = std::clamp(preferred_row_width + kMenuInset * 2,
+-                                     kMenuMinWidth, kMenuMaxWidth);
++  const int panel_width = std::clamp(
++      preferred_row_width + kMenuInset * 2 + kMenuContentWidthPadding,
++      kMenuMinWidth, kMenuMaxWidth);
+   for (views::View* row : menu_rows_) {
+     row->SetBounds(row->x(), row->y(), panel_width - kMenuInset * 2,
+                    kMenuRowHeight);
+diff --git a/chrome/browser/ui/views/extensions/extensions_menu_entry_view.cc b/chrome/browser/ui/views/extensions/extensions_menu_entry_view.cc
+index a1866a6..96601ff 100644
+--- a/chrome/browser/ui/views/extensions/extensions_menu_entry_view.cc
++++ b/chrome/browser/ui/views/extensions/extensions_menu_entry_view.cc
+@@ -39,6 +39,7 @@ ui::ImageModel RecolorMenuIcon(const ui::ImageModel& image,
+ }
+ 
+ void ConfigureMenuButtonForeground(HoverButton* button) {
++  button->SetEnabledTextColors(kColorExtensionsMenuSecondaryText);
+   button->SetTextColor(views::Button::STATE_NORMAL,
+                        kColorExtensionsMenuSecondaryText);
+   button->SetTextColor(views::Button::STATE_HOVERED,
+diff --git a/chrome/browser/ui/views/extensions/extensions_menu_main_page_view.cc b/chrome/browser/ui/views/extensions/extensions_menu_main_page_view.cc
+index 8290efb..fab7525 100644
+--- a/chrome/browser/ui/views/extensions/extensions_menu_main_page_view.cc
++++ b/chrome/browser/ui/views/extensions/extensions_menu_main_page_view.cc
+@@ -31,6 +31,7 @@
+ #include "ui/base/metadata/metadata_impl_macros.h"
+ #include "ui/base/ui_base_features.h"
+ #include "ui/base/ui_base_types.h"
++#include "ui/color/color_id.h"
+ #include "ui/gfx/geometry/insets.h"
+ #include "ui/gfx/text_constants.h"
+ #include "ui/gfx/vector_icon_types.h"
+@@ -653,6 +654,7 @@ ExtensionsMenuMainPageView::CreateManageButtonBuilder() {
+              l10n_util::GetStringUTF16(IDS_MANAGE_EXTENSIONS)))
+       .SetTextColor(views::Button::STATE_NORMAL,
+                     kColorExtensionsMenuSecondaryText)
++      .SetEnabledTextColors(kColorExtensionsMenuSecondaryText)
+       .SetTextColor(views::Button::STATE_HOVERED, kColorExtensionsMenuText)
+       .SetTextColor(views::Button::STATE_PRESSED, kColorExtensionsMenuText)
+       .SetImageModel(
+@@ -669,6 +671,13 @@ ExtensionsMenuMainPageView::CreateManageButtonBuilder() {
+                   ? vector_icons::kSettingsIcon
+                   : vector_icons::kSettingsChromeRefreshOldIcon,
+               kColorExtensionsMenuText))
++      .SetImageModel(
++          views::Button::STATE_DISABLED,
++          ui::ImageModel::FromVectorIcon(
++              features::IsRoundedIconsEnabled()
++                  ? vector_icons::kSettingsIcon
++                  : vector_icons::kSettingsChromeRefreshOldIcon,
++              ui::kColorLabelForegroundDisabled))
+       .SetProperty(views::kElementIdentifierKey,
+                    kExtensionsMenuManageExtensionsElementId);
+ }
+diff --git a/chrome/browser/ui/views/tabs/tab/tab_close_button.cc b/chrome/browser/ui/views/tabs/tab/tab_close_button.cc
+index 40b1d92..b41bba0 100644
+--- a/chrome/browser/ui/views/tabs/tab/tab_close_button.cc
++++ b/chrome/browser/ui/views/tabs/tab/tab_close_button.cc
+@@ -66,9 +66,6 @@ TabCloseButton::TabCloseButton(PressedCallback pressed_callback,
+   views::InkDrop::Get(this)->SetMode(views::InkDropHost::InkDropMode::ON);
+   views::InkDrop::Get(this)->SetHighlightOpacity(0.16f);
+   views::InkDrop::Get(this)->SetVisibleOpacity(0.14f);
+-  // Ember paints the compact hover surface below explicitly so the larger
+-  // hit target never becomes a large native ink-drop pill.
+-  views::InkDrop::Get(this)->SetMode(views::InkDropHost::InkDropMode::OFF);
+ 
+   SetImageCentered(true);
+ 
+@@ -151,11 +148,28 @@ void TabCloseButton::OnMouseReleased(const ui::MouseEvent& event) {
+   Button::OnMouseReleased(event);
+ }
+ 
++void TabCloseButton::OnMouseEntered(const ui::MouseEvent& event) {
++  hovered_ = true;
++  SchedulePaint();
++  Button::OnMouseEntered(event);
++}
++
++void TabCloseButton::OnMouseExited(const ui::MouseEvent& event) {
++  hovered_ = false;
++  SchedulePaint();
++  Button::OnMouseExited(event);
++}
++
+ void TabCloseButton::OnMouseMoved(const ui::MouseEvent& event) {
+   mouse_event_callback_.Run(this, event);
+   Button::OnMouseMoved(event);
+ }
+ 
++void TabCloseButton::OnMouseCaptureLost() {
++  hovered_ = false;
++  Button::OnMouseCaptureLost();
++}
++
+ void TabCloseButton::OnGestureEvent(ui::GestureEvent* event) {
+   // Consume all gesture events here so that the parent (Tab) does not
+   // start consuming gestures.
+@@ -178,7 +192,7 @@ void TabCloseButton::RemoveLayerFromRegions(ui::Layer* old_layer) {
+ }
+ 
+ void TabCloseButton::PaintButtonContents(gfx::Canvas* canvas) {
+-  if (GetState() == STATE_HOVERED || GetState() == STATE_PRESSED) {
++  if (hovered_ || GetState() == STATE_HOVERED || GetState() == STATE_PRESSED) {
+     cc::PaintFlags fill;
+     fill.setAntiAlias(true);
+     fill.setColor(SkColorSetA(
+diff --git a/chrome/browser/ui/views/tabs/tab/tab_close_button.h b/chrome/browser/ui/views/tabs/tab/tab_close_button.h
+index 9034885..7b4ad21 100644
+--- a/chrome/browser/ui/views/tabs/tab/tab_close_button.h
++++ b/chrome/browser/ui/views/tabs/tab/tab_close_button.h
+@@ -45,7 +45,10 @@ class TabCloseButton : public views::LabelButton,
+   View* GetTooltipHandlerForPoint(const gfx::Point& point) override;
+   bool OnMousePressed(const ui::MouseEvent& event) override;
+   void OnMouseReleased(const ui::MouseEvent& event) override;
++  void OnMouseEntered(const ui::MouseEvent& event) override;
++  void OnMouseExited(const ui::MouseEvent& event) override;
+   void OnMouseMoved(const ui::MouseEvent& event) override;
++  void OnMouseCaptureLost() override;
+   void OnGestureEvent(ui::GestureEvent* event) override;
+   void AddLayerToRegion(ui::Layer* new_layer,
+                         views::LayerRegion region) override;
+@@ -67,6 +70,7 @@ class TabCloseButton : public views::LabelButton,
+   MouseEventCallback mouse_event_callback_;
+ 
+   TabStyle::TabColors colors_;
++  bool hovered_ = false;
+ };
+ 
+ #endif  // CHROME_BROWSER_UI_VIEWS_TABS_TAB_TAB_CLOSE_BUTTON_H_
