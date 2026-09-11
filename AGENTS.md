@@ -482,6 +482,17 @@ Git is the history archive.
 
 ## 4. Work Log
 
+### 2026-09-11 — Codex — Native browser-chrome repair pass
+- **Status / Branch:** root-cause investigation in progress · `chromium-port`
+- **Touches:** native tab/split-tab chrome, omnibox/navigation controls, URL presentation, Web Store navigation policy, port tests/ledger
+- **Summary:** Tracing the supplied tab, split view, omnibox, navigation, and Chrome Web Store defects through the pinned Chromium implementation before adding the next ordered Ember patch.
+
+### 2026-09-09 — Codex — Browser typography and glass motion
+- **Status / Branch:** implementation and visual QA complete; automated gates deferred · `chromium-port`
+- **Touches:** native browser typography, bundled Inter resources, shared glass transitions, menu/submenu/switcher/bubble integration, port tests and ledger
+- **Summary:** Implemented and visually checked the browser UI Inter and independently sprung shell-geometry pass. The native chrome target links successfully; page fonts and the final glass material remain preserved. Smoke and unit gates are intentionally left to the follow-up verifier.
+
+
 Newest first. One entry per active/recent unit of work.
 
 ### 2026-09-09 — Codex — EmberGlass corrective acceptance

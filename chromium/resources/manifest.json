@@ -76,6 +76,50 @@
     {
       "source": "glass/displacement-map.jpg",
       "destination": "chrome/app/theme/chromium/ember_glass_displacement.jpg"
+    },
+    {
+      "source": "typography/Inter-Regular.ttf",
+      "destination": "chrome/app/theme/chromium/ember_fonts/Inter-Regular.ttf"
+    },
+    {
+      "source": "typography/Inter-Medium.ttf",
+      "destination": "chrome/app/theme/chromium/ember_fonts/Inter-Medium.ttf"
+    },
+    {
+      "source": "typography/Inter-SemiBold.ttf",
+      "destination": "chrome/app/theme/chromium/ember_fonts/Inter-SemiBold.ttf"
+    },
+    {
+      "source": "typography/Inter-Bold.ttf",
+      "destination": "chrome/app/theme/chromium/ember_fonts/Inter-Bold.ttf"
+    },
+    {
+      "source": "typography/Inter-Italic.ttf",
+      "destination": "chrome/app/theme/chromium/ember_fonts/Inter-Italic.ttf"
+    },
+    {
+      "source": "typography/Inter-MediumItalic.ttf",
+      "destination": "chrome/app/theme/chromium/ember_fonts/Inter-MediumItalic.ttf"
+    },
+    {
+      "source": "typography/Inter-SemiBoldItalic.ttf",
+      "destination": "chrome/app/theme/chromium/ember_fonts/Inter-SemiBoldItalic.ttf"
+    },
+    {
+      "source": "typography/Inter-BoldItalic.ttf",
+      "destination": "chrome/app/theme/chromium/ember_fonts/Inter-BoldItalic.ttf"
+    },
+    {
+      "source": "typography/InterVariable.woff2",
+      "destination": "ui/webui/resources/ember_fonts/InterVariable.woff2"
+    },
+    {
+      "source": "typography/InterVariable-Italic.woff2",
+      "destination": "ui/webui/resources/ember_fonts/InterVariable-Italic.woff2"
+    },
+    {
+      "source": "typography/LICENSE.txt",
+      "destination": "chrome/app/theme/chromium/ember_fonts/LICENSE.txt"
     }
   ]
 }

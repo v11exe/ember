@@ -1,13 +1,58 @@
 # Ember native Chromium port status
 
-Last updated: 2026-09-09 on branch `chromium-port`.
+Last updated: 2026-09-11 on branch `chromium-port`.
 
 **Read this first:** the pinned external checkout and incremental build graph are
-preserved at `C:\src\ember-chromium`. Patches 0006–0020 now provide the built
+preserved at `C:\src\ember-chromium`. Patches 0006–0022 now provide the built
 native shell plus the reusable EmberGlass material, context menu, Ctrl+Tab and
 eligible browser-bubble overlays. Patch 0017 fixes the production JPEG
 displacement-map decoder and removes the temporary blue fallback without
 changing the approved glass graph. Preserve that checkout and its `.ninja_log`.
+
+## 2026-09-11 Ember browser-chrome repair review run — unfinished
+
+- Patch 0022 contains the current repair attempt for compact close-button
+  visuals, favicon centering, split-tab adjacency/indicators, pane-local hover,
+  neutral New Tab ink-drop styling, compact URL presentation, URL-field scroll
+  reset, normal-mode Forward visibility, and public Web Store launch URLs.
+- The source patch is intentionally being handed off for review. The Forward
+  button is still absent in the current runtime capture; the address field
+  still shows an incorrect hover treatment when the pointer is over text; the
+  New Tab Web Store link still does not open; and extension installation still
+  redirects to the “Install Chrome” gate. These are open bugs, not completed
+  acceptance criteria.
+- `chrome.exe` linked successfully with `[333/333]`. Patch-hunk validation and
+  the focused Node contracts pass. The native unit-test graph is currently
+  blocked before the changed objects by unrelated upstream WebUI TypeScript
+  failures in the extensions sidebar and history routing tests. Full `npm test`
+  and `npm run smoke` remain outstanding for this review run.
+- This branch does not claim ROADMAP #9 Split View complete. The split changes
+  only repair existing Chromium split-tab chrome geometry and state painting.
+
+## 2026-09-10 Ember browser typography and shared glass motion
+
+- Patch 0021 adds bundled Inter faces for Ember-owned native Views and WebUI
+  surfaces, while leaving page CSS, authored web fonts, form controls and canvas
+  text under the website's control. Browser typography is scoped to the browser
+  process; WebUI resources load the same bundled family through explicit
+  `chrome://resources` imports.
+- The shared `EmberGlassTransition` drives width, height, corner radius and
+  opacity as independent spring/fade channels. Menu, submenu, context,
+  extension bubble and Ctrl+Tab surfaces use anchored reveal/close motion with
+  clipped content; no whole-tree scale animation is used.
+- Native visual QA on the secondary PL288H display (`-1920,224,1920×1080`) at
+  100% DPI produced `artifacts/native-capture/typography-motion/after-fonts.png`,
+  `after-menu.png`, `context-menu-motion3.mp4` and `ctrl-tab-motion2.mp4`.
+  The font-isolation capture preserves Georgia, Courier New, system UI,
+  authored web-font, form-control and canvas samples; the menu and switcher
+  captures show the frosted surfaces opening over that page.
+- Verification: the direct incremental command
+  `ninja -C out\\Default chrome -j 6` completed with `[319/319] LINK
+  chrome.exe chrome.exe.pdb`, and `node chromium/tools/check-patch-hunks.js`
+  passes all 21 patches (0021 has 128 hunks). Smoke and unit tests were
+  intentionally deferred to the separate test pass requested for this slice.
+- This slice is visually checked at 100% DPI on PL288H. A broader DPI/display
+  matrix and automated smoke/unit gates remain open for the follow-up verifier.
 
 ## 2026-09-09 EmberGlass overlay acceptance checkpoint
 

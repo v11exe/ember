@@ -1,0 +1,2005 @@
+--- a/chrome/BUILD.gn
++++ b/chrome/BUILD.gn
+@@ -368,6 +368,8 @@
+       "app/chrome_main.h",
+       "app/chrome_main_delegate.cc",
+       "app/chrome_main_delegate.h",
++      "app/ember_typography_win.cc",
++      "app/ember_typography_win.h",
+       "app/startup_timestamps.h",
+     ]
+ 
+@@ -400,6 +402,7 @@
+       "//crypto",
+       "//net:net_resources",
+       "//sandbox/win:sandbox",
++      "//skia",
+       "//third_party/cld_3/src/src:cld_3",
+       "//third_party/wtl",
+       "//ui/views",
+--- a/chrome/app/BUILD.gn
++++ b/chrome/app/BUILD.gn
+@@ -53,6 +53,17 @@
+ 
+   if (is_win) {
+     sources += [ "chrome_dll.rc" ]
++    inputs = [
++      "theme/chromium/ember_fonts/Inter-Regular.ttf",
++      "theme/chromium/ember_fonts/Inter-Medium.ttf",
++      "theme/chromium/ember_fonts/Inter-SemiBold.ttf",
++      "theme/chromium/ember_fonts/Inter-Bold.ttf",
++      "theme/chromium/ember_fonts/Inter-Italic.ttf",
++      "theme/chromium/ember_fonts/Inter-MediumItalic.ttf",
++      "theme/chromium/ember_fonts/Inter-SemiBoldItalic.ttf",
++      "theme/chromium/ember_fonts/Inter-BoldItalic.ttf",
++      "theme/chromium/ember_fonts/LICENSE.txt",
++    ]
+ 
+     deps += [
+       "//build:branding_buildflags",
+--- a/chrome/app/chrome_dll.rc
++++ b/chrome/app/chrome_dll.rc
+@@ -2,6 +2,17 @@
+ //
+ #include "build/branding_buildflags.h"
+ #include "chrome_dll_resource.h"
++
++// Process-private browser typography; never installed in Windows.
++"EMBER_INTER_REGULAR" RCDATA "theme/chromium/ember_fonts/Inter-Regular.ttf"
++"EMBER_INTER_MEDIUM" RCDATA "theme/chromium/ember_fonts/Inter-Medium.ttf"
++"EMBER_INTER_SEMIBOLD" RCDATA "theme/chromium/ember_fonts/Inter-SemiBold.ttf"
++"EMBER_INTER_BOLD" RCDATA "theme/chromium/ember_fonts/Inter-Bold.ttf"
++"EMBER_INTER_ITALIC" RCDATA "theme/chromium/ember_fonts/Inter-Italic.ttf"
++"EMBER_INTER_MEDIUMITALIC" RCDATA "theme/chromium/ember_fonts/Inter-MediumItalic.ttf"
++"EMBER_INTER_SEMIBOLDITALIC" RCDATA "theme/chromium/ember_fonts/Inter-SemiBoldItalic.ttf"
++"EMBER_INTER_BOLDITALIC" RCDATA "theme/chromium/ember_fonts/Inter-BoldItalic.ttf"
++"EMBER_INTER_LICENSE" RCDATA "theme/chromium/ember_fonts/LICENSE.txt"
+ #include "chrome_command_ids.h"
+ #include "printing/buildflags/buildflags.h"
+ 
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -3,6 +3,11 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/app/chrome_main_delegate.h"
++
++#include "build/build_config.h"
++#if BUILDFLAG(IS_WIN)
++#include "chrome/app/ember_typography_win.h"
++#endif
+ 
+ #include <stddef.h>
+ 
+@@ -1338,6 +1343,14 @@
+   std::string process_type =
+       command_line.GetSwitchValueASCII(switches::kProcessType);
+ 
++  // Only the browser owns Ember UI. Child processes retain their exact
++  // upstream font manager, generic fonts, website and extension rendering.
++#if BUILDFLAG(IS_WIN)
++  if (process_type.empty()) {
++    ember::InitializeBrowserTypography();
++  }
++#endif
++
+   crash_reporter::InitializeCrashKeys();
+ 
+ #if BUILDFLAG(IS_POSIX)
+--- a/chrome/app/ember_typography_win.cc
++++ b/chrome/app/ember_typography_win.cc
+@@ -0,0 +1,144 @@
++// Copyright 2026 The Ember Authors
++// Use of this source code is governed by a BSD-style license.
++#include "chrome/app/ember_typography_win.h"
++
++#include <windows.h>
++
++#include <array>
++#include <utility>
++#include <vector>
++
++#include "base/check.h"
++#include "base/strings/string_util.h"
++#include "base/win/current_module.h"
++#include "skia/ext/font_utils.h"
++#include "third_party/skia/include/core/SkData.h"
++#include "third_party/skia/include/core/SkFontMgr.h"
++#include "third_party/skia/include/core/SkFontStyle.h"
++#include "third_party/skia/include/core/SkStream.h"
++#include "third_party/skia/include/core/SkString.h"
++#include "third_party/skia/include/core/SkTypeface.h"
++#include "third_party/skia/include/ports/SkTypeface_win.h"
++
++namespace ember {
++namespace {
++
++// The original OFL faces live in the module: no user-font installation and no
++// dependency on an installed Inter version. Process-private GDI registration
++// lets Windows report the same metrics used by the native Skia text pipeline.
++class InterStyleSet final : public SkFontStyleSet {
++ public:
++  explicit InterStyleSet(const sk_sp<SkFontMgr>& system) {
++    constexpr std::array names = {
++        L"EMBER_INTER_REGULAR", L"EMBER_INTER_MEDIUM", L"EMBER_INTER_SEMIBOLD",
++        L"EMBER_INTER_BOLD", L"EMBER_INTER_ITALIC", L"EMBER_INTER_MEDIUMITALIC",
++        L"EMBER_INTER_SEMIBOLDITALIC", L"EMBER_INTER_BOLDITALIC"};
++    for (const wchar_t* name : names) {
++      HMODULE module = CURRENT_MODULE();
++      HRSRC resource = FindResourceW(module, name, RT_RCDATA);
++      // Resource overlays can be stripped by a downstream branding build;
++      // keep the browser usable and let DirectWrite provide fallback in that
++      // case instead of aborting browser startup.
++      if (!resource)
++        continue;
++      const DWORD size = SizeofResource(module, resource);
++      void* bytes = LockResource(LoadResource(module, resource));
++      if (!bytes || !size)
++        continue;
++      DWORD count = 0;
++      // These handles intentionally live until process exit. Removing the font
++      // while native labels or cached typefaces remain alive is unsafe.
++      if (!AddFontMemResourceEx(bytes, size, nullptr, &count))
++        continue;
++      auto face = system->makeFromData(SkData::MakeWithoutCopy(bytes, size));
++      if (face)
++        faces_.push_back(std::move(face));
++    }
++  }
++  int count() override { return static_cast<int>(faces_.size()); }
++  void getStyle(int index, SkFontStyle* style, SkString* name) override {
++    *style = faces_[index]->fontStyle();
++    if (name) {
++      name->reset();
++    }
++  }
++  sk_sp<SkTypeface> createTypeface(int index) override { return faces_[index]; }
++  sk_sp<SkTypeface> matchStyle(const SkFontStyle& style) override {
++    return matchStyleCSS3(style);
++  }
++ private:
++  std::vector<sk_sp<SkTypeface>> faces_;
++};
++
++bool IsInter(const char* name) {
++  return name && base::EqualsCaseInsensitiveASCII(name, "Inter");
++}
++
++// This manager is installed ONLY in the browser. It adds one explicit family;
++// the system manager continues to own every other family, fallback character,
++// font stream and default. Renderer/GPU/utility processes never execute this.
++class BrowserFontManager final : public SkFontMgr {
++ public:
++  BrowserFontManager()
++      : system_(SkFontMgr_New_DirectWrite()),
++        inter_(sk_make_sp<InterStyleSet>(system_)) {}
++ private:
++  int onCountFamilies() const override { return system_->countFamilies() + 1; }
++  void onGetFamilyName(int index, SkString* name) const override {
++    if (index == system_->countFamilies()) {
++      name->set("Inter");
++    } else {
++      system_->getFamilyName(index, name);
++    }
++  }
++  sk_sp<SkFontStyleSet> onCreateStyleSet(int index) const override {
++    return index == system_->countFamilies() ? inter_ : system_->createStyleSet(index);
++  }
++  sk_sp<SkFontStyleSet> onMatchFamily(const char name[]) const override {
++    return IsInter(name) ? inter_ : system_->matchFamily(name);
++  }
++  sk_sp<SkTypeface> onMatchFamilyStyle(const char name[],
++                                     const SkFontStyle& style) const override {
++    return IsInter(name) ? inter_->matchStyle(style)
++                         : system_->matchFamilyStyle(name, style);
++  }
++  sk_sp<SkTypeface> onMatchFamilyStyleCharacter(
++      const char name[], const SkFontStyle& style, const char* languages[],
++      int count, SkUnichar character) const override {
++    if (IsInter(name)) {
++      auto face = inter_->matchStyle(style);
++      if (face->unicharToGlyph(character)) {
++        return face;
++      }
++    }
++    return system_->matchFamilyStyleCharacter(name, style, languages, count,
++                                              character);
++  }
++  sk_sp<SkTypeface> onMakeFromData(sk_sp<SkData> data, int index) const override {
++    return system_->makeFromData(std::move(data), index);
++  }
++  sk_sp<SkTypeface> onMakeFromStreamIndex(std::unique_ptr<SkStreamAsset> stream,
++                                        int index) const override {
++    return system_->makeFromStream(std::move(stream), index);
++  }
++  sk_sp<SkTypeface> onMakeFromStreamArgs(std::unique_ptr<SkStreamAsset> stream,
++                                       const SkFontArguments& args) const override {
++    return system_->makeFromStream(std::move(stream), args);
++  }
++  sk_sp<SkTypeface> onMakeFromFile(const char path[], int index) const override {
++    return system_->makeFromFile(path, index);
++  }
++  sk_sp<SkTypeface> onLegacyMakeTypeface(const char name[],
++                                        SkFontStyle style) const override {
++    return IsInter(name) ? inter_->matchStyle(style)
++                         : system_->legacyMakeTypeface(name, style);
++  }
++  sk_sp<SkFontMgr> system_;
++  sk_sp<SkFontStyleSet> inter_;
++};
++}  // namespace
++
++void InitializeBrowserTypography() {
++  skia::OverrideDefaultSkFontMgr(sk_make_sp<BrowserFontManager>());
++}
++}  // namespace ember
+--- a/chrome/app/ember_typography_win.h
++++ b/chrome/app/ember_typography_win.h
+@@ -0,0 +1,9 @@
++// Copyright 2026 The Ember Authors
++// Use of this source code is governed by a BSD-style license.
++#ifndef CHROME_APP_EMBER_TYPOGRAPHY_WIN_H_
++#define CHROME_APP_EMBER_TYPOGRAPHY_WIN_H_
++namespace ember {
++// Must run once, in the browser process only, before any Skia font lookup.
++void InitializeBrowserTypography();
++}
++#endif
+--- a/chrome/browser/chrome_browser_main_win.cc
++++ b/chrome/browser/chrome_browser_main_win.cc
+@@ -551,7 +551,11 @@
+   DCHECK_NE(base::PlatformThread::CurrentId(), base::kInvalidThreadId);
+   gfx::CrashIdHelper::RegisterMainThread(base::PlatformThread::CurrentId());
+   ChromeBrowserMainParts::ToolkitInitialized();
+-  gfx::win::SetAdjustFontCallback(&l10n_util::AdjustUiFont);
++  gfx::win::SetAdjustFontCallback([](gfx::win::FontAdjustment& adjustment) {
++    l10n_util::AdjustUiFont(adjustment);
++    // Browser main only: retain locale/accessibility scaling and fallback.
++    adjustment.font_family_override = L"Inter";
++  });
+   gfx::win::SetGetMinimumFontSizeCallback(&GetMinimumFontSize);
+ }
+ 
+--- a/chrome/browser/resources/accessibility/accessibility.css
++++ b/chrome/browser/resources/accessibility/accessibility.css
+@@ -5,7 +5,7 @@
+  */
+ 
+ body {
+-  font-family: Arial, sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-size: 12px;
+   margin: 10px 0 10px 20px;
+   padding-block-end: 65px;
+--- a/chrome/browser/resources/accessibility/accessibility.html
++++ b/chrome/browser/resources/accessibility/accessibility.html
+@@ -6,6 +6,7 @@
+ found in the LICENSE file.
+ -->
+ <head>
++  <link rel="stylesheet" href="chrome://resources/css/ember_typography.css">
+   <meta charset="utf-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>Accessibility Internals</title>
+--- a/chrome/browser/resources/ai_overlay_dialog/app.css
++++ b/chrome/browser/resources/ai_overlay_dialog/app.css
+@@ -127,7 +127,7 @@
+   color: white;
+   padding: 4px 8px;
+   border-radius: 4px;
+-  font-family: sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-size: 13px;
+   border: none;
+ }
+@@ -151,7 +151,7 @@
+   color: white;
+   padding: 4px 8px;
+   border-radius: 4px;
+-  font-family: sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-size: 13px;
+   border: 1px solid rgba(255, 255, 255, 0.3);
+   box-sizing: border-box;
+--- a/chrome/browser/resources/compose/app.css
++++ b/chrome/browser/resources/compose/app.css
+@@ -267,7 +267,7 @@
+   border: 0;
+   border-radius: 100px;
+   color: var(--cr-secondary-text-color);
+-  font-family: Roboto, 'Noto Sans', Arial, sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-weight: 500;
+   height: auto;
+   line-height: 16px;
+--- a/chrome/browser/resources/context_hub/memory_banks/memory_banks.css
++++ b/chrome/browser/resources/context_hub/memory_banks/memory_banks.css
+@@ -13,7 +13,7 @@
+ }
+ 
+ h2 {
+-  font-family: 'Google Sans', sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-weight: 500;
+   font-size: 18px;
+   line-height: 24px;
+@@ -75,7 +75,7 @@
+ }
+ 
+ .text-preview {
+-  font-family: 'Google Sans Text', sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-weight: 500;
+   font-size: 13px;
+   line-height: 18px;
+@@ -115,7 +115,7 @@
+ }
+ 
+ .card-title {
+-  font-family: 'Google Sans Flex', sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-weight: 400;
+   font-size: 13px;
+   line-height: 17px;
+@@ -126,7 +126,7 @@
+ }
+ 
+ .card-date {
+-  font-family: 'Google Sans Flex', sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-weight: 500;
+   font-size: 10px;
+   line-height: 14px;
+--- a/chrome/browser/resources/contextual_tasks/app.css
++++ b/chrome/browser/resources/contextual_tasks/app.css
+@@ -124,8 +124,7 @@
+   --ghost-loader-base: #F3F5F6;
+   --ghost-loader-highlight: #DEE1E3;
+   --search-animated-glif-rotation-duration: 3s;
+-  --google-sans-font:
+-      'Google Sans', Roboto, Arial, sans-serif;
++  --google-sans-font: var(--ember-font-family, Inter, sans-serif);
+   --gradient-protection-width: 100%;
+   --min-composebox-width: 150px;
+   --paper-tooltip-background:rgba(255, 255, 255, 1);
+--- a/chrome/browser/resources/contextual_tasks/error_page.css
++++ b/chrome/browser/resources/contextual_tasks/error_page.css
+@@ -14,7 +14,7 @@
+ 
+ #errorBottomLine {
+   color: var(--error-bottom-line-color);
+-  font-family: Roboto, Arial, sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-size: 14px;
+   font-style: normal;
+   font-weight: 400;
+@@ -47,7 +47,7 @@
+ 
+ #errorTopLine {
+   color: var(--error-top-line-color);
+-  font-family: Roboto, Arial, sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-size: 16px;
+   font-style: normal;
+   font-weight: 400;
+--- a/chrome/browser/resources/enterprise/incognito_navigation_blocked_page/incognito_blocked.css
++++ b/chrome/browser/resources/enterprise/incognito_navigation_blocked_page/incognito_blocked.css
+@@ -5,7 +5,7 @@
+ body {
+   --header-color: var(--cr-primary-text-color);
+   --paragraph-color: var(--cr-secondary-text-color);
+-  font-family: sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   padding: 24px 24px 20px 24px;
+ }
+ 
+--- a/chrome/browser/resources/enterprise/incognito_navigation_blocked_page/incognito_blocked.html
++++ b/chrome/browser/resources/enterprise/incognito_navigation_blocked_page/incognito_blocked.html
+@@ -1,6 +1,7 @@
+ <!doctype html>
+ <html dir="$i18n{textdirection}" lang="$i18n{language}">
+ <head>
++  <link rel="stylesheet" href="chrome://resources/css/ember_typography.css">
+   <meta charset="utf-8">
+   <meta name="viewport" content="initial-scale=1,
+       minimum-scale=1,width=device-width">
+--- a/chrome/browser/resources/glic/experimental_opt_in/experimental_opt_in.css
++++ b/chrome/browser/resources/glic/experimental_opt_in/experimental_opt_in.css
+@@ -10,7 +10,7 @@
+ html {
+   background-color: var(--color-glic-background);
+   color: var(--cr-fallback-color-on-surface);
+-  font-family: Roboto, sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   height: auto !important;
+   margin: 0;
+   overflow: hidden;
+@@ -74,7 +74,7 @@
+ 
+ .headline {
+   color: var(--cr-fallback-color-on-surface);
+-  font-family: 'Google Sans', sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-size: 16px;
+   font-weight: 500;
+   line-height: 24px;
+@@ -83,7 +83,7 @@
+ 
+ .notice-message {
+   color: var(--cr-fallback-color-on-surface-variant);
+-  font-family: 'Google Sans Text', sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-size: 14px;
+   font-weight: 400;
+   line-height: 20px;
+@@ -122,7 +122,7 @@
+ .notice cr-button {
+   --cr-button-height: 36px;
+   border-radius: var(--corner-radii-fully-round, 100px);
+-  font-family: 'Google Sans Text', sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-size: var(--cr-button-font-size, 13px);
+   font-weight: 500;
+   margin-top: 16px;
+--- a/chrome/browser/resources/glic/experimental_opt_in/experimental_opt_in.html
++++ b/chrome/browser/resources/glic/experimental_opt_in/experimental_opt_in.html
+@@ -2,6 +2,7 @@
+ <html dir="$i18n{textdirection}" lang="$i18n{language}">
+ 
+ <head>
++  <link rel="stylesheet" href="chrome://resources/css/ember_typography.css">
+   <meta charset="utf-8">
+   <link rel="stylesheet" href="chrome://resources/cr_elements/cr_shared_vars.css">
+   <link rel="stylesheet" href="chrome://theme/colors.css?sets=chrome">
+--- a/chrome/browser/resources/glic/glic.css
++++ b/chrome/browser/resources/glic/glic.css
+@@ -41,7 +41,7 @@
+ 
+ .dialog {
+   color: var(--cr-fallback-color-on-surface);
+-  font-family: Roboto, sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-size: 13px;
+   font-weight: 400;
+   left: 0;
+@@ -380,7 +380,7 @@
+ 
+ .overlay .message {
+   display: inline-block;
+-  font-family: Roboto, sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-size: 11px;
+   font-weight: 500;
+   line-height: 16px;
+--- a/chrome/browser/resources/glic/glic.html
++++ b/chrome/browser/resources/glic/glic.html
+@@ -2,6 +2,7 @@
+ <html style="overflow: hidden">
+ 
+ <head>
++  <link rel="stylesheet" href="chrome://resources/css/ember_typography.css">
+   <meta charset="utf-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+   <link rel="stylesheet" href="chrome://resources/cr_elements/cr_shared_vars.css">
+--- a/chrome/browser/resources/indigo/text_overlay.css
++++ b/chrome/browser/resources/indigo/text_overlay.css
+@@ -25,7 +25,7 @@
+ 
+   align-items: flex-start;
+   display: flex;
+-  font-family: 'Google Sans', 'Roboto', sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-size: 16px;
+   height: 100%;
+   width: 100%;
+--- a/chrome/browser/resources/infobar_internals/app.css
++++ b/chrome/browser/resources/infobar_internals/app.css
+@@ -15,7 +15,7 @@
+ }
+ 
+ body {
+-  font-family: Arial, sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   margin: 20px;
+   background-color: #f4f4f9;
+ }
+--- a/chrome/browser/resources/infobar_internals/infobar_internals.css
++++ b/chrome/browser/resources/infobar_internals/infobar_internals.css
+@@ -3,7 +3,7 @@
+  * found in the LICENSE file. */
+ 
+ body {
+-  font-family: Arial, sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   margin: 20px;
+   background-color: #f4f4f9;
+ }
+--- a/chrome/browser/resources/lens/overlay/side_panel/side_panel_error_page.css
++++ b/chrome/browser/resources/lens/overlay/side_panel/side_panel_error_page.css
+@@ -14,7 +14,7 @@
+ 
+ #errorBottomLine {
+   color: #70757A;
+-  font-family: Roboto, Arial, sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-size: 14px;
+   font-style: normal;
+   font-weight: 400;
+@@ -46,7 +46,7 @@
+ 
+ #errorTopLine {
+   color: #202124;
+-  font-family: Roboto, Arial, sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-size: 16px;
+   font-style: normal;
+   font-weight: 400;
+--- a/chrome/browser/resources/lens/shared/searchbox_shared_style.css
++++ b/chrome/browser/resources/lens/shared/searchbox_shared_style.css
+@@ -9,7 +9,7 @@
+ 
+  #searchboxContainer {
+   display: flex;
+-  font-family: Roboto, Arial, sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   line-height: 20px;
+   z-index: 3;  /* Searchbox should render in front of the results iframe. */
+   /* TODO(jdonnelly): Specify these in a color mixer and consider moving this
+--- a/chrome/browser/resources/personal_context_notice/personal_context_notice.css
++++ b/chrome/browser/resources/personal_context_notice/personal_context_notice.css
+@@ -14,7 +14,7 @@
+   box-sizing: border-box;
+   align-items: center;
+   text-align: center;
+-  font-family: 'Google Sans Text', Roboto, Arial, sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   color: var(--cr-primary-text-color);
+ }
+ 
+@@ -81,7 +81,7 @@
+   line-height: 32px;
+   text-align: center;
+   align-self: center;
+-  font-family: 'Google Sans', Roboto, Arial, sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   color: var(--cr-primary-text-color);
+ }
+ 
+--- a/chrome/browser/resources/private_ai_internals/private_ai_internals.css
++++ b/chrome/browser/resources/private_ai_internals/private_ai_internals.css
+@@ -3,7 +3,7 @@
+  * found in the LICENSE file. */
+ 
+ body {
+-  font-family: sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   margin: 20px;
+ }
+ 
+--- a/chrome/browser/resources/private_ai_internals/private_ai_internals.html
++++ b/chrome/browser/resources/private_ai_internals/private_ai_internals.html
+@@ -7,6 +7,7 @@
+ <!doctype html>
+ <html lang="en">
+   <head>
++  <link rel="stylesheet" href="chrome://resources/css/ember_typography.css">
+     <meta charset="utf-8">
+     <title>Private AI internals</title>
+     <link rel="stylesheet" href="private_ai_internals.css">
+--- a/chrome/browser/resources/search_engine_choice/app.css
++++ b/chrome/browser/resources/search_engine_choice/app.css
+@@ -117,7 +117,7 @@
+   align-items: center;
+   display: flex;
+   flex-direction: row;
+-  font-family: Roboto, Arial;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-size: 0.8125rem;
+   font-weight: 400;
+   line-height: 20px;
+@@ -190,7 +190,7 @@
+ }
+ 
+ cr-dialog p {
+-  font-family: Roboto, Arial;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-size: 0.875rem;
+   font-weight: 400;
+   line-height: 20px;
+--- a/chrome/browser/resources/search_engine_choice/app_refresh.css
++++ b/chrome/browser/resources/search_engine_choice/app_refresh.css
+@@ -168,7 +168,7 @@
+   align-items: center;
+   display: flex;
+   flex-direction: row;
+-  font-family: Roboto, Arial;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-size: 0.8125rem;
+   font-weight: 400;
+   line-height: 20px;
+--- a/chrome/browser/resources/signin/cross_device_signin_qr_bubble/cross_device_signin_qr_bubble_app.css
++++ b/chrome/browser/resources/signin/cross_device_signin_qr_bubble/cross_device_signin_qr_bubble_app.css
+@@ -11,7 +11,7 @@
+   align-items: center;
+   color: var(--cr-primary-text-color);
+   display: flex;
+-  font-family: Roboto, sans-serif;
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   font-size: 13px;
+   justify-content: center;
+   width: 100%;
+--- a/chrome/browser/resources/whats_new/whats_new_app.css
++++ b/chrome/browser/resources/whats_new/whats_new_app.css
+@@ -18,7 +18,7 @@
+   border: 2px solid black;
+   border-radius: 5px;
+   bottom: 8px;
+-  font-family: 'Google Sans';
++  font-family: var(--ember-font-family, Inter, sans-serif);
+   opacity: 0.3;
+   padding: 2px 4px;
+   position: absolute;
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -3966,6 +3966,8 @@
+       "views/ember/ember_glass_material.h",
+       "views/ember/ember_glass_overlay_controller.cc",
+       "views/ember/ember_glass_overlay_controller.h",
++      "views/ember/ember_glass_transition.cc",
++      "views/ember/ember_glass_transition.h",
+       "views/ember/ember_glass_view.cc",
+       "views/ember/ember_glass_view.h",
+       "views/frame/browser_root_view.cc",
+--- a/chrome/browser/ui/views/BUILD.gn
++++ b/chrome/browser/ui/views/BUILD.gn
+@@ -61,6 +61,7 @@
+ source_set("layout_provider") {
+   sources = [
+     "chrome_layout_provider.h",
++    "ember/ember_typography.h",
+     "chrome_typography.h",
+     "chrome_typography_provider.h",
+   ]
+--- a/chrome/browser/ui/views/chrome_typography_provider.cc
++++ b/chrome/browser/ui/views/chrome_typography_provider.cc
+@@ -7,6 +7,7 @@
+ #include "build/build_config.h"
+ #include "chrome/browser/ui/color/chrome_color_id.h"
+ #include "chrome/browser/ui/views/chrome_typography.h"
++#include "chrome/browser/ui/views/ember/ember_typography.h"
+ #include "ui/base/default_style.h"
+ #include "ui/base/resource/resource_bundle.h"
+ #include "ui/base/theme_provider.h"
+@@ -58,7 +59,13 @@
+     int style) const {
+   if (style > views::style::STYLE_OVERRIDE_TYPOGRAPHY_START &&
+       style < views::style::STYLE_OVERRIDE_TYPOGRAPHY_END) {
+-    return TypographyProvider::GetFontDetailsImpl(context, style);
++    auto details = TypographyProvider::GetFontDetailsImpl(context, style);
++    details.typeface = ember::kUiFontFamily;
++    if (context == views::style::CONTEXT_MENU) {
++      details.size_delta = gfx::PlatformFont::GetFontSizeDelta(15);
++      details.weight = gfx::Font::Weight::MEDIUM;
++    }
++    return details;
+   }
+ 
+   // "Target" font size constants.
+@@ -70,6 +77,7 @@
+   constexpr int kBadgeSize = 9;
+ 
+   ui::ResourceBundle::FontDetails details;
++  details.typeface = ember::kUiFontFamily;
+ 
+   details.size_delta = gfx::PlatformFont::GetFontSizeDelta(kDefaultSize);
+ 
+@@ -80,6 +88,10 @@
+   ApplyCommonFontStyles(context, style, details);
+ 
+   switch (context) {
++    case views::style::CONTEXT_MENU:
++      details.size_delta = gfx::PlatformFont::GetFontSizeDelta(15);
++      details.weight = gfx::Font::Weight::MEDIUM;
++      break;
+     case views::style::CONTEXT_BADGE:
+       details.size_delta = gfx::PlatformFont::GetFontSizeDelta(kBadgeSize);
+       details.weight = gfx::Font::Weight::BOLD;
+--- a/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
+@@ -5,6 +5,7 @@
+ #include "chrome/browser/ui/views/ember/ember_glass_overlay_controller.h"
+ 
+ #include <algorithm>
++#include "ui/views/view_targeter.h"
+ #include <cmath>
+ #include <utility>
+ 
+@@ -16,6 +17,7 @@
+ #include "cc/paint/paint_canvas.h"
+ #include "cc/paint/paint_flags.h"
+ #include "chrome/browser/ui/views/ember/ember_glass_view.h"
++#include "chrome/browser/ui/views/ember/ember_typography.h"
+ #include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/tabs/tab_data.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+@@ -68,9 +70,7 @@
+ constexpr int kSwitcherCardGap = 12;
+ constexpr int kSwitcherInset = 12;
+ constexpr int kSwitcherMaxViewportWidth = 1080;
+-constexpr base::TimeDelta kSwitcherOpenDuration = base::Milliseconds(160);
+ constexpr base::TimeDelta kSwitcherSlideDuration = base::Milliseconds(190);
+-constexpr base::TimeDelta kSwitcherCloseDuration = base::Milliseconds(145);
+ 
+ float EaseOut(float value) {
+   const float inverse = 1.0f - value;
+@@ -109,10 +109,12 @@
+         reserve_icon_column_(reserve_icon_column),
+         has_submenu_(has_submenu) {
+     SetHorizontalAlignment(gfx::ALIGN_LEFT);
++    this->label()->SetFontList(FontForStyle(TextStyle::kMenu));
+     SetImageLabelSpacing(8);
+     accelerator_label_ = AddChildView(
+         std::make_unique<views::Label>(accelerator));
+     accelerator_label_->SetHorizontalAlignment(gfx::ALIGN_RIGHT);
++    accelerator_label_->SetFontList(FontForStyle(TextStyle::kSecondary));
+     if (has_submenu_) {
+       submenu_label_ = AddChildView(std::make_unique<views::Label>(u"›"));
+       submenu_label_->SetHorizontalAlignment(gfx::ALIGN_RIGHT);
+@@ -133,7 +135,7 @@
+ 
+   bool OnKeyPressed(const ui::KeyEvent& event) override {
+     EmberGlassOverlayController* controller =
+-        static_cast<EmberGlassOverlayController*>(parent()->parent());
++        static_cast<EmberGlassOverlayController*>(parent()->parent()->parent());
+     return controller ? controller->OnKeyPressed(event)
+                       : views::LabelButton::OnKeyPressed(event);
+   }
+@@ -248,8 +250,7 @@
+         AddChildView(std::make_unique<views::Label>(title_));
+     title_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+     title_label_->SetElideBehavior(gfx::ELIDE_TAIL);
+-    title_label_->SetFontList(
+-        title_label_->font_list().DeriveWithSizeDelta(-1));
++    title_label_->SetFontList(FontForStyle(TextStyle::kTab));
+ 
+     SetFocusBehavior(FocusBehavior::ALWAYS);
+     views::FocusRing::Get(this)->SetHasFocusPredicate(
+@@ -357,6 +358,8 @@
+     if (!controller_->IsShowingContextMenu()) {
+       return;
+     }
++    canvas->Save();
++    ClipToShell(canvas);
+     const gfx::Rect panel = GetPanelBounds();
+     const float row_y = controller_->MenuHighlightY();
+     cc::PaintFlags fill;
+@@ -373,6 +376,7 @@
+     rim.setColor(InteractionRim(false));
+     canvas->sk_canvas()->drawRoundRect(highlight.makeInset(0.5f, 0.5f),
+                                         6.5f, 6.5f, rim);
++    canvas->Restore();
+   }
+ 
+  private:
+@@ -392,6 +396,8 @@
+     if (!controller_->IsShowingCtrlTab()) {
+       return;
+     }
++    canvas->Save();
++    ClipToShell(canvas);
+     const gfx::Rect panel = GetPanelBounds();
+     const SkRect selection = SkRect::MakeXYWH(
+         controller_->CtrlTabHighlightX(), panel.y() + kSwitcherInset,
+@@ -407,6 +413,7 @@
+     rim.setColor(InteractionRim(true));
+     canvas->sk_canvas()->drawRoundRect(selection.makeInset(0.5f, 0.5f),
+                                         11.5f, 11.5f, rim);
++    canvas->Restore();
+   }
+ 
+   void OnMouseMoved(const ui::MouseEvent& event) override {
+@@ -427,8 +434,8 @@
+     BrowserView* browser_view)
+     : browser_view_(browser_view),
+       hover_animation_(base::Milliseconds(160), 60, this),
+-      switcher_animation_(kSwitcherSlideDuration, 60, this),
+-      switcher_visibility_animation_(kSwitcherOpenDuration, 60, this) {
++      switcher_animation_(kSwitcherSlideDuration, 60, this) {
++  SetEventTargeter(std::make_unique<views::ViewTargeter>(this));
+   SetVisible(false);
+   SetPaintToLayer();
+   layer()->SetFillsBoundsOpaquely(false);
+@@ -455,7 +462,7 @@
+     const gfx::Point& page_point,
+     base::OnceClosure menu_closed_callback) {
+   CloseCtrlTab(false);
+-  CloseContextMenu(false);
++  CloseContextMenu(false, !menu_closing_);
+   if (!model || model->GetItemCount() == 0) {
+     return;
+   }
+@@ -469,6 +476,7 @@
+   menu_panel_->SetBoundsRect(panel_with_shadow);
+   menu_panel_->SetVisible(true);
+   SetVisible(true);
++  menu_panel_->OpenFrom(page_point - panel_with_shadow.OffsetFromOrigin());
+   backdrop_snapshot_.reset();
+   ++backdrop_generation_;
+   CaptureBackdrop(backdrop_generation_);
+@@ -480,12 +488,12 @@
+ void EmberGlassOverlayController::CancelContextMenu(
+     const ui::MenuModel* model) {
+   if (!menu_stack_.empty() && menu_stack_.front().get() == model) {
+-    CloseContextMenu(true);
++    BeginContextMenuClose(true);
+   }
+ }
+ 
+ bool EmberGlassOverlayController::IsShowingContextMenu() const {
+-  return GetVisible() && menu_panel_->GetVisible() && !menu_stack_.empty();
++  return GetVisible() && menu_panel_->GetVisible() && !menu_stack_.empty() && !menu_closing_;
+ }
+ 
+ void EmberGlassOverlayController::ShowCtrlTab(
+@@ -493,7 +501,7 @@
+     const std::vector<raw_ptr<tabs::TabInterface>>& mru_tabs,
+     bool reverse) {
+   CloseContextMenu(false);
+-  CloseCtrlTab(false);
++  CloseCtrlTab(false, !ctrl_tab_closing_);
+   ctrl_tab_model_ = tab_strip_model;
+   for (tabs::TabInterface* tab : mru_tabs) {
+     if (tab_strip_model->GetIndexOfTab(tab) != TabStripModel::kNoTab) {
+@@ -521,12 +529,7 @@
+   CaptureBackdrop(backdrop_generation_);
+   ctrl_tab_closing_ = false;
+   restore_page_focus_after_close_ = false;
+-  if (gfx::Animation::PrefersReducedMotion()) {
+-    ApplyCtrlTabVisibility(1.0f);
+-  } else {
+-    switcher_visibility_animation_.SetDuration(kSwitcherOpenDuration);
+-    switcher_visibility_animation_.Start();
+-  }
++  switcher_panel_->OpenFrom(switcher_panel_->GetPanelBounds().CenterPoint());
+ }
+ 
+ void EmberGlassOverlayController::AdvanceCtrlTab(bool reverse) {
+@@ -569,18 +572,18 @@
+ }
+ 
+ bool EmberGlassOverlayController::IsShowingCtrlTab() const {
+-  return GetVisible() && switcher_panel_->GetVisible() && ctrl_tab_model_;
++  return GetVisible() && switcher_panel_->GetVisible() && ctrl_tab_model_ && !ctrl_tab_closing_;
+ }
+ 
+ bool EmberGlassOverlayController::OnMousePressed(
+     const ui::MouseEvent& event) {
+   if (IsShowingContextMenu() && !menu_panel_rect_.Contains(event.location())) {
+-    CloseContextMenu(true);
++    BeginContextMenuClose(true);
+     return true;
+   }
+   if (IsShowingCtrlTab() &&
+       !switcher_panel_rect_.Contains(event.location())) {
+-    CloseCtrlTab(true);
++    BeginCtrlTabClose(true);
+     return true;
+   }
+   return views::View::OnMousePressed(event);
+@@ -592,12 +595,13 @@
+   }
+   if (visible_model_indices_.empty()) {
+     return event.key_code() == ui::VKEY_ESCAPE
+-               ? (CloseContextMenu(true), true)
++               ? (BeginContextMenuClose(true), true)
+                : false;
+   }
+   switch (event.key_code()) {
+     case ui::VKEY_ESCAPE:
+-      CloseContextMenu(true);
++      if (parent_menu_) { parent_menu_->CloseSubmenu(); return true; }
++      BeginContextMenuClose(true);
+       return true;
+     case ui::VKEY_UP:
+       MoveSelection(-1);
+@@ -609,7 +613,8 @@
+       OpenSubmenu(visible_model_indices_[selected_visible_index_]);
+       return true;
+     case ui::VKEY_LEFT:
+-      CloseSubmenu();
++      if (parent_menu_) parent_menu_->CloseSubmenu();
++      else CloseSubmenu();
+       return true;
+     case ui::VKEY_RETURN:
+     case ui::VKEY_SPACE:
+@@ -622,12 +627,15 @@
+ }
+ 
+ void EmberGlassOverlayController::Layout(PassKey) {
++  if (submenu_) submenu_->SetBoundsRect(GetLocalBounds());
+   if (!menu_panel_rect_.IsEmpty()) {
++    menu_panel_rect_ = ClampToOverlayBounds(menu_panel_rect_.origin(), menu_panel_rect_.size());
+     gfx::Rect bounds = menu_panel_rect_;
+     bounds.Inset(-EmberGlassView::kShadowMargin);
+     menu_panel_->SetBoundsRect(bounds);
+   }
+   if (!switcher_panel_rect_.IsEmpty()) {
++    switcher_panel_rect_ = ClampToOverlayBounds(switcher_panel_rect_.origin(), switcher_panel_rect_.size());
+     gfx::Rect bounds = switcher_panel_rect_;
+     bounds.Inset(-EmberGlassView::kShadowMargin);
+     switcher_panel_->SetBoundsRect(bounds);
+@@ -641,10 +649,7 @@
+   } else if (animation == &switcher_animation_) {
+     ApplyCtrlTabStripOffset(CurrentCtrlTabStripOffset());
+     switcher_panel_->SchedulePaint();
+-  } else if (animation == &switcher_visibility_animation_) {
+-    const float raw = static_cast<float>(animation->GetCurrentValue());
+-    ApplyCtrlTabVisibility(ctrl_tab_closing_ ? 1.0f - EaseInOut(raw)
+-                                             : EaseOut(raw));
++
+   }
+ }
+ 
+@@ -652,13 +657,7 @@
+     const gfx::Animation* animation) {
+   if (animation == &switcher_animation_) {
+     ApplyCtrlTabStripOffset(switcher_strip_to_x_);
+-  } else if (animation == &switcher_visibility_animation_) {
+-    if (ctrl_tab_closing_) {
+-      const bool restore_focus = restore_page_focus_after_close_;
+-      CloseCtrlTab(restore_focus);
+-    } else {
+-      ApplyCtrlTabVisibility(1.0f);
+-    }
++
+   }
+ }
+ 
+@@ -677,7 +676,7 @@
+ }
+ 
+ void EmberGlassOverlayController::RebuildMenu(ui::MenuModel* model) {
+-  menu_panel_->RemoveAllChildViews();
++  menu_panel_->contents()->RemoveAllChildViews();
+   menu_rows_.clear();
+   visible_model_indices_.clear();
+   std::vector<raw_ptr<views::Separator>> separators;
+@@ -702,7 +701,7 @@
+     if (type == ui::MenuModel::TYPE_SEPARATOR) {
+       auto separator = std::make_unique<views::Separator>();
+       views::Separator* separator_ptr = separator.get();
+-      menu_panel_->AddChildView(std::move(separator));
++      menu_panel_->contents()->AddChildView(std::move(separator));
+       separators.push_back(separator_ptr);
+       separator_ptr->SetBounds(EmberGlassView::kShadowMargin + 10, y + 3,
+                                1, 1);
+@@ -744,7 +743,7 @@
+     row->SetBounds(EmberGlassView::kShadowMargin + kMenuInset, y, 1,
+                    kMenuRowHeight);
+     views::View* row_ptr = row.get();
+-    menu_panel_->AddChildView(
++    menu_panel_->contents()->AddChildView(
+         std::unique_ptr<views::View>(std::move(row)));
+     menu_rows_.push_back(row_ptr);
+     visible_model_indices_.push_back(index);
+@@ -787,7 +786,9 @@
+     return;
+   }
+   model->ActivatedAt(model_index, event_flags);
+-  CloseContextMenu(true);
++  EmberGlassOverlayController* root = this;
++  while (root->parent_menu_) root = root->parent_menu_;
++  root->BeginContextMenuClose(true);
+ }
+ 
+ void EmberGlassOverlayController::HoverMenuItem(size_t model_index,
+@@ -797,6 +798,7 @@
+   if (found == visible_model_indices_.end()) {
+     return;
+   }
++  if (submenu_ && submenu_->GetVisible() && submenu_index_ != model_index) CloseSubmenu();
+   selected_visible_index_ = found - visible_model_indices_.begin();
+   highlight_from_y_ = MenuHighlightY();
+   highlight_to_y_ = target_y;
+@@ -805,58 +807,58 @@
+ }
+ 
+ void EmberGlassOverlayController::OpenSubmenu(size_t model_index) {
+-  ui::MenuModel* model =
+-      menu_stack_.empty() ? nullptr : menu_stack_.back().get();
+-  ui::MenuModel* submenu =
+-      model ? model->GetSubmenuModelAt(model_index) : nullptr;
+-  if (!submenu) {
+-    return;
+-  }
+-  submenu->MenuWillShow();
+-  menu_stack_.push_back(submenu->AsWeakPtr());
+-  RebuildMenu(submenu);
+-  menu_panel_rect_ =
+-      ClampToOverlayBounds(menu_panel_rect_.origin(), menu_panel_rect_.size());
+-  gfx::Rect bounds = menu_panel_rect_;
+-  bounds.Inset(-EmberGlassView::kShadowMargin);
+-  menu_panel_->SetBoundsRect(bounds);
+-  if (!backdrop_snapshot_.empty()) {
+-    if (const EmberGlassPanel* panel = material_.RenderPanel(
+-            backdrop_snapshot_, menu_panel_rect_, backdrop_generation_,
+-            EmberGlassPreset::kMenu)) {
+-      menu_panel_->SetPanel(*panel);
+-      UpdateMenuColors();
+-    }
+-  }
+-  if (!menu_rows_.empty()) {
+-    menu_rows_[selected_visible_index_]->RequestFocus();
++  ui::MenuModel* model = menu_stack_.empty() ? nullptr : menu_stack_.back().get();
++  ui::MenuModel* child = model ? model->GetSubmenuModelAt(model_index) : nullptr;
++  if (!child || menu_closing_) return;
++  if (submenu_ && submenu_->IsShowingContextMenu() && submenu_index_ == model_index) return;
++  if (!submenu_) {
++    std::unique_ptr<views::View> submenu =
++        std::make_unique<EmberGlassOverlayController>(browser_view_);
++    submenu_ = static_cast<EmberGlassOverlayController*>(
++        AddChildView(std::move(submenu)));
++    submenu_->parent_menu_ = this;
++  }
++  submenu_->SetBoundsRect(GetLocalBounds());
++  submenu_index_ = model_index;
++  int y = menu_panel_rect_.y();
++  const auto row = std::find(visible_model_indices_.begin(), visible_model_indices_.end(), model_index);
++  if (row != visible_model_indices_.end())
++    y = menu_panel_->y() + menu_rows_[row - visible_model_indices_.begin()]->y();
++  // Each child owns a stable panel/model. The parent never rebuilds or animates.
++  submenu_->ShowMenu(child, gfx::Point(menu_panel_rect_.right(), y));
++  if (submenu_->menu_panel_rect_.x() < menu_panel_rect_.right()) {
++    submenu_->menu_panel_rect_ = ClampToOverlayBounds(
++        gfx::Point(menu_panel_rect_.x() - submenu_->menu_panel_rect_.width(), y),
++        submenu_->menu_panel_rect_.size());
++    gfx::Rect bounds = submenu_->menu_panel_rect_;
++    bounds.Inset(-EmberGlassView::kShadowMargin);
++    submenu_->menu_panel_->SetBoundsRect(bounds);
++    submenu_->menu_panel_->ResetTransition();
++    submenu_->menu_panel_->OpenFrom(gfx::Point(menu_panel_rect_.x(), y) - bounds.OffsetFromOrigin());
+   }
+ }
+ 
+ void EmberGlassOverlayController::CloseSubmenu() {
+-  if (menu_stack_.size() <= 1) {
+-    return;
+-  }
+-  if (ui::MenuModel* model = menu_stack_.back().get()) {
+-    model->MenuWillClose();
+-  }
+-  menu_stack_.pop_back();
+-  if (ui::MenuModel* parent = menu_stack_.back().get()) {
+-    RebuildMenu(parent);
+-    menu_panel_rect_ = ClampToOverlayBounds(menu_panel_rect_.origin(),
+-                                            menu_panel_rect_.size());
+-    gfx::Rect bounds = menu_panel_rect_;
+-    bounds.Inset(-EmberGlassView::kShadowMargin);
+-    menu_panel_->SetBoundsRect(bounds);
+-    if (!backdrop_snapshot_.empty()) {
+-      if (const EmberGlassPanel* panel = material_.RenderPanel(
+-              backdrop_snapshot_, menu_panel_rect_, backdrop_generation_,
+-              EmberGlassPreset::kMenu)) {
+-        menu_panel_->SetPanel(*panel);
+-        UpdateMenuColors();
+-      }
+-    }
+-  }
++  if (submenu_ && submenu_->GetVisible()) submenu_->BeginContextMenuClose(false);
++  if (!menu_rows_.empty()) menu_rows_[selected_visible_index_]->RequestFocus();
++}
++
++bool EmberGlassOverlayController::DoesIntersectRect(
++    const views::View* target, const gfx::Rect& rect) const {
++  if (!parent_menu_) return views::ViewTargeterDelegate::DoesIntersectRect(target, rect);
++  return (!menu_closing_ && menu_panel_rect_.Intersects(rect)) ||
++         (submenu_ && submenu_->GetVisible() && submenu_->DoesIntersectRect(submenu_, rect));
++}
++
++void EmberGlassOverlayController::BeginContextMenuClose(bool restore_page_focus) {
++  if (menu_closing_ || !menu_panel_->GetVisible()) return;
++  menu_closing_ = true;
++  if (submenu_) submenu_->BeginContextMenuClose(false);
++  if (restore_page_focus && browser_view_->GetActiveWebContents())
++    browser_view_->GetActiveWebContents()->Focus();
++  menu_panel_->CloseAnimated(base::BindOnce(
++      &EmberGlassOverlayController::CloseContextMenu,
++      weak_ptr_factory_.GetWeakPtr(), false, true));
+ }
+ 
+ void EmberGlassOverlayController::MoveSelection(int delta) {
+@@ -877,7 +879,10 @@
+ }
+ 
+ void EmberGlassOverlayController::CloseContextMenu(
+-    bool restore_page_focus) {
++    bool restore_page_focus, bool reset_transition) {
++  if (reset_transition) menu_panel_->ResetTransition();
++  menu_closing_ = false;
++  if (submenu_) submenu_->CloseContextMenu(false);
+   hover_animation_.Stop();
+   for (auto model = menu_stack_.rbegin(); model != menu_stack_.rend(); ++model) {
+     if (model->get()) {
+@@ -887,7 +892,7 @@
+   menu_stack_.clear();
+   visible_model_indices_.clear();
+   menu_rows_.clear();
+-  menu_panel_->RemoveAllChildViews();
++  menu_panel_->contents()->RemoveAllChildViews();
+   menu_panel_->SetVisible(false);
+   SetVisible(false);
+   backdrop_snapshot_.reset();
+@@ -973,7 +978,7 @@
+ }
+ 
+ void EmberGlassOverlayController::RebuildCtrlTabCards() {
+-  switcher_panel_->RemoveAllChildViews();
++  switcher_panel_->contents()->RemoveAllChildViews();
+   ctrl_tab_cards_.clear();
+   const int card_stride = kSwitcherCardWidth + kSwitcherCardGap;
+   const int strip_width =
+@@ -999,7 +1004,7 @@
+                                 viewport_width, kSwitcherCardHeight);
+   switcher_viewport_->layer()->SetClipRect(
+       switcher_viewport_->GetLocalBounds());
+-  switcher_panel_->AddChildView(std::move(viewport));
++  switcher_panel_->contents()->AddChildView(std::move(viewport));
+ 
+   auto strip = std::make_unique<views::View>();
+   switcher_strip_ = strip.get();
+@@ -1103,29 +1108,11 @@
+   }
+   ctrl_tab_closing_ = true;
+   restore_page_focus_after_close_ = restore_page_focus;
+-  switcher_visibility_animation_.Stop();
+-  if (gfx::Animation::PrefersReducedMotion()) {
+-    CloseCtrlTab(restore_page_focus);
+-    return;
+-  }
+-  switcher_visibility_animation_.SetDuration(kSwitcherCloseDuration);
+-  switcher_visibility_animation_.Start();
+-}
+-
+-void EmberGlassOverlayController::ApplyCtrlTabVisibility(float progress) {
+-  if (!switcher_panel_ || !switcher_panel_->layer()) {
+-    return;
+-  }
+-  const float clamped = std::clamp(progress, 0.0f, 1.0f);
+-  switcher_panel_->layer()->SetOpacity(clamped);
+-  const float scale = 0.985f + clamped * 0.015f;
+-  const float center_x = switcher_panel_->width() / 2.0f;
+-  const float center_y = switcher_panel_->height() / 2.0f;
+-  gfx::Transform transform;
+-  transform.Translate(center_x, center_y + (1.0f - clamped) * 6.0f);
+-  transform.Scale(scale);
+-  transform.Translate(-center_x, -center_y);
+-  switcher_panel_->layer()->SetTransform(transform);
++  if (restore_page_focus && browser_view_->GetActiveWebContents())
++    browser_view_->GetActiveWebContents()->Focus();
++  switcher_panel_->CloseAnimated(base::BindOnce(
++      &EmberGlassOverlayController::CloseCtrlTab,
++      weak_ptr_factory_.GetWeakPtr(), false, true));
+ }
+ 
+ void EmberGlassOverlayController::SelectCtrlTabCard(size_t entry_index) {
+@@ -1174,17 +1161,17 @@
+   }
+ }
+ 
+-void EmberGlassOverlayController::CloseCtrlTab(bool restore_page_focus) {
++void EmberGlassOverlayController::CloseCtrlTab(bool restore_page_focus, bool reset_transition) {
+   switcher_animation_.Stop();
+   ctrl_tab_closing_ = false;
+   restore_page_focus_after_close_ = false;
+-  switcher_visibility_animation_.Stop();
++  if (reset_transition) switcher_panel_->ResetTransition();
+   ctrl_tab_cards_.clear();
+   ctrl_tab_entries_.clear();
+   ctrl_tab_model_ = nullptr;
+   switcher_viewport_ = nullptr;
+   switcher_strip_ = nullptr;
+-  switcher_panel_->RemoveAllChildViews();
++  switcher_panel_->contents()->RemoveAllChildViews();
+   switcher_panel_->SetVisible(false);
+   SetVisible(false);
+   backdrop_snapshot_.reset();
+--- a/chrome/browser/ui/views/ember/ember_glass_overlay_controller.h
++++ b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.h
+@@ -19,6 +19,7 @@
+ #include "ui/gfx/geometry/point.h"
+ #include "ui/gfx/geometry/rect.h"
+ #include "ui/views/view.h"
++#include "ui/views/view_targeter_delegate.h"
+ 
+ class BrowserView;
+ class TabStripModel;
+@@ -46,7 +47,8 @@
+ // Context-menu capture is one-shot per opening; pointer movement only advances
+ // the cheap highlight animation over the cached glass panel.
+ class EmberGlassOverlayController : public views::View,
+-                                    public gfx::AnimationDelegate {
++                                    public gfx::AnimationDelegate,
++                                    public views::ViewTargeterDelegate {
+  public:
+   explicit EmberGlassOverlayController(BrowserView* browser_view);
+   EmberGlassOverlayController(const EmberGlassOverlayController&) = delete;
+@@ -73,6 +75,7 @@
+   bool OnMousePressed(const ui::MouseEvent& event) override;
+   bool OnKeyPressed(const ui::KeyEvent& event) override;
+   void Layout(PassKey) override;
++  bool DoesIntersectRect(const views::View* target, const gfx::Rect& rect) const override;
+ 
+   // gfx::AnimationDelegate:
+   void AnimationProgressed(const gfx::Animation* animation) override;
+@@ -90,7 +93,8 @@
+   void OpenSubmenu(size_t model_index);
+   void CloseSubmenu();
+   void MoveSelection(int delta);
+-  void CloseContextMenu(bool restore_page_focus);
++  void BeginContextMenuClose(bool restore_page_focus);
++  void CloseContextMenu(bool restore_page_focus, bool reset_transition = true);
+   void CaptureBackdrop(uint64_t generation);
+   void OnBackdropCaptured(uint64_t generation, SkBitmap bitmap);
+   void UpdateMenuColors();
+@@ -101,11 +105,10 @@
+   float TargetCtrlTabStripOffset() const;
+   void ApplyCtrlTabStripOffset(float offset);
+   void BeginCtrlTabClose(bool restore_page_focus);
+-  void ApplyCtrlTabVisibility(float progress);
+   void HoverCtrlTabAtPoint(const gfx::Point& panel_point);
+   void ActivateCtrlTabAtPoint(const gfx::Point& panel_point);
+   void SelectCtrlTabCard(size_t entry_index);
+-  void CloseCtrlTab(bool restore_page_focus);
++  void CloseCtrlTab(bool restore_page_focus, bool reset_transition = true);
+   float CtrlTabHighlightX() const;
+ 
+   raw_ptr<BrowserView> browser_view_;
+@@ -136,7 +139,10 @@
+   bool ctrl_tab_closing_ = false;
+   bool restore_page_focus_after_close_ = false;
+   gfx::LinearAnimation switcher_animation_;
+-  gfx::LinearAnimation switcher_visibility_animation_;
++  bool menu_closing_ = false;
++  raw_ptr<EmberGlassOverlayController> parent_menu_ = nullptr;
++  raw_ptr<EmberGlassOverlayController> submenu_ = nullptr;
++  size_t submenu_index_ = 0;
+   base::WeakPtrFactory<EmberGlassOverlayController> weak_ptr_factory_{this};
+ };
+ 
+--- a/chrome/browser/ui/views/ember/ember_glass_transition.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_transition.cc
+@@ -0,0 +1,103 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++#include "chrome/browser/ui/views/ember/ember_glass_transition.h"
++#include <algorithm>
++#include <cmath>
++#include <numbers>
++#include <utility>
++#include "base/time/time.h"
++#include "ui/gfx/animation/animation.h"
++
++namespace ember {
++EmberGlassTransition::EmberGlassTransition(Update update)
++    : update_(std::move(update)), clock_(base::Milliseconds(340), 120, this) {}
++EmberGlassTransition::~EmberGlassTransition() = default;
++void EmberGlassTransition::Reset() {
++  clock_.Stop();
++  finished_.Reset();
++  initialized_ = false;
++  closing_ = false;
++  axes_ = {};
++}
++void EmberGlassTransition::Open(const gfx::RectF& bounds,
++                               const gfx::PointF& origin, float radius) {
++  if (bounds.IsEmpty()) return;
++  // Sample before reversing so both position and velocity are continuous.
++  if (clock_.is_animating())
++    Sample(clock_.GetCurrentValue() * (closing_ ? .190 : .340));
++  clock_.Stop();
++  finished_.Reset();
++  bounds_ = bounds;
++  anchor_ = gfx::PointF(std::clamp((origin.x() - bounds.x()) / bounds.width(), 0.f, 1.f),
++                        std::clamp((origin.y() - bounds.y()) / bounds.height(), 0.f, 1.f));
++  final_radius_ = radius;
++  if (!initialized_) {
++    axes_ = {};
++    frame_.opacity = 0.f;
++  }
++  initialized_ = true;
++  Start(false);
++}
++void EmberGlassTransition::Close(base::OnceClosure finished) {
++  if (closing_) return;
++  if (clock_.is_animating()) Sample(clock_.GetCurrentValue() * .340);
++  clock_.Stop();
++  finished_ = std::move(finished);
++  Start(true);
++}
++void EmberGlassTransition::Start(bool closing) {
++  closing_ = closing;
++  initial_ = axes_;
++  opacity_from_ = frame_.opacity;
++  if (gfx::Animation::PrefersReducedMotion()) {
++    AnimationEnded(&clock_);
++    return;
++  }
++  Publish();
++  clock_.SetDuration(base::Milliseconds(closing ? 190 : 340));
++  clock_.Start();
++}
++void EmberGlassTransition::Sample(double seconds) {
++  constexpr double responses[] = {.190, .220, .200};
++  constexpr double damping[] = {.84, .80, .84};
++  const double target = closing_ ? 0. : 1.;
++  for (size_t i = 0; i < axes_.size(); ++i) {
++    const double omega = 2. * std::numbers::pi / (closing_ ? .165 : responses[i]);
++    const double zeta = closing_ ? .92 : damping[i];
++    const double decay = zeta * omega;
++    const double wd = omega * std::sqrt(1. - zeta * zeta);
++    const double a = initial_[i].position - target;
++    const double b = (initial_[i].velocity + decay * a) / wd;
++    const double c = std::cos(wd * seconds), s = std::sin(wd * seconds);
++    const double e = std::exp(-decay * seconds);
++    axes_[i].position = target + e * (a * c + b * s);
++    axes_[i].velocity = e * ((b * wd - decay * a) * c -
++                             (a * wd + decay * b) * s);
++  }
++  const double t = std::clamp(seconds / (closing_ ? .125 : .085), 0., 1.);
++  const float fade = static_cast<float>(1. - std::pow(1. - t, 3.));
++  frame_.opacity = opacity_from_ + ((closing_ ? 0.f : 1.f) - opacity_from_) * fade;
++}
++void EmberGlassTransition::Publish() {
++  const float small_w = std::min(28.f, bounds_.width());
++  const float small_h = std::min(20.f, bounds_.height());
++  const float w = std::max(1.f, small_w + (bounds_.width() - small_w) * static_cast<float>(axes_[0].position));
++  const float h = std::max(1.f, small_h + (bounds_.height() - small_h) * static_cast<float>(axes_[1].position));
++  frame_.bounds = gfx::RectF(bounds_.x() + (bounds_.width() - w) * anchor_.x(),
++                            bounds_.y() + (bounds_.height() - h) * anchor_.y(), w, h);
++  frame_.radius = std::clamp(12.f + (final_radius_ - 12.f) * static_cast<float>(axes_[2].position),
++                             0.f, std::min(w, h) * .5f);
++  update_.Run(frame_);
++}
++void EmberGlassTransition::AnimationProgressed(const gfx::Animation*) {
++  Sample(clock_.GetCurrentValue() * (closing_ ? .190 : .340));
++  Publish();
++}
++void EmberGlassTransition::AnimationEnded(const gfx::Animation*) {
++  for (auto& axis : axes_) axis = {closing_ ? 0. : 1., 0.};
++  frame_.opacity = closing_ ? 0.f : 1.f;
++  Publish();
++  if (finished_) std::move(finished_).Run();
++}
++}  // namespace ember
+--- a/chrome/browser/ui/views/ember/ember_glass_transition.h
++++ b/chrome/browser/ui/views/ember/ember_glass_transition.h
+@@ -0,0 +1,53 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++#ifndef CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_GLASS_TRANSITION_H_
++#define CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_GLASS_TRANSITION_H_
++
++#include <array>
++#include "base/functional/callback.h"
++#include "ui/gfx/animation/animation_delegate.h"
++#include "ui/gfx/animation/linear_animation.h"
++#include "ui/gfx/geometry/point_f.h"
++#include "ui/gfx/geometry/rect_f.h"
++
++namespace ember {
++// A frame clock drives analytic springs, not an eased scalar or tree transform.
++// Owners keep layout fixed and apply this geometry only to shell/reveal layers.
++class EmberGlassTransition : public gfx::AnimationDelegate {
++ public:
++  struct Frame {
++    gfx::RectF bounds;
++    float radius = 12.f;
++    float opacity = 1.f;
++  };
++  using Update = base::RepeatingCallback<void(const Frame&)>;
++  explicit EmberGlassTransition(Update update);
++  ~EmberGlassTransition() override;
++  void Open(const gfx::RectF& bounds, const gfx::PointF& origin, float radius);
++  void Close(base::OnceClosure finished);
++  void Reset();
++  const Frame& frame() const { return frame_; }
++  bool closing() const { return closing_; }
++  void AnimationProgressed(const gfx::Animation*) override;
++  void AnimationEnded(const gfx::Animation*) override;
++ private:
++  struct Axis { double position = 0; double velocity = 0; };
++  void Sample(double seconds);
++  void Publish();
++  void Start(bool closing);
++  Update update_;
++  base::OnceClosure finished_;
++  gfx::LinearAnimation clock_;
++  Frame frame_;
++  gfx::RectF bounds_;
++  gfx::PointF anchor_;
++  std::array<Axis, 3> axes_{};
++  std::array<Axis, 3> initial_{};
++  float final_radius_ = 12.f;
++  float opacity_from_ = 0.f;
++  bool initialized_ = false;
++  bool closing_ = false;
++};
++}  // namespace ember
++#endif
+--- a/chrome/browser/ui/views/ember/ember_glass_view.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_view.cc
+@@ -9,6 +9,7 @@
+ #include <utility>
+ 
+ #include "base/check.h"
++#include "base/memory/weak_ptr.h"
+ #include "base/functional/bind.h"
+ #include "base/task/bind_post_task.h"
+ #include "base/time/time.h"
+@@ -24,6 +25,8 @@
+ #include "third_party/skia/include/core/SkCanvas.h"
+ #include "third_party/skia/include/core/SkImage.h"
+ #include "third_party/skia/include/core/SkPaint.h"
++#include "third_party/skia/include/core/SkPath.h"
++#include "third_party/skia/include/core/SkPathBuilder.h"
+ #include "third_party/skia/include/core/SkRRect.h"
+ #include "third_party/skia/include/core/SkSamplingOptions.h"
+ #include "ui/compositor/layer.h"
+@@ -36,37 +39,112 @@
+ #include "ui/views/border.h"
+ #include "ui/views/bubble/bubble_dialog_delegate_view.h"
+ #include "ui/views/view_tracker.h"
++#include "ui/views/widget/widget.h"
+ 
+ namespace ember {
+ namespace {
+ 
+ constexpr float kBubbleCornerRadius = 14.0f;
+ 
++class EmberGlassContentView : public views::View {
++ public:
++  void OnMouseMoved(const ui::MouseEvent& event) override {
++    parent()->OnMouseMoved(event);
++  }
++  bool OnMousePressed(const ui::MouseEvent& event) override {
++    return parent()->OnMousePressed(event);
++  }
++};
++
+ class EmberGlassBitmapBackground : public views::Background {
+  public:
+-  explicit EmberGlassBitmapBackground(SkBitmap bitmap)
+-      : bitmap_(std::move(bitmap)) {}
++  EmberGlassBitmapBackground(SkBitmap bitmap,
++      std::shared_ptr<EmberGlassTransition::Frame> frame)
++      : bitmap_(std::move(bitmap)), frame_(std::move(frame)) {}
+ 
+   void Paint(gfx::Canvas* canvas, views::View* view) const override {
+     cc::PaintCanvas* paint_canvas = canvas->sk_canvas();
+-    const SkRect bounds = gfx::RectToSkRect(view->GetLocalBounds());
++    const SkRect bounds = SkRect::MakeXYWH(
++        frame_->bounds.x(), frame_->bounds.y(), frame_->bounds.width(),
++        frame_->bounds.height());
+     paint_canvas->save();
+     paint_canvas->clipRRect(
+-        SkRRect::MakeRectXY(bounds, kBubbleCornerRadius, kBubbleCornerRadius),
++        SkRRect::MakeRectXY(bounds, frame_->radius, frame_->radius),
+         true);
+-    paint_canvas->drawImageRect(
++    if (!bitmap_.empty()) paint_canvas->drawImageRect(
+         cc::PaintImage::CreateFromBitmap(bitmap_),
+         SkRect::MakeWH(bitmap_.width(), bitmap_.height()), bounds,
+         SkSamplingOptions(SkFilterMode::kLinear), nullptr,
+         SkCanvas::kStrict_SrcRectConstraint);
++    if (bitmap_.empty()) {
++      cc::PaintFlags fill;
++      fill.setColor(SkColorSetARGB(104, 28, 31, 38));
++      paint_canvas->drawRect(bounds, fill);
++    }
+     paint_canvas->restore();
++    cc::PaintFlags rim;
++    rim.setAntiAlias(true);
++    rim.setStyle(cc::PaintFlags::kStroke_Style);
++    rim.setStrokeWidth(1.f);
++    rim.setColor(SkColorSetARGB(62, 255, 255, 255));
++    paint_canvas->drawRoundRect(bounds.makeInset(.5f, .5f),
++        std::max(0.f, frame_->radius - .5f), std::max(0.f, frame_->radius - .5f), rim);
+   }
+ 
+  private:
+   const SkBitmap bitmap_;
++  const std::shared_ptr<EmberGlassTransition::Frame> frame_;
+ };
+ 
++// Owned by the bubble root, so asynchronous close/capture never outlive it.
++class EmberGlassBubbleTransition : public views::View {
++ public:
++  EmberGlassBubbleTransition(views::View* surface, const gfx::Point& origin,
++      std::shared_ptr<EmberGlassTransition::Frame> frame)
++      : surface_(surface), frame_(std::move(frame)),
++        transition_(base::BindRepeating(&EmberGlassBubbleTransition::Apply,
++                                        base::Unretained(this))), origin_(origin) {}
++  void Start() {
++    ArmClose();
++    transition_.Open(gfx::RectF(surface_->GetLocalBounds()), gfx::PointF(origin_), kBubbleCornerRadius);
++  }
++ private:
++  void ArmClose() {
++    surface_->GetWidget()->MakeCloseSynchronous(base::BindOnce(
++        &EmberGlassBubbleTransition::Close, weak_factory_.GetWeakPtr()));
++  }
++  void Close(views::Widget::ClosedReason reason) {
++    ArmClose(); // Repeated triggers cannot bypass an in-flight close.
++    if (transition_.closing()) return;
++    surface_->SetCanProcessEventsWithinSubtree(false);
++    transition_.Close(base::BindOnce(&EmberGlassBubbleTransition::FinishClose,
++                                     weak_factory_.GetWeakPtr(), reason));
++  }
++  void FinishClose(views::Widget::ClosedReason reason) {
++    views::Widget* widget = surface_->GetWidget();
++    widget->MakeCloseSynchronous({});
++    widget->CloseWithReason(reason);
++  }
++  void Apply(const EmberGlassTransition::Frame& frame) {
++    *frame_ = frame;
++    surface_->layer()->SetOpacity(frame.opacity);
++    for (views::View* child : surface_->children()) {
++      if (child == this) continue;
++      child->SetClipPath(SkPath::RRect(SkRRect::MakeRectXY(
++          SkRect::MakeXYWH(frame.bounds.x() - child->x(), frame.bounds.y() - child->y(),
++                           frame.bounds.width(), frame.bounds.height()), frame.radius, frame.radius)));
++    }
++    surface_->SchedulePaint();
++  }
++  raw_ptr<views::View> surface_;
++  std::shared_ptr<EmberGlassTransition::Frame> frame_;
++  EmberGlassTransition transition_;
++  gfx::Point origin_;
++  base::WeakPtrFactory<EmberGlassBubbleTransition> weak_factory_{this};
++};
++
+ void OnBubbleBackdropCaptured(std::unique_ptr<views::ViewTracker> tracker,
++                              std::shared_ptr<EmberGlassTransition::Frame> frame,
+                               gfx::Rect source_rect,
+                               SkBitmap bitmap) {
+   views::View* surface = tracker->view();
+@@ -86,7 +164,7 @@
+     return;
+   }
+   surface->SetBackground(
+-      std::make_unique<EmberGlassBitmapBackground>(panel->bitmap));
++      std::make_unique<EmberGlassBitmapBackground>(panel->bitmap, std::move(frame)));
+   surface->SchedulePaint();
+ }
+ 
+@@ -109,7 +187,22 @@
+ }
+ 
+ void CaptureEmberGlassBubbleBackdrop(BrowserView* browser_view,
+-                                     views::View* surface) {
++                                     views::View* surface,
++                                     const gfx::Point& screen_origin) {
++  if (!surface || surface->size().IsEmpty()) return;
++  auto transition_frame = std::make_shared<EmberGlassTransition::Frame>();
++  transition_frame->bounds = gfx::RectF(surface->GetLocalBounds());
++  transition_frame->radius = kBubbleCornerRadius;
++  surface->SetBorder(nullptr);
++  surface->SetBackground(std::make_unique<EmberGlassBitmapBackground>(
++      SkBitmap(), transition_frame));
++  const gfx::Point origin = screen_origin - surface->GetBoundsInScreen().OffsetFromOrigin();
++  std::unique_ptr<views::View> motion_view =
++      std::make_unique<EmberGlassBubbleTransition>(surface, origin,
++                                                   transition_frame);
++  auto* motion = static_cast<EmberGlassBubbleTransition*>(
++      surface->AddChildView(std::move(motion_view)));
++  motion->Start();
+   content::WebContents* web_contents =
+       browser_view ? browser_view->GetActiveWebContents() : nullptr;
+   content::RenderFrameHost* frame =
+@@ -128,7 +221,7 @@
+       content::GetUIThreadTaskRunner({}),
+       base::BindOnce(&OnBubbleBackdropCaptured,
+                      std::make_unique<views::ViewTracker>(surface),
+-                     source_rect));
++                     transition_frame, source_rect));
+   renderer_view->CopyFromSurface(
+       gfx::Rect(), renderer_bounds.size(), base::Milliseconds(250),
+       base::BindOnce(
+@@ -140,12 +233,23 @@
+           std::move(ready)));
+ }
+ 
+-EmberGlassView::EmberGlassView(EmberGlassPreset preset) : preset_(preset) {
++EmberGlassView::EmberGlassView(EmberGlassPreset preset)
++    : transition_(base::BindRepeating(&EmberGlassView::ApplyTransition,
++                                      base::Unretained(this))), preset_(preset) {
+   SetPaintToLayer();
+   layer()->SetFillsBoundsOpaquely(false);
++  std::unique_ptr<views::View> contents =
++      std::make_unique<EmberGlassContentView>();
++  contents_ = AddChildView(std::move(contents));
++  contents_->SetPaintToLayer();
++  contents_->layer()->SetFillsBoundsOpaquely(false);
+ }
+ 
+ EmberGlassView::~EmberGlassView() = default;
++
++void EmberGlassView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
++  contents_->SetBoundsRect(GetLocalBounds());
++}
+ 
+ void EmberGlassView::SetPanel(const EmberGlassPanel& panel) {
+   panel_bitmap_ = panel.bitmap;
+@@ -159,6 +263,46 @@
+   return bounds;
+ }
+ 
++void EmberGlassView::OpenFrom(const gfx::Point& origin) {
++  transitioning_ = true;
++  SetCanProcessEventsWithinSubtree(true);
++  transition_.Open(gfx::RectF(GetPanelBounds()), gfx::PointF(origin),
++                  EmberGlassMaterial::ParamsForPreset(preset_).corner_radius);
++}
++
++void EmberGlassView::CloseAnimated(base::OnceClosure finished) {
++  SetCanProcessEventsWithinSubtree(false);
++  transition_.Close(std::move(finished));
++}
++
++void EmberGlassView::ResetTransition() {
++  transition_.Reset();
++  transitioning_ = false;
++  layer()->SetOpacity(1.f);
++  SetCanProcessEventsWithinSubtree(true);
++  contents_->SetClipPath(SkPath());
++}
++
++void EmberGlassView::ApplyTransition(const EmberGlassTransition::Frame& frame) {
++  animated_bounds_ = frame.bounds;
++  animated_radius_ = frame.radius;
++  layer()->SetOpacity(frame.opacity);
++  // One reveal layer contains all final-size content, including compositor
++  // descendants. Only this small mask and the shell repaint each frame.
++  contents_->SetClipPath(SkPath::RRect(SkRRect::MakeRectXY(
++      SkRect::MakeXYWH(frame.bounds.x(), frame.bounds.y(), frame.bounds.width(),
++                       frame.bounds.height()), frame.radius, frame.radius)));
++  SchedulePaint();
++}
++
++void EmberGlassView::ClipToShell(gfx::Canvas* canvas) const {
++  const gfx::RectF rect = transitioning_ ? animated_bounds_ : gfx::RectF(GetPanelBounds());
++  const float radius = transitioning_ ? animated_radius_ :
++      EmberGlassMaterial::ParamsForPreset(preset_).corner_radius;
++  canvas->sk_canvas()->clipRRect(SkRRect::MakeRectXY(
++      SkRect::MakeXYWH(rect.x(), rect.y(), rect.width(), rect.height()), radius, radius), true);
++}
++
+ SkColor EmberGlassView::PrimaryTextColor() const {
+   return bright_backdrop_ ? SkColorSetRGB(31, 34, 39)
+                           : SkColorSetARGB(235, 255, 255, 255);
+@@ -188,8 +332,9 @@
+ }
+ 
+ void EmberGlassView::OnPaintBackground(gfx::Canvas* canvas) {
+-  const gfx::Rect panel_bounds = GetPanelBounds();
+-  const EmberGlassParams params = EmberGlassMaterial::ParamsForPreset(preset_);
++  const gfx::RectF panel_bounds = transitioning_ ? animated_bounds_ : gfx::RectF(GetPanelBounds());
++  EmberGlassParams params = EmberGlassMaterial::ParamsForPreset(preset_);
++  if (transitioning_) params.corner_radius = animated_radius_;
+   const SkRect panel_rect = SkRect::MakeXYWH(
+       panel_bounds.x(), panel_bounds.y(), panel_bounds.width(),
+       panel_bounds.height());
+--- a/chrome/browser/ui/views/ember/ember_glass_view.h
++++ b/chrome/browser/ui/views/ember/ember_glass_view.h
+@@ -6,6 +6,7 @@
+ #define CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_GLASS_VIEW_H_
+ 
+ #include "chrome/browser/ui/views/ember/ember_glass_material.h"
++#include "chrome/browser/ui/views/ember/ember_glass_transition.h"
+ #include "third_party/skia/include/core/SkBitmap.h"
+ #include "third_party/skia/include/core/SkColor.h"
+ #include "ui/views/view.h"
+@@ -26,7 +27,8 @@
+ // Captures the active renderer once and replaces the translucent placeholder
+ // with the same cached/refraction material used by Ember's other overlays.
+ void CaptureEmberGlassBubbleBackdrop(BrowserView* browser_view,
+-                                     views::View* surface);
++                                     views::View* surface,
++                                     const gfx::Point& screen_origin);
+ 
+ // Native Views surface for a cached EmberGlass panel. The panel pixels are
+ // stable while child labels/icons and lightweight interaction layers repaint.
+@@ -41,6 +43,13 @@
+ 
+   void SetPanel(const EmberGlassPanel& panel);
+   gfx::Rect GetPanelBounds() const;
++  views::View* contents() const { return contents_; }
++  void OnBoundsChanged(const gfx::Rect& previous_bounds) override;
++  void OpenFrom(const gfx::Point& origin);
++  void CloseAnimated(base::OnceClosure finished);
++  void ResetTransition();
++  void ClipToShell(gfx::Canvas* canvas) const;
++  const gfx::RectF& animated_bounds() const { return animated_bounds_; }
+   bool bright_backdrop() const { return bright_backdrop_; }
+ 
+   SkColor PrimaryTextColor() const;
+@@ -52,6 +61,12 @@
+   void OnPaintBackground(gfx::Canvas* canvas) override;
+ 
+  private:
++  void ApplyTransition(const EmberGlassTransition::Frame& frame);
++  raw_ptr<views::View> contents_ = nullptr;
++  EmberGlassTransition transition_;
++  gfx::RectF animated_bounds_;
++  float animated_radius_ = 12.f;
++  bool transitioning_ = false;
+   EmberGlassPreset preset_;
+   SkBitmap panel_bitmap_;
+   bool bright_backdrop_ = false;
+--- a/chrome/browser/ui/views/ember/ember_typography.h
++++ b/chrome/browser/ui/views/ember/ember_typography.h
+@@ -0,0 +1,25 @@
++// Copyright 2026 The Ember Authors
++// Use of this source code is governed by a BSD-style license.
++#ifndef CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_TYPOGRAPHY_H_
++#define CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_TYPOGRAPHY_H_
++#include "ui/gfx/font_list.h"
++namespace ember {
++inline constexpr char kUiFontFamily[] = "Inter";
++enum class TextStyle { kSecondary, kTab, kBody, kMenu, kEmphasis, kHeading };
++// Native Views preserves upstream line metrics; it has no letter-spacing API.
++// WebUI's equivalent styles use optical sizing and context-specific tracking.
++inline gfx::FontList FontForStyle(TextStyle style) {
++  int size = 14;
++  auto weight = gfx::Font::Weight::MEDIUM;
++  switch (style) {
++    case TextStyle::kSecondary: size = 11; weight = gfx::Font::Weight::NORMAL; break;
++    case TextStyle::kTab: size = 12; break;
++    case TextStyle::kBody: break;
++    case TextStyle::kMenu: size = 15; break;
++    case TextStyle::kEmphasis: weight = gfx::Font::Weight::SEMIBOLD; break;
++    case TextStyle::kHeading: size = 20; weight = gfx::Font::Weight::SEMIBOLD; break;
++  }
++  return gfx::FontList({kUiFontFamily}, gfx::Font::NORMAL, size, weight);
++}
++}  // namespace ember
++#endif
+--- a/chrome/browser/ui/views/extensions/extensions_menu_coordinator.cc
++++ b/chrome/browser/ui/views/extensions/extensions_menu_coordinator.cc
+@@ -58,14 +58,14 @@
+   ember::CaptureEmberGlassBubbleBackdrop(
+       BrowserView::GetBrowserViewForBrowser(
+           browser_->GetBrowserForMigrationOnly()),
+-      widget->GetRootView());
++      widget->GetRootView(), bubble_delegate_ptr->GetAnchorRect().CenterPoint());
+ }
+ 
+ void ExtensionsMenuCoordinator::Hide() {
+   DCHECK(base::FeatureList::IsEnabled(
+       extensions_features::kExtensionsMenuAccessControl));
+   if (views::Widget* const menu = GetExtensionsMenuWidget()) {
+-    menu->CloseNow();
++    menu->Close();
+   }
+ }
+ 
+--- a/chrome/browser/ui/views/extensions/extensions_menu_view.cc
++++ b/chrome/browser/ui/views/extensions/extensions_menu_view.cc
+@@ -530,7 +530,7 @@
+   ember::ConfigureEmberGlassBubble(widget->GetRootView(), g_extensions_dialog);
+   ember::CaptureEmberGlassBubbleBackdrop(
+       BrowserView::GetBrowserViewForBrowser(browser->GetBrowserForMigrationOnly()),
+-      widget->GetRootView());
++      widget->GetRootView(), anchor_view->GetBoundsInScreen().CenterPoint());
+   return widget;
+ }
+ 
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -1565,7 +1565,7 @@
+     ember_sidebar_address_->SetColor(
+         SkColorSetARGB(0xD1, 0xFF, 0xFF, 0xFF));
+     ember_sidebar_address_->SetFontList(
+-        gfx::FontList("Segoe UI, 12px"));
++        gfx::FontList("Inter, Medium 12px"));
+     ember_sidebar_address_->SetAccessibleName(u"Address");
+     address_layout->SetFlexForView(ember_sidebar_address_, 1);
+ 
+@@ -3800,7 +3800,7 @@
+   mark->SetPreferredSize(gfx::Size(14, 14));
+   mark->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+   mark->SetEnabledColor(SkColorSetRGB(0x9D, 0xFF, 0xC5));
+-  mark->SetFontList(gfx::FontList("Segoe UI, Bold 10px"));
++  mark->SetFontList(gfx::FontList("Inter, Medium 10px"));
+   mark->SetBorder(views::CreateRoundedRectBorder(
+       1, 7, SkColorSetARGB(0x94, 0x83, 0xFF, 0xBE)));
+ 
+@@ -3808,7 +3808,7 @@
+       std::make_unique<views::Label>(u"Link copied"));
+   label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+   label->SetEnabledColor(SkColorSetRGB(0xEC, 0xFF, 0xF4));
+-  label->SetFontList(gfx::FontList("Segoe UI, Semi-Bold 11px"));
++  label->SetFontList(gfx::FontList("Inter, Medium 11px"));
+ 
+   toast->SetContentsView(std::move(toast_contents));
+   toast->ShowInactive();
+--- a/chrome/browser/ui/views/global_media_controls/media_item_ui_cast_footer_view.cc
++++ b/chrome/browser/ui/views/global_media_controls/media_item_ui_cast_footer_view.cc
+@@ -33,7 +33,7 @@
+                     ui::ColorId background_color_id,
+                     ui::ColorId focus_ring_color_id)
+       : LabelButton(std::move(callback), text) {
+-    label()->SetFontList(gfx::FontList({"Google Sans", "Roboto"},
++    label()->SetFontList(gfx::FontList({"Inter"},
+                                        gfx::Font::NORMAL, kFontSize,
+                                        gfx::Font::Weight::NORMAL));
+     SetTooltipText(text);
+--- a/chrome/browser/ui/views/tabs/tab/tab_title.cc
++++ b/chrome/browser/ui/views/tabs/tab/tab_title.cc
+@@ -8,6 +8,7 @@
+ #include "ui/base/metadata/metadata_impl_macros.h"
+ 
+ TabTitle::TabTitle() {
++  SetFontList(font_list().DeriveWithWeight(gfx::Font::Weight::MEDIUM));
+   SetHorizontalAlignment(gfx::ALIGN_TO_HEAD);
+   SetElideBehavior(gfx::FADE_TAIL);
+   SetHandlesTooltips(false);
+--- a/chrome/browser/ui/views/web_apps/protocol_handler_picker_dialog.cc
++++ b/chrome/browser/ui/views/web_apps/protocol_handler_picker_dialog.cc
+@@ -266,7 +266,7 @@
+                                    views::LayoutOrientation::kHorizontal,
+                                    views::MinimumFlexSizeRule::kScaleToZero,
+                                    views::MaximumFlexSizeRule::kUnbounded))
+-                  .SetFontList(gfx::FontList("Roboto, 14px")
++                  .SetFontList(gfx::FontList("Inter, Medium 14px")
+                                    .DeriveWithWeight(gfx::Font::Weight::MEDIUM))
+                   .SetLineHeight(kAppNameLabelHeight)
+                   .SetProperty(views::kMarginsKey, left_gap))
+--- a/components/global_media_controls/public/views/chapter_item_view.cc
++++ b/components/global_media_controls/public/views/chapter_item_view.cc
+@@ -93,7 +93,7 @@
+                               .SetText(chapter.title())
+                               .SetID(kChapterItemViewTitleId)
+                               .SetFontList(gfx::FontList(
+-                                  {"Google Sans"}, gfx::Font::NORMAL, 13,
++                                  {"Inter"}, gfx::Font::NORMAL, 13,
+                                   gfx::Font::Weight::NORMAL))
+                               .SetHorizontalAlignment(gfx::ALIGN_LEFT)
+                               .SetEnabledColor(
+@@ -103,7 +103,7 @@
+                                   GetFormattedDuration(chapter.startTime()))
+                               .SetID(kChapterItemViewStartTimeId)
+                               .SetFontList(gfx::FontList(
+-                                  {"Google Sans"}, gfx::Font::NORMAL, 12,
++                                  {"Inter"}, gfx::Font::NORMAL, 12,
+                                   gfx::Font::Weight::NORMAL))
+                               .SetHorizontalAlignment(gfx::ALIGN_LEFT)
+                               .SetEnabledColor(
+--- a/components/global_media_controls/public/views/media_item_ui_detailed_view.cc
++++ b/components/global_media_controls/public/views/media_item_ui_detailed_view.cc
+@@ -84,7 +84,7 @@
+ constexpr int kProgressRowHeight = 20;
+ constexpr gfx::Insets kButtonRowInsets = gfx::Insets::TLBR(0, 8, 0, 0);
+ constexpr char16_t kTimestampDelimiter[] = u" / ";
+-const gfx::FontList kTimestampFont({"Google Sans"},
++const gfx::FontList kTimestampFont({"Inter"},
+                                    gfx::Font::NORMAL,
+                                    13,
+                                    gfx::Font::Weight::MEDIUM);
+@@ -188,7 +188,7 @@
+   main_row->SetFlexForView(media_info_column, 1);
+ 
+   const views::Label::CustomFont text_fonts = {
+-      gfx::FontList({"Google Sans", "Roboto"}, gfx::Font::NORMAL, kFontSize,
++      gfx::FontList({"Inter"}, gfx::Font::NORMAL, kFontSize,
+                     gfx::Font::Weight::NORMAL)};
+ 
+   // Create the media source label.
+--- a/ui/base/webui/web_ui_util.cc
++++ b/ui/base/webui/web_ui_util.cc
+@@ -232,7 +232,8 @@
+   font_family = "\"" + font_name + "\", " + font_family;
+ #endif  // BUILDFLAG(IS_LINUX)
+ 
+-  return font_family;
++  // This helper supplies browser-owned WebUI CSS only, never renderer defaults.
++  return "Inter, " + font_family;
+ }
+ 
+ std::string GetFontSize() {
+--- a/ui/views/controls/menu/menu_config_win.cc
++++ b/ui/views/controls/menu/menu_config_win.cc
+@@ -9,12 +9,15 @@
+ #include <Vssym32.h>
+ 
+ #include "ui/gfx/system_fonts_win.h"
++#include "ui/views/style/typography.h"
++#include "ui/views/style/typography_provider.h"
+ 
+ namespace views {
+ 
+ void MenuConfig::InitPlatform() {
+-  context_menu_font_list = font_list =
+-      gfx::FontList(gfx::win::GetSystemFont(gfx::win::SystemFont::kMenu));
++  // Respect the browser typography provider, including its menu semantic style.
++  context_menu_font_list = font_list = TypographyProvider::Get().GetFont(
++      style::CONTEXT_MENU, style::STYLE_BODY_3);
+ 
+   BOOL show_cues;
+   show_mnemonics =
+--- a/ui/webui/resources/BUILD.gn
++++ b/ui/webui/resources/BUILD.gn
+@@ -15,7 +15,11 @@
+   grd_prefix = "webui"
+   out_grd = "$target_gen_dir/${grd_prefix}_resources.grd"
+ 
+-  input_files = [ "test_loader.html" ]
++  input_files = [
++    "test_loader.html",
++    "ember_fonts/InterVariable.woff2",
++    "ember_fonts/InterVariable-Italic.woff2",
++  ]
+   input_files_base_dir = rebase_path(".", "//")
+ 
+   if (is_linux) {
+--- a/ui/webui/resources/css/BUILD.gn
++++ b/ui/webui/resources/css/BUILD.gn
+@@ -25,6 +25,7 @@
+   out_manifest = "$target_gen_dir/$preprocess_manifest"
+   in_files = [
+     "action_link.css",
++    "ember_typography.css",
+     "chrome_shared.css",
+     "spinner.css",
+     "text_defaults_md.css",
+--- a/ui/webui/resources/css/ember_typography.css
++++ b/ui/webui/resources/css/ember_typography.css
+@@ -2,14 +2,14 @@
+ /* Included only by browser-owned WebUI documents. Never injected into content. */
+ @font-face {
+   font-family: 'Inter';
+-  src: url('chrome://resources/ember_fonts/InterVariable.woff2') format('woff2');
++  src: url('../ember_fonts/InterVariable.woff2') format('woff2');
+   font-style: normal;
+   font-weight: 100 900;
+   font-display: block;
+ }
+ @font-face {
+   font-family: 'Inter';
+-  src: url('chrome://resources/ember_fonts/InterVariable-Italic.woff2') format('woff2');
++  src: url('../ember_fonts/InterVariable-Italic.woff2') format('woff2');
+   font-style: italic;
+   font-weight: 100 900;
+   font-display: block;
+@@ -27,6 +27,7 @@
+   --ember-font-emphasis-weight: 600;
+ }
+ body {
++  font-family: var(--ember-font-family);
+   font-optical-sizing: auto;
+   font-weight: var(--ember-font-body-weight);
+   letter-spacing: var(--ember-font-body-tracking);
+--- a/ui/webui/resources/css/text_defaults.css
++++ b/ui/webui/resources/css/text_defaults.css
+@@ -15,6 +15,8 @@
+  * to an HTML string.
+  * Otherwise its placeholders won't be expanded. */
+ 
++@import url('chrome://resources/css/ember_typography.css');
++
+ body {
+   font-family: $i18nRaw{fontfamily};
+   font-size: $i18n{fontsize};
+--- a/ui/webui/resources/css/text_defaults_md.css
++++ b/ui/webui/resources/css/text_defaults_md.css
+@@ -19,6 +19,8 @@
+ @import url(//resources/css/roboto.css);
+ </if>
+ 
++@import url('chrome://resources/css/ember_typography.css');
++
+ body {
+   font-family: $i18nRaw{fontfamilyMd};
+   font-size: 81.25%;

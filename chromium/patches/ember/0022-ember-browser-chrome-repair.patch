@@ -1,0 +1,697 @@
+diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
+index d237a30..44e12b5 100644
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -3973,6 +3973,8 @@ static_library("ui") {
+       "views/frame/browser_root_view.cc",
+       "views/frame/browser_view.cc",
+       "views/frame/browser_view.h",
++      "views/frame/ember_url_presentation.cc",
++      "views/frame/ember_url_presentation.h",
+       "views/frame/browser_widget.cc",
+       "views/frame/browser_widget.h",
+       "views/frame/browser_window_factory.cc",
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+index a305cc9..74109d3 100644
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -153,6 +153,7 @@
+ #include "chrome/browser/ui/views/find_bar_host.h"
+ #include "chrome/browser/ui/views/frame/app_menu_button.h"
+ #include "chrome/browser/ui/views/frame/browser_frame_view.h"
++#include "chrome/browser/ui/views/frame/ember_url_presentation.h"
+ #include "chrome/browser/ui/views/frame/browser_native_widget.h"
+ #include "chrome/browser/ui/views/frame/browser_widget.h"
+ #include "chrome/browser/ui/views/frame/contents_container_view.h"
+@@ -349,6 +350,7 @@
+ #include "ui/gfx/geometry/outsets.h"
+ #include "ui/gfx/geometry/point.h"
+ #include "ui/gfx/geometry/rect.h"
++#include "ui/gfx/range/range.h"
+ #include "ui/gfx/geometry/rect_conversions.h"
+ #include "ui/gfx/geometry/rect_f.h"
+ #include "ui/gfx/geometry/size.h"
+@@ -470,24 +472,10 @@ constexpr int kEmberSidebarCopyToastHeight = 30;
+ constexpr base::TimeDelta kEmberSidebarTransitionDuration =
+     base::Milliseconds(130);
+ 
+-std::u16string FormatEmberSidebarUrl(const GURL& url) {
+-  std::string display_url = url.spec();
+-  size_t scheme_length = 0;
+-  if (base::StartsWith(display_url, "http://",
+-                       base::CompareCase::INSENSITIVE_ASCII)) {
+-    scheme_length = 7;
+-  } else if (base::StartsWith(display_url, "https://",
+-                              base::CompareCase::INSENSITIVE_ASCII)) {
+-    scheme_length = 8;
+-  }
+-  if (scheme_length > 0) {
+-    display_url.erase(0, scheme_length);
+-    if (base::StartsWith(display_url, "www.",
+-                         base::CompareCase::INSENSITIVE_ASCII)) {
+-      display_url.erase(0, 4);
+-    }
+-  }
+-  return base::UTF8ToUTF16(display_url);
++void MoveCursorToStart(views::Textfield* textfield) {
++  // SetText preserves a Textfield's prior caret and horizontal scroll. Compact
++  // URL presentation must begin at the host every time it returns to idle.
++  textfield->SetSelectedRange(gfx::Range(0));
+ }
+ 
+ class EmberSidebarAddressRow : public views::View,
+@@ -3672,8 +3660,9 @@ void BrowserView::UpdateEmberSidebar() {
+   if (!ember_sidebar_editing_) {
+     const std::u16string display_url =
+         url.is_empty() ? l10n_util::GetStringUTF16(IDS_NEW_TAB)
+-                       : FormatEmberSidebarUrl(url);
++                       : ember::FormatUrlForCompactDisplay(url);
+     ember_sidebar_address_->SetText(display_url);
++    MoveCursorToStart(ember_sidebar_address_);
+     ember_sidebar_address_->SetTooltipText(
+         url.is_empty() ? display_url : base::UTF8ToUTF16(url.spec()));
+   }
+diff --git a/chrome/browser/ui/views/frame/ember_url_presentation.cc b/chrome/browser/ui/views/frame/ember_url_presentation.cc
+new file mode 100644
+index 0000000..8096980
+--- /dev/null
++++ b/chrome/browser/ui/views/frame/ember_url_presentation.cc
+@@ -0,0 +1,29 @@
++// Copyright 2026 The Ember Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/views/frame/ember_url_presentation.h"
++
++#include "base/strings/utf_string_conversions.h"
++#include "components/url_formatter/url_formatter.h"
++#include "url/gurl.h"
++
++namespace ember {
++
++std::u16string FormatUrlForCompactDisplay(const GURL& url) {
++  if (!url.is_valid()) {
++    return base::UTF8ToUTF16(url.possibly_invalid_spec());
++  }
++
++  const url_formatter::FormatUrlTypes kCompactFormat =
++      url_formatter::kFormatUrlOmitUsernamePassword |
++      url_formatter::kFormatUrlOmitHTTP |
++      url_formatter::kFormatUrlOmitHTTPS |
++      url_formatter::kFormatUrlOmitTrailingSlashOnBareHostname |
++      url_formatter::kFormatUrlOmitTrivialSubdomains;
++  return url_formatter::FormatUrl(url, kCompactFormat,
++                                  base::UnescapeRule::SPACES, nullptr, nullptr,
++                                  nullptr);
++}
++
++}  // namespace ember
+diff --git a/chrome/browser/ui/views/frame/ember_url_presentation.h b/chrome/browser/ui/views/frame/ember_url_presentation.h
+new file mode 100644
+index 0000000..4e8c8e8
+--- /dev/null
++++ b/chrome/browser/ui/views/frame/ember_url_presentation.h
+@@ -0,0 +1,21 @@
++// Copyright 2026 The Ember Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_VIEWS_FRAME_EMBER_URL_PRESENTATION_H_
++#define CHROME_BROWSER_UI_VIEWS_FRAME_EMBER_URL_PRESENTATION_H_
++
++#include <string>
++
++class GURL;
++
++namespace ember {
++
++// Formats a URL for Ember's compact, non-editing browser chrome. The returned
++// text is presentation-only; navigation and clipboard actions must retain the
++// original GURL as their source of truth.
++std::u16string FormatUrlForCompactDisplay(const GURL& url);
++
++}  // namespace ember
++
++#endif  // CHROME_BROWSER_UI_VIEWS_FRAME_EMBER_URL_PRESENTATION_H_
+diff --git a/chrome/browser/ui/views/frame/ember_url_presentation_unittest.cc b/chrome/browser/ui/views/frame/ember_url_presentation_unittest.cc
+new file mode 100644
+index 0000000..6b56bea
+--- /dev/null
++++ b/chrome/browser/ui/views/frame/ember_url_presentation_unittest.cc
+@@ -0,0 +1,34 @@
++// Copyright 2026 The Ember Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/views/frame/ember_url_presentation.h"
++
++#include "testing/gtest/include/gtest/gtest.h"
++#include "url/gurl.h"
++
++namespace ember {
++
++TEST(FormatEmberSidebarUrlTest, OmitsOnlyOrdinaryWebDecoration) {
++  EXPECT_EQ(u"example.com/path",
++            FormatUrlForCompactDisplay(
++                GURL("https://www.example.com/path")));
++  EXPECT_EQ(u"example.com/path",
++            FormatUrlForCompactDisplay(GURL("http://www.example.com/path")));
++  EXPECT_EQ(u"docs.example.com/path",
++            FormatUrlForCompactDisplay(GURL("https://docs.example.com/path")));
++}
++
++TEST(FormatEmberSidebarUrlTest, PreservesMeaningfulSchemes) {
++  EXPECT_EQ(u"chrome://settings/",
++            FormatUrlForCompactDisplay(GURL("chrome://settings")));
++  EXPECT_EQ(u"ember://start/",
++            FormatUrlForCompactDisplay(GURL("ember://start")));
++  EXPECT_EQ(u"file:///C:/path/file.txt",
++            FormatUrlForCompactDisplay(GURL("file:///C:/path/file.txt")));
++  EXPECT_EQ(u"view-source:https://www.example.com/path",
++            FormatUrlForCompactDisplay(
++                GURL("view-source:https://www.example.com/path")));
++}
++
++}  // namespace ember
+diff --git a/chrome/browser/ui/views/tabs/new_tab_button.cc b/chrome/browser/ui/views/tabs/new_tab_button.cc
+index 19330be..caff65e 100644
+--- a/chrome/browser/ui/views/tabs/new_tab_button.cc
++++ b/chrome/browser/ui/views/tabs/new_tab_button.cc
+@@ -12,6 +12,7 @@
+ #include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/browser_commands.h"
+ #include "chrome/browser/ui/browser_element_identifiers.h"
++#include "chrome/browser/ui/color/chrome_color_id.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+ #include "chrome/browser/ui/tabs/split_tab_metrics.h"
+ #include "chrome/browser/ui/tabs/tab_group_model.h"
+@@ -45,6 +46,10 @@ NewTabButton::NewTabButton(PressedCallback callback,
+       browser_(browser) {
+   set_context_menu_controller(this);
+   SetProperty(views::kElementIdentifierKey, kNewTabButtonElementId);
++  SetImageCentered(true);
++  SetHorizontalAlignment(gfx::ALIGN_CENTER);
++  SetInkdropHoverColorId(kColorTabBackgroundInactiveHoverFrameActive);
++  SetInkdropRippleColorId(kColorTabBackgroundInactiveHoverFrameActive);
+ }
+ 
+ NewTabButton::~NewTabButton() {
+diff --git a/chrome/browser/ui/views/tabs/tab.cc b/chrome/browser/ui/views/tabs/tab.cc
+index 20e8237..7a29969 100644
+--- a/chrome/browser/ui/views/tabs/tab.cc
++++ b/chrome/browser/ui/views/tabs/tab.cc
+@@ -389,6 +389,12 @@ void Tab::Layout(PassKey) {
+     // Add space for insets outside the favicon bounds.
+     favicon_bounds.Inset(-icon_->GetInsets());
+     favicon_bounds.set_size(icon_->GetPreferredSize());
++    // Center the painted favicon in the content box. TabIcon's view is wider
++    // than its 16-DIP glyph so it can carry discard/attention treatments.
++    favicon_bounds.set_y(
++        contents_rect.y() +
++        Center(contents_rect.height(), gfx::kFaviconSize) -
++        icon_->GetInsets().top());
+   }
+   icon_->SetBoundsRect(favicon_bounds);
+   icon_->SetVisible(showing_icon_);
+@@ -399,7 +405,11 @@ void Tab::Layout(PassKey) {
+   // Ember's hover close surface sits six DIPs inside the painted pill. The
+   // visible icon still follows Chromium's accessibility-aware button model.
+   int close_x = contents_rect.right() - 5;
+-  if (showing_close_button_) {
++  const bool reserve_close_lane =
++      ShouldRenderAsNormalTab() && !data().pinned &&
++      !base::CommandLine::ForCurrentProcess()->HasSwitch(
++          "hide-tab-close-buttons");
++  if (reserve_close_lane || showing_close_button_) {
+     // The visible size is the button's hover shape size. The actual size
+     // includes the border insets for the button.
+     const int close_button_visible_size =
+@@ -435,7 +445,7 @@ void Tab::Layout(PassKey) {
+ 
+   if (showing_alert_indicator_) {
+     int right = contents_rect.right();
+-    if (showing_close_button_) {
++    if (reserve_close_lane) {
+       right = close_x;
+       if (extra_alert_indicator_padding_) {
+         right -= ui::TouchUiController::Get()->touch_ui()
+@@ -482,8 +492,9 @@ void Tab::Layout(PassKey) {
+     int title_right = contents_rect.right();
+     if (showing_alert_indicator_) {
+       title_right = alert_indicator_button_->x() - after_title_padding;
+-    } else if (showing_close_button_) {
+-      // Allow the title to overlay the close button's empty border padding.
++    } else if (reserve_close_lane) {
++      // Reserve the close lane whether or not the button is visible. Hovering
++      // may reveal the affordance, but it must never reflow the title.
+       title_right = close_x - after_title_padding;
+     }
+     const int title_width = std::max(title_right - title_left, 0);
+diff --git a/chrome/browser/ui/views/tabs/tab/tab_close_button.cc b/chrome/browser/ui/views/tabs/tab/tab_close_button.cc
+index c9f283e..2ae57f2 100644
+--- a/chrome/browser/ui/views/tabs/tab/tab_close_button.cc
++++ b/chrome/browser/ui/views/tabs/tab/tab_close_button.cc
+@@ -34,6 +34,8 @@
+ #endif
+ 
+ namespace {
++constexpr int kEmberCloseVisualInset = 6;
++
+ gfx::Size GetButtonSize() {
+   // The close button is larger than the icon inside to provide a larger hit
+   // target.
+@@ -78,8 +80,8 @@ TabCloseButton::TabCloseButton(PressedCallback pressed_callback,
+   // TODO(http://crbug.com/40120351): Make ink drops in RTL work the same way as
+   // focus rings.
+   auto ink_drop_highlight_path =
+-      std::make_unique<views::RoundRectHighlightPathGenerator>(gfx::Insets(),
+-                                                               6);
++      std::make_unique<views::RoundRectHighlightPathGenerator>(
++          gfx::Insets(kEmberCloseVisualInset), 4);
+   ink_drop_highlight_path->set_use_contents_bounds(true);
+   ink_drop_highlight_path->set_use_mirrored_rect(true);
+   views::HighlightPathGenerator::Install(this,
+@@ -89,14 +91,11 @@ TabCloseButton::TabCloseButton(PressedCallback pressed_callback,
+   // TODO(http://crbug.com/40120351): Once this bug is solved and explicit
+   // mirroring for ink drops is not needed, we can combine these two.
+   auto ring_highlight_path =
+-      std::make_unique<views::RoundRectHighlightPathGenerator>(gfx::Insets(),
+-                                                               6);
++      std::make_unique<views::RoundRectHighlightPathGenerator>(
++          gfx::Insets(kEmberCloseVisualInset), 4);
+   ring_highlight_path->set_use_contents_bounds(true);
+   views::FocusRing::Get(this)->SetPathGenerator(std::move(ring_highlight_path));
+ 
+-  SetBackground(views::CreateRoundedRectBackground(
+-      SkColorSetARGB(0xF5, 0x23, 0x1D, 0x1B), 6));
+-
+   UpdateIcon();
+ }
+ 
+diff --git a/chrome/browser/ui/views/tabs/tab_strip.cc b/chrome/browser/ui/views/tabs/tab_strip.cc
+index 0df77ac..534b015 100644
+--- a/chrome/browser/ui/views/tabs/tab_strip.cc
++++ b/chrome/browser/ui/views/tabs/tab_strip.cc
+@@ -1989,23 +1989,11 @@ bool TabStrip::HoverCardIsShowing(HoverCardAnchorTarget* anchor_target) {
+ }
+ 
+ void TabStrip::ShowHover(Tab* tab, TabStyle::ShowHoverStyle style) {
+-  if (tab->split().has_value()) {
+-    for (Tab* split_tab : GetTabsInSplit(tab)) {
+-      split_tab->ShowHover(style);
+-    }
+-  } else {
+-    tab->ShowHover(style);
+-  }
++  tab->ShowHover(style);
+ }
+ 
+ void TabStrip::HideHover(Tab* tab, TabStyle::HideHoverStyle style) {
+-  if (tab->split().has_value()) {
+-    for (Tab* split_tab : GetTabsInSplit(tab)) {
+-      split_tab->HideHover(style);
+-    }
+-  } else {
+-    tab->HideHover(style);
+-  }
++  tab->HideHover(style);
+ }
+ 
+ int TabStrip::GetStrokeThickness() const {
+diff --git a/chrome/browser/ui/views/tabs/tab_strip_layout.cc b/chrome/browser/ui/views/tabs/tab_strip_layout.cc
+index 909ca62..5a474de 100644
+--- a/chrome/browser/ui/views/tabs/tab_strip_layout.cc
++++ b/chrome/browser/ui/views/tabs/tab_strip_layout.cc
+@@ -16,6 +16,22 @@
+ 
+ namespace {
+ 
++bool AreJoinedSplitPartners(const std::vector<TabWidthConstraints>& tabs,
++                            size_t leading_index) {
++  if (leading_index + 1 >= tabs.size()) {
++    return false;
++  }
++  const auto leading_split = tabs[leading_index].get_state().split();
++  const auto trailing_split = tabs[leading_index + 1].get_state().split();
++  return leading_split.has_value() && leading_split == trailing_split;
++}
++
++int GapAfter(const std::vector<TabWidthConstraints>& tabs,
++             size_t leading_index,
++             int tab_overlap) {
++  return AreJoinedSplitPartners(tabs, leading_index) ? 0 : -tab_overlap;
++}
++
+ // Solve layout constraints to determine how much space is available for tabs
+ // to use relative to how much they want to use.
+ TabSizer CalculateSpaceFractionAvailable(
+@@ -30,19 +46,19 @@ TabSizer CalculateSpaceFractionAvailable(
+   float minimum_width = 0;
+   float crossover_width = 0;
+   float preferred_width = 0;
+-  for (const TabWidthConstraints& tab : tabs) {
+-    // Add the tab's width, less the width of its trailing foot (which would
+-    // be double counting).
+-    minimum_width += tab.GetMinimumWidth() - tab_overlap;
+-    crossover_width += tab.GetLayoutCrossoverWidth() - tab_overlap;
+-    preferred_width += tab.GetPreferredWidth() - tab_overlap;
++  for (size_t index = 0; index < tabs.size(); ++index) {
++    const TabWidthConstraints& tab = tabs[index];
++    minimum_width += tab.GetMinimumWidth();
++    crossover_width += tab.GetLayoutCrossoverWidth();
++    preferred_width += tab.GetPreferredWidth();
++    if (index + 1 < tabs.size()) {
++      const int gap = GapAfter(tabs, index, tab_overlap);
++      minimum_width += gap;
++      crossover_width += gap;
++      preferred_width += gap;
++    }
+   }
+ 
+-  // Add back the width of the trailing foot of the last tab.
+-  minimum_width += tab_overlap;
+-  crossover_width += tab_overlap;
+-  preferred_width += tab_overlap;
+-
+   LayoutDomain domain;
+   float space_fraction_available;
+   if (width < crossover_width) {
+@@ -148,11 +164,15 @@ std::pair<std::vector<gfx::Rect>, LayoutDomain> CalculateTabBounds(
+ 
+   int next_x = 0;
+   std::vector<gfx::Rect> bounds;
+-  for (const TabWidthConstraints& tab : tabs) {
++  for (size_t index = 0; index < tabs.size(); ++index) {
++    const TabWidthConstraints& tab = tabs[index];
+     const int tab_width = tab_sizer.CalculateTabWidth(tab);
+     bounds.emplace_back(next_x, 0, tab_width,
+                         TabStyle::Get()->GetStandardHeight());
+-    next_x += tab_width - TabStyle::Get()->GetTabOverlap();
++    next_x += tab_width;
++    if (index + 1 < tabs.size()) {
++      next_x += GapAfter(tabs, index, TabStyle::Get()->GetTabOverlap());
++    }
+   }
+ 
+   const std::optional<int> calculated_extra_space =
+diff --git a/chrome/browser/ui/views/tabs/tab_strip_layout_unittest.cc b/chrome/browser/ui/views/tabs/tab_strip_layout_unittest.cc
+index 2fa4a5e..d682a82 100644
+--- a/chrome/browser/ui/views/tabs/tab_strip_layout_unittest.cc
++++ b/chrome/browser/ui/views/tabs/tab_strip_layout_unittest.cc
+@@ -193,10 +193,21 @@ TEST(TabStripLayoutTest, SplitPinnedTabs) {
+ 
+   auto bounds = CalculateTabBounds(test_case);
+   EXPECT_EQ("55 55", TabWidthsAsString(bounds));
+-  EXPECT_EQ("0 37", TabXPositionsAsString(bounds));
++  EXPECT_EQ("0 55", TabXPositionsAsString(bounds));
+   ExpectTabsNarrowerThanTabStrip(bounds, test_case.tabstrip_width);
+ }
+ 
++TEST(TabStripLayoutTest, SplitTabsHaveNoGutter) {
++  TestCase test_case;
++  test_case.tabstrip_width = 1000;
++  test_case.num_tabs = 3;
++  test_case.split_tabs = {0, 1};
++
++  const auto bounds = CalculateTabBounds(test_case);
++  EXPECT_EQ(bounds[0].right(), bounds[1].x());
++  EXPECT_EQ(bounds[1].right() - kTabOverlap, bounds[2].x());
++}
++
+ TEST(TabStripLayoutTest, MiddleWidth) {
+   TestCase test_case;
+   test_case.tabstrip_width = 598;
+diff --git a/chrome/browser/ui/views/tabs/tab_style_views.cc b/chrome/browser/ui/views/tabs/tab_style_views.cc
+index 4bc9984..4ae3349 100644
+--- a/chrome/browser/ui/views/tabs/tab_style_views.cc
++++ b/chrome/browser/ui/views/tabs/tab_style_views.cc
+@@ -163,6 +163,11 @@ class TabStyleViewsImpl : public TabStyleViews {
+   // left/right insets and positioning.
+   bool IsRightSplitTab(const Tab* tab) const;
+ 
++  // A split group is active as a whole; this identifies the one pane that
++  // directly owns keyboard interaction inside that active group.
++  bool IsDirectlyActiveSplitPane() const;
++  void PaintEmberSplitIndicator(gfx::Canvas* canvas) const;
++
+   BrowserFrameView* GetBrowserFrameView() const;
+ 
+   const raw_ptr<const Tab> tab_;
+@@ -195,11 +200,11 @@ SkPath TabStyleViewsImpl::GetPath(TabStyle::PathType path_type,
+   gfx::RectF aligned_bounds =
+       ScaleAndAlignBounds(tab()->bounds(), scale, stroke_thickness);
+ 
+-  // Ember tabs are detached rounded pills. Chromium's standard active path
+-  // grows shoulders into neighbouring tabs, but that turns Ember's measured
+-  // eight-DIP gap into a visibly larger void. Keep split tabs on Chromium's
+-  // specialized path and use the same pill footprint for every ordinary state.
+-  if (!tab()->split().has_value()) {
++  // Ember tabs never use Chromium's shoulder geometry. Ordinary tabs are
++  // detached pills; split partners use the same shell with only the shared
++  // inner edge flattened. The layout solver places joined partners flush.
++  const bool is_split = tab()->split().has_value();
++  if (!is_split || IsLeftSplitTab(tab()) || IsRightSplitTab(tab())) {
+     const bool hit_test = path_type == TabStyle::PathType::kHitTest;
+     const float stroke_inset =
+         hit_test ? 0.0f : 0.5f * stroke_thickness * scale;
+@@ -217,8 +222,13 @@ SkPath TabStyleViewsImpl::GetPath(TabStyle::PathType path_type,
+         SkRect::MakeLTRB(aligned_bounds.x() + stroke_inset, top,
+                          aligned_bounds.right() - stroke_inset, bottom);
+     const float radius = tab_style()->GetTopCornerRadius() * scale;
++    const float left_radius = is_split && IsRightSplitTab(tab()) ? 0 : radius;
++    const float right_radius = is_split && IsLeftSplitTab(tab()) ? 0 : radius;
++    const SkVector radii[4] = {
++        {left_radius, left_radius}, {right_radius, right_radius},
++        {right_radius, right_radius}, {left_radius, left_radius}};
+     SkPathBuilder path;
+-    path.addRRect(SkRRect::MakeRectXY(pill_bounds, radius, radius));
++    path.addRRect(SkRRect::MakeRectRadii(pill_bounds, radii));
+ 
+     gfx::PointF origin(tab()->origin());
+     origin.Scale(scale);
+@@ -809,14 +819,7 @@ float TabStyleViewsImpl::GetHoverInterpolatedSeparatorOpacity(
+ }
+ 
+ bool TabStyleViewsImpl::IsHovering() const {
+-  if (tab_->mouse_hovered()) {
+-    return true;
+-  }
+-
+-  return std::ranges::any_of(tab()->controller()->GetTabsInSplit(tab_),
+-                             [](const Tab* split_tab) {
+-                               return split_tab && split_tab->mouse_hovered();
+-                             });
++  return tab_->mouse_hovered();
+ }
+ 
+ bool TabStyleViewsImpl::IsHoverAnimationActive() const {
+@@ -902,6 +905,7 @@ void TabStyleViewsImpl::PaintTabBackground(gfx::Canvas* canvas,
+                        : SkColorSetARGB(0x09, 0xFF, 0xFF, 0xFF);
+ 
+   PaintBackgroundStroke(canvas, group_color.value_or(tab_stroke_color));
++  PaintEmberSplitIndicator(canvas);
+   PaintSeparators(canvas);
+ }
+ 
+@@ -934,6 +938,12 @@ void TabStyleViewsImpl::PaintTabBackgroundFill(
+     flags.setColor(color);
+     canvas->DrawRect(gfx::ScaleToEnclosingRect(tab_->GetLocalBounds(), scale),
+                      flags);
++
++    if (IsDirectlyActiveSplitPane()) {
++      flags.setColor(SkColorSetARGB(0x0F, 0xFF, 0xFF, 0xFF));
++      canvas->DrawRect(
++          gfx::ScaleToEnclosingRect(tab_->GetLocalBounds(), scale), flags);
++    }
+   }
+ 
+   if (fill_id.has_value()) {
+@@ -1051,6 +1061,46 @@ bool TabStyleViewsImpl::IsRightSplitTab(const Tab* tab) const {
+          tabs_in_split[base::i18n::IsRTL() ? 0 : tabs_in_split.size() - 1];
+ }
+ 
++bool TabStyleViewsImpl::IsDirectlyActiveSplitPane() const {
++  return tab()->split().has_value() && tab()->IsActive() &&
++         tab()->controller()->IsActiveTab(tab());
++}
++
++void TabStyleViewsImpl::PaintEmberSplitIndicator(gfx::Canvas* canvas) const {
++  if (!tab()->split().has_value()) {
++    return;
++  }
++
++  gfx::ScopedCanvas scoped_canvas(canvas);
++  const float scale = canvas->UndoDeviceScaleFactor();
++  const float indicator_top =
++      (tab()->height() - 6.0f) * 0.5f * scale;
++  const bool left_pane = IsLeftSplitTab(tab());
++
++  cc::PaintFlags flags;
++  flags.setAntiAlias(true);
++  flags.setColor(SkColorSetARGB(tab()->IsActive() ? 0x66 : 0x38,
++                               0xFF, 0xFF, 0xFF));
++  flags.setStrokeWidth(scale);
++
++  // Each half contributes one tiny window pane. Together they read as a
++  // restrained two-pane mark centered around the structural seam.
++  flags.setStyle(cc::PaintFlags::kStroke_Style);
++  const float pane_x = left_pane ? (tab()->width() - 6.0f) * scale
++                                 : 3.0f * scale;
++  canvas->DrawRoundRect(
++      gfx::RectF(pane_x, indicator_top, 3.0f * scale, 6.0f * scale),
++      scale, flags);
++
++  if (left_pane) {
++    flags.setStyle(cc::PaintFlags::kFill_Style);
++    canvas->DrawRect(gfx::RectF((tab()->width() - 1.0f) * scale,
++                                7.0f * scale, scale,
++                                (tab()->height() - 14.0f) * scale),
++                     flags);
++  }
++}
++
+ BrowserFrameView* TabStyleViewsImpl::GetBrowserFrameView() const {
+   BrowserWindowInterface* browser_window_interface =
+       tab()->controller()->GetBrowserWindowInterface();
+diff --git a/chrome/browser/ui/views/tabs/tab_unittest.cc b/chrome/browser/ui/views/tabs/tab_unittest.cc
+index ed4f782..a0e4578 100644
+--- a/chrome/browser/ui/views/tabs/tab_unittest.cc
++++ b/chrome/browser/ui/views/tabs/tab_unittest.cc
+@@ -173,10 +173,8 @@ class TabTest : public ChromeViewsTestBase {
+     }
+ 
+     // Check the tab icon's positioning. Icons should be positioned at the
+-    // start of the tab. Favicons should be centered within their icons. We
+-    // extend the bounds vertically down along the tab so that the crashed tabs
+-    // and alerts icons can be placed. This means that the true bounds are not
+-    // centered on the contents bounds.
++    // start of the tab and their painted favicon should be centered in the
++    // same content box used by the title and close affordance.
+     const gfx::Rect contents_bounds = tab.GetContentsBounds();
+     if (tab.showing_icon_) {
+       gfx::Rect icon_bounds = tab.icon_->bounds();
+@@ -190,9 +188,8 @@ class TabTest : public ChromeViewsTestBase {
+         EXPECT_LE(tab.icon_->bounds().right(), tab.title_->x());
+       }
+ 
+-      // Tab Icon content now exactly fit the content bounds.
+-      EXPECT_EQ(icon_bounds.y(), contents_bounds.y());
+-      EXPECT_GE(tab.icon_->bounds().bottom(), contents_bounds.bottom());
++      EXPECT_EQ(icon_bounds.CenterPoint().y(),
++                contents_bounds.CenterPoint().y());
+     }
+ 
+     if (tab.showing_icon_ && tab.showing_alert_indicator_) {
+@@ -499,6 +496,32 @@ TEST_F(TabTest, CloseButtonLayout) {
+   EXPECT_EQ(close_button_insets.right(), close_button_insets_2.right());
+ }
+ 
++TEST_F(TabTest, HoverCloseDoesNotReflowTabContents) {
++  auto controller = std::make_unique<FakeTabSlotController>();
++  std::unique_ptr<views::Widget> widget =
++      CreateTestWidget(views::Widget::InitParams::CLIENT_OWNS_WIDGET);
++  Tab* tab = widget->SetContentsView(
++      std::make_unique<Tab>(tabs::TabHandle(1), controller.get()));
++
++  tabs::TabData data;
++  data.should_display_favicon = true;
++  data.title = u"Stable Ember tab title";
++  tab->SetDataForTesting(data);
++  tab->SetBounds(0, 0, tab->tab_style()->GetStandardWidth(false),
++                 GetLayoutConstant(LayoutConstant::kTabHeight));
++  LayoutTab(tab);
++  const gfx::Rect idle_icon_bounds = GetTabIcon(tab)->bounds();
++  const gfx::Rect idle_title_bounds = GetTabTitle(tab)->bounds();
++
++  tab->OnMouseEntered(ui::MouseEvent(ui::EventType::kMouseMoved, gfx::Point(),
++                                     gfx::Point(), base::TimeTicks(), 0, 0));
++  LayoutTab(tab);
++
++  EXPECT_TRUE(GetCloseButton(tab)->GetVisible());
++  EXPECT_EQ(idle_icon_bounds, GetTabIcon(tab)->bounds());
++  EXPECT_EQ(idle_title_bounds, GetTabTitle(tab)->bounds());
++}
++
+ // Regression test for http://crbug.com/40468176. Ensure TabCloseButton does not
+ // get focus on right click.
+ TEST_F(TabTest, CloseButtonFocus) {
+diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.cc b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+index 6cd14f8..0202d55 100644
+--- a/chrome/browser/ui/views/toolbar/toolbar_view.cc
++++ b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+@@ -649,7 +649,11 @@ void ToolbarView::Init() {
+       base::BindRepeating(&ToolbarView::OnShowForwardButtonChanged,
+                           base::Unretained(this)));
+ 
+-  SetForwardButtonVisibility(show_forward_button_.GetValue());
++  // Ember's compact normal toolbar always reserves Back / Forward / Reload.
++  // Visibility is stable while IDC_FORWARD continues to own enabled state and
++  // navigation; alternate toolbar modes retain Chromium's preference.
++  SetForwardButtonVisibility(display_mode_ == DisplayMode::kNormal ||
++                             show_forward_button_.GetValue());
+ 
+   show_home_button_.Init(
+       prefs::kShowHomeButton, prefs,
+@@ -1918,7 +1922,8 @@ void ToolbarView::LoadImages() {
+ }
+ 
+ void ToolbarView::OnShowForwardButtonChanged() {
+-  SetForwardButtonVisibility(show_forward_button_.GetValue());
++  SetForwardButtonVisibility(display_mode_ == DisplayMode::kNormal ||
++                             show_forward_button_.GetValue());
+   InvalidateLayout();
+ }
+ 
+diff --git a/chrome/test/BUILD.gn b/chrome/test/BUILD.gn
+index 357aeb7..ca2d5c4 100644
+--- a/chrome/test/BUILD.gn
++++ b/chrome/test/BUILD.gn
+@@ -8897,6 +8897,7 @@ test("unit_tests") {
+       "../browser/ui/views/extensions/extensions_toolbar_unittest.h",
+       "../browser/ui/views/frame/browser_frame_view_unittest.cc",
+       "../browser/ui/views/frame/browser_view_unittest.cc",
++      "../browser/ui/views/frame/ember_url_presentation_unittest.cc",
+       "../browser/ui/views/frame/layout/browser_view_layout_params_unittest.cc",
+       "../browser/ui/views/frame/multi_contents_drop_target_view_unittest.cc",
+       "../browser/ui/views/frame/multi_contents_view_drop_target_controller_unittest.cc",
+diff --git a/extensions/common/extension_urls.cc b/extensions/common/extension_urls.cc
+index 0037ea1..b54a558 100644
+--- a/extensions/common/extension_urls.cc
++++ b/extensions/common/extension_urls.cc
+@@ -38,8 +38,11 @@ const GURL* g_item_snippet_url_for_test_ = nullptr;
+ 
+ }  // namespace
+ 
+-const char kChromeWebstoreBaseURL[] = "https://chrome.9oo91e.qjz9zk/webstore";
+-const char kNewChromeWebstoreBaseURL[] = "https://chromewebstore.9oo91e.qjz9zk/";
++// Web Store launch navigation is explicitly user initiated. Keep the
++// ungoogled update/API endpoints substituted below, but do not send the user
++// to the qjz9zk fail-safe host when they ask to browse the public store.
++const char kChromeWebstoreBaseURL[] = "https://chrome.google.com/webstore";
++const char kNewChromeWebstoreBaseURL[] = "https://chromewebstore.google.com/";
+ const char kExtensionsDocsWhatsNewURL[] =
+     "https://developer.ch40me.qjz9zk/docs/extensions/whats-new";
+ const char kChromeWebstoreUpdateURL[] =
+diff --git a/extensions/common/extension_urls_unittest.cc b/extensions/common/extension_urls_unittest.cc
+index 9120b87..79f5dea 100644
+--- a/extensions/common/extension_urls_unittest.cc
++++ b/extensions/common/extension_urls_unittest.cc
+@@ -19,10 +19,17 @@ namespace extension_urls {
+ // Tests that the URL for the extensions category in the webstore is what
+ // we expect.
+ TEST(ExtensionWebstoreURLsTest, GetWebstoreExtensionsCategoryURL) {
+-  EXPECT_EQ("https://chromewebstore.9oo91e.qjz9zk/category/extensions",
++  EXPECT_EQ("https://chromewebstore.google.com/category/extensions",
+             GetWebstoreExtensionsCategoryURL().spec());
+ }
+ 
++TEST(ExtensionWebstoreURLsTest, LaunchURLsUseThePublicStore) {
++  EXPECT_EQ("https://chrome.google.com/webstore",
++            GetWebstoreLaunchURL().spec());
++  EXPECT_EQ("https://chromewebstore.google.com/",
++            GetNewWebstoreLaunchURL().spec());
++}
++
+ // Tests that the URL to get the block status of extensions in the webstore is
+ // what we expect.
+ TEST(ExtensionWebstoreURLsTest, GetWebstoreBlockStatusURL) {

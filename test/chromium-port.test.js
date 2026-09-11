@@ -63,6 +63,8 @@ test('the Ember patch series is ordered, local, and complete', () => {
     'ember/0018-ember-glass-overlay-refinements.patch',
     'ember/0019-ember-glass-menu-adoption.patch',
     'ember/0020-ember-glass-runtime-followups.patch',
+    'ember/0021-ember-typography-glass-motion.patch',
+    'ember/0022-ember-browser-chrome-repair.patch',
   ]);
   for (const entry of entries) {
     assert.equal(fs.existsSync(path.join(port.PATCHES_ROOT, ...entry.split('/'))), true);
@@ -237,8 +239,8 @@ test('the visible product patch brands window, About, accessibility, and default
 
 test('the native resource overlay is path-safe and carries valid Ember raster and ICO assets', () => {
   const manifest = port.readResourceManifest();
-  assert.equal(manifest.files.length, 19);
-  assert.equal(new Set(manifest.files.map((item) => item.destination)).size, 19);
+  assert.equal(manifest.files.length, 30);
+  assert.equal(new Set(manifest.files.map((item) => item.destination)).size, 30);
   assert.match(port.resourceOverlayHash(manifest), /^[0-9a-f]{64}$/);
   assert.equal(
     manifest.files.some((item) => item.destination.endsWith('/chromium/win/chromium.ico')),
@@ -755,6 +757,42 @@ test('EmberGlass runtime follow-ups commit hovered tabs and anchor chrome menus 
     patchText,
     /^\+.*ConvertPointFromScreen\(browser_view/m,
   );
+});
+
+test('the browser-chrome repair joins split tabs and preserves native browser state', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0022-ember-browser-chrome-repair.patch'),
+    'utf8',
+  );
+  const touchedFiles = [...patchText.matchAll(/^diff --git a\/(\S+) b\/\S+$/gm)]
+    .map((match) => match[1]);
+  const additions = patchText.split(/\r?\n/)
+    .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
+    .join('\n');
+
+  assert.match(patchText, /kEmberCloseVisualInset/);
+  assert.match(patchText, /Reserve the close lane whether or not the button is visible/);
+  assert.match(patchText, /Center\(contents_rect\.height\(\), gfx::kFaviconSize\)/);
+  assert.match(patchText, /AreJoinedSplitPartners/);
+  assert.match(patchText, /SplitTabsHaveNoGutter/);
+  assert.match(patchText, /IsDirectlyActiveSplitPane/);
+  assert.match(patchText, /PaintEmberSplitIndicator/);
+  assert.match(patchText, /tab_->mouse_hovered\(\)/);
+  assert.match(patchText, /kColorTabBackgroundInactiveHoverFrameActive/);
+  assert.match(patchText, /url_formatter::kFormatUrlOmitHTTP/);
+  assert.match(patchText, /url_formatter::kFormatUrlOmitHTTPS/);
+  assert.match(patchText, /url_formatter::kFormatUrlOmitTrivialSubdomains/);
+  assert.match(patchText, /FormatEmberSidebarUrlTest/);
+  assert.match(patchText, /u"docs\.example\.com\/path"/);
+  assert.match(patchText, /u"file:\/\/\/C:\/path\/file\.txt"/);
+  assert.match(patchText, /MoveCursorToStart/);
+  assert.match(patchText, /SetForwardButtonVisibility\(display_mode_ == DisplayMode::kNormal/);
+  assert.match(patchText, /IDC_FORWARD/);
+  assert.match(additions, /https:\/\/chrome\.google\.com\/webstore/);
+  assert.match(additions, /https:\/\/chromewebstore\.google\.com\//);
+  assert.doesNotMatch(additions, /clients2\.google\.com|chromewebstore\.googleapis\.com/);
+  assert.ok(!touchedFiles.includes('net/url_request/url_request.cc'));
+  assert.doesNotMatch(additions, /disable-site-isolation|no-sandbox|SafeBrowsing/);
 });
 
 test('packaging normalizes pinned artifacts to Ember names without overwriting conflicts', () => {
