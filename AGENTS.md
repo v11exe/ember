@@ -185,6 +185,21 @@ test/                          node:test contracts/integration fixtures
   lifecycle dependency on it. Keep the host hidden and require `GetVisible()`
   before reserving its leading margin; deleting it crashes during first-window
   construction.
+- The native Forward control is a Chromium `ToolbarController` responsive
+  element by default. In Ember's compact toolbar that rule can snap its width
+  to zero even when `SetVisible(true)` is called; keep it outside responsive
+  overflow and let `IDC_FORWARD` own enabled state and navigation.
+- The default New Tab Web Store tile is seeded from `IDS_WEBSTORE_URL` in
+  `chrome/app/resources/locale_settings.grd`, not the extension URL constants.
+  Ungoogled's `qjz9zk` placeholder host is rewritten in `URLRequest` to the
+  tracking-block scheme and ends in `ERR_BLOCKED_BY_CLIENT`. Fix launch URLs
+  at their owning resources; do not bypass that request filter.
+- The native New Tab button inherits a blue Chromium ink drop. Keep it
+  disabled and paint its neutral state inside fixed contents bounds. The tab
+  close button's contents bounds are already icon-sized; inset its full local
+  target for a visible compact hover tile. Glass-menu rows must use
+  `LabelButton`'s measured preferred size because the image lane adds to the
+  configured border insets.
 - `updateTabMetrics()` cancels the pending pass when it is called again, and a
   new tab is followed by a run of state emits. Anything that must happen after
   the widths settle has to survive being superseded — keep it as state (an id,
@@ -481,6 +496,11 @@ Git is the history archive.
 ---
 
 ## 4. Work Log
+
+### 2026-09-12 — Codex — Native browser-chrome repair verification
+- **Status / Branch:** patch 0025 linked, runtime-accepted and packaged · `chromium-port`
+- **Touches:** native tab/toolbar/sidebar controls, glass-menu sizing, Web Store links, patch contracts and port ledger
+- **Summary:** Runtime checks exposed responsive Forward collapse, a blocked generated Web Store tile, blue New Tab hover, a nearly invisible close-hover fill, and a clipped split-menu label despite earlier claims. Patch 0025 fixes their owning paths. The final incremental link and combined runtime pass accepted the controls, split geometry, menu text and actual Web Store tile click. CRLF patch drift was normalized; the full stack verifies and the installer/portable package succeed.
 
 ### 2026-09-11 — Codex — Native browser-chrome corrective pass
 - **Status / Branch:** four targeted regressions corrected and full native target linked · `chromium-port`

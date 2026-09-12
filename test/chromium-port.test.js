@@ -67,6 +67,7 @@ test('the Ember patch series is ordered, local, and complete', () => {
     'ember/0022-ember-browser-chrome-repair.patch',
     'ember/0023-ember-browser-chrome-cleanup.patch',
     'ember/0024-ember-browser-chrome-corrective.patch',
+    'ember/0025-ember-native-browser-chrome-verified-repair.patch',
   ]);
   for (const entry of entries) {
     assert.equal(fs.existsSync(path.join(port.PATCHES_ROOT, ...entry.split('/'))), true);
@@ -828,6 +829,33 @@ test('the browser-chrome cleanup repairs six foreground and sizing states', () =
   assert.match(additions, /kColorExtensionsMenuSecondaryText/);
   assert.match(additions, /SetEnabledTextColors\(kColorExtensionsMenuSecondaryText\)/);
   assert.match(additions, /SetImageModel\(views::Button::STATE_DISABLED/);
+});
+
+test('the native chrome follow-up keeps Forward visible and Web Store links public', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember',
+      '0025-ember-native-browser-chrome-verified-repair.patch'),
+    'utf8',
+  );
+  const additions = patchText.split(/\r?\n/)
+    .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
+    .join('\n');
+  assert.match(additions, /std::erase_if\(responsive_elements/);
+  assert.match(additions, /kToolbarForwardButtonElementId/);
+  assert.match(additions, /FocusRing::Remove\(this\)/);
+  assert.match(additions, /InkDropHost::InkDropMode::OFF/);
+  assert.match(patchText, /chrome\/browser\/ui\/views\/tabs\/new_tab_button\.cc/);
+  assert.match(additions, /NewTabButton::OnPaintBackground/);
+  assert.match(additions, /GetState\(\) == views::Button::STATE_PRESSED/);
+  assert.match(additions, /DrawRoundRect\(gfx::RectF\(GetContentsBounds\(\)\)/);
+  assert.match(additions, /gfx::RectF hover_bounds\(GetLocalBounds\(\)\)/);
+  assert.match(additions, /views::LabelButton::CalculatePreferredSize\(available_size\)/);
+  assert.match(additions, /kMenuContentWidthPadding = 32/);
+  assert.match(additions, /https:\/\/chromewebstore\.google\.com\//);
+  assert.match(patchText, /chrome\/app\/resources\/locale_settings\.grd/);
+  assert.match(additions, /https:\/\/chromewebstore\.google\.com\/\?hl=\[GRITLANGCODE\]/);
+  assert.match(additions, /https:\/\/chrome\.google\.com\/webstore/);
+  assert.doesNotMatch(additions, /9oo91e\.qjz9zk\/webstore|chromewebstore\.9oo91e/);
 });
 
 test('packaging normalizes pinned artifacts to Ember names without overwriting conflicts', () => {

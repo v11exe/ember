@@ -1,0 +1,430 @@
+diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.cc b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+--- a/chrome/browser/ui/views/toolbar/toolbar_view.cc
++++ b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+@@ -5,10 +5,11 @@
+ #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
+ 
+ #include <algorithm>
+ #include <memory>
+ #include <utility>
++#include <variant>
+ 
+ #include "base/command_line.h"
+ #include "base/containers/fixed_flat_map.h"
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
+@@ -1615,12 +1616,21 @@
+   // Order 1 is reserved for the location bar if kOmniboxResizingPrioritization
+   // is enabled.
+   constexpr int kToolbarFlexOrderStart = 2;
+ 
+   // TODO(crbug.com/40929989): Ignore containers till issue addressed.
++  auto responsive_elements =
++      ToolbarController::GetDefaultResponsiveElements(browser_);
++  // Forward belongs to Ember's permanent Back / Forward / Reload cluster.
++  // Chromium's responsive rule snaps it to zero beside the hidden omnibox.
++  std::erase_if(responsive_elements, [](const auto& element) {
++    const auto* id = std::get_if<ToolbarController::ElementIdInfo>(
++        &element.overflow_id);
++    return id && id->overflow_identifier == kToolbarForwardButtonElementId;
++  });
+   toolbar_controller_ = std::make_unique<ToolbarController>(
+-      ToolbarController::GetDefaultResponsiveElements(browser_),
++      responsive_elements,
+       ToolbarController::GetDefaultOverflowOrder(), kToolbarFlexOrderStart,
+       this, toolbar_webview_.get(), overflow_button_, pinned_toolbar_actions_,
+       PinnedToolbarActionsModel::Get(browser_view_->GetProfile()));
+   overflow_button_->set_toolbar_controller(toolbar_controller_.get());
+ 
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -364,10 +364,11 @@
+ #include "ui/views/background.h"
+ #include "ui/views/border.h"
+ #include "ui/views/bubble/bubble_dialog_delegate_view.h"
+ #include "ui/views/controls/button/label_button.h"
+ #include "ui/views/controls/button/menu_button.h"
++#include "ui/views/controls/focus_ring.h"
+ #include "ui/views/controls/label.h"
+ #include "ui/views/controls/textfield/textfield.h"
+ #include "ui/views/controls/webview/webview.h"
+ #include "ui/views/interaction/element_tracker_views.h"
+ #include "ui/views/interaction/view_subregion_anchor.h"
+@@ -609,10 +610,13 @@
+         cancel_callback_(std::move(cancel_callback)) {
+     // The parent address row owns the single hover surface. Textfield's
+     // default InkDrop otherwise paints a second, text-local hover treatment.
+     views::InkDrop::Get(this)->SetMode(
+         views::InkDropHost::InkDropMode::OFF);
++    // The row paints the focus state at its own bounds. Textfield's installed
++    // focus ring otherwise outlines the smaller text box inside that row.
++    views::FocusRing::Remove(this);
+   }
+ 
+   EmberSidebarAddressTextfield(const EmberSidebarAddressTextfield&) = delete;
+   EmberSidebarAddressTextfield& operator=(
+       const EmberSidebarAddressTextfield&) = delete;
+diff --git a/chrome/browser/ui/views/tabs/tab/tab_close_button.cc b/chrome/browser/ui/views/tabs/tab/tab_close_button.cc
+--- a/chrome/browser/ui/views/tabs/tab/tab_close_button.cc
++++ b/chrome/browser/ui/views/tabs/tab/tab_close_button.cc
+@@ -33,11 +33,11 @@
+ #if defined(USE_AURA)
+ #include "ui/aura/env.h"
+ #endif
+ 
+ namespace {
+-constexpr int kEmberCloseVisualInset = 6;
++constexpr int kEmberCloseVisualInset = 8;
+ constexpr int kEmberCloseHoverAlpha = 0x26;
+ constexpr int kEmberClosePressedAlpha = 0x3A;
+ 
+ gfx::Size GetButtonSize() {
+   // The close button is larger than the icon inside to provide a larger hit
+@@ -61,11 +61,13 @@
+   // Some sites cannot be closed immediately and instead show a confirmation
+   // dialog when the close button is clicked, so this is needed to reset the
+   // inkdrop state.
+   SetHasInkDropActionOnClick(true);
+ 
+-  views::InkDrop::Get(this)->SetMode(views::InkDropHost::InkDropMode::ON);
++  // Hover and press are painted in PaintButtonContents at the compact visual
++  // bounds; the hit target remains larger without a second native surface.
++  views::InkDrop::Get(this)->SetMode(views::InkDropHost::InkDropMode::OFF);
+   views::InkDrop::Get(this)->SetHighlightOpacity(0.16f);
+   views::InkDrop::Get(this)->SetVisibleOpacity(0.14f);
+ 
+   SetImageCentered(true);
+ 
+@@ -83,22 +85,20 @@
+   // TODO(http://crbug.com/40120351): Make ink drops in RTL work the same way as
+   // focus rings.
+   auto ink_drop_highlight_path =
+       std::make_unique<views::RoundRectHighlightPathGenerator>(
+           gfx::Insets(kEmberCloseVisualInset), 4);
+-  ink_drop_highlight_path->set_use_contents_bounds(true);
+   ink_drop_highlight_path->set_use_mirrored_rect(true);
+   views::HighlightPathGenerator::Install(this,
+                                          std::move(ink_drop_highlight_path));
+ 
+   SetInstallFocusRingOnFocus(true);
+   // TODO(http://crbug.com/40120351): Once this bug is solved and explicit
+   // mirroring for ink drops is not needed, we can combine these two.
+   auto ring_highlight_path =
+       std::make_unique<views::RoundRectHighlightPathGenerator>(
+           gfx::Insets(kEmberCloseVisualInset), 4);
+-  ring_highlight_path->set_use_contents_bounds(true);
+   views::FocusRing::Get(this)->SetPathGenerator(std::move(ring_highlight_path));
+ 
+   UpdateIcon();
+ }
+ 
+@@ -197,11 +197,13 @@
+     fill.setAntiAlias(true);
+     fill.setColor(SkColorSetA(
+         colors_.foreground_color,
+         GetState() == STATE_PRESSED ? kEmberClosePressedAlpha
+                                     : kEmberCloseHoverAlpha));
+-    gfx::RectF hover_bounds(GetContentsBounds());
++    // Use the whole 32-DIP target before insetting. GetContentsBounds() is
++    // already only icon-sized; another inset made the hover tile 4 DIPs wide.
++    gfx::RectF hover_bounds(GetLocalBounds());
+     hover_bounds.Inset(kEmberCloseVisualInset);
+     canvas->DrawRoundRect(hover_bounds, 4.0f, fill);
+   }
+   views::LabelButton::PaintButtonContents(canvas);
+ }
+diff --git a/chrome/browser/ui/views/tabs/new_tab_button.cc b/chrome/browser/ui/views/tabs/new_tab_button.cc
+--- a/chrome/browser/ui/views/tabs/new_tab_button.cc
++++ b/chrome/browser/ui/views/tabs/new_tab_button.cc
+@@ -6,10 +6,11 @@
+ 
+ #include <memory>
+ #include <string>
+ 
+ #include "base/metrics/user_metrics.h"
++#include "cc/paint/paint_flags.h"
+ #include "chrome/app/chrome_command_ids.h"
+ #include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/browser_commands.h"
+ #include "chrome/browser/ui/browser_element_identifiers.h"
+ #include "chrome/browser/ui/color/chrome_color_id.h"
+@@ -23,10 +24,12 @@
+ #include "chrome/grit/generated_resources.h"
+ #include "components/tabs/public/tab_group.h"
+ #include "ui/base/interaction/element_identifier.h"
+ #include "ui/base/l10n/l10n_util.h"
+ #include "ui/base/ui_base_features.h"
++#include "ui/gfx/canvas.h"
++#include "ui/views/animation/ink_drop.h"
+ #include "ui/views/view_class_properties.h"
+ 
+ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(NewTabButtonMenuModel, kNewTab);
+ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(NewTabButtonMenuModel, kNewTabInGroup);
+ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(NewTabButtonMenuModel, kNewSplitView);
+@@ -46,12 +49,13 @@
+       browser_(browser) {
+   set_context_menu_controller(this);
+   SetProperty(views::kElementIdentifierKey, kNewTabButtonElementId);
+   SetImageCentered(true);
+   SetHorizontalAlignment(gfx::ALIGN_CENTER);
+-  SetInkdropHoverColorId(kColorTabBackgroundInactiveHoverFrameActive);
+-  SetInkdropRippleColorId(kColorTabBackgroundInactiveHoverFrameActive);
++  // The inherited Chromium ink drop paints a blue header-hover tile. Ember
++  // paints its compact neutral state in the same contents bounds instead.
++  views::InkDrop::Get(this)->SetMode(views::InkDropHost::InkDropMode::OFF);
+ }
+ 
+ NewTabButton::~NewTabButton() {
+   Browser* browser = browser_ ? browser_->GetBrowserForMigrationOnly() : nullptr;
+   BrowserView* browser_view =
+@@ -93,10 +97,26 @@
+ 
+ void NewTabButton::UpdateBackground() {
+   SetBackground(views::CreateSolidBackground(SK_ColorTRANSPARENT));
+ }
+ 
++void NewTabButton::OnPaintBackground(gfx::Canvas* canvas) {
++  TabStripControlButton::OnPaintBackground(canvas);
++  if (GetState() != views::Button::STATE_HOVERED &&
++      GetState() != views::Button::STATE_PRESSED) {
++    return;
++  }
++
++  cc::PaintFlags flags;
++  flags.setAntiAlias(true);
++  flags.setColor(SkColorSetARGB(
++      GetState() == views::Button::STATE_PRESSED ? 0x30 : 0x20,
++      0xFF, 0xFF, 0xFF));
++  canvas->DrawRoundRect(gfx::RectF(GetContentsBounds()), GetCornerRadius(),
++                        flags);
++}
++
+ NewTabButtonMenuModel::NewTabButtonMenuModel(BrowserWindowInterface* browser)
+     : ui::SimpleMenuModel(this), browser_(browser) {
+   CHECK(browser_);
+ 
+   // Build the menu.
+diff --git a/chrome/browser/ui/views/tabs/new_tab_button.h b/chrome/browser/ui/views/tabs/new_tab_button.h
+--- a/chrome/browser/ui/views/tabs/new_tab_button.h
++++ b/chrome/browser/ui/views/tabs/new_tab_button.h
+@@ -44,10 +44,11 @@
+       ui::mojom::MenuSourceType source_type) override;
+ 
+  protected:
+   // TabStripControlButton:
+   void UpdateBackground() override;
++  void OnPaintBackground(gfx::Canvas* canvas) override;
+ 
+  private:
+   std::unique_ptr<NewTabButtonMenuModel> context_menu_model_;
+   std::unique_ptr<views::MenuRunner> context_menu_runner_;
+   raw_ptr<BrowserWindowInterface> browser_;
+diff --git a/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
+--- a/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_overlay_controller.cc
+@@ -57,14 +57,14 @@
+ constexpr int kMenuMaxWidth = 560;
+ constexpr int kMenuRowHeight = 30;
+ constexpr int kMenuSeparatorHeight = 7;
+ constexpr int kMenuInset = 7;
+ constexpr int kMenuHorizontalPadding = 10;
+-// The custom row layout positions the accelerator/submenu labels outside the
+-// LabelButton's default measurement. Preserve that trailing content budget
+-// when the panel width is derived from the widest label.
+-constexpr int kMenuContentWidthPadding = 16;
++// The custom row layout positions accelerator/submenu labels independently of
++// LabelButton. Include their space plus the rendered font's edge overhang so
++// long rows keep the whole last glyph inside the panel.
++constexpr int kMenuContentWidthPadding = 32;
+ constexpr int kMenuIconColumnWidth = 24;
+ constexpr int kMenuAcceleratorGap = 18;
+ constexpr int kMenuSubmenuWidth = 14;
+ constexpr int kSwitcherCardWidth = 236;
+ constexpr int kSwitcherPreviewHeight = 133;
+@@ -145,23 +145,17 @@
+                       : views::LabelButton::OnKeyPressed(event);
+   }
+ 
+   gfx::Size CalculatePreferredSize(
+       const views::SizeBounds& available_size) const override {
+-    const int label_width = label()->GetPreferredSize().width();
+-    int width = kMenuHorizontalPadding * 2 + label_width;
+-    if (reserve_icon_column_) {
+-      width += kMenuIconColumnWidth;
+-    }
+-    if (!accelerator_label_->GetText().empty()) {
+-      width += kMenuAcceleratorGap +
+-               accelerator_label_->GetPreferredSize().width();
+-    }
+-    if (has_submenu_) {
+-      width += kMenuSubmenuWidth;
+-    }
+-    return gfx::Size(width, kMenuRowHeight);
++    // LabelButton measures its actual icon, spacing and border insets. The
++    // earlier hand sum missed its image lane after SetMenuIcon(), so the panel
++    // clipped long rows such as "New split view with current tab".
++    gfx::Size size =
++        views::LabelButton::CalculatePreferredSize(available_size);
++    size.set_height(kMenuRowHeight);
++    return size;
+   }
+ 
+   views::ProposedLayout CalculateProposedLayout(
+       const views::SizeBounds& size_bounds) const override {
+     views::ProposedLayout layouts =
+diff --git a/chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome_page_handler.cc b/chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome_page_handler.cc
+--- a/chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome_page_handler.cc
++++ b/chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome_page_handler.cc
+@@ -398,18 +398,18 @@
+   page_->SetThemeEditable(is_theme_editable);
+ }
+ 
+ void CustomizeChromePageHandler::OpenChromeWebStore() {
+   open_url_callback_.Run(
+-      GURL("https://chromewebstore.9oo91e.qjz9zk/category/themes"));
++      GURL("https://chromewebstore.google.com/category/themes"));
+   UMA_HISTOGRAM_ENUMERATION("NewTabPage.ChromeWebStoreOpen",
+                             NtpChromeWebStoreOpen::kAppearance);
+ }
+ 
+ void CustomizeChromePageHandler::OpenThirdPartyThemePage(
+     const std::string& theme_id) {
+-  open_url_callback_.Run(GURL("https://chromewebstore.9oo91e.qjz9zk/detail/" +
++  open_url_callback_.Run(GURL("https://chromewebstore.google.com/detail/" +
+                               base::EscapePath(theme_id)));
+   UMA_HISTOGRAM_ENUMERATION("NewTabPage.ChromeWebStoreOpen",
+                             NtpChromeWebStoreOpen::kCollections);
+ }
+ 
+@@ -426,11 +426,11 @@
+       path = "extensions/lifestyle/shopping";
+       page = NtpChromeWebStoreOpen::kShoppingCategoryPage;
+       break;
+   }
+ 
+-  open_url_callback_.Run(GURL("https://chromewebstore.9oo91e.qjz9zk/category/" +
++  open_url_callback_.Run(GURL("https://chromewebstore.google.com/category/" +
+                               path +
+                               "?utm_source=chromeSidebarExtensionCards"));
+   UMA_HISTOGRAM_ENUMERATION("NewTabPage.ChromeWebStoreOpen", page);
+ }
+ 
+@@ -443,19 +443,19 @@
+       path = "writing_essentials";
+       page = NtpChromeWebStoreOpen::kWritingEssentialsCollectionPage;
+       break;
+   }
+ 
+-  open_url_callback_.Run(GURL("https://chromewebstore.9oo91e.qjz9zk/collection/" +
++  open_url_callback_.Run(GURL("https://chromewebstore.google.com/collection/" +
+                               path +
+                               "?utm_source=chromeSidebarExtensionCards"));
+   UMA_HISTOGRAM_ENUMERATION("NewTabPage.ChromeWebStoreOpen", page);
+ }
+ 
+ void CustomizeChromePageHandler::OpenChromeWebStoreHomePage() {
+   open_url_callback_.Run(
+-      GURL("https://chromewebstore.9oo91e.qjz9zk/"
++      GURL("https://chromewebstore.google.com/"
+            "?utm_source=chromeSidebarExtensionCards"));
+   UMA_HISTOGRAM_ENUMERATION("NewTabPage.ChromeWebStoreOpen",
+                             NtpChromeWebStoreOpen::kHomePage);
+ }
+ 
+diff --git a/chrome/browser/resources/new_tab_page/app.ts b/chrome/browser/resources/new_tab_page/app.ts
+--- a/chrome/browser/resources/new_tab_page/app.ts
++++ b/chrome/browser/resources/new_tab_page/app.ts
+@@ -1567,11 +1567,11 @@
+     });
+   }
+ 
+   protected onWebstoreToastButtonClick_() {
+     window.location.assign(
+-        `https://chrome.9oo91e.qjz9zk/webstore/category/collection/chrome_color_themes?hl=${
++        `https://chrome.google.com/webstore/category/collection/chrome_color_themes?hl=${
+             window.navigator.language}`);
+   }
+ 
+   private onWindowClick_(e: Event) {
+     if (this.ntpRealboxNextEnabled_) {
+diff --git a/chrome/browser/resources/extensions_zero_state_promo/zero_state_promo_app.html.ts b/chrome/browser/resources/extensions_zero_state_promo/zero_state_promo_app.html.ts
+--- a/chrome/browser/resources/extensions_zero_state_promo/zero_state_promo_app.html.ts
++++ b/chrome/browser/resources/extensions_zero_state_promo/zero_state_promo_app.html.ts
+@@ -114,11 +114,11 @@
+         $i18n{extensionsZeroStateIphWebStoreLink}
+       </cr-chip>
+     </div>
+   </div>` : html`
+   <div id="sectionHeaderContainer">
+-    <a class="extensionIphLink" href="https://chromewebstore.9oo91e.qjz9zk/">$i18nRaw{extensionsZeroStateChipsWithLinkIphLinkLabel}</a>
++    <a class="extensionIphLink" href="https://chromewebstore.google.com/">$i18nRaw{extensionsZeroStateChipsWithLinkIphLinkLabel}</a>
+     $i18nRaw{extensionsZeroStateChipsWithLinkIphDesc}
+   </div>
+   <div id='labelContainer'>
+     <div class="v3Chip">
+       <cr-chip id="aiButton"
+diff --git a/chrome/browser/resources/settings/appearance_page/appearance_page.ts b/chrome/browser/resources/settings/appearance_page/appearance_page.ts
+--- a/chrome/browser/resources/settings/appearance_page/appearance_page.ts
++++ b/chrome/browser/resources/settings/appearance_page/appearance_page.ts
+@@ -516,11 +516,11 @@
+ 
+       this.appearanceBrowserProxy_.getThemeInfo(themeId).then(info => {
+         this.themeSublabel_ = info.name;
+       });
+ 
+-      this.themeUrl_ = 'https://chrome.9oo91e.qjz9zk/webstore/detail/' + themeId;
++      this.themeUrl_ = 'https://chrome.google.com/webstore/detail/' + themeId;
+       return;
+     }
+ 
+     this.themeUrl_ = '';
+ 
+diff --git a/chrome/browser/resources/settings/a11y_page/a11y_page.ts b/chrome/browser/resources/settings/a11y_page/a11y_page.ts
+--- a/chrome/browser/resources/settings/a11y_page/a11y_page.ts
++++ b/chrome/browser/resources/settings/a11y_page/a11y_page.ts
+@@ -208,11 +208,11 @@
+   // </if>
+ 
+   /** private */
+   private onMoreFeaturesLinkClick_() {
+     window.open(
+-        'https://chrome.9oo91e.qjz9zk/webstore/category/collection/3p_accessibility_extensions');
++        'https://chrome.google.com/webstore/category/collection/3p_accessibility_extensions');
+   }
+ 
+   // <if expr="is_win or is_linux">
+   private onOverscrollHistoryNavigationChange_(event: Event) {
+     const enabled = (event.target as SettingsToggleButtonElement).checked;
+diff --git a/chrome/app/resources/locale_settings.grd b/chrome/app/resources/locale_settings.grd
+--- a/chrome/app/resources/locale_settings.grd
++++ b/chrome/app/resources/locale_settings.grd
+@@ -166,11 +166,11 @@
+         25
+       </message>
+ 
+       <!-- The URL for the webstore. -->
+       <message name="IDS_WEBSTORE_URL" translateable="false">
+-        https://chrome.9oo91e.qjz9zk/webstore?hl=[GRITLANGCODE]
++        https://chromewebstore.google.com/?hl=[GRITLANGCODE]
+       </message>
+ 
+       <!-- The width of the media galleries configuration dialog in characters. -->
+       <message name="IDS_MEDIA_GALLERIES_DIALOG_CONTENT_WIDTH_CHARS" use_name_for_id="true">
+         81
+diff --git a/chrome/app/extensions_strings.grdp b/chrome/app/extensions_strings.grdp
+--- a/chrome/app/extensions_strings.grdp
++++ b/chrome/app/extensions_strings.grdp
+@@ -393,11 +393,11 @@
+   </message>
+   <message name="IDS_EXTENSIONS_NO_ACTIVITIES" desc="The message shown to the user when an extension has no recent activities.">
+     No recent activities
+   </message>
+   <message name="IDS_EXTENSIONS_NO_INSTALLED_ITEMS" desc="The message shown to the user on the Extensions settings page when there are no extensions or apps installed.">
+-    Find extensions and themes in the <ph name="BEGIN_LINK">&lt;a target="_blank" href="https://chrome.9oo91e.qjz9zk/webstore/category/extensions"&gt;</ph>Chrome Web Store<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
++    Find extensions and themes in the <ph name="BEGIN_LINK">&lt;a target="_blank" href="https://chromewebstore.google.com/category/extensions"&gt;</ph>Chrome Web Store<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
+   </message>
+   <message name="IDS_EXTENSIONS_NO_DESCRIPTION" desc="The message shown to the user when an extension does not have any description.">
+     No description provided
+   </message>
+   <message name="IDS_EXTENSIONS_OPENS_IN_NEW_TAB" desc="ARIA (accessibility) label describing a link which opens in a new tab.">

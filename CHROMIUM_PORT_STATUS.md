@@ -1,13 +1,62 @@
 # Ember native Chromium port status
 
-Last updated: 2026-09-11 on branch `chromium-port`.
+Last updated: 2026-09-12 on branch `chromium-port`.
 
 **Read this first:** the pinned external checkout and incremental build graph are
-preserved at `C:\src\ember-chromium`. Patches 0006–0024 now provide the built
+preserved at `C:\src\ember-chromium`. Patches 0006–0025 now provide the built
 native shell plus the reusable EmberGlass material, context menu, Ctrl+Tab and
 eligible browser-bubble overlays. Patch 0017 fixes the production JPEG
 displacement-map decoder and removes the temporary blue fallback without
 changing the approved glass graph. Preserve that checkout and its `.ninja_log`.
+
+## 2026-09-12 Browser-chrome repair — verified residuals
+
+Do not treat the 2026-09-11 patch 0022–0024 repair claims as acceptance. A
+direct run of their built binary reproduced two failures: Forward occupied an
+empty accessibility rectangle, and the New Tab button's hover painted a blue
+Chromium tile. The old New Tab Web Store shortcut pointed at a
+`*.9oo91e.qjz9zk` host; `net/url_request/url_request.cc` rewrites that host to
+the `trk:` scheme, whose protocol handler returns `ERR_BLOCKED_BY_CLIENT`.
+The public `https://chromewebstore.google.com/category/extensions` loads in
+the same profile. This is a stale destination, not a reason to relax the
+request block.
+
+Patch 0025 removes Forward from Chromium's responsive-collapse list, removes
+the nested address textfield focus ring, removes the close X's second ink-drop
+layer, makes the New Tab button paint a compact neutral hover/press surface,
+and replaces the user-facing stale Web Store destinations, including the
+locale resource that seeds New Tab's prepopulated Web Store tile. The
+`chrome://new-tab-page-third-party/` shortcut changed to the public URL on
+restart in an existing profile; no Top Sites database migration was needed.
+
+Runtime evidence from the final 0025 build: Back, Forward and Reload occupy
+three adjacent 31×31 rectangles. Forward is disabled with no forward history,
+enables after Back, and its invoke navigates forward. The sidebar address shows
+`example.com/test` when idle and `https://www.example.com/test` when focused;
+Copy current link writes the full URL to the clipboard. The public Chrome Web
+Store category page renders normally. PrintWindow captures were taken from the
+second-monitor HWND. A subsequent capture caught the plus-button blue hover;
+the rebuilt neutral-gray state was then photographed in the same location.
+The selected and background split pairs are flush 95 px halves; hovering
+either half keeps its geometry fixed, and closing either side restores an
+ordinary rounded tab. A zoomed close-button hover capture confirmed a centered
+X on a compact 16 px surface after the ink-drop removal. The final split
+context-menu capture shows the full “New split view with current tab” label.
+The plus button's pressed state remains neutral, compact and centered. An
+automated click on the actual New Tab Web Store tile navigated to the public
+Chrome Web Store and rendered its page, without `ERR_BLOCKED_BY_CLIENT`.
+
+Checks: `node --test test/chromium-port.test.js` 45/45 pass;
+`node chromium/tools/check-patch-hunks.js` accepts all 25 patches; `npm test`
+428/428 pass; `npm run smoke` passes (its frame-dependent assertions skip on
+this host). The preserved incremental native build linked at `[333/333] LINK
+chrome.exe chrome.exe.pdb`; the combined interaction and visual acceptance pass
+used that executable. Patches 0020, 0021 and 0024 were normalized from CRLF to
+LF so the reverse-apply verifier matches the LF source. The ordered 25-patch
+postimage and 30 resource destinations verify. The generated configuration
+metadata was synchronized without cleaning or changing the compiled source.
+`npm run chromium:package -- --work-root C:\src\ember-chromium` produced the
+installer and portable ZIP under `C:\src\ember-chromium\configuration\build`.
 
 ## 2026-09-11 Browser-chrome corrective pass — four targeted fixes
 
