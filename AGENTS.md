@@ -195,11 +195,12 @@ test/                          node:test contracts/integration fixtures
   tracking-block scheme and ends in `ERR_BLOCKED_BY_CLIENT`. Fix launch URLs
   at their owning resources; do not bypass that request filter.
 - The native New Tab button inherits a blue Chromium ink drop. Keep it
-  disabled and paint its neutral state inside fixed contents bounds. The tab
-  close button's contents bounds are already icon-sized; inset its full local
-  target for a visible compact hover tile. Glass-menu rows must use
-  `LabelButton`'s measured preferred size because the image lane adds to the
-  configured border insets.
+  disabled and paint its neutral state inside fixed contents bounds. Paint the
+  tab close hover tile at the laid-out image bounds so it follows the X. A
+  compact idle tab uses the hidden close lane for its full title; hovering
+  narrows and fades that title from the right over 100 ms. Glass-menu rows
+  must use `LabelButton`'s measured preferred size because the image lane adds
+  to the configured border insets.
 - `updateTabMetrics()` cancels the pending pass when it is called again, and a
   new tab is followed by a run of state emits. Anything that must happen after
   the widths settle has to survive being superseded — keep it as state (an id,
@@ -496,6 +497,11 @@ Git is the history archive.
 ---
 
 ## 4. Work Log
+
+### 2026-09-12 — Codex — Native tab title and close alignment
+- **Status / Branch:** rebuilt and screen-captured · `chromium-port`
+- **Touches:** native tab title lane, hover animation and close paint, patch 0026, focused QA
+- **Summary:** Idle 95 px tabs now show “New Tab” in full. Hover reserves the close lane with a 100 ms right-to-left title fade; the X tile follows the image bounds and sits evenly inside the pill. The native DLL links, live idle/hover/motion captures confirm the result, and repository tests pass.
 
 ### 2026-09-12 — Codex — Native browser-chrome repair verification
 - **Status / Branch:** patch 0025 linked, runtime-accepted and packaged · `chromium-port`

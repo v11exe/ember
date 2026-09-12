@@ -68,6 +68,7 @@ test('the Ember patch series is ordered, local, and complete', () => {
     'ember/0023-ember-browser-chrome-cleanup.patch',
     'ember/0024-ember-browser-chrome-corrective.patch',
     'ember/0025-ember-native-browser-chrome-verified-repair.patch',
+    'ember/0026-ember-native-tab-title-and-close-alignment.patch',
   ]);
   for (const entry of entries) {
     assert.equal(fs.existsSync(path.join(port.PATCHES_ROOT, ...entry.split('/'))), true);

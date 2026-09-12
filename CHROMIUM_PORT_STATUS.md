@@ -1,13 +1,38 @@
 # Ember native Chromium port status
 
-Last updated: 2026-09-12 on branch `chromium-port`.
+Last updated: 2026-09-13 on branch `chromium-port`.
 
 **Read this first:** the pinned external checkout and incremental build graph are
-preserved at `C:\src\ember-chromium`. Patches 0006–0025 now provide the built
+preserved at `C:\src\ember-chromium`. Patches 0006–0026 now provide the built
 native shell plus the reusable EmberGlass material, context menu, Ctrl+Tab and
 eligible browser-bubble overlays. Patch 0017 fixes the production JPEG
 displacement-map decoder and removes the temporary blue fallback without
 changing the approved glass graph. Preserve that checkout and its `.ninja_log`.
+
+## 2026-09-12 Compact tab title and close alignment — runtime verified
+
+Patch 0026 lets a compact idle tab use the space held for its hidden close
+button. At 95 px, the complete “New Tab” title now renders without a tail fade.
+Hover reveals the close button and animates the title lane narrower over 100 ms,
+so the tail fades from right to left; leaving the tab expands it again. The X
+hover tile paints at the laid-out image bounds, and the close control shifts
+six DIPs right to give the tile approximately equal top, bottom and right gaps
+inside the 32-DIP pill. The icon and tab geometry stay fixed.
+
+Evidence: `node chromium/tools/check-patch-hunks.js` accepts all 26 patches,
+`node --test test/chromium-port.test.js` passes 45/45, `npm test` passes 428/428,
+and `npm run smoke` passes with its documented frame-dependent skips. The
+focused native `chrome.dll` build compiles `tab.obj` and `tab_close_button.obj`
+and links successfully. A fresh profile on the second monitor produced direct
+screen captures of the 95 px idle title, hovered X and right-to-left transition
+at early, middle and settled frames (`qa-tab-0026d-*` in the external work
+root). The full `chrome` target stopped at its resource-allowlist tool lookup
+before the Visual Studio `undname.exe` directory was supplied; its long retry
+was interrupted after the DLL had linked. The existing executable with that
+rebuilt DLL was used for visual acceptance. The native `tab_unittest.cc`
+regression was updated for 95 px idle/hover/exit states but was not compiled
+into `unit_tests.exe` on this host. Next: compile and run that native test,
+then finish the resource-allowlist step before rebuilding distributable packages.
 
 ## 2026-09-12 Browser-chrome repair — verified residuals
 

@@ -1,0 +1,125 @@
+diff --git a/chrome/browser/ui/views/tabs/tab.cc b/chrome/browser/ui/views/tabs/tab.cc
+--- a/chrome/browser/ui/views/tabs/tab.cc
++++ b/chrome/browser/ui/views/tabs/tab.cc
+@@ -356,6 +356,7 @@
+   const gfx::Rect contents_rect = GetContentsBounds();
+ 
+   const bool was_showing_icon = showing_icon_;
++  const bool was_showing_close_button = showing_close_button_;
+   UpdateIconVisibility();
+ 
+   const int start = contents_rect.x();
+@@ -402,11 +403,11 @@
+   const int after_title_padding =
+       GetLayoutConstant(LayoutConstant::kTabAfterTitlePadding);
+ 
+-  // Ember's hover close surface sits six DIPs inside the painted pill. The
+-  // visible icon still follows Chromium's accessibility-aware button model.
+-  int close_x = contents_rect.right() - 5;
++  // Center the 16-DIP close surface with equal eight-DIP gaps above, below,
++  // and to the right of the compact 32-DIP tab pill.
++  int close_x = contents_rect.right() + 1;
+   const bool reserve_close_lane =
+-      ShouldRenderAsNormalTab() && !data().pinned &&
++      showing_close_button_ && ShouldRenderAsNormalTab() && !data().pinned &&
+       !base::CommandLine::ForCurrentProcess()->HasSwitch(
+           "hide-tab-close-buttons");
+   if (reserve_close_lane || showing_close_button_) {
+@@ -493,9 +494,9 @@
+     if (showing_alert_indicator_) {
+       title_right = alert_indicator_button_->x() - after_title_padding;
+     } else if (reserve_close_lane) {
+-      // Reserve the close lane whether or not the button is visible. Hovering
+-      // may reveal the affordance, but it must never reflow the title.
+-      title_right = close_x - after_title_padding;
++      // The visible close button needs one gap, already included in close_x.
++      // Idle compact tabs use this lane for their title while X is hidden.
++      title_right = close_x;
+     }
+     const int title_width = std::max(title_right - title_left, 0);
+     // The Label will automatically center the font's cap height within the
+@@ -506,12 +507,18 @@
+ 
+     if (title_bounds != target_title_bounds_) {
+       target_title_bounds_ = title_bounds;
+-      if (was_showing_icon == showing_icon_ || title_->bounds().IsEmpty() ||
++      const bool animate_title =
++          was_showing_icon != showing_icon_ ||
++          was_showing_close_button != showing_close_button_;
++      if (!animate_title || title_->bounds().IsEmpty() ||
+           title_bounds.IsEmpty()) {
+         title_animation_.Stop();
+         title_->SetBoundsRect(title_bounds);
+-      } else if (!title_animation_.is_animating()) {
+-        start_title_bounds_ = title_->bounds();
++      } else {
++        const gfx::Rect start_bounds = title_->bounds();
++        title_animation_.Stop();
++        title_->SetBoundsRect(start_bounds);
++        start_title_bounds_ = start_bounds;
+         title_animation_.Start();
+       }
+     }
+diff --git a/chrome/browser/ui/views/tabs/tab/tab_close_button.cc b/chrome/browser/ui/views/tabs/tab/tab_close_button.cc
+--- a/chrome/browser/ui/views/tabs/tab/tab_close_button.cc
++++ b/chrome/browser/ui/views/tabs/tab/tab_close_button.cc
+@@ -199,10 +199,9 @@
+         colors_.foreground_color,
+         GetState() == STATE_PRESSED ? kEmberClosePressedAlpha
+                                     : kEmberCloseHoverAlpha));
+-    // Use the whole 32-DIP target before insetting. GetContentsBounds() is
+-    // already only icon-sized; another inset made the hover tile 4 DIPs wide.
+-    gfx::RectF hover_bounds(GetLocalBounds());
+-    hover_bounds.Inset(kEmberCloseVisualInset);
++    // The image's laid-out bounds are the actual X position. Paint the hover
++    // tile at those bounds instead of guessing from the button or its insets.
++    gfx::RectF hover_bounds(image_container_view()->bounds());
+     canvas->DrawRoundRect(hover_bounds, 4.0f, fill);
+   }
+   views::LabelButton::PaintButtonContents(canvas);
+diff --git a/chrome/browser/ui/views/tabs/tab_unittest.cc b/chrome/browser/ui/views/tabs/tab_unittest.cc
+--- a/chrome/browser/ui/views/tabs/tab_unittest.cc
++++ b/chrome/browser/ui/views/tabs/tab_unittest.cc
+@@ -496,7 +496,7 @@
+   EXPECT_EQ(close_button_insets.right(), close_button_insets_2.right());
+ }
+ 
+-TEST_F(TabTest, HoverCloseDoesNotReflowTabContents) {
++TEST_F(TabTest, IdleTitleUsesHiddenCloseButtonSpace) {
+   auto controller = std::make_unique<FakeTabSlotController>();
+   std::unique_ptr<views::Widget> widget =
+       CreateTestWidget(views::Widget::InitParams::CLIENT_OWNS_WIDGET);
+@@ -505,13 +505,14 @@
+ 
+   tabs::TabData data;
+   data.should_display_favicon = true;
+-  data.title = u"Stable Ember tab title";
+-  tab->SetDataForTesting(data);
+-  tab->SetBounds(0, 0, tab->tab_style()->GetStandardWidth(false),
+-                 GetLayoutConstant(LayoutConstant::kTabHeight));
++  data.title = u"New Tab";
++  tab->SetDataForTesting(data);
++  tab->SetBounds(0, 0, 95, GetLayoutConstant(LayoutConstant::kTabHeight));
+   LayoutTab(tab);
+   const gfx::Rect idle_icon_bounds = GetTabIcon(tab)->bounds();
+   const gfx::Rect idle_title_bounds = GetTabTitle(tab)->bounds();
++  EXPECT_GE(idle_title_bounds.width(),
++            GetTabTitle(tab)->GetPreferredSize().width());
+ 
+   tab->OnMouseEntered(ui::MouseEvent(ui::EventType::kMouseMoved, gfx::Point(),
+                                      gfx::Point(), base::TimeTicks(), 0, 0));
+@@ -519,6 +520,14 @@
+ 
+   EXPECT_TRUE(GetCloseButton(tab)->GetVisible());
+   EXPECT_EQ(idle_icon_bounds, GetTabIcon(tab)->bounds());
++  EndTitleAnimation(tab);
++  EXPECT_GT(idle_title_bounds.width(), GetTabTitle(tab)->bounds().width());
++
++  tab->OnMouseExited(ui::MouseEvent(ui::EventType::kMouseMoved, gfx::Point(),
++                                    gfx::Point(), base::TimeTicks(), 0, 0));
++  LayoutTab(tab);
++  EndTitleAnimation(tab);
++  EXPECT_FALSE(GetCloseButton(tab)->GetVisible());
+   EXPECT_EQ(idle_title_bounds, GetTabTitle(tab)->bounds());
+ }
+ 
