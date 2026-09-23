@@ -120,6 +120,34 @@
     {
       "source": "typography/LICENSE.txt",
       "destination": "chrome/app/theme/chromium/ember_fonts/LICENSE.txt"
+    },
+    {
+      "source": "newtab/new_tab_page_third_party.html",
+      "destination": "chrome/browser/resources/new_tab_page_third_party/new_tab_page_third_party.html"
+    },
+    {
+      "source": "newtab/ember-newtab.css",
+      "destination": "chrome/browser/resources/new_tab_page_third_party/ember-newtab.css"
+    },
+    {
+      "source": "newtab/ember-brand.ts",
+      "destination": "chrome/browser/resources/new_tab_page_third_party/ember-brand.ts"
+    },
+    {
+      "source": "newtab/ember-search.ts",
+      "destination": "chrome/browser/resources/new_tab_page_third_party/ember-search.ts"
+    },
+    {
+      "source": "newtab/ember-newtab.ts",
+      "destination": "chrome/browser/resources/new_tab_page_third_party/ember-newtab.ts"
+    },
+    {
+      "source": "newtab/ember-icon.png",
+      "destination": "chrome/browser/resources/new_tab_page_third_party/ember-icon.png"
+    },
+    {
+      "source": "newtab/Necosmic-PersonalUse.otf",
+      "destination": "chrome/browser/resources/new_tab_page_third_party/Necosmic-PersonalUse.otf"
     }
   ]
 }

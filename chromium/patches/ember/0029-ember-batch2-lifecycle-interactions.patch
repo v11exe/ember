@@ -1,0 +1,3157 @@
+diff --git a/chrome/browser/performance_manager/policies/memory_saver_mode_policy.cc b/chrome/browser/performance_manager/policies/memory_saver_mode_policy.cc
+index 76a12a2..1c90a65 100644
+--- a/chrome/browser/performance_manager/policies/memory_saver_mode_policy.cc
++++ b/chrome/browser/performance_manager/policies/memory_saver_mode_policy.cc
+@@ -206,7 +206,9 @@ base::TimeDelta MemorySaverModePolicy::GetTimeBeforeDiscardForCurrentMode()
+     case MemorySaverModeAggressiveness::kMedium:
+       return base::Hours(4);
+     case MemorySaverModeAggressiveness::kAggressive:
+-      return base::Hours(2);
++      // Ember preserves its established 30-minute idle policy while using
++      // Chromium's native proactive discard eligibility and wake lifecycle.
++      return base::Minutes(30);
+   }
+   NOTREACHED();
+ }
+diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
+index caa9349..8ea5b43 100644
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -1727,6 +1727,8 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
+   contextual_tasks::RegisterProfilePrefs(registry);
+   registry->RegisterIntegerPref(prefs::kContextualTasksNextPanelOpenCount, 0);
+   registry->RegisterBooleanPref(prefs::kCtrlTabMru, false);
++  registry->RegisterIntegerPref(prefs::kEmberFavoritesColumns, 2);
++  registry->RegisterIntegerPref(prefs::kEmberFavoritesRows, 2);
+   cross_device::RegisterProfilePrefs(registry);
+   enterprise::RegisterIdentifiersProfilePrefs(registry);
+   enterprise_connectors::RegisterProfilePrefs(registry);
+diff --git a/chrome/browser/resources/new_tab_page_third_party/ember-newtab.css b/chrome/browser/resources/new_tab_page_third_party/ember-newtab.css
+index 1cdb334..993ad8e 100644
+--- a/chrome/browser/resources/new_tab_page_third_party/ember-newtab.css
++++ b/chrome/browser/resources/new_tab_page_third_party/ember-newtab.css
+@@ -24,7 +24,7 @@ body {
+   color: var(--text);
+   font-family: var(--font);
+   display: grid;
+-  place-items: center;
++  place-items: start center;
+   overflow: hidden;
+ }
+ ::selection { background: var(--accent-halo); }
+@@ -48,7 +48,7 @@ body {
+   to { opacity: 1; transform: none; }
+ }
+ 
+-.hero { position: relative; z-index: 1; width: min(680px, 90vw); text-align: center; margin-top: -6vh; }
++.hero { position: relative; z-index: 1; width: min(680px, 90vw); text-align: center; margin-top: clamp(44px, 10vh, 116px); }
+ 
+ /* ---------- logo ---------- */
+ .logo { margin-bottom: 14px; }
+@@ -119,6 +119,58 @@ body {
+ .liquid-glass-search > button:active { transform: scale(.94); }
+ .liquid-glass-search-glyph { display: grid; place-items: center; }
+ 
++/* ---------- Favorites: one bookmark model, two synchronized surfaces ---------- */
++.favorites { margin-top: 34px; text-align: left; }
++.favorites__header { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 12px; }
++.favorites__header h2 { margin: 0; color: rgba(255,255,255,.92); font: 650 13px/1 var(--font); letter-spacing: .02em; }
++.favorites__controls { display: flex; align-items: center; gap: 8px; }
++.favorites__controls label { display: flex; align-items: center; gap: 5px; color: rgba(255,255,255,.62); font: 600 10px/1 var(--font); }
++.favorites__controls select,
++.favorites__controls button,
++.favorite-dialog__actions button {
++  height: 27px; border: 1px solid rgba(255,255,255,.13); border-radius: 8px;
++  background: rgba(255,255,255,.08); color: #fff; font: 600 11px/1 var(--font);
++  outline: none;
++}
++.favorites__controls select { min-width: 44px; padding: 0 5px; }
++.favorites__controls button { padding: 0 11px; cursor: pointer; }
++.favorites__controls button:hover { background: rgba(255,255,255,.15); }
++.favorites__grid {
++  display: grid; grid-template-columns: repeat(var(--favorite-columns, 2), minmax(0, 1fr));
++  grid-auto-rows: var(--favorite-tile-height, 43px); gap: var(--favorite-gap, 10px);
++  min-height: var(--favorite-grid-height, 98px);
++}
++.favorite-tile {
++  position: relative; display: grid; place-items: center; min-width: 0; padding: 0;
++  border: 1px solid rgba(255,255,255,.06); border-radius: 7px;
++  background: rgba(255,255,255,.075); color: #fff; cursor: pointer;
++  transition: background 130ms ease, border-color 130ms ease, transform 130ms ease;
++}
++.favorite-tile:hover, .favorite-tile[data-drop="true"] { background: rgba(255,255,255,.15); border-color: rgba(255,255,255,.22); }
++.favorite-tile:active { transform: scale(.97); }
++.favorite-tile--empty { background: rgba(255,255,255,.018); border-style: dashed; cursor: default; }
++.favorite-tile img { width: 19px; height: 19px; object-fit: contain; }
++.favorite-tile__remove {
++  position: absolute; top: 3px; right: 4px; width: 18px; height: 18px; padding: 0;
++  border: 0; border-radius: 50%; background: rgba(0,0,0,.34); color: rgba(255,255,255,.86);
++  opacity: 0; cursor: pointer; font: 13px/18px var(--font); transition: opacity 100ms ease;
++}
++.favorite-tile:hover .favorite-tile__remove, .favorite-tile__remove:focus-visible { opacity: 1; }
++#favorite-dialog { width: min(380px, 86vw); padding: 0; border: 1px solid rgba(255,255,255,.2); border-radius: 16px; background: rgba(28,31,38,.94); color: #fff; box-shadow: 0 24px 80px rgba(0,0,0,.5); }
++#favorite-dialog::backdrop { background: rgba(0,0,0,.38); backdrop-filter: blur(8px); }
++#favorite-form { display: grid; gap: 15px; padding: 22px; }
++#favorite-form h2 { margin: 0 0 2px; font: 650 17px/1.2 var(--font); }
++#favorite-form label { display: grid; gap: 7px; color: rgba(255,255,255,.72); font: 600 11px/1 var(--font); }
++#favorite-form input { height: 38px; padding: 0 11px; border: 1px solid rgba(255,255,255,.14); border-radius: 9px; background: rgba(255,255,255,.08); color: #fff; outline: none; font: 500 13px/1 var(--font); }
++#favorite-form input:focus { border-color: rgba(255,255,255,.38); }
++.favorite-dialog__actions { display: flex; justify-content: flex-end; gap: 8px; }
++.favorite-dialog__actions button { padding: 0 13px; cursor: pointer; }
++
++@media (max-height: 700px) {
++  .hero { margin-top: 28px; }
++  .favorites { margin-top: 22px; }
++}
++
+ @media (prefers-reduced-motion: reduce) {
+   * { transition: none !important; animation: none !important; }
+   .liquid-glass-root { transform: none !important; }
+diff --git a/chrome/browser/resources/new_tab_page_third_party/ember-newtab.ts b/chrome/browser/resources/new_tab_page_third_party/ember-newtab.ts
+index 7177d1a..f2c7776 100644
+--- a/chrome/browser/resources/new_tab_page_third_party/ember-newtab.ts
++++ b/chrome/browser/resources/new_tab_page_third_party/ember-newtab.ts
+@@ -1,4 +1,6 @@
++/* eslint-disable no-restricted-imports, no-restricted-properties */
+ // @ts-nocheck — WebUI globals are supplied by Chromium's internal-page runtime.
++import {addWebUiListener, sendWithPromise} from 'chrome://resources/js/cr.js';
+ // Ember's New Tab submits to Chromium's own omnibox classifier in the browser
+ // process. This keeps URL/search decisions identical to the address bar.
+ window.EmberBrand.mountBrand(document.getElementById('ember-brand'));
+@@ -21,6 +23,138 @@ function bindSearch() {
+ document.addEventListener('native-liquid-glass-ready', bindSearch);
+ bindSearch();
+ 
++const grid = document.getElementById('favorites-grid');
++const columnsSelect = document.getElementById('favorites-columns');
++const rowsSelect = document.getElementById('favorites-rows');
++const dialog = document.getElementById('favorite-dialog');
++let favoritesState = {favorites: [], columns: 2, rows: 2};
++let draggedFavoriteId = null;
++
++for (let value = 1; value <= 4; value++) {
++  columnsSelect.add(new Option(String(value), String(value)));
++}
++for (let value = 1; value <= 7; value++) {
++  rowsSelect.add(new Option(String(value), String(value)));
++}
++
++function gridMetrics(rows) {
++  const gap = rows <= 4 ? 10 : Math.max(4, 10 - (rows - 4) * 2);
++  const tileHeight = rows <= 4 ? 43 : Math.floor((202 - gap * (rows - 1)) / rows);
++  return {gap, tileHeight, height: tileHeight * rows + gap * (rows - 1) + 2};
++}
++
++function renderFavorites(state) {
++  favoritesState = state;
++  const columns = Math.max(1, Math.min(4, state.columns));
++  const rows = Math.max(1, Math.min(7, state.rows));
++  const capacity = columns * rows;
++  const metrics = gridMetrics(rows);
++  columnsSelect.value = String(columns);
++  rowsSelect.value = String(rows);
++  grid.style.setProperty('--favorite-columns', String(columns));
++  grid.style.setProperty('--favorite-gap', `${metrics.gap}px`);
++  grid.style.setProperty('--favorite-tile-height', `${metrics.tileHeight}px`);
++  grid.style.setProperty('--favorite-grid-height', `${metrics.height}px`);
++  grid.replaceChildren();
++
++  for (let index = 0; index < capacity; index++) {
++    const favorite = state.favorites[index];
++    const tile = document.createElement('div');
++    tile.className = `favorite-tile${favorite ? '' : ' favorite-tile--empty'}`;
++    tile.dataset.index = String(index);
++    if (favorite) {
++      tile.tabIndex = 0;
++      tile.setAttribute('role', 'button');
++      tile.title = favorite.title || favorite.url;
++      tile.setAttribute('aria-label', `Open ${favorite.title || favorite.url}`);
++      tile.draggable = true;
++      const icon = document.createElement('img');
++      icon.alt = '';
++      icon.draggable = false;
++      icon.src = `chrome://favicon2/?size=32&scale_factor=1x&page_url=${encodeURIComponent(favorite.url)}`;
++      tile.append(icon);
++      const remove = document.createElement('button');
++      remove.type = 'button';
++      remove.className = 'favorite-tile__remove';
++      remove.textContent = '×';
++      remove.title = `Remove ${favorite.title || favorite.url}`;
++      remove.addEventListener('click', event => {
++        event.stopPropagation();
++        chrome.send('emberFavoriteRemove', [favorite.id]);
++      });
++      tile.append(remove);
++      tile.addEventListener('click', () => chrome.send('emberFavoriteOpen', [favorite.url]));
++      tile.addEventListener('keydown', event => {
++        if (event.key === 'Enter' || event.key === ' ') {
++          event.preventDefault();
++          chrome.send('emberFavoriteOpen', [favorite.url]);
++        }
++      });
++      tile.addEventListener('dragstart', event => {
++        draggedFavoriteId = favorite.id;
++        event.dataTransfer.effectAllowed = 'move';
++        event.dataTransfer.setData('text/x-ember-favorite', favorite.id);
++      });
++      tile.addEventListener('dragend', () => {
++        draggedFavoriteId = null;
++        grid.querySelectorAll('[data-drop="true"]').forEach(node => delete node.dataset.drop);
++      });
++    }
++    tile.addEventListener('dragover', event => {
++      if (!draggedFavoriteId) return;
++      event.preventDefault();
++      tile.dataset.drop = 'true';
++    });
++    tile.addEventListener('dragleave', () => delete tile.dataset.drop);
++    tile.addEventListener('drop', event => {
++      if (!draggedFavoriteId) return;
++      event.preventDefault();
++      chrome.send('emberFavoriteMove', [draggedFavoriteId, index]);
++      draggedFavoriteId = null;
++    });
++    grid.append(tile);
++  }
++}
++
++function persistGrid() {
++  chrome.send('emberFavoritesSetGrid', [Number(columnsSelect.value), Number(rowsSelect.value)]);
++}
++columnsSelect.addEventListener('change', persistGrid);
++rowsSelect.addEventListener('change', persistGrid);
++document.getElementById('favorite-add').addEventListener('click', () => {
++  document.getElementById('favorite-form').reset();
++  dialog.showModal();
++  document.getElementById('favorite-title').focus();
++});
++document.getElementById('favorite-cancel').addEventListener('click', () => dialog.close());
++document.getElementById('favorite-url').addEventListener('input', event => {
++  event.target.setCustomValidity('');
++});
++document.getElementById('favorite-form').addEventListener('submit', event => {
++  event.preventDefault();
++  const title = document.getElementById('favorite-title').value.trim();
++  const urlField = document.getElementById('favorite-url');
++  const url = urlField.value.trim();
++  if (!title || !url) return;
++  try {
++    const parsed = new URL(url);
++    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
++      throw new TypeError('Unsupported favorite URL scheme');
++    }
++  } catch {
++    urlField.setCustomValidity('Use an http or https URL');
++    urlField.reportValidity();
++    return;
++  }
++  const capacity = favoritesState.columns * favoritesState.rows;
++  const index = Math.min(favoritesState.favorites.length, Math.max(0, capacity - 1));
++  chrome.send('emberFavoriteAdd', [url, title, index]);
++  dialog.close();
++});
++
++addWebUiListener('ember-favorites-changed', renderFavorites);
++sendWithPromise('emberFavoritesGet').then(renderFavorites);
++
+ document.addEventListener('keydown', (event) => {
+   if (event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1)
+     return;
+diff --git a/chrome/browser/resources/new_tab_page_third_party/new_tab_page_third_party.html b/chrome/browser/resources/new_tab_page_third_party/new_tab_page_third_party.html
+index 7618dce..c5170d7 100644
+--- a/chrome/browser/resources/new_tab_page_third_party/new_tab_page_third_party.html
++++ b/chrome/browser/resources/new_tab_page_third_party/new_tab_page_third_party.html
+@@ -10,7 +10,33 @@
+   <main class="hero">
+     <div class="logo" id="ember-brand"></div>
+     <div id="native-liquid-glass"></div>
++    <section class="favorites" aria-labelledby="favorites-title">
++      <header class="favorites__header">
++        <h2 id="favorites-title">Favorites</h2>
++        <div class="favorites__controls">
++          <label>Columns
++            <select id="favorites-columns" aria-label="Favorite columns"></select>
++          </label>
++          <label>Rows
++            <select id="favorites-rows" aria-label="Favorite rows"></select>
++          </label>
++          <button id="favorite-add" type="button">Add</button>
++        </div>
++      </header>
++      <div id="favorites-grid" class="favorites__grid"></div>
++    </section>
+   </main>
++  <dialog id="favorite-dialog">
++    <form method="dialog" id="favorite-form">
++      <h2>Add favorite</h2>
++      <label>Name<input id="favorite-title" autocomplete="off" required></label>
++      <label>URL<input id="favorite-url" type="url" placeholder="https://" required></label>
++      <div class="favorite-dialog__actions">
++        <button value="cancel" type="button" id="favorite-cancel">Cancel</button>
++        <button value="default" type="submit">Add</button>
++      </div>
++    </form>
++  </dialog>
+   <script type="module" src="ember-brand.js"></script>
+   <script type="module" src="ember-search.js"></script>
+   <script type="module" src="ember-newtab.js"></script>
+diff --git a/chrome/browser/resources/settings/appearance_page/appearance_page.html b/chrome/browser/resources/settings/appearance_page/appearance_page.html
+index b68972f..e88be87 100644
+--- a/chrome/browser/resources/settings/appearance_page/appearance_page.html
++++ b/chrome/browser/resources/settings/appearance_page/appearance_page.html
+@@ -233,6 +233,29 @@
+           </div>
+         </template>
+ 
++        <div class="cr-row hr">
++          <div class="flex cr-padded-text" aria-hidden="true">
++            Ember Favorites columns
++            <div class="secondary">Visible columns; hidden favorites remain saved</div>
++          </div>
++          <settings-dropdown-menu id="emberFavoritesColumns"
++              label="Ember Favorites columns"
++              pref-key="ember.favorites.columns"
++              menu-options="[[emberFavoritesColumnOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">
++            Ember Favorites rows
++            <div class="secondary">One through seven rows</div>
++          </div>
++          <settings-dropdown-menu id="emberFavoritesRows"
++              label="Ember Favorites rows"
++              pref-key="ember.favorites.rows"
++              menu-options="[[emberFavoritesRowOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++
+         <settings-toggle-button id="showTabSearchButton" class="hr"
+             pref="{{prefs.tab_search.pinned_to_tabstrip}}"
+             label="$i18n{showTabSearchButton}"
+diff --git a/chrome/browser/resources/settings/appearance_page/appearance_page.ts b/chrome/browser/resources/settings/appearance_page/appearance_page.ts
+index 067e0be..14c3202 100644
+--- a/chrome/browser/resources/settings/appearance_page/appearance_page.ts
++++ b/chrome/browser/resources/settings/appearance_page/appearance_page.ts
+@@ -149,6 +149,24 @@ export class SettingsAppearancePageElement extends
+         },
+       },
+ 
++      emberFavoritesColumnOptions_: {
++        readOnly: true,
++        type: Array,
++        value: () => [1, 2, 3, 4].map(value => ({
++          value,
++          name: String(value),
++        })),
++      },
++
++      emberFavoritesRowOptions_: {
++        readOnly: true,
++        type: Array,
++        value: () => [1, 2, 3, 4, 5, 6, 7].map(value => ({
++          value,
++          name: String(value),
++        })),
++      },
++
+       /**
+        * Predefined zoom factors to be used when zooming in/out. These are in
+        * ascending order. Values are displayed in the page zoom drop-down menu
+@@ -326,6 +344,8 @@ export class SettingsAppearancePageElement extends
+   declare private defaultZoom_: number;
+   declare private isWallpaperPolicyControlled_: boolean;
+   declare private fontSizeOptions_: DropdownMenuOptionList;
++  declare private emberFavoritesColumnOptions_: DropdownMenuOptionList;
++  declare private emberFavoritesRowOptions_: DropdownMenuOptionList;
+   declare private colorSchemeModeOptions_:
+       Array<{value: ColorSchemeMode, name: string}>;
+   declare private selectedColorSchemeMode_: ColorSchemeMode|undefined;
+diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
+index 44e12b5..245ae2c 100644
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -3945,6 +3945,8 @@ static_library("ui") {
+       "views/extensions/security_dialog_tracker.cc",
+       "views/extensions/security_dialog_tracker.h",
+       "views/extensions/windows_utils_views.cc",
++      "ember_favorites.cc",
++      "ember_favorites.h",
+       "views/find_bar_host.cc",
+       "views/find_bar_host.h",
+       "views/find_bar_owner.h",
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+index 31a8798..03fce5d 100644
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -45,18 +45,18 @@
+ #include "chrome/browser/actor/ui/actor_overlay_web_view.h"
+ #include "chrome/browser/app_mode/app_mode_utils.h"
+ #include "chrome/browser/ash/boca/on_task/on_task_locked_controller.h"
+-#include "chrome/browser/browser_process.h"
+ #include "chrome/browser/bookmarks/bookmark_model_factory.h"
++#include "chrome/browser/browser_process.h"
+ #include "chrome/browser/browsing_data/browsing_data_important_sites_util.h"
+ #include "chrome/browser/desktop_to_mobile_promos/promos_utils.h"
+ #include "chrome/browser/devtools/devtools_ui_controller.h"
+-#include "chrome/browser/favicon/favicon_utils.h"
+ #include "chrome/browser/devtools/devtools_window.h"
+ #include "chrome/browser/enterprise/data_protection/data_protection_navigation_observer.h"
+ #include "chrome/browser/enterprise/data_protection/data_protection_overlay_view.h"
+ #include "chrome/browser/enterprise/watermark/settings.h"
+ #include "chrome/browser/extensions/browser_extension_window_controller.h"
+ #include "chrome/browser/extensions/extension_util.h"
++#include "chrome/browser/favicon/favicon_utils.h"
+ #include "chrome/browser/feature_engagement/tracker_factory.h"
+ #include "chrome/browser/headless/headless_mode_util.h"
+ #include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
+@@ -95,9 +95,9 @@
+ #include "chrome/browser/ui/browser_window_state.h"
+ #include "chrome/browser/ui/browser_window_theme_observer.h"
+ #include "chrome/browser/ui/color/chrome_color_id.h"
+-#include "chrome/common/webui_url_constants.h"
+ #include "chrome/browser/ui/context_highlight/context_highlight_window_feature.h"
+ #include "chrome/browser/ui/dialogs/browser_dialogs.h"
++#include "chrome/browser/ui/ember_favorites.h"
+ #include "chrome/browser/ui/exclusive_access/exclusive_access_context.h"
+ #include "chrome/browser/ui/exclusive_access/exclusive_access_manager.h"
+ #include "chrome/browser/ui/find_bar/find_bar.h"
+@@ -146,6 +146,7 @@
+ #include "chrome/browser/ui/views/bubble_anchor_util_views.h"
+ #include "chrome/browser/ui/views/color_provider_browser_helper.h"
+ #include "chrome/browser/ui/views/download/download_in_progress_dialog_view.h"
++#include "chrome/browser/ui/views/ember/ember_glass_overlay_controller.h"
+ #include "chrome/browser/ui/views/exclusive_access_bubble_views.h"
+ #include "chrome/browser/ui/views/exclusive_access_bubble_views_context.h"
+ #include "chrome/browser/ui/views/extensions/extension_keybinding_registry_views.h"
+@@ -154,14 +155,13 @@
+ #include "chrome/browser/ui/views/find_bar_host.h"
+ #include "chrome/browser/ui/views/frame/app_menu_button.h"
+ #include "chrome/browser/ui/views/frame/browser_frame_view.h"
+-#include "chrome/browser/ui/views/frame/ember_url_presentation.h"
+ #include "chrome/browser/ui/views/frame/browser_native_widget.h"
+ #include "chrome/browser/ui/views/frame/browser_widget.h"
+ #include "chrome/browser/ui/views/frame/contents_container_view.h"
+-#include "chrome/browser/ui/views/ember/ember_glass_overlay_controller.h"
+ #include "chrome/browser/ui/views/frame/contents_layout_manager.h"
+ #include "chrome/browser/ui/views/frame/contents_separator.h"
+ #include "chrome/browser/ui/views/frame/custom_floating_corner.h"
++#include "chrome/browser/ui/views/frame/ember_url_presentation.h"
+ #include "chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.h"
+ #include "chrome/browser/ui/views/frame/layout/browser_view_layout.h"
+ #include "chrome/browser/ui/views/frame/layout/browser_view_layout_delegate_impl.h"
+@@ -215,6 +215,8 @@
+ #include "chrome/browser/ui/views/tab_contents/chrome_web_contents_view_focus_helper.h"
+ #include "chrome/browser/ui/views/tab_search_bubble_host.h"
+ #include "chrome/browser/ui/views/tabs/browser_tab_strip_controller.h"
++#include "chrome/browser/ui/views/tabs/dragging/drag_session_data.h"
++#include "chrome/browser/ui/views/tabs/dragging/tab_drag_target.h"
+ #include "chrome/browser/ui/views/tabs/new_tab_button.h"
+ #include "chrome/browser/ui/views/tabs/projects/projects_panel_view.h"
+ #include "chrome/browser/ui/views/tabs/shared/tab_strip_combo_button.h"
+@@ -250,6 +252,7 @@
+ #include "chrome/common/chrome_switches.h"
+ #include "chrome/common/pref_names.h"
+ #include "chrome/common/url_constants.h"
++#include "chrome/common/webui_url_constants.h"
+ #include "chrome/grit/branded_strings.h"
+ #include "chrome/grit/generated_resources.h"
+ #include "chrome/grit/theme_resources.h"
+@@ -308,14 +311,16 @@
+ #include "content/public/browser/render_widget_host.h"
+ #include "content/public/browser/render_widget_host_view.h"
+ #include "content/public/browser/web_contents.h"
+-#include "content/public/common/url_constants.h"
+ #include "content/public/common/content_features.h"
+ #include "content/public/common/content_switches.h"
+ #include "content/public/common/drop_data.h"
++#include "content/public/common/url_constants.h"
+ #include "extensions/common/command.h"
+ #include "media/capture/capture_switches.h"
+ #include "third_party/blink/public/common/features.h"
+ #include "third_party/blink/public/common/permissions/permission_utils.h"
++#include "third_party/skia/include/core/SkPath.h"
++#include "third_party/skia/include/core/SkPathBuilder.h"
+ #include "ui/accessibility/ax_enums.mojom-shared.h"
+ #include "ui/accessibility/ax_node_data.h"
+ #include "ui/accessibility/platform/assistive_tech.h"
+@@ -353,11 +358,11 @@
+ #include "ui/gfx/geometry/outsets.h"
+ #include "ui/gfx/geometry/point.h"
+ #include "ui/gfx/geometry/rect.h"
+-#include "ui/gfx/range/range.h"
+ #include "ui/gfx/geometry/rect_conversions.h"
+ #include "ui/gfx/geometry/rect_f.h"
+ #include "ui/gfx/geometry/size.h"
+ #include "ui/gfx/image/image_skia_operations.h"
++#include "ui/gfx/range/range.h"
+ #include "ui/gfx/scoped_canvas.h"
+ #include "ui/gfx/scrollbar_size.h"
+ #include "ui/views/accessibility/view_accessibility.h"
+@@ -387,8 +392,6 @@
+ #include "ui/views/widget/widget.h"
+ #include "ui/views/window/dialog_delegate.h"
+ #include "ui/views/window/hit_test_utils.h"
+-#include "third_party/skia/include/core/SkPath.h"
+-#include "third_party/skia/include/core/SkPathBuilder.h"
+ 
+ #if BUILDFLAG(IS_CHROMEOS)
+ #include "ash/constants/ash_switches.h"
+@@ -423,14 +426,15 @@
+ #include "chrome/browser/ui/views/theme_profile_key.h"
+ #include "ui/aura/client/window_parenting_client.h"
+ #include "ui/aura/window.h"
+-#include "ui/compositor/compositor.h"
+ #include "ui/aura/window_tree_host.h"
++#include "ui/compositor/compositor.h"
+ #endif
+ 
+ #if BUILDFLAG(IS_WIN)
+-#include <dwmapi.h>
+ #include <windows.h>
+ 
++#include <dwmapi.h>
++
+ #include "chrome/browser/taskbar/taskbar_decorator_win.h"
+ #include "chrome/browser/win/jumplist.h"
+ #include "chrome/browser/win/jumplist_factory.h"
+@@ -536,10 +540,9 @@ class EmberSidebarAddressRow : public views::View,
+     border_bounds.Inset(0.5f);
+     flags.setStyle(cc::PaintFlags::kStroke_Style);
+     flags.setStrokeWidth(1.0f);
+-    flags.setColor(
+-        SkColorSetARGB(current_border_alpha_, 0xFF, 0xFF, 0xFF));
+-    canvas->DrawRoundRect(border_bounds,
+-                          kEmberSidebarAddressRadius - 0.5f, flags);
++    flags.setColor(SkColorSetARGB(current_border_alpha_, 0xFF, 0xFF, 0xFF));
++    canvas->DrawRoundRect(border_bounds, kEmberSidebarAddressRadius - 0.5f,
++                          flags);
+   }
+ 
+   void AnimationProgressed(const gfx::Animation* animation) override {
+@@ -619,16 +622,15 @@ class EmberSidebarAddressTextfield : public views::Textfield {
+         cancel_callback_(std::move(cancel_callback)) {
+     // The parent address row owns the single hover surface. Textfield's
+     // default InkDrop otherwise paints a second, text-local hover treatment.
+-    views::InkDrop::Get(this)->SetMode(
+-        views::InkDropHost::InkDropMode::OFF);
++    views::InkDrop::Get(this)->SetMode(views::InkDropHost::InkDropMode::OFF);
+     // The row paints the focus state at its own bounds. Textfield's installed
+     // focus ring otherwise outlines the smaller text box inside that row.
+     views::FocusRing::Remove(this);
+   }
+ 
+   EmberSidebarAddressTextfield(const EmberSidebarAddressTextfield&) = delete;
+-  EmberSidebarAddressTextfield& operator=(
+-      const EmberSidebarAddressTextfield&) = delete;
++  EmberSidebarAddressTextfield& operator=(const EmberSidebarAddressTextfield&) =
++      delete;
+   ~EmberSidebarAddressTextfield() override = default;
+ 
+  protected:
+@@ -682,20 +684,17 @@ class EmberSidebarCopyButton : public views::LabelButton {
+   void PaintButtonContents(gfx::Canvas* canvas) override {
+     const float button_width = width() * current_button_scale_;
+     const float button_height = height() * current_button_scale_;
+-    const gfx::RectF button_bounds(
+-        (width() - button_width) / 2.0f,
+-        (height() - button_height) / 2.0f,
+-        button_width, button_height);
++    const gfx::RectF button_bounds((width() - button_width) / 2.0f,
++                                   (height() - button_height) / 2.0f,
++                                   button_width, button_height);
+ 
+     cc::PaintFlags flags;
+     flags.setAntiAlias(true);
+     flags.setStyle(cc::PaintFlags::kFill_Style);
+     flags.setColor(SkColorSetARGB(current_fill_alpha_, 0xFF, 0xFF, 0xFF));
+-    canvas->DrawRoundRect(button_bounds,
+-                          6.0f * current_button_scale_, flags);
++    canvas->DrawRoundRect(button_bounds, 6.0f * current_button_scale_, flags);
+ 
+-    const float glyph_scale =
+-        current_button_scale_ * current_glyph_scale_;
++    const float glyph_scale = current_button_scale_ * current_glyph_scale_;
+     const float glyph_width = kEmberSidebarCopyGlyphWidth * glyph_scale;
+     const float glyph_height = kEmberSidebarCopyGlyphHeight * glyph_scale;
+     const float x = (width() - glyph_width) / 2.0f;
+@@ -706,21 +705,17 @@ class EmberSidebarCopyButton : public views::LabelButton {
+     SkPathBuilder glyph;
+     glyph.moveTo(x + 4.6f * scale_x, y + 1.5f * scale_y);
+     glyph.lineTo(x + 2.4f * scale_x, y + 1.5f * scale_y);
+-    glyph.cubicTo(x + 0.9f * scale_x, y + 1.5f * scale_y,
+-                  x + 0.4f * scale_x, y + 2.6f * scale_y,
+-                  x + 0.4f * scale_x, y + 3.5f * scale_y);
+-    glyph.cubicTo(x + 0.4f * scale_x, y + 4.4f * scale_y,
+-                  x + 0.9f * scale_x, y + 5.5f * scale_y,
+-                  x + 2.4f * scale_x, y + 5.5f * scale_y);
++    glyph.cubicTo(x + 0.9f * scale_x, y + 1.5f * scale_y, x + 0.4f * scale_x,
++                  y + 2.6f * scale_y, x + 0.4f * scale_x, y + 3.5f * scale_y);
++    glyph.cubicTo(x + 0.4f * scale_x, y + 4.4f * scale_y, x + 0.9f * scale_x,
++                  y + 5.5f * scale_y, x + 2.4f * scale_x, y + 5.5f * scale_y);
+     glyph.lineTo(x + 4.6f * scale_x, y + 5.5f * scale_y);
+     glyph.moveTo(x + 7.4f * scale_x, y + 5.5f * scale_y);
+     glyph.lineTo(x + 9.6f * scale_x, y + 5.5f * scale_y);
+-    glyph.cubicTo(x + 11.1f * scale_x, y + 5.5f * scale_y,
+-                  x + 11.6f * scale_x, y + 4.4f * scale_y,
+-                  x + 11.6f * scale_x, y + 3.5f * scale_y);
+-    glyph.cubicTo(x + 11.6f * scale_x, y + 2.6f * scale_y,
+-                  x + 11.1f * scale_x, y + 1.5f * scale_y,
+-                  x + 9.6f * scale_x, y + 1.5f * scale_y);
++    glyph.cubicTo(x + 11.1f * scale_x, y + 5.5f * scale_y, x + 11.6f * scale_x,
++                  y + 4.4f * scale_y, x + 11.6f * scale_x, y + 3.5f * scale_y);
++    glyph.cubicTo(x + 11.6f * scale_x, y + 2.6f * scale_y, x + 11.1f * scale_x,
++                  y + 1.5f * scale_y, x + 9.6f * scale_x, y + 1.5f * scale_y);
+     glyph.lineTo(x + 7.4f * scale_x, y + 1.5f * scale_y);
+     glyph.moveTo(x + 4.3f * scale_x, y + 3.5f * scale_y);
+     glyph.lineTo(x + 7.7f * scale_x, y + 3.5f * scale_y);
+@@ -728,8 +723,7 @@ class EmberSidebarCopyButton : public views::LabelButton {
+     flags.setStyle(cc::PaintFlags::kStroke_Style);
+     flags.setStrokeWidth(1.15f * glyph_scale);
+     flags.setStrokeCap(cc::PaintFlags::kRound_Cap);
+-    flags.setColor(
+-        SkColorSetARGB(current_glyph_alpha_, 0xFF, 0xFF, 0xFF));
++    flags.setColor(SkColorSetARGB(current_glyph_alpha_, 0xFF, 0xFF, 0xFF));
+     canvas->DrawPath(glyph.detach(), flags);
+   }
+ 
+@@ -763,8 +757,7 @@ class EmberSidebarCopyButton : public views::LabelButton {
+         GetState() == STATE_PRESSED
+             ? kEmberSidebarCopyPressedGlyphScale
+             : (hovered ? kEmberSidebarCopyHoverGlyphScale : 1.0f);
+-    target_glyph_alpha_ =
+-        hovered ? 0xFF : kEmberSidebarCopyRestingGlyphAlpha;
++    target_glyph_alpha_ = hovered ? 0xFF : kEmberSidebarCopyRestingGlyphAlpha;
+     if (gfx::Animation::PrefersReducedMotion()) {
+       ApplyTransition(1.0);
+       return;
+@@ -801,15 +794,6 @@ class EmberSidebarCopyButton : public views::LabelButton {
+   gfx::LinearAnimation transition_;
+ };
+ 
+-
+-constexpr char kEmberFavoritesFolderMetaKey[] = "ember_favorites_folder";
+-constexpr char kEmberFavoritesFolderMetaValue[] = "1";
+-constexpr char kEmberFavoritesInitializedMetaKey[] =
+-    "ember_favorites_initialized";
+-constexpr size_t kEmberVisibleFavoriteCount = 4;
+-constexpr int kEmberFavoriteTileWidth = 70;
+-constexpr int kEmberFavoriteTileHeight = 43;
+-constexpr int kEmberFavoritesGridHeight = 98;
+ constexpr float kEmberFavoriteCornerRadius = 7.0f;
+ constexpr int kEmberFavoriteRestingFillAlpha = 0x13;
+ constexpr int kEmberFavoriteRestingBorderAlpha = 0x06;
+@@ -843,6 +827,14 @@ class EmberFavoriteButton : public views::LabelButton {
+     StartVisualTransition();
+   }
+ 
++  void SetDropTarget(bool is_drop_target) {
++    if (is_drop_target_ == is_drop_target) {
++      return;
++    }
++    is_drop_target_ = is_drop_target;
++    StartVisualTransition();
++  }
++
+  protected:
+   void StateChanged(ButtonState old_state) override {
+     views::LabelButton::StateChanged(old_state);
+@@ -866,10 +858,9 @@ class EmberFavoriteButton : public views::LabelButton {
+     border_bounds.Inset(0.5f);
+     flags.setStyle(cc::PaintFlags::kStroke_Style);
+     flags.setStrokeWidth(1.0f);
+-    flags.setColor(
+-        SkColorSetARGB(current_border_alpha_, 0xFF, 0xFF, 0xFF));
+-    canvas->DrawRoundRect(border_bounds,
+-                          kEmberFavoriteCornerRadius - 0.5f, flags);
++    flags.setColor(SkColorSetARGB(current_border_alpha_, 0xFF, 0xFF, 0xFF));
++    canvas->DrawRoundRect(border_bounds, kEmberFavoriteCornerRadius - 0.5f,
++                          flags);
+   }
+ 
+   void AnimationProgressed(const gfx::Animation* animation) override {
+@@ -888,6 +879,9 @@ class EmberFavoriteButton : public views::LabelButton {
+ 
+  private:
+   int TargetFillAlpha() const {
++    if (is_drop_target_) {
++      return 0x42;
++    }
+     if (is_open_) {
+       return kEmberFavoriteOpenFillAlpha;
+     }
+@@ -897,6 +891,9 @@ class EmberFavoriteButton : public views::LabelButton {
+   }
+ 
+   int TargetBorderAlpha() const {
++    if (is_drop_target_) {
++      return 0xC0;
++    }
+     return is_open_ ? kEmberFavoriteOpenBorderAlpha
+                     : kEmberFavoriteRestingBorderAlpha;
+   }
+@@ -932,8 +929,8 @@ class EmberFavoriteButton : public views::LabelButton {
+         eased_value, start_fill_alpha_, target_fill_alpha_);
+     current_border_alpha_ = gfx::Tween::IntValueBetween(
+         eased_value, start_border_alpha_, target_border_alpha_);
+-    current_scale_ = gfx::Tween::FloatValueBetween(
+-        eased_value, start_scale_, target_scale_);
++    current_scale_ =
++        gfx::Tween::FloatValueBetween(eased_value, start_scale_, target_scale_);
+     UpdateLayerTransform();
+     SchedulePaint();
+   }
+@@ -951,6 +948,7 @@ class EmberFavoriteButton : public views::LabelButton {
+   }
+ 
+   bool is_open_ = false;
++  bool is_drop_target_ = false;
+   int start_fill_alpha_ = kEmberFavoriteRestingFillAlpha;
+   int target_fill_alpha_ = kEmberFavoriteRestingFillAlpha;
+   int current_fill_alpha_ = kEmberFavoriteRestingFillAlpha;
+@@ -972,8 +970,7 @@ std::string EmberFavoriteHost(const GURL& url) {
+ }
+ 
+ bool IsEmberFavoriteMatch(const GURL& favorite_url, const GURL& tab_url) {
+-  if (!favorite_url.SchemeIsHTTPOrHTTPS() ||
+-      !tab_url.SchemeIsHTTPOrHTTPS()) {
++  if (!favorite_url.SchemeIsHTTPOrHTTPS() || !tab_url.SchemeIsHTTPOrHTTPS()) {
+     return false;
+   }
+ 
+@@ -992,27 +989,93 @@ bool IsEmberFavoriteMatch(const GURL& favorite_url, const GURL& tab_url) {
+   return tab_host == favorite_host && tab_path == favorite_path;
+ }
+ 
+-const bookmarks::BookmarkNode* FindMarkedEmberFavoritesFolder(
+-    const bookmarks::BookmarkNode* parent) {
+-  if (!parent) {
++class EmberFavoritesDropTargetController final : public TabDragTarget {
++ public:
++  using PreviewCallback = base::RepeatingCallback<void(std::optional<size_t>)>;
++  using DropCallback =
++      base::RepeatingCallback<void(content::WebContents*, size_t)>;
++
++  EmberFavoritesDropTargetController(views::View* grid,
++                                     PrefService* prefs,
++                                     PreviewCallback preview_callback,
++                                     DropCallback drop_callback)
++      : grid_(grid),
++        prefs_(prefs),
++        preview_callback_(std::move(preview_callback)),
++        drop_callback_(std::move(drop_callback)) {}
++
++  ~EmberFavoritesDropTargetController() override {
++    on_will_destroy_callbacks_.Notify();
++  }
++
++  void OnTabDragEntered() override {}
++
++  TabDragContext* OnTabDragUpdated(TabDragTarget::DragController& controller,
++                                   const gfx::Point& point_in_screen) override {
++    const DragSessionData& session = controller.GetSessionData();
++    content::WebContents* contents = session.source_dragged_contents();
++    const bool eligible = session.num_dragging_tabs() == 1 &&
++                          session.dragging_groups.empty() && contents &&
++                          contents->GetVisibleURL().SchemeIsHTTPOrHTTPS();
++    const gfx::Rect bounds = grid_->GetBoundsInScreen();
++    if (!eligible || bounds.IsEmpty() || !bounds.Contains(point_in_screen)) {
++      SetTarget(std::nullopt, nullptr);
++      return nullptr;
++    }
++
++    const int columns = ember_favorites::GetColumns(prefs_);
++    const int rows = ember_favorites::GetRows(prefs_);
++    const int x = std::clamp(point_in_screen.x() - bounds.x(), 0,
++                             std::max(0, bounds.width() - 1));
++    const int y = std::clamp(point_in_screen.y() - bounds.y(), 0,
++                             std::max(0, bounds.height() - 1));
++    const size_t column =
++        std::min(columns - 1, x * columns / std::max(1, bounds.width()));
++    const size_t row =
++        std::min(rows - 1, y * rows / std::max(1, bounds.height()));
++    SetTarget(row * columns + column, contents);
+     return nullptr;
+   }
+-  for (const auto& child : parent->children()) {
+-    std::string marker;
+-    if (child->is_folder() &&
+-        child->GetMetaInfo(kEmberFavoritesFolderMetaKey, &marker) &&
+-        marker == kEmberFavoritesFolderMetaValue) {
+-      return child.get();
++
++  void OnTabDragExited(const gfx::Point& point_in_screen) override {
++    SetTarget(std::nullopt, nullptr);
++  }
++
++  void OnTabDragEnded() override { SetTarget(std::nullopt, nullptr); }
++
++  bool CanDropTab() override {
++    return target_index_.has_value() && dragged_contents_;
++  }
++
++  void HandleTabDrop(TabDragTarget::DragController& controller) override {
++    if (CanDropTab()) {
++      drop_callback_.Run(dragged_contents_, *target_index_);
+     }
+-    if (child->is_folder()) {
+-      if (const bookmarks::BookmarkNode* match =
+-              FindMarkedEmberFavoritesFolder(child.get())) {
+-        return match;
+-      }
++    SetTarget(std::nullopt, nullptr);
++  }
++
++  base::CallbackListSubscription RegisterWillDestroyCallback(
++      base::OnceClosure callback) override {
++    return on_will_destroy_callbacks_.Add(std::move(callback));
++  }
++
++ private:
++  void SetTarget(std::optional<size_t> index, content::WebContents* contents) {
++    if (target_index_ != index) {
++      target_index_ = index;
++      preview_callback_.Run(index);
+     }
++    dragged_contents_ = contents;
+   }
+-  return nullptr;
+-}
++
++  raw_ptr<views::View> grid_;
++  raw_ptr<PrefService> prefs_;
++  PreviewCallback preview_callback_;
++  DropCallback drop_callback_;
++  std::optional<size_t> target_index_;
++  raw_ptr<content::WebContents> dragged_contents_ = nullptr;
++  base::OnceClosureList on_will_destroy_callbacks_;
++};
+ 
+ // The visible height of the shadow above the tabs. Clicks in this area are
+ // treated as clicks to the frame, rather than clicks to the tab.
+@@ -1353,7 +1416,8 @@ class BrowserView::ExclusiveAccessContextImpl
+   void UpdateExclusiveAccessBubble(
+       const ExclusiveAccessBubbleParams& params,
+       ExclusiveAccessBubbleHideCallback first_hide_callback) override {
+-    if (base::CommandLine::ForCurrentProcess()->HasSwitch("hide-fullscreen-exit-ui")) {
++    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++            "hide-fullscreen-exit-ui")) {
+       return;
+     }
+     // Trusted pinned mode does not allow to escape. So do not show the bubble.
+@@ -1523,14 +1587,12 @@ BrowserView::BrowserView(Browser* browser)
+     ember_sidebar_ = AddChildView(std::make_unique<views::View>());
+     ember_sidebar_->SetBackground(std::make_unique<ThemedBackground>(
+         this, ThemedBackground::kFrameTheme));
+-    ember_sidebar_->SetProperty(
+-        views::kElementIdentifierKey,
+-        BrowserViewLayoutViews::kEmberSidebarElementId);
++    ember_sidebar_->SetProperty(views::kElementIdentifierKey,
++                                BrowserViewLayoutViews::kEmberSidebarElementId);
+ 
+     ember_sidebar_->SetLayoutManager(std::make_unique<views::BoxLayout>(
+         views::BoxLayout::Orientation::kVertical,
+-        gfx::Insets::TLBR(kEmberSidebarTopInset,
+-                          kEmberSidebarHorizontalInset,
++        gfx::Insets::TLBR(kEmberSidebarTopInset, kEmberSidebarHorizontalInset,
+                           kEmberSidebarBottomInset,
+                           kEmberSidebarHorizontalInset),
+         kEmberSidebarRowSpacing));
+@@ -1540,39 +1602,32 @@ BrowserView::BrowserView(Browser* browser)
+     ember_sidebar_->AddChildView(std::move(address_row));
+     ember_sidebar_address_row_->SetPreferredSize(
+         gfx::Size(0, kEmberSidebarAddressHeight));
+-    auto* address_layout =
+-        ember_sidebar_address_row_->SetLayoutManager(
+-            std::make_unique<views::BoxLayout>(
+-                views::BoxLayout::Orientation::kHorizontal,
+-                gfx::Insets::TLBR(0, 9, 0, 0), 0));
++    auto* address_layout = ember_sidebar_address_row_->SetLayoutManager(
++        std::make_unique<views::BoxLayout>(
++            views::BoxLayout::Orientation::kHorizontal,
++            gfx::Insets::TLBR(0, 9, 0, 0), 0));
+     address_layout->set_cross_axis_alignment(
+         views::BoxLayout::CrossAxisAlignment::kStretch);
+ 
+     std::unique_ptr<views::Textfield> address =
+         std::make_unique<EmberSidebarAddressTextfield>(
+-            base::BindRepeating(
+-                &BrowserView::OnEmberSidebarAddressFocused,
+-                weak_ptr_factory_.GetWeakPtr()),
+-            base::BindRepeating(
+-                &BrowserView::OnEmberSidebarAddressBlurred,
+-                weak_ptr_factory_.GetWeakPtr()),
+-            base::BindRepeating(
+-                &BrowserView::SubmitEmberSidebarAddress,
+-                weak_ptr_factory_.GetWeakPtr()),
+-            base::BindRepeating(
+-                &BrowserView::CancelEmberSidebarAddressEdit,
+-                weak_ptr_factory_.GetWeakPtr()));
++            base::BindRepeating(&BrowserView::OnEmberSidebarAddressFocused,
++                                weak_ptr_factory_.GetWeakPtr()),
++            base::BindRepeating(&BrowserView::OnEmberSidebarAddressBlurred,
++                                weak_ptr_factory_.GetWeakPtr()),
++            base::BindRepeating(&BrowserView::SubmitEmberSidebarAddress,
++                                weak_ptr_factory_.GetWeakPtr()),
++            base::BindRepeating(&BrowserView::CancelEmberSidebarAddressEdit,
++                                weak_ptr_factory_.GetWeakPtr()));
+     ember_sidebar_address_ = address.get();
+     ember_sidebar_address_row_->AddChildView(std::move(address));
+-    ember_sidebar_address_->SetProperty(
+-        views::kElementIdentifierKey, kEmberSidebarAddressElementId);
++    ember_sidebar_address_->SetProperty(views::kElementIdentifierKey,
++                                        kEmberSidebarAddressElementId);
+     ember_sidebar_address_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+     ember_sidebar_address_->SetBackgroundEnabled(false);
+     ember_sidebar_address_->SetBorder(nullptr);
+-    ember_sidebar_address_->SetColor(
+-        SkColorSetARGB(0xD1, 0xFF, 0xFF, 0xFF));
+-    ember_sidebar_address_->SetFontList(
+-        gfx::FontList("Inter, Medium 12px"));
++    ember_sidebar_address_->SetColor(SkColorSetARGB(0xD1, 0xFF, 0xFF, 0xFF));
++    ember_sidebar_address_->SetFontList(gfx::FontList("Inter, Medium 12px"));
+     ember_sidebar_address_->SetAccessibleName(u"Address");
+     address_layout->SetFlexForView(ember_sidebar_address_, 1);
+ 
+@@ -1582,8 +1637,8 @@ BrowserView::BrowserView(Browser* browser)
+                                 weak_ptr_factory_.GetWeakPtr()));
+     ember_sidebar_copy_link_ = copy_link.get();
+     ember_sidebar_address_row_->AddChildView(std::move(copy_link));
+-    ember_sidebar_copy_link_->SetProperty(
+-        views::kElementIdentifierKey, kEmberSidebarCopyLinkElementId);
++    ember_sidebar_copy_link_->SetProperty(views::kElementIdentifierKey,
++                                          kEmberSidebarCopyLinkElementId);
+     ember_sidebar_copy_link_->SetPreferredSize(
+         gfx::Size(kEmberSidebarCopyWidth, kEmberSidebarAddressHeight));
+     ember_sidebar_copy_link_->SetFocusBehavior(
+@@ -1593,13 +1648,20 @@ BrowserView::BrowserView(Browser* browser)
+ 
+     ember_sidebar_favorites_ =
+         ember_sidebar_->AddChildView(std::make_unique<views::View>());
+-    ember_sidebar_favorites_->SetProperty(
+-        views::kElementIdentifierKey, kEmberSidebarFavoritesElementId);
+-    ember_sidebar_favorites_->SetPreferredSize(
+-        gfx::Size(0, kEmberFavoritesGridHeight));
++    ember_sidebar_favorites_->SetProperty(views::kElementIdentifierKey,
++                                          kEmberSidebarFavoritesElementId);
++    ember_sidebar_favorites_->SetPreferredSize(gfx::Size(
++        0, ember_favorites::GetGridHeight(ember_favorites::kDefaultRows)));
+     ember_sidebar_favorites_->SetLayoutManager(
+         std::make_unique<views::BoxLayout>(
+             views::BoxLayout::Orientation::kVertical, gfx::Insets(), 10));
++    ember_favorites_drop_target_ =
++        std::make_unique<EmberFavoritesDropTargetController>(
++            ember_sidebar_favorites_, GetProfile()->GetPrefs(),
++            base::BindRepeating(&BrowserView::SetEmberFavoriteDropPreview,
++                                weak_ptr_factory_.GetWeakPtr()),
++            base::BindRepeating(&BrowserView::AddDraggedTabToEmberFavorites,
++                                weak_ptr_factory_.GetWeakPtr()));
+     InitializeEmberFavorites();
+     UpdateEmberSidebar();
+   }
+@@ -1652,8 +1714,7 @@ BrowserView::BrowserView(Browser* browser)
+   contents_container_ = AddChildView(std::move(contents_container));
+   set_contents_view(contents_container_);
+   if (browser_->is_type_normal()) {
+-    auto overlay =
+-        std::make_unique<ember::EmberGlassOverlayController>(this);
++    auto overlay = std::make_unique<ember::EmberGlassOverlayController>(this);
+     ember_glass_overlay_ = overlay.get();
+     contents_container_->AddChildView(
+         std::unique_ptr<views::View>(std::move(overlay)));
+@@ -1755,6 +1816,14 @@ BrowserView::BrowserView(Browser* browser)
+       prefs::kFullscreenAllowed,
+       base::BindRepeating(&BrowserView::UpdateFullscreenAllowedFromPolicy,
+                           base::Unretained(this), CanFullscreen()));
++  registrar_.Add(
++      prefs::kEmberFavoritesColumns,
++      base::BindRepeating(&BrowserView::ScheduleEmberFavoritesRefresh,
++                          base::Unretained(this)));
++  registrar_.Add(
++      prefs::kEmberFavoritesRows,
++      base::BindRepeating(&BrowserView::ScheduleEmberFavoritesRefresh,
++                          base::Unretained(this)));
+   UpdateFullscreenAllowedFromPolicy(CanFullscreen());
+ 
+   WebUIContentsPreloadManager::GetInstance()->WarmupForBrowser(browser_.get());
+@@ -1831,10 +1900,12 @@ BrowserView::~BrowserView() {
+   browser_widget_ = nullptr;
+   main_background_region_ = nullptr;
+   ember_bookmark_model_observation_.Reset();
++  ember_favorites_drop_target_.reset();
+   ember_bookmark_model_ = nullptr;
+   ember_favorite_urls_.clear();
+   ember_favorite_titles_.clear();
+   ember_favorite_buttons_.clear();
++  ember_favorite_slots_.clear();
+   ember_sidebar_ = nullptr;
+   ember_sidebar_address_row_ = nullptr;
+   ember_sidebar_address_ = nullptr;
+@@ -3091,11 +3162,10 @@ void BrowserView::SetFocusToLocationBar(bool is_user_initiated) {
+   const content::NavigationEntry* const pending_entry =
+       active_contents ? active_contents->GetController().GetPendingEntry()
+                       : nullptr;
+-  const GURL active_url = pending_entry
+-                              ? pending_entry->GetURL()
+-                              : active_contents
+-                                    ? active_contents->GetLastCommittedURL()
+-                                    : GURL();
++  const GURL active_url = pending_entry ? pending_entry->GetURL()
++                          : active_contents
++                              ? active_contents->GetLastCommittedURL()
++                              : GURL();
+   const bool is_ember_new_tab =
+       active_url.SchemeIs(content::kChromeUIScheme) &&
+       (active_url.host() == chrome::kChromeUINewTabPageThirdPartyHost ||
+@@ -3247,6 +3317,11 @@ void BrowserView::TabDraggingStatusChanged(bool is_dragging) {
+ 
+ TabDragTarget* BrowserView::GetTabDragTarget(
+     const gfx::Point& point_in_screen) {
++  if (ember_favorites_drop_target_ && ember_sidebar_favorites_ &&
++      ember_sidebar_favorites_->GetVisible() &&
++      ember_sidebar_favorites_->GetBoundsInScreen().Contains(point_in_screen)) {
++    return ember_favorites_drop_target_.get();
++  }
+   if (vertical_tab_strip_region_view_) {
+     if (auto* target = vertical_tab_strip_region_view_->GetTabDragTarget(
+             point_in_screen)) {
+@@ -3743,9 +3818,9 @@ void BrowserView::OnEmberSidebarAddressFocused() {
+       ->SetAddressFocused(true);
+   content::WebContents* contents = GetActiveWebContents();
+   const GURL url = contents ? contents->GetVisibleURL() : GURL();
+-  ember_sidebar_address_->SetText(
+-      url.is_empty() ? l10n_util::GetStringUTF16(IDS_NEW_TAB)
+-                     : base::UTF8ToUTF16(url.spec()));
++  ember_sidebar_address_->SetText(url.is_empty()
++                                      ? l10n_util::GetStringUTF16(IDS_NEW_TAB)
++                                      : base::UTF8ToUTF16(url.spec()));
+   ember_sidebar_address_->SelectAll(false);
+ }
+ 
+@@ -3764,8 +3839,7 @@ void BrowserView::SubmitEmberSidebarAddress(std::u16string text) {
+     return;
+   }
+   OmniboxView* omnibox_view = location_bar->GetOmniboxView();
+-  OmniboxController* omnibox_controller =
+-      location_bar->GetOmniboxController();
++  OmniboxController* omnibox_controller = location_bar->GetOmniboxController();
+   if (!omnibox_view || !omnibox_controller) {
+     return;
+   }
+@@ -3784,9 +3858,9 @@ void BrowserView::CancelEmberSidebarAddressEdit() {
+   }
+   content::WebContents* contents = GetActiveWebContents();
+   const GURL url = contents ? contents->GetVisibleURL() : GURL();
+-  ember_sidebar_address_->SetText(
+-      url.is_empty() ? l10n_util::GetStringUTF16(IDS_NEW_TAB)
+-                     : base::UTF8ToUTF16(url.spec()));
++  ember_sidebar_address_->SetText(url.is_empty()
++                                      ? l10n_util::GetStringUTF16(IDS_NEW_TAB)
++                                      : base::UTF8ToUTF16(url.spec()));
+   if (views::FocusManager* focus_manager = GetFocusManager()) {
+     focus_manager->ClearFocus();
+   }
+@@ -3825,9 +3899,9 @@ void BrowserView::ShowEmberSidebarCopyToast() {
+   params.opacity = views::Widget::InitParams::WindowOpacity::kTranslucent;
+   params.shadow_type = views::Widget::InitParams::ShadowType::kNone;
+   params.activatable = views::Widget::InitParams::Activatable::kNo;
+-  params.bounds = gfx::Rect(
+-      sidebar_bounds.right() + 8, address_bounds.y() + 1,
+-      kEmberSidebarCopyToastWidth, kEmberSidebarCopyToastHeight);
++  params.bounds =
++      gfx::Rect(sidebar_bounds.right() + 8, address_bounds.y() + 1,
++                kEmberSidebarCopyToastWidth, kEmberSidebarCopyToastHeight);
+ 
+   auto toast = std::make_unique<views::Widget>();
+   toast->Init(std::move(params));
+@@ -3840,8 +3914,8 @@ void BrowserView::ShowEmberSidebarCopyToast() {
+       1, 15, SkColorSetARGB(0x7A, 0x5C, 0xF2, 0xA1)));
+   auto* toast_layout =
+       toast_contents->SetLayoutManager(std::make_unique<views::BoxLayout>(
+-          views::BoxLayout::Orientation::kHorizontal,
+-          gfx::Insets::VH(0, 10), 6));
++          views::BoxLayout::Orientation::kHorizontal, gfx::Insets::VH(0, 10),
++          6));
+   toast_layout->set_cross_axis_alignment(
+       views::BoxLayout::CrossAxisAlignment::kCenter);
+ 
+@@ -3880,11 +3954,7 @@ void BrowserView::InitializeEmberFavorites() {
+ }
+ 
+ const bookmarks::BookmarkNode* BrowserView::GetEmberFavoritesFolder() const {
+-  if (!ember_bookmark_model_ || !ember_bookmark_model_->loaded()) {
+-    return nullptr;
+-  }
+-
+-  return FindMarkedEmberFavoritesFolder(ember_bookmark_model_->root_node());
++  return ember_favorites::FindFolder(ember_bookmark_model_);
+ }
+ 
+ void BrowserView::BookmarkModelChanged() {
+@@ -3898,9 +3968,8 @@ void BrowserView::ScheduleEmberFavoritesRefresh() {
+   }
+   ember_favorites_refresh_pending_ = true;
+   base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+-      FROM_HERE,
+-      base::BindOnce(&BrowserView::RefreshEmberFavorites,
+-                     weak_ptr_factory_.GetWeakPtr()));
++      FROM_HERE, base::BindOnce(&BrowserView::RefreshEmberFavorites,
++                                weak_ptr_factory_.GetWeakPtr()));
+ }
+ 
+ void BrowserView::RefreshEmberFavorites() {
+@@ -3911,32 +3980,7 @@ void BrowserView::RefreshEmberFavorites() {
+   }
+ 
+   base::AutoReset<bool> updating(&ember_updating_favorites_, true);
+-  const bookmarks::BookmarkNode* folder = GetEmberFavoritesFolder();
+-  const bookmarks::BookmarkNode* other = ember_bookmark_model_->other_node();
+-  std::string initialized_marker;
+-  const bool initialized =
+-      other->GetMetaInfo(kEmberFavoritesInitializedMetaKey,
+-                         &initialized_marker) &&
+-      initialized_marker == kEmberFavoritesFolderMetaValue;
+-  if (!initialized) {
+-    ember_bookmark_model_->SetNodeMetaInfo(
+-        other, kEmberFavoritesInitializedMetaKey,
+-        kEmberFavoritesFolderMetaValue);
+-  }
+-  if (!initialized && !folder) {
+-    bookmarks::BookmarkNode::MetaInfoMap metadata = {
+-        {kEmberFavoritesFolderMetaKey, kEmberFavoritesFolderMetaValue}};
+-    folder = ember_bookmark_model_->AddFolder(
+-        other, other->children().size(), u"Ember Favorites", &metadata);
+-    ember_bookmark_model_->AddURL(folder, folder->children().size(), u"Google",
+-                                  GURL("https://www.google.com/"));
+-    ember_bookmark_model_->AddURL(folder, folder->children().size(),
+-                                  u"YouTube",
+-                                  GURL("https://www.youtube.com/"));
+-    ember_bookmark_model_->AddURL(folder, folder->children().size(),
+-                                  u"Google Calendar",
+-                                  GURL("https://calendar.google.com/"));
+-  }
++  ember_favorites::EnsureFolder(ember_bookmark_model_);
+   RebuildEmberFavorites();
+ }
+ 
+@@ -3947,8 +3991,7 @@ void BrowserView::BookmarkModelBeingDeleted() {
+   RebuildEmberFavorites(/*force=*/true);
+ }
+ 
+-void BrowserView::BookmarkMetaInfoChanged(
+-    const bookmarks::BookmarkNode* node) {
++void BrowserView::BookmarkMetaInfoChanged(const bookmarks::BookmarkNode* node) {
+   ScheduleEmberFavoritesRefresh();
+ }
+ 
+@@ -3969,69 +4012,92 @@ void BrowserView::RebuildEmberFavorites(bool force) {
+   std::vector<const bookmarks::BookmarkNode*> favorite_nodes;
+   std::vector<GURL> favorite_urls;
+   std::vector<std::u16string> favorite_titles;
++  const int columns =
++      ember_favorites::GetColumns(browser_->profile()->GetPrefs());
++  const int rows = ember_favorites::GetRows(browser_->profile()->GetPrefs());
++  const size_t visible_capacity = static_cast<size_t>(columns * rows);
+   if (folder && ember_bookmark_model_) {
+-    for (const auto& child : folder->children()) {
+-      if (!child->is_url() || !child->url().SchemeIsHTTPOrHTTPS()) {
+-        continue;
+-      }
+-      if (favorite_nodes.size() >= kEmberVisibleFavoriteCount) {
+-        break;
+-      }
++    favorite_nodes = ember_favorites::GetNodes(ember_bookmark_model_);
++    if (favorite_nodes.size() > visible_capacity) {
++      favorite_nodes.resize(visible_capacity);
++    }
++    for (const bookmarks::BookmarkNode* child : favorite_nodes) {
+       std::u16string title = child->GetTitle();
+       if (title.empty()) {
+         title = base::UTF8ToUTF16(EmberFavoriteHost(child->url()));
+       }
+-      favorite_nodes.push_back(child.get());
+       favorite_urls.push_back(child->url());
+       favorite_titles.push_back(std::move(title));
+     }
+   }
+   if (!force && favorite_urls == ember_favorite_urls_ &&
+-      favorite_titles == ember_favorite_titles_) {
++      favorite_titles == ember_favorite_titles_ &&
++      columns == ember_favorites_columns_ && rows == ember_favorites_rows_) {
+     return;
+   }
+ 
++  ember_favorites_columns_ = columns;
++  ember_favorites_rows_ = rows;
+   ember_favorite_urls_ = favorite_urls;
+   ember_favorite_titles_ = favorite_titles;
+   ember_favorite_buttons_.clear();
++  ember_favorite_slots_.clear();
+   ember_sidebar_favorites_->RemoveAllChildViews();
++  const int gap = ember_favorites::GetGridGap(rows);
++  const int tile_height = ember_favorites::GetGridTileHeight(rows);
++  ember_sidebar_favorites_->SetPreferredSize(
++      gfx::Size(0, ember_favorites::GetGridHeight(rows)));
++  ember_sidebar_favorites_->SetLayoutManager(std::make_unique<views::BoxLayout>(
++      views::BoxLayout::Orientation::kVertical, gfx::Insets(), gap));
+   views::View* row = nullptr;
+-  for (size_t index = 0; index < favorite_nodes.size(); ++index) {
+-    const bookmarks::BookmarkNode* child = favorite_nodes[index];
+-    if (index % 2 == 0) {
++  views::BoxLayout* row_layout = nullptr;
++  for (size_t index = 0; index < visible_capacity; ++index) {
++    const bookmarks::BookmarkNode* child =
++        index < favorite_nodes.size() ? favorite_nodes[index] : nullptr;
++    if (index % columns == 0) {
+       row = ember_sidebar_favorites_->AddChildView(
+           std::make_unique<views::View>());
+-      row->SetPreferredSize(gfx::Size(0, kEmberFavoriteTileHeight));
+-      row->SetLayoutManager(std::make_unique<views::BoxLayout>(
+-          views::BoxLayout::Orientation::kHorizontal, gfx::Insets(), 10));
++      row->SetPreferredSize(gfx::Size(0, tile_height));
++      row_layout = row->SetLayoutManager(std::make_unique<views::BoxLayout>(
++          views::BoxLayout::Orientation::kHorizontal, gfx::Insets(), gap));
+     }
+ 
+     std::unique_ptr<views::LabelButton> button =
+-        std::make_unique<EmberFavoriteButton>(base::BindRepeating(
+-            &BrowserView::OpenEmberFavorite, weak_ptr_factory_.GetWeakPtr(),
+-            child->url()));
+-    button->SetPreferredSize(
+-        gfx::Size(kEmberFavoriteTileWidth, kEmberFavoriteTileHeight));
++        child
++            ? std::make_unique<EmberFavoriteButton>(base::BindRepeating(
++                  &BrowserView::OpenEmberFavorite,
++                  weak_ptr_factory_.GetWeakPtr(), child->url()))
++            : std::make_unique<EmberFavoriteButton>(base::BindRepeating([] {}));
++    button->SetPreferredSize(gfx::Size(1, tile_height));
+     button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+-    button->SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
+     button->SetFocusRingCornerRadius(kEmberFavoriteCornerRadius);
+-    button->SetTooltipText(favorite_titles[index]);
+-    std::u16string accessible_name = u"Open ";
+-    accessible_name += favorite_titles[index];
+-    button->GetViewAccessibility().SetName(accessible_name);
+-    const gfx::Image& favicon = ember_bookmark_model_->GetFavicon(child);
+-    const gfx::ImageSkia source_favicon =
+-        favicon.IsEmpty() ? *favicon::GetDefaultFavicon().ToImageSkia()
+-                          : favicon.AsImageSkia();
+-    const gfx::ImageSkia resized =
+-        gfx::ImageSkiaOperations::CreateResizedImage(
+-            source_favicon, skia::ImageOperations::RESIZE_BEST,
+-            gfx::Size(19, 19));
+-    button->SetImageModel(views::Button::STATE_NORMAL,
+-                          ui::ImageModel::FromImageSkia(resized));
++    if (child) {
++      button->SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
++      button->SetTooltipText(favorite_titles[index]);
++      std::u16string accessible_name = u"Open ";
++      accessible_name += favorite_titles[index];
++      button->GetViewAccessibility().SetName(accessible_name);
++      const gfx::Image& favicon = ember_bookmark_model_->GetFavicon(child);
++      const gfx::ImageSkia source_favicon =
++          favicon.IsEmpty() ? *favicon::GetDefaultFavicon().ToImageSkia()
++                            : favicon.AsImageSkia();
++      const gfx::ImageSkia resized =
++          gfx::ImageSkiaOperations::CreateResizedImage(
++              source_favicon, skia::ImageOperations::RESIZE_BEST,
++              gfx::Size(19, 19));
++      button->SetImageModel(views::Button::STATE_NORMAL,
++                            ui::ImageModel::FromImageSkia(resized));
++    } else {
++      button->SetEnabled(false);
++      button->GetViewAccessibility().SetIsIgnored(true);
++    }
+ 
+     views::LabelButton* button_ptr = row->AddChildView(std::move(button));
+-    ember_favorite_buttons_.push_back(button_ptr);
++    row_layout->SetFlexForView(button_ptr, 1);
++    ember_favorite_slots_.push_back(button_ptr);
++    if (child) {
++      ember_favorite_buttons_.push_back(button_ptr);
++    }
+   }
+ 
+   UpdateEmberFavoriteOpenStates();
+@@ -4053,8 +4119,7 @@ content::WebContents* BrowserView::FindEmberFavoriteTab(
+         TabStripModel* tab_strip = candidate->GetTabStripModel();
+         for (int index = 0; index < tab_strip->count(); ++index) {
+           content::WebContents* contents = tab_strip->GetWebContentsAt(index);
+-          const GURL tab_url =
+-              contents ? contents->GetVisibleURL() : GURL();
++          const GURL tab_url = contents ? contents->GetVisibleURL() : GURL();
+           if (!IsEmberFavoriteMatch(favorite_url, tab_url)) {
+             continue;
+           }
+@@ -4118,6 +4183,36 @@ void BrowserView::OpenEmberFavorite(GURL favorite_url) {
+   chrome::AddTabAt(browser_.get(), favorite_url, -1, true);
+ }
+ 
++void BrowserView::SetEmberFavoriteDropPreview(std::optional<size_t> index) {
++  for (size_t slot = 0; slot < ember_favorite_slots_.size(); ++slot) {
++    static_cast<EmberFavoriteButton*>(ember_favorite_slots_[slot].get())
++        ->SetDropTarget(index.has_value() && *index == slot);
++  }
++}
++
++void BrowserView::AddDraggedTabToEmberFavorites(content::WebContents* contents,
++                                                size_t index) {
++  if (!contents || !ember_bookmark_model_) {
++    return;
++  }
++  const GURL url = contents->GetVisibleURL();
++  if (!url.SchemeIsHTTPOrHTTPS()) {
++    return;
++  }
++  std::u16string title = contents->GetTitle();
++  if (title.empty()) {
++    title = base::UTF8ToUTF16(EmberFavoriteHost(url));
++  }
++  for (const bookmarks::BookmarkNode* existing :
++       ember_favorites::GetNodes(ember_bookmark_model_)) {
++    if (existing->url() == url) {
++      ember_favorites::Move(ember_bookmark_model_, existing->id(), index);
++      return;
++    }
++  }
++  ember_favorites::Add(ember_bookmark_model_, url, title, index);
++}
++
+ void BrowserView::TouchModeChanged() {
+ #if BUILDFLAG(IS_CHROMEOS)
+   if (ui::TouchUiController::Get()->touch_ui()) {
+@@ -6772,8 +6860,8 @@ void BrowserView::LoadAccelerators() {
+         escape_released, ui::AcceleratorManager::kNormalPriority, this);
+   }
+ 
+-  ui::Accelerator control_released(
+-      ui::VKEY_CONTROL, ui::EF_NONE, ui::Accelerator::KeyState::RELEASED);
++  ui::Accelerator control_released(ui::VKEY_CONTROL, ui::EF_NONE,
++                                   ui::Accelerator::KeyState::RELEASED);
+   focus_manager->RegisterAccelerator(
+       control_released, ui::AcceleratorManager::kNormalPriority, this);
+ }
+@@ -7181,28 +7269,38 @@ void BrowserView::PaintAsActiveChanged() {
+ #if BUILDFLAG(IS_WIN)
+ void BrowserView::UpdateEmberNativeBackdrop(WebContents* contents) {
+   views::Widget* widget = GetWidget();
+-  if (!widget || !GetIsNormalType()) return;
++  if (!widget || !GetIsNormalType()) {
++    return;
++  }
+   HWND hwnd = views::HWNDForWidget(widget);
+-  if (!hwnd) return;
++  if (!hwnd) {
++    return;
++  }
+ 
+   // The only page allowed to expose the native material in this batch is the
+   // Ember New Tab WebUI. Future internal pages can extend this predicate.
+-  if (contents != GetActiveWebContents()) contents = GetActiveWebContents();
++  if (contents != GetActiveWebContents()) {
++    contents = GetActiveWebContents();
++  }
+   const GURL url = contents ? contents->GetLastCommittedURL() : GURL();
+-  const bool active = url.SchemeIs(content::kChromeUIScheme) &&
++  const bool active =
++      url.SchemeIs(content::kChromeUIScheme) &&
+       (url.host() == chrome::kChromeUINewTabPageThirdPartyHost ||
+        url.host() == chrome::kChromeUINewTabHost);
+   // ContentsWebView owns an opaque kColorWebContentsBackground layer behind
+   // the renderer. Clear it for Ember's transparent WebUI as well as the HWND;
+   // otherwise the native acrylic is covered by a flat #3c3c3c rectangle.
+-  if (auto* view = contents_web_view()) view->SetBackgroundVisible(!active);
++  if (auto* view = contents_web_view()) {
++    view->SetBackgroundVisible(!active);
++  }
+ 
+   // BrowserView normally paints an opaque frame-theme background beneath the
+   // WebContents. Remove that backing only for the NTP so its transparent
+   // renderer can reveal DWM's material. Recreate it before attaching an
+   // ordinary page; otherwise transparent areas in a website expose the HWND.
+-  SetBackground(active ? nullptr : std::make_unique<ThemedBackground>(
+-                                      this, ThemedBackground::kFrameTheme));
++  SetBackground(active ? nullptr
++                       : std::make_unique<ThemedBackground>(
++                             this, ThemedBackground::kFrameTheme));
+ 
+   // Use the supported Windows 11 backdrop API. The legacy AccentPolicy
+   // acrylic filters the already-composited HWND and feeds Ember's transparent
+@@ -7229,13 +7327,13 @@ void BrowserView::UpdateEmberNativeBackdrop(WebContents* contents) {
+   widget->GetCompositor()->SetBackgroundColor(compositor_color);
+   if (aura::Window* native_window = widget->GetNativeWindow()) {
+     native_window->SetTransparent(active);
+-    if (aura::Window* root_window = native_window->GetRootWindow())
++    if (aura::Window* root_window = native_window->GetRootWindow()) {
+       root_window->SetTransparent(active);
++    }
+   }
+   ember_native_backdrop_active_ = active;
+   ember_native_backdrop_initialized_ = true;
+-  MARGINS margins = active ? MARGINS{-1, -1, -1, -1}
+-                           : MARGINS{0, 0, 0, 0};
++  MARGINS margins = active ? MARGINS{-1, -1, -1, -1} : MARGINS{0, 0, 0, 0};
+   DwmExtendFrameIntoClientArea(hwnd, &margins);
+   // Let Chromium's HWND handler retain the same DWM margin mode through
+   // subsequent frame changes, and restore normal margins on exit.
+diff --git a/chrome/browser/ui/views/frame/browser_view.h b/chrome/browser/ui/views/frame/browser_view.h
+index 0abbfd3..982eb51 100644
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -281,10 +281,10 @@ class BrowserView : public BrowserWindow,
+   // Container for the web contents.
+   views::View* contents_container() { return contents_container_; }
+ 
+-  void ShowEmberContextMenu(ui::MenuModel* model,
+-                            const gfx::Point& page_point,
+-                            base::OnceClosure menu_closed_callback =
+-                                base::OnceClosure());
++  void ShowEmberContextMenu(
++      ui::MenuModel* model,
++      const gfx::Point& page_point,
++      base::OnceClosure menu_closed_callback = base::OnceClosure());
+   void ShowEmberContextMenuAtScreenPoint(
+       ui::MenuModel* model,
+       const gfx::Point& screen_point,
+@@ -934,17 +934,17 @@ class BrowserView : public BrowserWindow,
+   void RebuildEmberFavorites(bool force = false);
+   void UpdateEmberFavoriteOpenStates();
+   void UpdateEmberFavoriteOpenStatesForProfile();
+-  content::WebContents* FindEmberFavoriteTab(
+-      const GURL& favorite_url) const;
++  content::WebContents* FindEmberFavoriteTab(const GURL& favorite_url) const;
+   void OpenEmberFavorite(GURL favorite_url);
++  void SetEmberFavoriteDropPreview(std::optional<size_t> index);
++  void AddDraggedTabToEmberFavorites(content::WebContents* contents,
++                                     size_t index);
+ 
+   // bookmarks::BaseBookmarkModelObserver:
+   void BookmarkModelChanged() override;
+   void BookmarkModelBeingDeleted() override;
+-  void BookmarkMetaInfoChanged(
+-      const bookmarks::BookmarkNode* node) override;
+-  void BookmarkNodeFaviconChanged(
+-      const bookmarks::BookmarkNode* node) override;
++  void BookmarkMetaInfoChanged(const bookmarks::BookmarkNode* node) override;
++  void BookmarkNodeFaviconChanged(const bookmarks::BookmarkNode* node) override;
+ 
+   // If the browser is in immersive full screen mode, it will reveal the
+   // top container for a short duration. The top container will have the toolbar
+@@ -1213,6 +1213,10 @@ class BrowserView : public BrowserWindow,
+   std::vector<GURL> ember_favorite_urls_;
+   std::vector<std::u16string> ember_favorite_titles_;
+   std::vector<raw_ptr<views::LabelButton>> ember_favorite_buttons_;
++  std::vector<raw_ptr<views::View>> ember_favorite_slots_;
++  std::unique_ptr<TabDragTarget> ember_favorites_drop_target_;
++  int ember_favorites_columns_ = 0;
++  int ember_favorites_rows_ = 0;
+   base::ScopedObservation<bookmarks::BookmarkModel,
+                           bookmarks::BookmarkModelObserver>
+       ember_bookmark_model_observation_{this};
+diff --git a/chrome/browser/ui/views/tabs/new_tab_button.cc b/chrome/browser/ui/views/tabs/new_tab_button.cc
+index 15ee937..d2eef4d 100644
+--- a/chrome/browser/ui/views/tabs/new_tab_button.cc
++++ b/chrome/browser/ui/views/tabs/new_tab_button.cc
+@@ -10,17 +10,22 @@
+ #include "base/metrics/user_metrics.h"
+ #include "cc/paint/paint_flags.h"
+ #include "chrome/app/chrome_command_ids.h"
++#include "chrome/browser/prefs/incognito_mode_prefs.h"
++#include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/browser_commands.h"
+ #include "chrome/browser/ui/browser_element_identifiers.h"
+-#include "chrome/browser/ui/color/chrome_color_id.h"
++#include "chrome/browser/ui/browser_tabstrip.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
++#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
++#include "chrome/browser/ui/color/chrome_color_id.h"
+ #include "chrome/browser/ui/tabs/split_tab_metrics.h"
+ #include "chrome/browser/ui/tabs/tab_group_model.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/browser/ui/ui_features.h"
+-#include "chrome/browser/ui/views/tabs/tab_strip.h"
+ #include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/browser/ui/views/tabs/tab_strip.h"
++#include "chrome/common/webui_url_constants.h"
+ #include "chrome/grit/generated_resources.h"
+ #include "components/tabs/public/tab_group.h"
+ #include "ui/base/interaction/element_identifier.h"
+@@ -31,10 +36,10 @@
+ #include "ui/views/view_class_properties.h"
+ 
+ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(NewTabButtonMenuModel, kNewTab);
+-DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(NewTabButtonMenuModel, kNewTabInGroup);
+-DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(NewTabButtonMenuModel, kNewSplitView);
++DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(NewTabButtonMenuModel, kNewWindow);
++DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(NewTabButtonMenuModel, kNewIncognitoTab);
+ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(NewTabButtonMenuModel,
+-                                      kCreateNewTabGroup);
++                                      kNewIncognitoWindow);
+ 
+ NewTabButton::NewTabButton(PressedCallback callback,
+                            const gfx::VectorIcon& icon,
+@@ -57,7 +62,8 @@ NewTabButton::NewTabButton(PressedCallback callback,
+ }
+ 
+ NewTabButton::~NewTabButton() {
+-  Browser* browser = browser_ ? browser_->GetBrowserForMigrationOnly() : nullptr;
++  Browser* browser =
++      browser_ ? browser_->GetBrowserForMigrationOnly() : nullptr;
+   BrowserView* browser_view =
+       browser ? BrowserView::GetBrowserViewForBrowser(browser) : nullptr;
+   if (browser_view && context_menu_model_) {
+@@ -69,30 +75,26 @@ void NewTabButton::ShowContextMenuForViewImpl(
+     View* source,
+     const gfx::Point& point,
+     ui::mojom::MenuSourceType source_type) {
+-  if (features::IsTabGroupMenuMoreEntryPointsEnabled()) {
+-    Browser* browser = browser_->GetBrowserForMigrationOnly();
+-    BrowserView* browser_view =
+-        browser ? BrowserView::GetBrowserViewForBrowser(browser) : nullptr;
+-    if (browser_view && context_menu_model_) {
+-      browser_view->CancelEmberContextMenu(context_menu_model_.get());
+-    }
+-    context_menu_model_ = std::make_unique<NewTabButtonMenuModel>(browser_);
+-    if (browser_view) {
+-      browser_view->ShowEmberContextMenuAtScreenPoint(
+-          context_menu_model_.get(), point);
+-      return;
+-    }
+-
+-    int32_t menu_runner_flags =
+-        views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU;
+-
+-    context_menu_runner_ = std::make_unique<views::MenuRunner>(
+-        context_menu_model_.get(), menu_runner_flags);
+-
+-    context_menu_runner_->RunMenuAt(
+-        source->GetWidget(), nullptr, gfx::Rect(point, gfx::Size()),
+-        views::MenuAnchorPosition::kTopLeft, source_type);
++  Browser* browser = browser_->GetBrowserForMigrationOnly();
++  BrowserView* browser_view =
++      browser ? BrowserView::GetBrowserViewForBrowser(browser) : nullptr;
++  if (browser_view && context_menu_model_) {
++    browser_view->CancelEmberContextMenu(context_menu_model_.get());
+   }
++  context_menu_model_ = std::make_unique<NewTabButtonMenuModel>(browser_);
++  if (browser_view) {
++    browser_view->ShowEmberContextMenuAtScreenPoint(context_menu_model_.get(),
++                                                    point);
++    return;
++  }
++
++  int32_t menu_runner_flags =
++      views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU;
++  context_menu_runner_ = std::make_unique<views::MenuRunner>(
++      context_menu_model_.get(), menu_runner_flags);
++  context_menu_runner_->RunMenuAt(
++      source->GetWidget(), nullptr, gfx::Rect(point, gfx::Size()),
++      views::MenuAnchorPosition::kTopLeft, source_type);
+ }
+ 
+ void NewTabButton::UpdateBackground() {
+@@ -108,9 +110,9 @@ void NewTabButton::OnPaintBackground(gfx::Canvas* canvas) {
+ 
+   cc::PaintFlags flags;
+   flags.setAntiAlias(true);
+-  flags.setColor(SkColorSetARGB(
+-      GetState() == views::Button::STATE_PRESSED ? 0x30 : 0x20,
+-      0xFF, 0xFF, 0xFF));
++  flags.setColor(
++      SkColorSetARGB(GetState() == views::Button::STATE_PRESSED ? 0x30 : 0x20,
++                     0xFF, 0xFF, 0xFF));
+   canvas->DrawRoundRect(gfx::RectF(GetContentsBounds()), GetCornerRadius(),
+                         flags);
+ }
+@@ -119,19 +121,24 @@ NewTabButtonMenuModel::NewTabButtonMenuModel(BrowserWindowInterface* browser)
+     : ui::SimpleMenuModel(this), browser_(browser) {
+   CHECK(browser_);
+ 
+-  // Build the menu.
+   AddItemWithStringId(IDC_NEW_TAB, IDS_NEW_TAB);
+   SetElementIdentifierAt(GetIndexOfCommandId(IDC_NEW_TAB).value(), kNewTab);
+-  AddNewTabInGroupItem();
+-
++  AddItemWithStringId(IDC_NEW_WINDOW, IDS_NEW_WINDOW);
++  SetElementIdentifierAt(GetIndexOfCommandId(IDC_NEW_WINDOW).value(),
++                         kNewWindow);
+   AddSeparator(ui::NORMAL_SEPARATOR);
+-
+-  AddItemWithStringId(IDC_CREATE_NEW_TAB_GROUP, IDS_NEW_TAB_GROUP);
+-  SetElementIdentifierAt(GetIndexOfCommandId(IDC_CREATE_NEW_TAB_GROUP).value(),
+-                         kCreateNewTabGroup);
+-
+-  AddSeparator(ui::NORMAL_SEPARATOR);
+-  AddNewSplitTabItem();
++  AddItem(kNewIncognitoTabCommand, u"New incognito tab");
++  SetElementIdentifierAt(GetIndexOfCommandId(kNewIncognitoTabCommand).value(),
++                         kNewIncognitoTab);
++  AddItemWithStringId(IDC_NEW_INCOGNITO_WINDOW, IDS_NEW_INCOGNITO_WINDOW);
++  SetElementIdentifierAt(GetIndexOfCommandId(IDC_NEW_INCOGNITO_WINDOW).value(),
++                         kNewIncognitoWindow);
++  const bool incognito_allowed = IncognitoModePrefs::IsIncognitoAllowed(
++      browser_->GetProfile()->GetOriginalProfile());
++  SetEnabledAt(GetIndexOfCommandId(kNewIncognitoTabCommand).value(),
++               incognito_allowed);
++  SetEnabledAt(GetIndexOfCommandId(IDC_NEW_INCOGNITO_WINDOW).value(),
++               incognito_allowed);
+ }
+ 
+ NewTabButtonMenuModel::~NewTabButtonMenuModel() = default;
+@@ -144,25 +151,41 @@ void NewTabButtonMenuModel::ExecuteCommand(int command_id, int event_flags) {
+       base::RecordAction(
+           base::UserMetricsAction("NewTabButton_ContextMenu_NewTab"));
+       break;
+-    case IDC_ADD_NEW_TAB_RECENT_GROUP:
++    case IDC_NEW_WINDOW:
+       base::RecordAction(
+-          base::UserMetricsAction("NewTabButton_ContextMenu_NewTabInGroup"));
++          base::UserMetricsAction("NewTabButton_ContextMenu_NewWindow"));
+       break;
+-    case IDC_CREATE_NEW_TAB_GROUP:
++    case kNewIncognitoTabCommand:
+       base::RecordAction(
+-          base::UserMetricsAction("NewTabButton_ContextMenu_NewGroup"));
++          base::UserMetricsAction("NewTabButton_ContextMenu_IncognitoTab"));
+       break;
+-    case IDC_NEW_SPLIT_TAB:
++    case IDC_NEW_INCOGNITO_WINDOW:
+       base::RecordAction(
+-          base::UserMetricsAction("NewTabButton_ContextMenu_NewSplitTab"));
++          base::UserMetricsAction("NewTabButton_ContextMenu_IncognitoWindow"));
+       break;
+   }
+ 
+-  if (command_id == IDC_NEW_SPLIT_TAB) {
+-    // Handle this command directly because we want to specify the source
+-    // as the new tab button.
+-    chrome::NewSplitTab(browser_, split_tabs::SplitTabLayout::kSideBySide,
+-                        split_tabs::SplitTabCreatedSource::kNewTabButton);
++  if (command_id == kNewIncognitoTabCommand) {
++    Profile* original = browser_->GetProfile()->GetOriginalProfile();
++    BrowserWindowInterface* target = nullptr;
++    GlobalBrowserCollection::GetInstance()->ForEach(
++        [&](BrowserWindowInterface* candidate) {
++          Profile* profile = candidate->GetProfile();
++          if (candidate->GetType() == BrowserWindowInterface::TYPE_NORMAL &&
++              profile->IsOffTheRecord() &&
++              profile->GetOriginalProfile() == original) {
++            target = candidate;
++            return false;
++          }
++          return true;
++        },
++        BrowserCollection::Order::kActivation);
++    if (target) {
++      chrome::AddTabAt(target, GURL(chrome::kChromeUINewTabURL), -1, true);
++      target->GetWindow()->Activate();
++    } else {
++      chrome::NewIncognitoWindow(original);
++    }
+     return;
+   }
+ 
+@@ -173,7 +196,7 @@ bool NewTabButtonMenuModel::GetAcceleratorForCommandId(
+     int command_id,
+     ui::Accelerator* accelerator) const {
+   CHECK(browser_);
+-  if (command_id < 0) {
++  if (command_id < 0 || command_id == kNewIncognitoTabCommand) {
+     // This is a non-interactive title.
+     return false;
+   }
+@@ -182,59 +205,3 @@ bool NewTabButtonMenuModel::GetAcceleratorForCommandId(
+       .accelerator_provider()
+       ->GetAcceleratorForCommandId(command_id, accelerator);
+ }
+-
+-void NewTabButtonMenuModel::AddNewTabInGroupItem() {
+-  TabStripModel* tab_strip_model = browser_->GetTabStripModel();
+-  CHECK(tab_strip_model);
+-
+-  TabGroupModel* tab_group_model = tab_strip_model->group_model();
+-  CHECK(tab_group_model);
+-
+-  std::optional<tab_groups::TabGroupId> group_id =
+-      tab_group_model->GetMostRecentTabGroupId();
+-
+-  if (!group_id) {
+-    // There is no most recent group. So we don't enable this option.
+-    AddItem(IDC_ADD_NEW_TAB_RECENT_GROUP,
+-            l10n_util::GetStringUTF16(IDS_NEW_TAB_IN_GROUP_NO_GROUPS));
+-    SetEnabledAt(GetIndexOfCommandId(IDC_ADD_NEW_TAB_RECENT_GROUP).value(),
+-                 false);
+-  } else {
+-    // The most recent tab group exists.
+-    std::u16string group_name =
+-        tab_group_model->GetTabGroup(*group_id)->visual_data()->title();
+-
+-    std::u16string menu_item_label;
+-
+-    if (group_name.empty()) {
+-      // "New tab in 2 tabs
+-      int num_tabs = tab_group_model->GetTabGroup(*group_id)->tab_count();
+-      menu_item_label = l10n_util::GetPluralStringFUTF16(
+-          IDS_NEW_TAB_IN_GROUP_NO_NAME, num_tabs);
+-    } else {
+-      // "New tab in |group_name|".
+-      menu_item_label =
+-          l10n_util::GetStringFUTF16(IDS_NEW_TAB_IN_GROUP, group_name);
+-    }
+-    AddItem(IDC_ADD_NEW_TAB_RECENT_GROUP, menu_item_label);
+-  }
+-
+-  SetElementIdentifierAt(
+-      GetIndexOfCommandId(IDC_ADD_NEW_TAB_RECENT_GROUP).value(),
+-      kNewTabInGroup);
+-}
+-
+-void NewTabButtonMenuModel ::AddNewSplitTabItem() {
+-  AddItemWithStringId(IDC_NEW_SPLIT_TAB, IDS_TAB_CXMENU_NEW_SPLIT_WITH_CURRENT);
+-  SetElementIdentifierAt(GetIndexOfCommandId(IDC_NEW_SPLIT_TAB).value(),
+-                         kNewSplitView);
+-
+-  TabStripModel* tab_strip_model = browser_->GetTabStripModel();
+-  CHECK(tab_strip_model);
+-
+-  const tabs::TabInterface* const active_tab = tab_strip_model->GetActiveTab();
+-  bool is_active_tab_split = active_tab && active_tab->IsSplit();
+-
+-  SetEnabledAt(GetIndexOfCommandId(IDC_NEW_SPLIT_TAB).value(),
+-               !is_active_tab_split);
+-}
+diff --git a/chrome/browser/ui/views/tabs/new_tab_button.h b/chrome/browser/ui/views/tabs/new_tab_button.h
+index 2cf08e7..8a3287f 100644
+--- a/chrome/browser/ui/views/tabs/new_tab_button.h
++++ b/chrome/browser/ui/views/tabs/new_tab_button.h
+@@ -58,9 +58,9 @@ class NewTabButtonMenuModel : public ui::SimpleMenuModel,
+                               public ui::SimpleMenuModel::Delegate {
+  public:
+   DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kNewTab);
+-  DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kNewTabInGroup);
+-  DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kNewSplitView);
+-  DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kCreateNewTabGroup);
++  DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kNewWindow);
++  DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kNewIncognitoTab);
++  DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kNewIncognitoWindow);
+   explicit NewTabButtonMenuModel(BrowserWindowInterface* browser);
+   NewTabButtonMenuModel(const NewTabButtonMenuModel&) = delete;
+   NewTabButtonMenuModel& operator=(const NewTabButtonMenuModel&) = delete;
+@@ -72,8 +72,10 @@ class NewTabButtonMenuModel : public ui::SimpleMenuModel,
+                                   ui::Accelerator* accelerator) const override;
+ 
+  private:
+-  void AddNewTabInGroupItem();
+-  void AddNewSplitTabItem();
++  // This command is local to this menu model. Values below the global command
++  // label floor are reserved for dynamic menu entries and cannot collide with
++  // a browser command dispatched by `chrome::ExecuteCommand`.
++  static constexpr int kNewIncognitoTabCommand = 3999;
+ 
+   raw_ptr<BrowserWindowInterface> browser_;
+ };
+diff --git a/chrome/browser/ui/views/tabs/tab_strip.cc b/chrome/browser/ui/views/tabs/tab_strip.cc
+index 534b015..b1e521e 100644
+--- a/chrome/browser/ui/views/tabs/tab_strip.cc
++++ b/chrome/browser/ui/views/tabs/tab_strip.cc
+@@ -15,8 +15,8 @@
+ #include <utility>
+ #include <vector>
+ 
+-#include "base/command_line.h"
+ #include "base/check.h"
++#include "base/command_line.h"
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
+ #include "base/functional/callback.h"
+@@ -269,6 +269,7 @@ class TabStrip::TabDragContextImpl : public TabDragContext,
+     // Build the set of selected tabs to drag and calculate the offset from the
+     // source.
+     ui::ListSelectionModel selection_model;
++    bool deferred_background_drag = false;
+     if (source->GetTabSlotViewType() ==
+         TabSlotView::ViewType::kTabGroupHeader) {
+       dragging_views.push_back(source);
+@@ -290,31 +291,40 @@ class TabStrip::TabDragContextImpl : public TabDragContext,
+         selection_model = original_selection;
+       }
+     } else {
+-      // Any groups where all the tabs are selected should get dragged.
+-      std::map<tab_groups::TabGroupId, TabGroupHeader*> fully_selected_groups =
+-          GetFullySelectedTabGroups();
+-
+-      const ui::ListSelectionModel& strip_selection_model =
+-          tab_strip_->GetSelectionModel();
+-      for (size_t i : strip_selection_model.selected_indices()) {
+-        TabSlotView* other_tab = GetTabAt(static_cast<int>(i));
+-        if (!other_tab) {
+-          continue;
+-        }
+-        if (other_tab->group().has_value()) {
+-          const tab_groups::TabGroupId group = other_tab->group().value();
+-          if (auto it = fully_selected_groups.find(group);
+-              it != fully_selected_groups.end()) {
+-            dragging_views.push_back(it->second);
+-            fully_selected_groups.erase(it);
++      const int source_index = tab_strip_->GetModelIndexOf(source).value();
++      deferred_background_drag =
++          !original_selection.IsSelected(source_index) &&
++          !tab_strip_->GetSelectionModel().IsSelected(source_index);
++      if (deferred_background_drag) {
++        dragging_views.push_back(source);
++        selection_model = original_selection;
++      } else {
++        // Any groups where all the tabs are selected should get dragged.
++        std::map<tab_groups::TabGroupId, TabGroupHeader*>
++            fully_selected_groups = GetFullySelectedTabGroups();
++
++        const ui::ListSelectionModel& strip_selection_model =
++            tab_strip_->GetSelectionModel();
++        for (size_t i : strip_selection_model.selected_indices()) {
++          TabSlotView* other_tab = GetTabAt(static_cast<int>(i));
++          if (!other_tab) {
++            continue;
++          }
++          if (other_tab->group().has_value()) {
++            const tab_groups::TabGroupId group = other_tab->group().value();
++            if (auto it = fully_selected_groups.find(group);
++                it != fully_selected_groups.end()) {
++              dragging_views.push_back(it->second);
++              fully_selected_groups.erase(it);
++            }
+           }
+-        }
+ 
+-        dragging_views.push_back(other_tab);
+-      }
+-      if (!original_selection.IsSelected(
+-              tab_strip_->GetModelIndexOf(source).value())) {
+-        selection_model = original_selection;
++          dragging_views.push_back(other_tab);
++        }
++        if (!original_selection.IsSelected(
++                tab_strip_->GetModelIndexOf(source).value())) {
++          selection_model = original_selection;
++        }
+       }
+     }
+ 
+@@ -341,7 +351,8 @@ class TabStrip::TabDragContextImpl : public TabDragContext,
+     // is nullptr or it points to a *different instance*.
+     if (drag_controller_->Init(this, source, dragging_views, event.location(),
+                                std::move(selection_model),
+-                               EventSourceFromEvent(event)) ==
++                               EventSourceFromEvent(event),
++                               deferred_background_drag) ==
+         TabDragController::Liveness::kDeleted) {
+       return;
+     }
+@@ -990,9 +1001,10 @@ class TabStrip::TabDragContextImpl : public TabDragContext,
+     }
+ 
+     TabSlotView* const left_tab = GetTabAt(candidate_index - 1);
+-    TabSlotView* const right_tab = tab_strip_->IsValidModelIndex(candidate_index)
+-                               ? GetTabAt(candidate_index)
+-                               : nullptr;
++    TabSlotView* const right_tab =
++        tab_strip_->IsValidModelIndex(candidate_index)
++            ? GetTabAt(candidate_index)
++            : nullptr;
+ 
+     // This might be in the middle of a group, which may or may not be fine.
+     std::optional<tab_groups::TabGroupId> left_group = left_tab->group();
+@@ -1976,8 +1988,12 @@ void TabStrip::OnGroupContentsChanged(const tab_groups::TabGroupId& group) {
+ 
+ void TabStrip::UpdateHoverCard(HoverCardAnchorTarget* anchor_target,
+                                HoverCardUpdateType update_type) {
+-  if (base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII("tab-hover-cards") == "tooltip" ||
+-      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII("tab-hover-cards") == "none") return;
++  if (base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++          "tab-hover-cards") == "tooltip" ||
++      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++          "tab-hover-cards") == "none") {
++    return;
++  }
+   if (tab_container_) {
+     tab_container_->UpdateHoverCard(anchor_target, update_type);
+   }
+diff --git a/chrome/browser/ui/views/tabs/tab.cc b/chrome/browser/ui/views/tabs/tab.cc
+index b0b20c4..5aa12a4 100644
+--- a/chrome/browser/ui/views/tabs/tab.cc
++++ b/chrome/browser/ui/views/tabs/tab.cc
+@@ -59,6 +59,7 @@
+ #include "components/tabs/public/tab_group.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "third_party/skia/include/core/SkPath.h"
++#include "third_party/skia/include/core/SkPathBuilder.h"
+ #include "ui/accessibility/ax_enums.mojom.h"
+ #include "ui/base/l10n/l10n_util.h"
+ #include "ui/base/metadata/metadata_impl_macros.h"
+@@ -162,6 +163,47 @@ class TabStyleHighlightPathGenerator : public views::HighlightPathGenerator {
+   const raw_ptr<TabStyleViews, AcrossTasksDanglingUntriaged> tab_style_views_;
+ };
+ 
++class EmberSleepIndicatorView final : public views::View {
++  METADATA_HEADER(EmberSleepIndicatorView, views::View)
++
++ public:
++  EmberSleepIndicatorView() {
++    SetPreferredSize(gfx::Size(18, 18));
++    SetCanProcessEventsWithinSubtree(false);
++    GetViewAccessibility().SetIsIgnored(true);
++  }
++
++  void OnPaint(gfx::Canvas* canvas) override {
++    views::View::OnPaint(canvas);
++    cc::PaintFlags flags;
++    flags.setAntiAlias(true);
++    flags.setColor(SkColorSetARGB(0xD9, 0xFF, 0xFF, 0xFF));
++    flags.setStyle(cc::PaintFlags::kStroke_Style);
++    flags.setStrokeWidth(1.55f);
++    flags.setStrokeCap(cc::PaintFlags::kRound_Cap);
++    flags.setStrokeJoin(cc::PaintFlags::kRound_Join);
++
++    SkPathBuilder large_z;
++    large_z.moveTo(5.5f, 8.0f);
++    large_z.lineTo(12.5f, 8.0f);
++    large_z.lineTo(5.5f, 14.0f);
++    large_z.lineTo(12.5f, 14.0f);
++    canvas->DrawPath(large_z.detach(), flags);
++
++    SkPathBuilder small_z;
++    small_z.moveTo(9.5f, 3.5f);
++    small_z.lineTo(13.5f, 3.5f);
++    small_z.lineTo(9.5f, 6.5f);
++    small_z.lineTo(13.5f, 6.5f);
++    flags.setStrokeWidth(1.2f);
++    flags.setAlphaf(0.72f);
++    canvas->DrawPath(small_z.detach(), flags);
++  }
++};
++
++BEGIN_METADATA(EmberSleepIndicatorView)
++END_METADATA
++
+ }  // namespace
+ 
+ // Helper class that observes the tab's close button.
+@@ -237,6 +279,7 @@ Tab::Tab(tabs::TabHandle handle, TabSlotController* controller)
+ 
+   alert_indicator_button_ =
+       AddChildView(std::make_unique<AlertIndicatorButton>(this));
++  sleep_indicator_ = AddChildView(std::make_unique<EmberSleepIndicatorView>());
+ 
+   BrowserWindowInterface* const browser_window_interface =
+       controller_->GetBrowserWindowInterface();
+@@ -357,6 +400,7 @@ void Tab::Layout(PassKey) {
+ 
+   const bool was_showing_icon = showing_icon_;
+   const bool was_showing_close_button = showing_close_button_;
++  const bool was_showing_sleep_indicator = showing_sleep_indicator_;
+   UpdateIconVisibility();
+ 
+   const int start = contents_rect.x();
+@@ -392,10 +436,9 @@ void Tab::Layout(PassKey) {
+     favicon_bounds.set_size(icon_->GetPreferredSize());
+     // Center the painted favicon in the content box. TabIcon's view is wider
+     // than its 16-DIP glyph so it can carry discard/attention treatments.
+-    favicon_bounds.set_y(
+-        contents_rect.y() +
+-        Center(contents_rect.height(), gfx::kFaviconSize) -
+-        icon_->GetInsets().top());
++    favicon_bounds.set_y(contents_rect.y() +
++                         Center(contents_rect.height(), gfx::kFaviconSize) -
++                         icon_->GetInsets().top());
+   }
+   icon_->SetBoundsRect(favicon_bounds);
+   icon_->SetVisible(showing_icon_);
+@@ -407,7 +450,8 @@ void Tab::Layout(PassKey) {
+   // and to the right of the compact 32-DIP tab pill.
+   int close_x = contents_rect.right() + 1;
+   const bool reserve_close_lane =
+-      showing_close_button_ && ShouldRenderAsNormalTab() && !data().pinned &&
++      (showing_close_button_ || showing_sleep_indicator_) &&
++      ShouldRenderAsNormalTab() && !data().pinned &&
+       !base::CommandLine::ForCurrentProcess()->HasSwitch(
+           "hide-tab-close-buttons");
+   if (reserve_close_lane || showing_close_button_) {
+@@ -444,6 +488,16 @@ void Tab::Layout(PassKey) {
+   }
+   close_button_->SetVisible(showing_close_button_);
+ 
++  if (showing_sleep_indicator_) {
++    int right = showing_close_button_ ? close_x : contents_rect.right();
++    const gfx::Size sleep_size = sleep_indicator_->GetPreferredSize();
++    sleep_indicator_->SetBounds(
++        std::max(contents_rect.x(), right - sleep_size.width()),
++        contents_rect.y() + Center(contents_rect.height(), sleep_size.height()),
++        sleep_size.width(), sleep_size.height());
++  }
++  sleep_indicator_->SetVisible(showing_sleep_indicator_);
++
+   if (showing_alert_indicator_) {
+     int right = contents_rect.right();
+     if (reserve_close_lane) {
+@@ -493,6 +547,8 @@ void Tab::Layout(PassKey) {
+     int title_right = contents_rect.right();
+     if (showing_alert_indicator_) {
+       title_right = alert_indicator_button_->x() - after_title_padding;
++    } else if (showing_sleep_indicator_) {
++      title_right = sleep_indicator_->x() - after_title_padding;
+     } else if (reserve_close_lane) {
+       // The visible close button needs one gap, already included in close_x.
+       // Idle compact tabs use this lane for their title while X is hidden.
+@@ -509,7 +565,8 @@ void Tab::Layout(PassKey) {
+       target_title_bounds_ = title_bounds;
+       const bool animate_title =
+           was_showing_icon != showing_icon_ ||
+-          was_showing_close_button != showing_close_button_;
++          was_showing_close_button != showing_close_button_ ||
++          was_showing_sleep_indicator != showing_sleep_indicator_;
+       if (!animate_title || title_->bounds().IsEmpty() ||
+           title_bounds.IsEmpty()) {
+         title_animation_.Stop();
+@@ -611,8 +668,10 @@ bool Tab::OnMousePressed(const ui::MouseEvent& event) {
+         return false;
+       }
+     } else if (!IsSelected()) {
+-      controller_->SelectTab(this, event);
+-      base::RecordAction(UserMetricsAction("SwitchTab_Click"));
++      // Ember defers a plain background-tab selection until mouse-up. If the
++      // gesture turns into a drag, the currently displayed page therefore
++      // stays visible while the background tab can target split view or
++      // Favorites. Modifier-selection retains Chromium's normal behavior.
+     }
+     ui::MouseEvent cloned_event(event_in_parent, parent(),
+                                 views::AsViewClass<View>(this));
+@@ -668,6 +727,9 @@ void Tab::OnMouseReleased(const ui::MouseEvent& event) {
+     // If the tab was already selected mouse pressed doesn't change the
+     // selection. Reset it now to handle the case where multiple tabs were
+     // selected.
++    if (!IsSelected()) {
++      base::RecordAction(UserMetricsAction("SwitchTab_Click"));
++    }
+     controller_->SelectTab(this, event);
+   }
+   // If the tab was closed with the animation disabled, the tab may have
+@@ -853,8 +915,12 @@ void Tab::SetSplit(std::optional<split_tabs::SplitTabId> split) {
+ }
+ 
+ std::u16string Tab::GetRenderedTooltipText(const gfx::Point& p) const {
+-  if (base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII("tab-hover-cards") == "tooltip")
+-    return GetTooltipText(data_.title, data_.alert_state.has_value() ? data_.alert_state.value() : std::optional<tabs::TabAlert>());
++  if (base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++          "tab-hover-cards") == "tooltip") {
++    return GetTooltipText(data_.title, data_.alert_state.has_value()
++                                           ? data_.alert_state.value()
++                                           : std::optional<tabs::TabAlert>());
++  }
+   // Tab hover cards replace tooltips for tabs.
+   return std::u16string();
+ }
+@@ -1053,6 +1119,7 @@ void Tab::UpdateIconVisibility() {
+   if (width() < tab_style()->GetMinimumInactiveWidth()) {
+     showing_icon_ = false;
+     showing_alert_indicator_ = false;
++    showing_sleep_indicator_ = false;
+     showing_close_button_ = false;
+     return;
+   }
+@@ -1068,7 +1135,7 @@ void Tab::UpdateIconVisibility() {
+     center_icon_ = false;
+   }
+ 
+-  showing_icon_ = showing_alert_indicator_ = false;
++  showing_icon_ = showing_alert_indicator_ = showing_sleep_indicator_ = false;
+   extra_alert_indicator_padding_ = false;
+ 
+   if (height() < GetLayoutConstant(LayoutConstant::kTabHeight)) {
+@@ -1090,6 +1157,8 @@ void Tab::UpdateIconVisibility() {
+     // hidden.
+     has_alert_icon = false;
+   }
++  const bool has_sleep_indicator =
++      data().is_tab_discarded && !has_alert_icon && !data().pinned;
+ 
+   is_animating_from_pinned_ &= animating();
+ 
+@@ -1136,7 +1205,8 @@ void Tab::UpdateIconVisibility() {
+     showing_close_button_ = mouse_hovered_ || HasFocus() ||
+                             (close_button_ && close_button_->HasFocus());
+ #endif  // BUILDFLAG(IS_CHROMEOS)
+-    if (base::CommandLine::ForCurrentProcess()->HasSwitch("hide-tab-close-buttons")) {
++    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++            "hide-tab-close-buttons")) {
+       showing_close_button_ = false;
+     }
+ 
+@@ -1193,14 +1263,14 @@ void Tab::UpdateIconVisibility() {
+       available_width -= favicon_width;
+     }
+ 
+-    showing_close_button_ =
+-        !base::CommandLine::ForCurrentProcess()->HasSwitch("hide-tab-close-buttons") &&
++    showing_close_button_ = !base::CommandLine::ForCurrentProcess()->HasSwitch(
++                                "hide-tab-close-buttons") &&
+ #if BUILDFLAG(IS_CHROMEOS)
+-        should_show_close_button &&
++                            should_show_close_button &&
+ #endif
+-        large_enough_for_close_button &&
+-        (mouse_hovered_ || HasFocus() ||
+-         (close_button_ && close_button_->HasFocus()));
++                            large_enough_for_close_button &&
++                            (mouse_hovered_ || HasFocus() ||
++                             (close_button_ && close_button_->HasFocus()));
+     if (showing_close_button_) {
+       available_width -= close_button_width;
+     }
+@@ -1235,6 +1305,9 @@ void Tab::UpdateIconVisibility() {
+   extra_alert_indicator_padding_ = showing_alert_indicator_ &&
+                                    showing_close_button_ &&
+                                    large_enough_for_close_button;
++  showing_sleep_indicator_ =
++      has_sleep_indicator &&
++      available_width >= sleep_indicator_->GetPreferredSize().width();
+ }
+ 
+ bool Tab::ShouldRenderAsNormalTab() const {
+diff --git a/chrome/browser/ui/views/tabs/tab.h b/chrome/browser/ui/views/tabs/tab.h
+index 6d6e79c..97494e2 100644
+--- a/chrome/browser/ui/views/tabs/tab.h
++++ b/chrome/browser/ui/views/tabs/tab.h
+@@ -51,7 +51,7 @@ namespace tabs {
+ enum class TabAlert;
+ class TabDataObserver;
+ struct TabData;
+-}
++}  // namespace tabs
+ 
+ namespace glic {
+ class TabUnderlineView;
+@@ -289,6 +289,7 @@ class Tab : public gfx::AnimationDelegate,
+ 
+   raw_ptr<TabIcon> icon_ = nullptr;
+   raw_ptr<AlertIndicatorButton> alert_indicator_button_ = nullptr;
++  raw_ptr<views::View> sleep_indicator_ = nullptr;
+   raw_ptr<TabCloseButton> close_button_ = nullptr;
+ 
+   raw_ptr<TabTitle> title_;
+@@ -311,6 +312,10 @@ class Tab : public gfx::AnimationDelegate,
+   // detect when it changes and layout appropriately.
+   bool showing_alert_indicator_ = false;
+ 
++  // Sleeping tabs keep their favicon identity and use this trailing marker.
++  // Hover places the close button to its right instead of replacing it.
++  bool showing_sleep_indicator_ = false;
++
+   // Whether we are showing the close button. It is cached so that we can
+   // detect when it changes and layout appropriately.
+   bool showing_close_button_ = false;
+diff --git a/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.cc b/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.cc
+index 78b8d7d..979dc94a 100644
+--- a/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.cc
++++ b/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.cc
+@@ -398,7 +398,8 @@ TabDragController::Liveness TabDragController::Init(
+     const std::vector<TabSlotView*>& dragging_views,
+     const gfx::Point& offset_from_source_view,
+     ui::ListSelectionModel initial_selection_model,
+-    ui::mojom::DragEventSource event_source) {
++    ui::mojom::DragEventSource event_source,
++    bool is_background_tab_drag) {
+   DCHECK(!dragging_views.empty());
+   DCHECK(std::ranges::contains(dragging_views, source_view));
+ 
+@@ -519,6 +520,7 @@ TabDragController::Liveness TabDragController::Init(
+         source_view->height());
+   }
+   ref->initial_selection_model_ = std::move(initial_selection_model);
++  ref->is_background_tab_drag_ = is_background_tab_drag;
+ 
+   ref->window_finder_ = std::make_unique<WindowFinder>();
+ 
+@@ -742,7 +744,7 @@ TabDragController::Liveness TabDragController::Drag(
+     }
+ 
+     current_state_ = DragState::kDraggingTabs;
+-      StartDraggingTabsSession(true, point_in_screen);
++    StartDraggingTabsSession(true, point_in_screen);
+   }
+ 
+   return ContinueDragging(point_in_screen);
+@@ -986,13 +988,18 @@ TabDragController::Liveness TabDragController::ContinueDragging(
+     if (current_drag_target_) {
+       TabDragContext* delegate_context =
+           current_drag_target_->OnTabDragUpdated(*this, point_in_screen);
+-      if (!delegate_context && current_state_ == DragState::kDraggingWindow) {
++      if (!delegate_context && (current_state_ == DragState::kDraggingWindow ||
++                                is_background_tab_drag_)) {
+         delegate_context = attached_context_;
+       }
+       target_context = delegate_context;
+     }
+   }
+ 
++  if (is_background_tab_drag_ && !target_context) {
++    target_context = attached_context_;
++  }
++
+   if (target_context != attached_context_) {
+     is_dragging_new_browser_ = false;
+     did_restore_window_ = false;
+@@ -1457,9 +1464,14 @@ void TabDragController::AttachImpl() {
+   for (size_t i = 0; i < drag_data_.tab_drag_data_.size(); ++i) {
+     drag_data_.tab_drag_data_[i].attached_view = views[i];
+   }
+ 
+-  ResetSelection(attached_context_->GetTabStripModel());
++  // Keep the current page active while a plain background tab is dragged in
++  // its own window. Activating the dragged tab even briefly can wake a native
++  // discarded tab and replace the page being previewed for a split drop.
++  if (!is_background_tab_drag_ || attached_context_ != source_context_) {
++    ResetSelection(attached_context_->GetTabStripModel());
++  }
+ 
+-  // This should be called after ResetSelection() in order to generate
+-  // bounds correctly. http://crbug.com/40573140
++  // Calculate bounds after the selection decision above. For ordinary drags,
++  // ResetSelection() must precede this call. http://crbug.com/40573140
+   OnContextStartedDragging(views);
+diff --git a/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.h b/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.h
+index d7dbafa..12254d9 100644
+--- a/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.h
++++ b/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.h
+@@ -140,7 +140,8 @@ class TabDragController : public views::WidgetObserver,
+                               const std::vector<TabSlotView*>& dragging_views,
+                               const gfx::Point& offset_from_source_view,
+                               ui::ListSelectionModel initial_selection_model,
+-                              ui::mojom::DragEventSource event_source);
++                              ui::mojom::DragEventSource event_source,
++                              bool is_background_tab_drag = false);
+ 
+   // Returns true if there is a drag underway and the drag is attached to
+   // `tab_strip`.
+@@ -629,6 +630,11 @@ class TabDragController : public views::WidgetObserver,
+   // details.
+   ui::ListSelectionModel initial_selection_model_;
+ 
++  // True when a plain drag began on a tab that was not selected. Ember keeps
++  // the source renderer attached and the original page selected until an
++  // explicit split/Favorites drop consumes the drag.
++  bool is_background_tab_drag_ = false;
++
+   // The selection model of `attached_context_` before the tabs were attached.
+   ui::ListSelectionModel selection_model_before_attach_;
+ 
+diff --git a/chrome/browser/ui/views/tabs/tab/tab_icon.cc b/chrome/browser/ui/views/tabs/tab/tab_icon.cc
+index 5a2c9d5..d80b231 100644
+--- a/chrome/browser/ui/views/tabs/tab/tab_icon.cc
++++ b/chrome/browser/ui/views/tabs/tab/tab_icon.cc
+@@ -9,6 +9,7 @@
+ #include "base/memory/raw_ptr.h"
+ #include "base/time/default_tick_clock.h"
+ #include "base/time/time.h"
+ #include "base/trace_event/trace_event.h"
++#include "cc/paint/color_filter.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/favicon/favicon_utils.h"
+@@ -160,7 +161,7 @@ void TabIcon::SetData(const tabs::TabData& data) {
+   SetIcon(data.favicon, data.should_themify_favicon);
+   SetNetworkState(data.network_state);
+   SetCrashed(data.is_crashed);
+-  SetDiscarded(data.should_show_discard_status);
++  SetDiscarded(data.is_tab_discarded);
+   has_tab_data_ = true;
+ 
+   UpdateThrobber();
+@@ -242,25 +243,11 @@ void TabIcon::ResizeDiscardIndicatorRadiusForWidth(int width) {
+ }
+ 
+ void TabIcon::OnDiscardRingTreatmentEnabledChanged() {
+-  discard_ring_treatment_enabled_ =
+-      g_browser_process->local_state()->GetBoolean(
+-          performance_manager::user_tuning::prefs::
+-              kDiscardRingTreatmentEnabled);
+-  bool show_discard_indicator =
+-      is_discarded_ && discard_ring_treatment_enabled_;
+-  if (was_discard_indicator_shown_ != show_discard_indicator) {
+-    was_discard_indicator_shown_ = show_discard_indicator;
+-
+-    // Directly set animations to their end states and do not animate.
+-    if (show_discard_indicator) {
+-      tab_discard_animation_.SetCurrentValue(1);
+-      favicon_size_animation_.Reset(0);
+-    } else {
+-      tab_discard_animation_.SetCurrentValue(0);
+-      favicon_size_animation_.Reset(1);
+-    }
+-    SchedulePaint();
+-  }
++  discard_ring_treatment_enabled_ = false;
++  was_discard_indicator_shown_ = false;
++  tab_discard_animation_.SetCurrentValue(0);
++  favicon_size_animation_.Reset(1);
++  SchedulePaint();
+ }
+ 
+ void TabIcon::OnPaint(gfx::Canvas* canvas) {
+@@ -486,9 +473,17 @@ void TabIcon::MaybePaintFavicon(gfx::Canvas* canvas,
+     canvas->Translate(gfx::Vector2d(-bounds.x(), -bounds.y()));
+   }
+ 
++  cc::PaintFlags image_flags;
++  if (is_discarded_) {
++    constexpr float kGrayscaleMatrix[20] = {
++        0.2126f, 0.7152f, 0.0722f, 0, 0, 0.2126f, 0.7152f, 0.0722f, 0, 0,
++        0.2126f, 0.7152f, 0.0722f, 0, 0, 0,       0,       0,       1, 0};
++    image_flags.setColorFilter(cc::ColorFilter::MakeMatrix(kGrayscaleMatrix));
++    image_flags.setAlphaf(0.58f);
++  }
+   canvas->DrawImageInt(icon, 0, 0, bounds.width(), bounds.height(), bounds.x(),
+                        bounds.y(), bounds.width(), bounds.height(),
+-                       /*filter=*/true);
++                       /*filter=*/true, image_flags);
+ 
+   // Emits a custom event when the favicon finishes shrinking and the discard
+   // ring gets painted
+@@ -518,38 +513,17 @@ void TabIcon::SetIcon(const ui::ImageModel& icon, bool should_themify_favicon) {
+ }
+ 
+ void TabIcon::SetDiscarded(bool discarded) {
+-  is_discarded_ = discarded;
+-  bool show_discard_indicator =
+-      is_discarded_ && discard_ring_treatment_enabled_;
+-  if (was_discard_indicator_shown_ != show_discard_indicator) {
+-    was_discard_indicator_shown_ = show_discard_indicator;
+-    favicon_size_animation_.SetSlideDuration(
+-        gfx::Animation::RichAnimationDuration(base::Milliseconds(250)));
+-    if (show_discard_indicator) {
+-      tab_discard_animation_.SetDuration(
+-          gfx::Animation::RichAnimationDuration(base::Seconds(1)));
+-      tab_discard_animation_.Start();
+-      favicon_size_animation_.Hide();
+-
+-      // Potentially show an IPH if a tab was discarded.
+-      const ui::ElementContext context =
+-          views::ElementTrackerViews::GetInstance()->GetContextForView(this);
+-      BrowserWindowInterface* browser = nullptr;
+-      ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
+-          [&](BrowserWindowInterface* current_browser) {
+-            if (BrowserElements::From(current_browser)->GetContext() ==
+-                context) {
+-              browser = current_browser;
+-            }
+-            return !browser;
+-          });
+-      BrowserUserEducationInterface::From(browser)->MaybeShowFeaturePromo(
+-          feature_engagement::kIPHDiscardRingFeature);
+-    } else {
+-      tab_discard_animation_.Stop();
+-      favicon_size_animation_.Show();
+-    }
++  if (is_discarded_ == discarded) {
++    return;
+   }
++  is_discarded_ = discarded;
++  // Ember's explicit sleep marker owns the trailing status lane. Keep the
++  // original favicon at full size and recognisable instead of layering the
++  // generic Chromium discard ring over it.
++  was_discard_indicator_shown_ = false;
++  tab_discard_animation_.Stop();
++  favicon_size_animation_.Reset(1);
++  SchedulePaint();
+ }
+ 
+ void TabIcon::SetNetworkState(tabs::TabNetworkState network_state) {
+diff --git a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
+index aa3ec64..5a6a12a 100644
+--- a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
++++ b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
+@@ -4,20 +4,28 @@
+ 
+ #include "chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.h"
+ 
++#include <algorithm>
+ #include <memory>
+ #include <utility>
+ 
+ #include "base/functional/bind.h"
++#include "base/location.h"
++#include "base/memory/weak_ptr.h"
++#include "base/scoped_observation.h"
++#include "base/strings/string_number_conversions.h"
+ #include "base/strings/utf_string_conversions.h"
++#include "base/task/single_thread_task_runner.h"
+ #include "base/values.h"
+ #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
++#include "chrome/browser/bookmarks/bookmark_model_factory.h"
+ #include "chrome/browser/browser_features.h"
+ #include "chrome/browser/profiles/profile.h"
+-#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+-#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+ #include "chrome/browser/themes/theme_properties.h"
+ #include "chrome/browser/themes/theme_service.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+ #include "chrome/browser/ui/color/chrome_color_id.h"
++#include "chrome/browser/ui/ember_favorites.h"
+ #include "chrome/browser/ui/webui/cr_components/most_visited/most_visited_handler.h"
+ #include "chrome/browser/ui/webui/favicon_source.h"
+ #include "chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_handler.h"
+@@ -32,10 +40,14 @@
+ #include "chrome/grit/new_tab_page_third_party_resources.h"
+ #include "chrome/grit/new_tab_page_third_party_resources_map.h"
+ #include "chrome/grit/theme_resources.h"
++#include "components/bookmarks/browser/base_bookmark_model_observer.h"
++#include "components/bookmarks/browser/bookmark_model.h"
++#include "components/bookmarks/browser/bookmark_node.h"
+ #include "components/favicon_base/favicon_url_parser.h"
+ #include "components/omnibox/browser/autocomplete_classifier.h"
+ #include "components/omnibox/browser/autocomplete_input.h"
+ #include "components/omnibox/browser/autocomplete_match.h"
++#include "components/prefs/pref_change_registrar.h"
+ #include "components/prefs/pref_service.h"
+ #include "components/search/ntp_features.h"
+ #include "components/strings/grit/components_strings.h"
+@@ -70,9 +82,26 @@ NewTabPageThirdPartyUIConfig::CreateWebUIController(content::WebUI* web_ui,
+ }
+ 
+ namespace {
+-class EmberNewTabNavigationHandler : public content::WebUIMessageHandler {
++class EmberNewTabNavigationHandler
++    : public content::WebUIMessageHandler,
++      public bookmarks::BaseBookmarkModelObserver {
+  public:
+-  EmberNewTabNavigationHandler() = default;
++  explicit EmberNewTabNavigationHandler(Profile* profile)
++      : profile_(profile),
++        bookmark_model_(BookmarkModelFactory::GetForBrowserContext(profile)) {
++    if (bookmark_model_) {
++      bookmark_model_observation_.Observe(bookmark_model_);
++    }
++    pref_change_registrar_.Init(profile_->GetPrefs());
++    pref_change_registrar_.Add(
++        prefs::kEmberFavoritesColumns,
++        base::BindRepeating(&EmberNewTabNavigationHandler::NotifyChanged,
++                            base::Unretained(this)));
++    pref_change_registrar_.Add(
++        prefs::kEmberFavoritesRows,
++        base::BindRepeating(&EmberNewTabNavigationHandler::NotifyChanged,
++                            base::Unretained(this)));
++  }
+   ~EmberNewTabNavigationHandler() override = default;
+ 
+   void RegisterMessages() override {
+@@ -80,17 +109,69 @@ class EmberNewTabNavigationHandler : public content::WebUIMessageHandler {
+         "emberNavigate",
+         base::BindRepeating(&EmberNewTabNavigationHandler::Navigate,
+                             base::Unretained(this)));
++    web_ui()->RegisterMessageCallback(
++        "emberFavoritesGet",
++        base::BindRepeating(&EmberNewTabNavigationHandler::GetFavorites,
++                            base::Unretained(this)));
++    web_ui()->RegisterMessageCallback(
++        "emberFavoriteOpen",
++        base::BindRepeating(&EmberNewTabNavigationHandler::OpenFavorite,
++                            base::Unretained(this)));
++    web_ui()->RegisterMessageCallback(
++        "emberFavoriteAdd",
++        base::BindRepeating(&EmberNewTabNavigationHandler::AddFavorite,
++                            base::Unretained(this)));
++    web_ui()->RegisterMessageCallback(
++        "emberFavoriteRemove",
++        base::BindRepeating(&EmberNewTabNavigationHandler::RemoveFavorite,
++                            base::Unretained(this)));
++    web_ui()->RegisterMessageCallback(
++        "emberFavoriteMove",
++        base::BindRepeating(&EmberNewTabNavigationHandler::MoveFavorite,
++                            base::Unretained(this)));
++    web_ui()->RegisterMessageCallback(
++        "emberFavoritesSetGrid",
++        base::BindRepeating(&EmberNewTabNavigationHandler::SetGrid,
++                            base::Unretained(this)));
++  }
++
++  void BookmarkModelChanged() override {
++    // Folder seeding itself emits bookmark notifications. Defer the WebUI
++    // snapshot until that transaction unwinds so BuildState() cannot re-enter
++    // EnsureFolder() and create a second marked folder on a fresh profile.
++    if (favorites_notify_pending_) {
++      return;
++    }
++    favorites_notify_pending_ = true;
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE,
++        base::BindOnce(&EmberNewTabNavigationHandler::NotifyAfterBookmarkChange,
++                       weak_ptr_factory_.GetWeakPtr()));
++  }
++
++  void BookmarkModelBeingDeleted() override {
++    bookmark_model_observation_.Reset();
++    bookmark_model_ = nullptr;
+   }
+ 
+  private:
++  BrowserWindowInterface* GetBrowser() {
++    return GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
++        web_ui()->GetWebContents());
++  }
++
+   void Navigate(const base::ListValue& args) {
+-    if (args.size() != 1) return;
++    if (args.size() != 1) {
++      return;
++    }
+     const std::string* text = args[0].GetIfString();
+-    if (!text || text->empty()) return;
+-    BrowserWindowInterface* browser =
+-        GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
+-            web_ui()->GetWebContents());
+-    if (!browser) return;
++    if (!text || text->empty()) {
++      return;
++    }
++    BrowserWindowInterface* browser = GetBrowser();
++    if (!browser) {
++      return;
++    }
+ 
+     AutocompleteMatch match;
+     AutocompleteClassifierFactory::GetForProfile(browser->GetProfile())
+@@ -104,6 +185,115 @@ class EmberNewTabNavigationHandler : public content::WebUIMessageHandler {
+     browser->OpenGURL(match.destination_url,
+                       WindowOpenDisposition::CURRENT_TAB);
+   }
++
++  base::DictValue BuildState() {
++    if (bookmark_model_ && bookmark_model_->loaded()) {
++      ember_favorites::EnsureFolder(bookmark_model_);
++    }
++    base::ListValue favorites;
++    for (const bookmarks::BookmarkNode* node :
++         ember_favorites::GetNodes(bookmark_model_)) {
++      base::DictValue favorite;
++      favorite.Set("id", base::NumberToString(node->id()));
++      favorite.Set("title", node->GetTitle());
++      favorite.Set("url", node->url().spec());
++      favorites.Append(std::move(favorite));
++    }
++    base::DictValue state;
++    state.Set("favorites", std::move(favorites));
++    state.Set("columns", ember_favorites::GetColumns(profile_->GetPrefs()));
++    state.Set("rows", ember_favorites::GetRows(profile_->GetPrefs()));
++    return state;
++  }
++
++  void GetFavorites(const base::ListValue& args) {
++    if (args.empty()) {
++      return;
++    }
++    AllowJavascript();
++    ResolveJavascriptCallback(args[0], base::Value(BuildState()));
++  }
++
++  void OpenFavorite(const base::ListValue& args) {
++    if (args.size() != 1 || !args[0].is_string()) {
++      return;
++    }
++    const GURL url(args[0].GetString());
++    BrowserWindowInterface* browser = GetBrowser();
++    if (browser && url.is_valid() && url.SchemeIsHTTPOrHTTPS()) {
++      browser->OpenGURL(url, WindowOpenDisposition::CURRENT_TAB);
++    }
++  }
++
++  void AddFavorite(const base::ListValue& args) {
++    if (!bookmark_model_ || args.size() != 3 || !args[0].is_string() ||
++        !args[1].is_string() || !args[2].is_int()) {
++      return;
++    }
++    const GURL url(args[0].GetString());
++    std::u16string title = base::UTF8ToUTF16(args[1].GetString());
++    if (title.empty()) {
++      title = base::UTF8ToUTF16(url.host());
++    }
++    ember_favorites::Add(bookmark_model_, url, title,
++                         std::max(0, args[2].GetInt()));
++  }
++
++  void RemoveFavorite(const base::ListValue& args) {
++    if (!bookmark_model_ || args.size() != 1 || !args[0].is_string()) {
++      return;
++    }
++    int64_t node_id = 0;
++    if (base::StringToInt64(args[0].GetString(), &node_id)) {
++      ember_favorites::Remove(bookmark_model_, node_id);
++    }
++  }
++
++  void MoveFavorite(const base::ListValue& args) {
++    if (!bookmark_model_ || args.size() != 2 || !args[0].is_string() ||
++        !args[1].is_int()) {
++      return;
++    }
++    int64_t node_id = 0;
++    if (base::StringToInt64(args[0].GetString(), &node_id)) {
++      ember_favorites::Move(bookmark_model_, node_id,
++                            std::max(0, args[1].GetInt()));
++    }
++  }
++
++  void SetGrid(const base::ListValue& args) {
++    if (args.size() != 2 || !args[0].is_int() || !args[1].is_int()) {
++      return;
++    }
++    profile_->GetPrefs()->SetInteger(
++        prefs::kEmberFavoritesColumns,
++        std::clamp(args[0].GetInt(), ember_favorites::kMinColumns,
++                   ember_favorites::kMaxColumns));
++    profile_->GetPrefs()->SetInteger(
++        prefs::kEmberFavoritesRows,
++        std::clamp(args[1].GetInt(), ember_favorites::kMinRows,
++                   ember_favorites::kMaxRows));
++  }
++
++  void NotifyChanged() {
++    if (IsJavascriptAllowed()) {
++      FireWebUIListener("ember-favorites-changed", base::Value(BuildState()));
++    }
++  }
++
++  void NotifyAfterBookmarkChange() {
++    favorites_notify_pending_ = false;
++    NotifyChanged();
++  }
++
++  raw_ptr<Profile> profile_;
++  raw_ptr<bookmarks::BookmarkModel> bookmark_model_ = nullptr;
++  base::ScopedObservation<bookmarks::BookmarkModel,
++                          bookmarks::BookmarkModelObserver>
++      bookmark_model_observation_{this};
++  PrefChangeRegistrar pref_change_registrar_;
++  bool favorites_notify_pending_ = false;
++  base::WeakPtrFactory<EmberNewTabNavigationHandler> weak_ptr_factory_{this};
+ };
+ 
+ void CreateAndAddNewTabPageThirdPartyUiHtmlSource(Profile* profile,
+@@ -210,7 +400,8 @@ NewTabPageThirdPartyUI::NewTabPageThirdPartyUI(content::WebUI* web_ui)
+       profile_(Profile::FromWebUI(web_ui)),
+       web_contents_(web_ui->GetWebContents()),
+       navigation_start_time_(base::Time::Now()) {
+-  web_ui->AddMessageHandler(std::make_unique<EmberNewTabNavigationHandler>());
++  web_ui->AddMessageHandler(
++      std::make_unique<EmberNewTabNavigationHandler>(profile_));
+   web_contents_->SetPageBaseBackgroundColor(SK_ColorTRANSPARENT);
+   CreateAndAddNewTabPageThirdPartyUiHtmlSource(profile_, web_contents_);
+   content::URLDataSource::Add(
+diff --git a/chrome/common/pref_names.h b/chrome/common/pref_names.h
+index 8c5d1ca..34d31d4 100644
+--- a/chrome/common/pref_names.h
++++ b/chrome/common/pref_names.h
+@@ -30,6 +30,11 @@
+ 
+ namespace prefs {
+ 
++// Number of columns and rows shown by Ember's Favorites grid. The underlying
++// BookmarkModel folder is never truncated when presentation capacity shrinks.
++inline constexpr char kEmberFavoritesColumns[] = "ember.favorites.columns";
++inline constexpr char kEmberFavoritesRows[] = "ember.favorites.rows";
++
+ // *************** PROFILE PREFS ***************
+ // These are attached to the user profile
+ 
+diff --git a/components/performance_manager/user_tuning/prefs.cc b/components/performance_manager/user_tuning/prefs.cc
+index 40915dc..0a17828 100644
+--- a/components/performance_manager/user_tuning/prefs.cc
++++ b/components/performance_manager/user_tuning/prefs.cc
+@@ -27,15 +27,15 @@ bool IsForceForegroundPriorityForAllTabsEnabled(PrefService* pref_service) {
+ }
+ 
+ void RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
+-  registry->RegisterBooleanPref(kMemorySaverModeEnabled, false);
++  registry->RegisterBooleanPref(kMemorySaverModeEnabled, true);
+   registry->RegisterIntegerPref(
+       kMemorySaverModeTimeBeforeDiscardInMinutes,
+       kDefaultMemorySaverModeTimeBeforeDiscardInMinutes);
+   registry->RegisterIntegerPref(
+-      kMemorySaverModeState, static_cast<int>(MemorySaverModeState::kDisabled));
++      kMemorySaverModeState, static_cast<int>(MemorySaverModeState::kEnabled));
+   registry->RegisterIntegerPref(
+       kMemorySaverModeAggressiveness,
+-      static_cast<int>(MemorySaverModeAggressiveness::kMedium));
++      static_cast<int>(MemorySaverModeAggressiveness::kAggressive));
+   registry->RegisterIntegerPref(
+       kBatterySaverModeState,
+       static_cast<int>(BatterySaverModeState::kEnabledBelowThreshold));
+diff --git a/chrome/browser/ui/ember_favorites.h b/chrome/browser/ui/ember_favorites.h
+new file mode 100644
+index 0000000..1e6ae22
+--- /dev/null
++++ b/chrome/browser/ui/ember_favorites.h
+@@ -0,0 +1,58 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_EMBER_FAVORITES_H_
++#define CHROME_BROWSER_UI_EMBER_FAVORITES_H_
++
++#include <cstddef>
++#include <cstdint>
++#include <string>
++#include <vector>
++
++#include "url/gurl.h"
++
++class PrefService;
++
++namespace bookmarks {
++class BookmarkModel;
++class BookmarkNode;
++}  // namespace bookmarks
++
++namespace ember_favorites {
++
++inline constexpr int kMinColumns = 1;
++inline constexpr int kMaxColumns = 4;
++inline constexpr int kMinRows = 1;
++inline constexpr int kMaxRows = 7;
++inline constexpr int kDefaultColumns = 2;
++inline constexpr int kDefaultRows = 2;
++inline constexpr int kTileHeight = 43;
++inline constexpr int kDefaultGap = 10;
++inline constexpr int kFourRowInnerHeight = kTileHeight * 4 + kDefaultGap * 3;
++
++int GetColumns(const PrefService* prefs);
++int GetRows(const PrefService* prefs);
++size_t GetVisibleCapacity(const PrefService* prefs);
++int GetGridGap(int rows);
++int GetGridTileHeight(int rows);
++int GetGridHeight(int rows);
++
++const bookmarks::BookmarkNode* FindFolder(
++    const bookmarks::BookmarkModel* model);
++const bookmarks::BookmarkNode* EnsureFolder(bookmarks::BookmarkModel* model);
++std::vector<const bookmarks::BookmarkNode*> GetNodes(
++    const bookmarks::BookmarkModel* model);
++
++const bookmarks::BookmarkNode* Add(bookmarks::BookmarkModel* model,
++                                   const GURL& url,
++                                   const std::u16string& title,
++                                   size_t index);
++bool Remove(bookmarks::BookmarkModel* model, int64_t node_id);
++bool Move(bookmarks::BookmarkModel* model,
++          int64_t node_id,
++          size_t destination_index);
++
++}  // namespace ember_favorites
++
++#endif  // CHROME_BROWSER_UI_EMBER_FAVORITES_H_
+diff --git a/chrome/browser/ui/ember_favorites.cc b/chrome/browser/ui/ember_favorites.cc
+new file mode 100644
+index 0000000..b7aaa31
+--- /dev/null
++++ b/chrome/browser/ui/ember_favorites.cc
+@@ -0,0 +1,216 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/ember_favorites.h"
++
++#include <algorithm>
++#include <optional>
++
++#include "base/location.h"
++#include "chrome/common/pref_names.h"
++#include "components/bookmarks/browser/bookmark_model.h"
++#include "components/bookmarks/browser/bookmark_node.h"
++#include "components/bookmarks/common/bookmark_metrics.h"
++#include "components/prefs/pref_service.h"
++
++namespace ember_favorites {
++namespace {
++
++constexpr char kFolderMetaKey[] = "ember_favorites_folder";
++constexpr char kFolderMetaValue[] = "1";
++constexpr char kInitializedMetaKey[] = "ember_favorites_initialized";
++
++const bookmarks::BookmarkNode* FindMarkedFolder(
++    const bookmarks::BookmarkNode* parent) {
++  if (!parent) {
++    return nullptr;
++  }
++  for (const auto& child : parent->children()) {
++    std::string marker;
++    if (child->is_folder() && child->GetMetaInfo(kFolderMetaKey, &marker) &&
++        marker == kFolderMetaValue) {
++      return child.get();
++    }
++    if (child->is_folder()) {
++      if (const bookmarks::BookmarkNode* match =
++              FindMarkedFolder(child.get())) {
++        return match;
++      }
++    }
++  }
++  return nullptr;
++}
++
++const bookmarks::BookmarkNode* FindNodeById(
++    const bookmarks::BookmarkNode* folder,
++    int64_t node_id) {
++  if (!folder) {
++    return nullptr;
++  }
++  for (const auto& child : folder->children()) {
++    if (child->id() == node_id) {
++      return child.get();
++    }
++  }
++  return nullptr;
++}
++
++size_t ChildIndexForVisibleIndex(const bookmarks::BookmarkNode* folder,
++                                 size_t visible_index) {
++  size_t visible = 0;
++  for (size_t child_index = 0; child_index < folder->children().size();
++       ++child_index) {
++    const bookmarks::BookmarkNode* child =
++        folder->children()[child_index].get();
++    if (!child->is_url() || !child->url().SchemeIsHTTPOrHTTPS()) {
++      continue;
++    }
++    if (visible++ == visible_index) {
++      return child_index;
++    }
++  }
++  return folder->children().size();
++}
++
++}  // namespace
++
++int GetColumns(const PrefService* prefs) {
++  return std::clamp(prefs->GetInteger(prefs::kEmberFavoritesColumns),
++                    kMinColumns, kMaxColumns);
++}
++
++int GetRows(const PrefService* prefs) {
++  return std::clamp(prefs->GetInteger(prefs::kEmberFavoritesRows), kMinRows,
++                    kMaxRows);
++}
++
++size_t GetVisibleCapacity(const PrefService* prefs) {
++  return static_cast<size_t>(GetColumns(prefs) * GetRows(prefs));
++}
++
++int GetGridGap(int rows) {
++  rows = std::clamp(rows, kMinRows, kMaxRows);
++  return rows <= 4 ? kDefaultGap : std::max(4, kDefaultGap - (rows - 4) * 2);
++}
++
++int GetGridTileHeight(int rows) {
++  rows = std::clamp(rows, kMinRows, kMaxRows);
++  if (rows <= 4) {
++    return kTileHeight;
++  }
++  const int gap = GetGridGap(rows);
++  return (kFourRowInnerHeight - gap * (rows - 1)) / rows;
++}
++
++int GetGridHeight(int rows) {
++  rows = std::clamp(rows, kMinRows, kMaxRows);
++  return GetGridTileHeight(rows) * rows + GetGridGap(rows) * (rows - 1) + 2;
++}
++
++const bookmarks::BookmarkNode* FindFolder(
++    const bookmarks::BookmarkModel* model) {
++  if (!model || !model->loaded()) {
++    return nullptr;
++  }
++  return FindMarkedFolder(model->root_node());
++}
++
++const bookmarks::BookmarkNode* EnsureFolder(bookmarks::BookmarkModel* model) {
++  if (!model || !model->loaded()) {
++    return nullptr;
++  }
++  if (const bookmarks::BookmarkNode* folder = FindFolder(model)) {
++    return folder;
++  }
++
++  const bookmarks::BookmarkNode* other = model->other_node();
++  std::string initialized_marker;
++  const bool initialized =
++      other->GetMetaInfo(kInitializedMetaKey, &initialized_marker) &&
++      initialized_marker == kFolderMetaValue;
++  if (!initialized) {
++    model->SetNodeMetaInfo(other, kInitializedMetaKey, kFolderMetaValue);
++  }
++
++  bookmarks::BookmarkNode::MetaInfoMap metadata = {
++      {kFolderMetaKey, kFolderMetaValue}};
++  const bookmarks::BookmarkNode* folder = model->AddFolder(
++      other, other->children().size(), u"Ember Favorites", &metadata);
++  if (!initialized) {
++    model->AddURL(folder, folder->children().size(), u"Google",
++                  GURL("https://www.google.com/"), nullptr, std::nullopt,
++                  std::nullopt, true);
++    model->AddURL(folder, folder->children().size(), u"YouTube",
++                  GURL("https://www.youtube.com/"), nullptr, std::nullopt,
++                  std::nullopt, true);
++    model->AddURL(folder, folder->children().size(), u"Google Calendar",
++                  GURL("https://calendar.google.com/"), nullptr, std::nullopt,
++                  std::nullopt, true);
++  }
++  return folder;
++}
++
++std::vector<const bookmarks::BookmarkNode*> GetNodes(
++    const bookmarks::BookmarkModel* model) {
++  std::vector<const bookmarks::BookmarkNode*> nodes;
++  const bookmarks::BookmarkNode* folder = FindFolder(model);
++  if (!folder) {
++    return nodes;
++  }
++  for (const auto& child : folder->children()) {
++    if (child->is_url() && child->url().SchemeIsHTTPOrHTTPS()) {
++      nodes.push_back(child.get());
++    }
++  }
++  return nodes;
++}
++
++const bookmarks::BookmarkNode* Add(bookmarks::BookmarkModel* model,
++                                   const GURL& url,
++                                   const std::u16string& title,
++                                   size_t index) {
++  if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS()) {
++    return nullptr;
++  }
++  const bookmarks::BookmarkNode* folder = EnsureFolder(model);
++  if (!folder) {
++    return nullptr;
++  }
++  const size_t child_index = ChildIndexForVisibleIndex(folder, index);
++  return model->AddURL(folder, child_index, title, url, nullptr, std::nullopt,
++                       std::nullopt, true);
++}
++
++bool Remove(bookmarks::BookmarkModel* model, int64_t node_id) {
++  const bookmarks::BookmarkNode* node =
++      FindNodeById(FindFolder(model), node_id);
++  if (!node || !node->is_url()) {
++    return false;
++  }
++  model->Remove(node, bookmarks::metrics::BookmarkEditSource::kUser, FROM_HERE);
++  return true;
++}
++
++bool Move(bookmarks::BookmarkModel* model,
++          int64_t node_id,
++          size_t destination_index) {
++  const bookmarks::BookmarkNode* folder = FindFolder(model);
++  const bookmarks::BookmarkNode* node = FindNodeById(folder, node_id);
++  if (!folder || !node || !node->is_url()) {
++    return false;
++  }
++  const size_t old_child_index = folder->GetIndexOf(node).value();
++  size_t insertion_index = ChildIndexForVisibleIndex(folder, destination_index);
++  // BookmarkModel::Move() treats its index as an insertion point in the
++  // pre-removal child list, then decrements forward same-parent moves. Advance
++  // past the destination node so a Favorite dropped to the right lands in the
++  // exact requested visible slot rather than one slot early.
++  if (insertion_index > old_child_index) {
++    insertion_index = std::min(insertion_index + 1, folder->children().size());
++  }
++  model->Move(node, folder, insertion_index);
++  return true;
++}
++
++}  // namespace ember_favorites
+diff --git a/chrome/browser/performance_manager/policies/memory_saver_mode_policy_unittest.cc b/chrome/browser/performance_manager/policies/memory_saver_mode_policy_unittest.cc
+index 8bec6b5b37829..fc6bb9d298ea7 100644
+--- a/chrome/browser/performance_manager/policies/memory_saver_mode_policy_unittest.cc
++++ b/chrome/browser/performance_manager/policies/memory_saver_mode_policy_unittest.cc
+@@ -19,7 +19,7 @@ namespace performance_manager::policies {
+ namespace {
+ // These discard timeouts are based on the values in
+ // `MemorySaverModePolicy::GetTimeBeforeDiscardForCurrentMode`.
+-constexpr base::TimeDelta AGGRESSIVE_TIMEOUT = base::Hours(2);
++constexpr base::TimeDelta AGGRESSIVE_TIMEOUT = base::Minutes(30);
+ constexpr base::TimeDelta MEDIUM_TIMEOUT = base::Hours(4);
+ constexpr base::TimeDelta CONSERVATIVE_TIMEOUT = base::Hours(6);
+ }  // namespace
+diff --git a/components/performance_manager/user_tuning/prefs_unittest.cc b/components/performance_manager/user_tuning/prefs_unittest.cc
+index 7c350fb469b1a..71ffd57ac7548 100644
+--- a/components/performance_manager/user_tuning/prefs_unittest.cc
++++ b/components/performance_manager/user_tuning/prefs_unittest.cc
+@@ -36,7 +36,7 @@ TEST_F(MemorySaverModePrefMigrationTest, NoChangeToUserSetNewPref) {
+   // The old pref should be reset.
+   EXPECT_TRUE(
+       pref_service_.FindPreference(kMemorySaverModeEnabled)->IsDefaultValue());
+-  EXPECT_FALSE(pref_service_.GetBoolean(kMemorySaverModeEnabled));
++  EXPECT_TRUE(pref_service_.GetBoolean(kMemorySaverModeEnabled));
+ }
+ 
+ TEST_F(MemorySaverModePrefMigrationTest, BothPrefsDefaultNoMigration) {
+@@ -63,7 +63,7 @@ TEST_F(MemorySaverModePrefMigrationTest,
+   pref_service_.SetBoolean(kMemorySaverModeEnabled, true);
+ 
+   EXPECT_EQ(pref_service_.GetInteger(kMemorySaverModeState),
+-            static_cast<int>(MemorySaverModeState::kDisabled));
++            static_cast<int>(MemorySaverModeState::kEnabled));
+   EXPECT_TRUE(
+       pref_service_.FindPreference(kMemorySaverModeState)->IsDefaultValue());
+ 
+@@ -78,7 +78,7 @@ TEST_F(MemorySaverModePrefMigrationTest,
+   // The old pref should be reset.
+   EXPECT_TRUE(
+       pref_service_.FindPreference(kMemorySaverModeEnabled)->IsDefaultValue());
+-  EXPECT_FALSE(pref_service_.GetBoolean(kMemorySaverModeEnabled));
++  EXPECT_TRUE(pref_service_.GetBoolean(kMemorySaverModeEnabled));
+ }
+ 
+ TEST_F(MemorySaverModePrefMigrationTest,
+@@ -87,7 +87,7 @@ TEST_F(MemorySaverModePrefMigrationTest,
+   pref_service_.SetBoolean(kMemorySaverModeEnabled, false);
+ 
+   EXPECT_EQ(pref_service_.GetInteger(kMemorySaverModeState),
+-            static_cast<int>(MemorySaverModeState::kDisabled));
++            static_cast<int>(MemorySaverModeState::kEnabled));
+   EXPECT_TRUE(
+       pref_service_.FindPreference(kMemorySaverModeState)->IsDefaultValue());
+ 
+@@ -102,7 +102,7 @@ TEST_F(MemorySaverModePrefMigrationTest,
+   // The old pref should be reset.
+   EXPECT_TRUE(
+       pref_service_.FindPreference(kMemorySaverModeEnabled)->IsDefaultValue());
+-  EXPECT_FALSE(pref_service_.GetBoolean(kMemorySaverModeEnabled));
++  EXPECT_TRUE(pref_service_.GetBoolean(kMemorySaverModeEnabled));
+ }
+ 
+ TEST_F(MemorySaverModePrefMigrationTest, MigrateMultiStateModePref) {
+diff --git a/chrome/browser/ui/views/frame/multi_contents_drop_target_view.cc b/chrome/browser/ui/views/frame/multi_contents_drop_target_view.cc
+index 761c212848eae..db4df06654105 100644
+--- a/chrome/browser/ui/views/frame/multi_contents_drop_target_view.cc
++++ b/chrome/browser/ui/views/frame/multi_contents_drop_target_view.cc
+@@ -147,8 +147,15 @@ bool MultiContentsDropTargetView::IsVisibleAndNotClosing() const {
+ // static
+ int MultiContentsDropTargetView::GetMaxSize(int web_contents_size,
+                                             DropTargetState state,
+                                             DragType drag_type) {
++  // Ember's background-tab drag previews an exact half-page split. The
++  // existing drop target remains the owning view and later commits through
++  // Chromium's normal split-tab path; link drags retain their stock sizing.
++  if (state == DropTargetState::kFull &&
++      drag_type == DragType::kBackgroundTab) {
++    return web_contents_size / 2;
++  }
+   int min_size = 0;
+   int max_size = 0;
+   int percentage = 0;
+
+@@ -229,9 +236,10 @@ void MultiContentsDropTargetView::Show(DropSide side,
+   state_ = state;
+   drag_type_ = drag_type;
+ 
+   inner_container_layout_->SetMainAxisAlignment(
+-      (side != DropSide::BOTTOM && drag_type_ == DragType::kTab)
++      (side != DropSide::BOTTOM &&
++       (drag_type_ == DragType::kTab || drag_type_ == DragType::kBackgroundTab))
+           ? views::LayoutAlignment::kStart
+           : views::LayoutAlignment::kCenter);
+ 
+   UpdateVisibility(true);
+diff --git a/chrome/browser/ui/views/frame/multi_contents_drop_target_view.h b/chrome/browser/ui/views/frame/multi_contents_drop_target_view.h
+index 563a91145c5fe..3ed5f135ef35c 100644
+--- a/chrome/browser/ui/views/frame/multi_contents_drop_target_view.h
++++ b/chrome/browser/ui/views/frame/multi_contents_drop_target_view.h
+@@ -58,8 +58,9 @@ class MultiContentsDropTargetView : public views::View,
+ 
+   // Represents the type of content being dragged.
+   enum class DragType {
+     kTab,
++    kBackgroundTab,
+     kLink,
+   };
+ 
+   // Delegate for handling drag events that are routed to this view.
+diff --git a/chrome/browser/ui/views/frame/multi_contents_view_drop_target_controller.cc b/chrome/browser/ui/views/frame/multi_contents_view_drop_target_controller.cc
+index 782c80273c21c..34ce51f78e2de 100644
+--- a/chrome/browser/ui/views/frame/multi_contents_view_drop_target_controller.cc
++++ b/chrome/browser/ui/views/frame/multi_contents_view_drop_target_controller.cc
+@@ -132,14 +132,49 @@ TabDragContext* MultiContentsViewDropTargetController::OnTabDragUpdated(
+
+   const gfx::Point point_in_parent = views::View::ConvertPointFromScreen(
+       &drop_target_parent_view_.get(), point_in_screen);
+   if (!dragging_single_ungrouped_tab ||
+-      PointOverlapsWithOSDropTarget(point_in_screen) ||
+       !IsPointEligibleForDrag(point_in_parent, drop_target_parent_view_)) {
+     ResetDropTargetTimers();
+     HideDropTarget();
+     return nullptr;
+   }
++
++  // A background tab stays attached to its source strip while the current
++  // page remains selected. Show the existing split target immediately over
++  // whichever half the pointer enters, and let MultiContentsView compress the
++  // current page into the opposite half without creating a temporary split.
++  const TabStripModel* tab_strip_model = tab_strip_model_observer_.GetSource();
++  // Chromium's split delegate accepts only a single active tab. Keep an
++  // existing split intact instead of offering a target that cannot commit.
++  if (tab_strip_model && tab_strip_model->GetActiveTab() &&
++      tab_strip_model->GetActiveTab()->IsSplit()) {
++    ResetDropTargetTimers();
++    HideDropTarget();
++    return nullptr;
++  }
++  if (tab_strip_model && drag_data.source_dragged_contents() !=
++                             tab_strip_model->GetActiveWebContents()) {
++    ResetDropTargetTimers();
++    const auto side =
++        point_in_parent.x() < drop_target_parent_view_->width() / 2
++            ? MultiContentsDropTargetView::DropSide::START
++            : MultiContentsDropTargetView::DropSide::END;
++    if (!drop_target_view_->IsVisibleAndNotClosing() ||
++        drop_target_view_->side() != side) {
++      drop_target_view_->Show(
++          side, MultiContentsDropTargetView::DropTargetState::kFull,
++          MultiContentsDropTargetView::DragType::kBackgroundTab);
++      drop_target_parent_view_->InvalidateLayout();
++    }
++    return nullptr;
++  }
++
++  if (PointOverlapsWithOSDropTarget(point_in_screen)) {
++    ResetDropTargetTimers();
++    HideDropTarget();
++    return nullptr;
++  }
+   HandleDragUpdate(point_in_parent,
+                    MultiContentsDropTargetView::DragType::kTab);
+   return nullptr;
+ }
+diff --git a/chrome/browser/ui/views/frame/multi_contents_drop_target_view_unittest.cc b/chrome/browser/ui/views/frame/multi_contents_drop_target_view_unittest.cc
+index cc8597f8fca77..c60756362c7fa 100644
+--- a/chrome/browser/ui/views/frame/multi_contents_drop_target_view_unittest.cc
++++ b/chrome/browser/ui/views/frame/multi_contents_drop_target_view_unittest.cc
+@@ -314,8 +314,17 @@ TEST_P(DropTargetViewTest, GetSizeForAvailableSpace) {
+   EXPECT_FALSE(view->GetVisible());
+   EXPECT_EQ(0, view->GetSizeForAvailableSpace(1000));
+ }
+ 
++TEST_P(DropTargetViewTest, BackgroundTabUsesHalfPagePreview) {
++  MultiContentsDropTargetView* view = drop_target_view();
++  view->Show(GetParam(), MultiContentsDropTargetView::DropTargetState::kFull,
++             MultiContentsDropTargetView::DragType::kBackgroundTab);
++  EXPECT_EQ(200, view->GetSizeForAvailableSpace(400));
++  EXPECT_EQ(500, view->GetSizeForAvailableSpace(1000));
++  EXPECT_EQ(1500, view->GetSizeForAvailableSpace(3000));
++}
++
+ TEST_P(DropTargetViewTest, GetSizeForAvailableSpaceForLink) {
+   MultiContentsDropTargetView* view = drop_target_view();
+   view->Show(GetParam(), MultiContentsDropTargetView::DropTargetState::kFull,
+              MultiContentsDropTargetView::DragType::kLink);

@@ -1,0 +1,65 @@
+// @ts-nocheck — Electron's canonical brand mount, emitted by Chromium's WebUI pipeline.
+(function exposeEmberBrand(root) {
+  const ICON_ASSET = 'ember-icon.png'
+  // The chrome mark is the coloured meteor at the height of the icons beside
+  // it. The white-stroke trace it replaced was a hairline outline that turned
+  // to mush next to a 1.35px-stroked SVG at the same size.
+  const CHROME_ICON_ASSET = 'ember-icon.png'
+  // The square crop the Windows app icon uses. Anywhere the meteor has to sit
+  // in a favicon-sized box, the long version would render as a sliver.
+  const APP_ICON_ASSET = 'ember-icon.png'
+  const WORDMARK_FONT_ASSET = 'Necosmic-PersonalUse.otf'
+
+  function requireTarget(target) {
+    if (!target || typeof target.replaceChildren !== 'function') {
+      throw new TypeError('A DOM target is required')
+    }
+  }
+
+  function createMeteor(target, className, label) {
+    const image = target.ownerDocument.createElement('img')
+    image.className = className
+    image.src = new URL(ICON_ASSET, target.ownerDocument.baseURI).href
+    image.alt = label
+    return image
+  }
+
+  function mountIcon(target) {
+    requireTarget(target)
+    const image = createMeteor(target, 'ember-icon', 'Ember')
+    target.replaceChildren(image)
+    return image
+  }
+
+  function mountChromeIcon(target) {
+    requireTarget(target)
+    const image = target.ownerDocument.createElement('img')
+    image.className = 'ember-chrome-icon'
+    image.src = new URL(CHROME_ICON_ASSET, target.ownerDocument.baseURI).href
+    image.alt = 'Ember'
+    target.replaceChildren(image)
+    return image
+  }
+
+  function mountBrand(target) {
+    requireTarget(target)
+    const masthead = target.ownerDocument.createElement('div')
+    masthead.className = 'ember-masthead'
+
+    const meteor = createMeteor(target, 'ember-meteor', '')
+    const wordmark = target.ownerDocument.createElement('span')
+    wordmark.className = 'ember-wordmark'
+    wordmark.textContent = 'ember'
+
+    masthead.append(meteor, wordmark)
+    target.replaceChildren(masthead)
+    return masthead
+  }
+
+  const api = {
+    ICON_ASSET, CHROME_ICON_ASSET, APP_ICON_ASSET, WORDMARK_FONT_ASSET,
+    mountIcon, mountChromeIcon, mountBrand,
+  }
+  if (typeof module !== 'undefined' && module.exports) module.exports = api
+  if (root) root.EmberBrand = api
+})(typeof window !== 'undefined' ? window : null)

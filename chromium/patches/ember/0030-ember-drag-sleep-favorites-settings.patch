@@ -1,0 +1,1106 @@
+diff --git a/chrome/browser/resources/new_tab_page_third_party/ember-newtab.ts b/chrome/browser/resources/new_tab_page_third_party/ember-newtab.ts
+index f2c7776..b9d46b5 100644
+--- a/chrome/browser/resources/new_tab_page_third_party/ember-newtab.ts
++++ b/chrome/browser/resources/new_tab_page_third_party/ember-newtab.ts
+@@ -1,8 +1,7 @@
+-/* eslint-disable no-restricted-imports, no-restricted-properties */
++/* eslint-disable no-restricted-properties */
+ // @ts-nocheck — WebUI globals are supplied by Chromium's internal-page runtime.
+-import {addWebUiListener, sendWithPromise} from 'chrome://resources/js/cr.js';
+-// Ember's New Tab submits to Chromium's own omnibox classifier in the browser
+-// process. This keeps URL/search decisions identical to the address bar.
++// Ember's New Tab remains a quiet logo and search surface. Favorites are
++// managed in chrome://settings and rendered in the browser's sidebar.
+ window.EmberBrand.mountBrand(document.getElementById('ember-brand'));
+ 
+ function bindSearch() {
+@@ -13,8 +12,6 @@ function bindSearch() {
+   form.addEventListener('submit', (event) => {
+     event.preventDefault();
+     const text = input.value.trim();
+-    // The native WebUI handler delegates input resolution to Chromium's omnibox.
+-    // eslint-disable-next-line no-restricted-properties
+     if (text) chrome.send('emberNavigate', [text]);
+   });
+   input.focus();
+@@ -23,138 +20,6 @@ function bindSearch() {
+ document.addEventListener('native-liquid-glass-ready', bindSearch);
+ bindSearch();
+ 
+-const grid = document.getElementById('favorites-grid');
+-const columnsSelect = document.getElementById('favorites-columns');
+-const rowsSelect = document.getElementById('favorites-rows');
+-const dialog = document.getElementById('favorite-dialog');
+-let favoritesState = {favorites: [], columns: 2, rows: 2};
+-let draggedFavoriteId = null;
+-
+-for (let value = 1; value <= 4; value++) {
+-  columnsSelect.add(new Option(String(value), String(value)));
+-}
+-for (let value = 1; value <= 7; value++) {
+-  rowsSelect.add(new Option(String(value), String(value)));
+-}
+-
+-function gridMetrics(rows) {
+-  const gap = rows <= 4 ? 10 : Math.max(4, 10 - (rows - 4) * 2);
+-  const tileHeight = rows <= 4 ? 43 : Math.floor((202 - gap * (rows - 1)) / rows);
+-  return {gap, tileHeight, height: tileHeight * rows + gap * (rows - 1) + 2};
+-}
+-
+-function renderFavorites(state) {
+-  favoritesState = state;
+-  const columns = Math.max(1, Math.min(4, state.columns));
+-  const rows = Math.max(1, Math.min(7, state.rows));
+-  const capacity = columns * rows;
+-  const metrics = gridMetrics(rows);
+-  columnsSelect.value = String(columns);
+-  rowsSelect.value = String(rows);
+-  grid.style.setProperty('--favorite-columns', String(columns));
+-  grid.style.setProperty('--favorite-gap', `${metrics.gap}px`);
+-  grid.style.setProperty('--favorite-tile-height', `${metrics.tileHeight}px`);
+-  grid.style.setProperty('--favorite-grid-height', `${metrics.height}px`);
+-  grid.replaceChildren();
+-
+-  for (let index = 0; index < capacity; index++) {
+-    const favorite = state.favorites[index];
+-    const tile = document.createElement('div');
+-    tile.className = `favorite-tile${favorite ? '' : ' favorite-tile--empty'}`;
+-    tile.dataset.index = String(index);
+-    if (favorite) {
+-      tile.tabIndex = 0;
+-      tile.setAttribute('role', 'button');
+-      tile.title = favorite.title || favorite.url;
+-      tile.setAttribute('aria-label', `Open ${favorite.title || favorite.url}`);
+-      tile.draggable = true;
+-      const icon = document.createElement('img');
+-      icon.alt = '';
+-      icon.draggable = false;
+-      icon.src = `chrome://favicon2/?size=32&scale_factor=1x&page_url=${encodeURIComponent(favorite.url)}`;
+-      tile.append(icon);
+-      const remove = document.createElement('button');
+-      remove.type = 'button';
+-      remove.className = 'favorite-tile__remove';
+-      remove.textContent = '×';
+-      remove.title = `Remove ${favorite.title || favorite.url}`;
+-      remove.addEventListener('click', event => {
+-        event.stopPropagation();
+-        chrome.send('emberFavoriteRemove', [favorite.id]);
+-      });
+-      tile.append(remove);
+-      tile.addEventListener('click', () => chrome.send('emberFavoriteOpen', [favorite.url]));
+-      tile.addEventListener('keydown', event => {
+-        if (event.key === 'Enter' || event.key === ' ') {
+-          event.preventDefault();
+-          chrome.send('emberFavoriteOpen', [favorite.url]);
+-        }
+-      });
+-      tile.addEventListener('dragstart', event => {
+-        draggedFavoriteId = favorite.id;
+-        event.dataTransfer.effectAllowed = 'move';
+-        event.dataTransfer.setData('text/x-ember-favorite', favorite.id);
+-      });
+-      tile.addEventListener('dragend', () => {
+-        draggedFavoriteId = null;
+-        grid.querySelectorAll('[data-drop="true"]').forEach(node => delete node.dataset.drop);
+-      });
+-    }
+-    tile.addEventListener('dragover', event => {
+-      if (!draggedFavoriteId) return;
+-      event.preventDefault();
+-      tile.dataset.drop = 'true';
+-    });
+-    tile.addEventListener('dragleave', () => delete tile.dataset.drop);
+-    tile.addEventListener('drop', event => {
+-      if (!draggedFavoriteId) return;
+-      event.preventDefault();
+-      chrome.send('emberFavoriteMove', [draggedFavoriteId, index]);
+-      draggedFavoriteId = null;
+-    });
+-    grid.append(tile);
+-  }
+-}
+-
+-function persistGrid() {
+-  chrome.send('emberFavoritesSetGrid', [Number(columnsSelect.value), Number(rowsSelect.value)]);
+-}
+-columnsSelect.addEventListener('change', persistGrid);
+-rowsSelect.addEventListener('change', persistGrid);
+-document.getElementById('favorite-add').addEventListener('click', () => {
+-  document.getElementById('favorite-form').reset();
+-  dialog.showModal();
+-  document.getElementById('favorite-title').focus();
+-});
+-document.getElementById('favorite-cancel').addEventListener('click', () => dialog.close());
+-document.getElementById('favorite-url').addEventListener('input', event => {
+-  event.target.setCustomValidity('');
+-});
+-document.getElementById('favorite-form').addEventListener('submit', event => {
+-  event.preventDefault();
+-  const title = document.getElementById('favorite-title').value.trim();
+-  const urlField = document.getElementById('favorite-url');
+-  const url = urlField.value.trim();
+-  if (!title || !url) return;
+-  try {
+-    const parsed = new URL(url);
+-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+-      throw new TypeError('Unsupported favorite URL scheme');
+-    }
+-  } catch {
+-    urlField.setCustomValidity('Use an http or https URL');
+-    urlField.reportValidity();
+-    return;
+-  }
+-  const capacity = favoritesState.columns * favoritesState.rows;
+-  const index = Math.min(favoritesState.favorites.length, Math.max(0, capacity - 1));
+-  chrome.send('emberFavoriteAdd', [url, title, index]);
+-  dialog.close();
+-});
+-
+-addWebUiListener('ember-favorites-changed', renderFavorites);
+-sendWithPromise('emberFavoritesGet').then(renderFavorites);
+-
+ document.addEventListener('keydown', (event) => {
+   if (event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1)
+     return;
+diff --git a/chrome/browser/resources/new_tab_page_third_party/new_tab_page_third_party.html b/chrome/browser/resources/new_tab_page_third_party/new_tab_page_third_party.html
+index c5170d7..7618dce 100644
+--- a/chrome/browser/resources/new_tab_page_third_party/new_tab_page_third_party.html
++++ b/chrome/browser/resources/new_tab_page_third_party/new_tab_page_third_party.html
+@@ -10,33 +10,7 @@
+   <main class="hero">
+     <div class="logo" id="ember-brand"></div>
+     <div id="native-liquid-glass"></div>
+-    <section class="favorites" aria-labelledby="favorites-title">
+-      <header class="favorites__header">
+-        <h2 id="favorites-title">Favorites</h2>
+-        <div class="favorites__controls">
+-          <label>Columns
+-            <select id="favorites-columns" aria-label="Favorite columns"></select>
+-          </label>
+-          <label>Rows
+-            <select id="favorites-rows" aria-label="Favorite rows"></select>
+-          </label>
+-          <button id="favorite-add" type="button">Add</button>
+-        </div>
+-      </header>
+-      <div id="favorites-grid" class="favorites__grid"></div>
+-    </section>
+   </main>
+-  <dialog id="favorite-dialog">
+-    <form method="dialog" id="favorite-form">
+-      <h2>Add favorite</h2>
+-      <label>Name<input id="favorite-title" autocomplete="off" required></label>
+-      <label>URL<input id="favorite-url" type="url" placeholder="https://" required></label>
+-      <div class="favorite-dialog__actions">
+-        <button value="cancel" type="button" id="favorite-cancel">Cancel</button>
+-        <button value="default" type="submit">Add</button>
+-      </div>
+-    </form>
+-  </dialog>
+   <script type="module" src="ember-brand.js"></script>
+   <script type="module" src="ember-search.js"></script>
+   <script type="module" src="ember-newtab.js"></script>
+diff --git a/chrome/browser/resources/settings/appearance_page/appearance_page.html b/chrome/browser/resources/settings/appearance_page/appearance_page.html
+index 81f62b4..dfe092f 100644
+--- a/chrome/browser/resources/settings/appearance_page/appearance_page.html
++++ b/chrome/browser/resources/settings/appearance_page/appearance_page.html
+@@ -30,6 +30,24 @@
+         padding-inline-end: 0;
+       }
+ 
++      .ember-favorite-row {
++        display: flex;
++        align-items: center;
++        gap: 8px;
++        padding: 6px var(--cr-section-padding);
++      }
++      .ember-favorite-row input {
++        min-width: 0;
++        padding: 8px;
++        border: 1px solid var(--cr-separator-color);
++        border-radius: 8px;
++        background: transparent;
++        color: var(--cr-primary-text-color);
++      }
++      .ember-favorite-title { flex: 1; }
++      .ember-favorite-url { flex: 2; }
++      .ember-favorite-error { color: var(--cr-error-text-color); padding: 8px 20px; }
++
+       .indented-toggles settings-toggle-button,
+       .indented-rows .cr-row {
+         padding-inline-start: 0;
+@@ -38,12 +56,11 @@
+     </style>
+     <settings-section page-title="$i18n{appearancePageTitle}">
+       <div route-path="default">
+-        <div class="settings-row first" id="themeRow"
++        <div class="cr-row first" id="themeRow"
+             hidden="[[!pageVisibility.setTheme]]">
+-          <cr-link-row id="openTheme" class="first"
+-              hidden="[[!pageVisibility.setTheme]]"
+-              label="$i18n{themes}" sub-label="[[themeSublabel_]]"
+-              on-click="onThemeClick_" external></cr-link-row>
++          <div class="flex cr-padded-text">
++            <div>$i18n{themes}</div><div class="secondary">[[themeSublabel_]]</div>
++          </div>
+ <if expr="not is_linux">
+           <template is="dom-if" if="[[prefs.extensions.theme.id.value]]">
+             <div class="separator"></div>
+@@ -257,6 +274,38 @@
+           </settings-dropdown-menu>
+         </div>
+ 
++        <div class="cr-row">
++          <div class="flex cr-padded-text">
++            Favorite sites
++            <div class="secondary">In sidebar order; sites beyond the visible grid remain saved</div>
++          </div>
++        </div>
++        <template is="dom-repeat" items="[[emberFavorites_]]" as="favorite">
++          <div class="ember-favorite-row" data-id$="[[favorite.id]]"
++              data-index$="[[index]]">
++            <input class="ember-favorite-title" aria-label="Favorite name"
++                value="[[favorite.title]]" on-change="onEmberFavoriteEdited_">
++            <input class="ember-favorite-url" aria-label="Favorite URL"
++                value="[[favorite.url]]" on-change="onEmberFavoriteEdited_">
++            <cr-button data-delta="-1" aria-label="Move favorite up"
++                on-click="onEmberFavoriteMove_">↑</cr-button>
++            <cr-button data-delta="1" aria-label="Move favorite down"
++                on-click="onEmberFavoriteMove_">↓</cr-button>
++            <cr-button aria-label="Remove favorite"
++                on-click="onEmberFavoriteRemove_">×</cr-button>
++          </div>
++        </template>
++        <div class="ember-favorite-row">
++          <input class="ember-favorite-title" id="emberFavoriteNewTitle"
++              aria-label="New favorite name" placeholder="Site name">
++          <input class="ember-favorite-url" id="emberFavoriteNewUrl"
++              aria-label="New favorite URL" placeholder="https://example.com">
++          <cr-button on-click="onEmberFavoriteAdd_">Add</cr-button>
++        </div>
++        <div class="ember-favorite-error" hidden$="[[!emberFavoritesError_]]">
++          [[emberFavoritesError_]]
++        </div>
++
+         <settings-toggle-button id="showTabSearchButton" class="hr"
+             pref="{{prefs.tab_search.pinned_to_tabstrip}}"
+             label="$i18n{showTabSearchButton}"
+diff --git a/chrome/browser/resources/settings/appearance_page/appearance_page.ts b/chrome/browser/resources/settings/appearance_page/appearance_page.ts
+index 14c3202..c43bcf5 100644
+--- a/chrome/browser/resources/settings/appearance_page/appearance_page.ts
++++ b/chrome/browser/resources/settings/appearance_page/appearance_page.ts
+@@ -21,7 +21,9 @@ import {PrefsMixin} from '/shared/settings/prefs/prefs_mixin.js';
+ import {browserProxyFactory, ColorSchemeMode} from 'chrome://resources/cr_components/customize_color_scheme_mode/customize_color_scheme_mode.mojom-webui.js';
+ import type {BrowserProxy as CustomizeColorSchemeModeBrowserProxy} from 'chrome://resources/cr_components/customize_color_scheme_mode/customize_color_scheme_mode.mojom-webui.js';
+ import {I18nMixin} from 'chrome://resources/cr_elements/i18n_mixin.js';
++import {WebUiListenerMixin} from 'chrome://resources/cr_elements/web_ui_listener_mixin.js';
+ import {assert, assertNotReached} from 'chrome://resources/js/assert.js';
++import {sendWithPromise} from 'chrome://resources/js/cr.js';
+ import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+ 
+ import type {DropdownMenuOptionList, SettingsDropdownMenuElement} from '../controls/settings_dropdown_menu.js';
+@@ -57,6 +59,8 @@ const AUTOGENERATED_THEME_ID: string = 'autogenerated_theme_id';
+  */
+ const USER_COLOR_THEME_ID: string = 'user_color_theme_id';
+ 
++type EmberFavorite = {id: string, title: string, url: string};
++
+ /**
+  * 'settings-appearance-page' is the settings page containing appearance
+  * settings.
+@@ -83,7 +87,7 @@ export enum SystemTheme {
+ }
+ 
+ const SettingsAppearancePageElementBase =
+-    SettingsViewMixin(RelaunchMixin(I18nMixin(PrefsMixin(PolymerElement))));
++    WebUiListenerMixin(SettingsViewMixin(RelaunchMixin(I18nMixin(PrefsMixin(PolymerElement)))));
+ 
+ export class SettingsAppearancePageElement extends
+     SettingsAppearancePageElementBase {
+@@ -167,6 +171,9 @@ export class SettingsAppearancePageElement extends
+         })),
+       },
+ 
++      emberFavorites_: {type: Array, value: () => []},
++      emberFavoritesError_: {type: String, value: ''},
++
+       /**
+        * Predefined zoom factors to be used when zooming in/out. These are in
+        * ascending order. Values are displayed in the page zoom drop-down menu
+@@ -346,6 +353,8 @@ export class SettingsAppearancePageElement extends
+   declare private fontSizeOptions_: DropdownMenuOptionList;
+   declare private emberFavoritesColumnOptions_: DropdownMenuOptionList;
+   declare private emberFavoritesRowOptions_: DropdownMenuOptionList;
++  declare private emberFavorites_: EmberFavorite[];
++  declare private emberFavoritesError_: string;
+   declare private colorSchemeModeOptions_:
+       Array<{value: ColorSchemeMode, name: string}>;
+   declare private selectedColorSchemeMode_: ColorSchemeMode|undefined;
+@@ -383,6 +392,12 @@ export class SettingsAppearancePageElement extends
+   override ready() {
+     super.ready();
+ 
++    this.addWebUiListener('ember-favorites-changed',
++        (state: {favorites: EmberFavorite[]}) => {
++          this.emberFavorites_ = state.favorites;
++        });
++    void this.refreshEmberFavorites_();
++
+     this.$.defaultFontSize.menuOptions = this.fontSizeOptions_;
+     // TODO(dschuyler): Look into adding a listener for the
+     // default zoom percent.
+@@ -411,6 +426,69 @@ export class SettingsAppearancePageElement extends
+         this.setColorSchemeModeListenerId_);
+   }
+ 
++  private async refreshEmberFavorites_() {
++    const state = await sendWithPromise<{favorites: EmberFavorite[]}>(
++        'emberFavoritesGet');
++    this.emberFavorites_ = state.favorites;
++  }
++
++  private async mutateEmberFavorites_(command: string, ...args: unknown[]) {
++    try {
++      const state = await sendWithPromise<{favorites: EmberFavorite[]}>(
++          command, ...args);
++      this.emberFavorites_ = state.favorites;
++      this.emberFavoritesError_ = '';
++      return true;
++    } catch (error) {
++      this.emberFavoritesError_ = String(error);
++      return false;
++    }
++  }
++
++  private onEmberFavoriteEdited_(event: Event) {
++    const row = (event.currentTarget as HTMLElement)
++                    .closest<HTMLElement>('.ember-favorite-row')!;
++    const title = row.querySelector<HTMLInputElement>('.ember-favorite-title')!
++                      .value.trim();
++    const url = row.querySelector<HTMLInputElement>('.ember-favorite-url')!
++                    .value.trim();
++    void this.mutateEmberFavorites_(
++        'emberFavoriteUpdate', row.dataset['id'], title, url);
++  }
++
++  private onEmberFavoriteRemove_(event: Event) {
++    const row = (event.currentTarget as HTMLElement)
++                    .closest<HTMLElement>('.ember-favorite-row')!;
++    void this.mutateEmberFavorites_('emberFavoriteRemove', row.dataset['id']);
++  }
++
++  private onEmberFavoriteMove_(event: Event) {
++    const row = (event.currentTarget as HTMLElement)
++                    .closest<HTMLElement>('.ember-favorite-row')!;
++    const destination = Number(row.dataset['index']) +
++        Number((event.currentTarget as HTMLElement).dataset['delta']);
++    if (destination < 0 || destination >= this.emberFavorites_.length) return;
++    void this.mutateEmberFavorites_(
++        'emberFavoriteMove', row.dataset['id'], destination);
++  }
++
++  private async onEmberFavoriteAdd_() {
++    const titleInput = this.shadowRoot!.querySelector<HTMLInputElement>(
++        '#emberFavoriteNewTitle')!;
++    const urlInput = this.shadowRoot!.querySelector<HTMLInputElement>(
++        '#emberFavoriteNewUrl')!;
++    const title = titleInput.value.trim();
++    const url = urlInput.value.trim();
++    if (!title || !url) {
++      this.emberFavoritesError_ = 'Enter a name and URL';
++      return;
++    }
++    if (await this.mutateEmberFavorites_('emberFavoriteAdd', title, url)) {
++      titleInput.value = '';
++      urlInput.value = '';
++    }
++  }
++
+   /** @return A zoom easier read by users. */
+   private formatZoom_(zoom: number): number {
+     return Math.round(zoom * 100);
+diff --git a/chrome/browser/ui/tabs/tab_menu_model.cc b/chrome/browser/ui/tabs/tab_menu_model.cc
+index 1baf7a0..301e7b4 100644
+--- a/chrome/browser/ui/tabs/tab_menu_model.cc
++++ b/chrome/browser/ui/tabs/tab_menu_model.cc
+@@ -102,6 +102,7 @@ TabMenuModel::~TabMenuModel() = default;
+ void TabMenuModel::BuildForWebApp(int index) {
+   AddItemWithStringId(TabStripModel::CommandCopyURL, IDS_COPY_URL);
+   AddItemWithStringId(TabStripModel::CommandReload, IDS_TAB_CXMENU_RELOAD);
++
+   AddItemWithStringId(TabStripModel::CommandGoBack, IDS_CONTENT_CONTEXT_BACK);
+ 
+   if (!web_app::IsPinnedHomeTab(tab_strip_, index) &&
+@@ -414,6 +415,11 @@ void TabMenuModel::Build(int index) {
+   AddSeparator(ui::NORMAL_SEPARATOR);
+   AddItemWithStringId(TabStripModel::CommandReload, IDS_TAB_CXMENU_RELOAD);
+ 
++  AddItem(TabStripModel::CommandEmberSleepTab, u"Put tab to sleep");
++  SetEnabledAt(GetItemCount() - 1,
++               tab_strip_->IsContextMenuCommandEnabled(
++                   index, TabStripModel::CommandEmberSleepTab));
++
+   AddItemWithStringId(TabStripModel::CommandDuplicate,
+                       IDS_TAB_CXMENU_DUPLICATE);
+   SetElementIdentifierAt(GetItemCount() - 1, kDuplicateMenuItem);
+diff --git a/chrome/browser/ui/tabs/tab_strip_model.cc b/chrome/browser/ui/tabs/tab_strip_model.cc
+index e45f240..17d5bd7 100644
+--- a/chrome/browser/ui/tabs/tab_strip_model.cc
++++ b/chrome/browser/ui/tabs/tab_strip_model.cc
+@@ -18,6 +18,7 @@
+ 
+ #include "base/check.h"
+ #include "base/check_op.h"
++#include "base/command_line.h"
+ #include "base/containers/adapters.h"
+ #include "base/containers/flat_map.h"
+ #include "base/containers/span.h"
+@@ -46,7 +47,9 @@
+ #include "chrome/browser/lifetime/browser_shutdown.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/reading_list/reading_list_model_factory.h"
++#include "chrome/browser/resource_coordinator/lifecycle_unit_state.mojom.h"
+ #include "chrome/browser/resource_coordinator/tab_helper.h"
++#include "chrome/browser/resource_coordinator/tab_lifecycle_unit_external.h"
+ #include "chrome/browser/send_tab_to_self/send_tab_to_self_util.h"
+ #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
+ #include "chrome/browser/ui/browser.h"
+@@ -1323,6 +1326,11 @@ void TabStripModel::CloseWebContentsAt(int index, uint32_t close_types) {
+   ReentrancyCheck::ValidateNotReentrant(&reentrancy_guard_);
+ 
+   CHECK(ContainsIndex(index));
++  if (base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++          "close-window-with-last-tab") == "never" &&
++      !closing_all_ && count() < 2) {
++    delegate()->AddTabAt(GURL(), -1, true);
++  }
+   CloseTabs({GetWebContentsAt(index)}, close_types);
+ }
+ 
+@@ -2400,6 +2408,19 @@ bool TabStripModel::IsContextMenuCommandEnabled(
+   }
+ 
+   switch (command_id) {
++    case CommandEmberSleepTab: {
++      // A split's non-focused pane is still visible and must not be discarded.
++      if (IsTabSelected(context_index) ||
++          GetSplitForTab(context_index).has_value()) {
++        return false;
++      }
++      content::WebContents* contents = GetWebContentsAt(context_index);
++      auto* lifecycle =
++          resource_coordinator::TabLifecycleUnitExternal::FromWebContents(
++              contents);
++      return lifecycle &&
++             lifecycle->GetTabState() != mojom::LifecycleUnitState::DISCARDED;
++    }
+     case CommandNewTabToRight:
+     case CommandCloseTab:
+       return true;
+@@ -2508,6 +2529,18 @@ void TabStripModel::ExecuteContextMenuCommand(int context_index,
+     return;
+   }
+   switch (command_id) {
++    case CommandEmberSleepTab: {
++      if (!IsContextMenuCommandEnabled(context_index, command_id)) {
++        break;
++      }
++      auto* lifecycle =
++          resource_coordinator::TabLifecycleUnitExternal::FromWebContents(
++              GetWebContentsAt(context_index));
++      if (lifecycle) {
++        lifecycle->DiscardTab(mojom::LifecycleUnitDiscardReason::EXTERNAL);
++      }
++      break;
++    }
+     case CommandNewTabToRight: {
+       base::UmaHistogramCounts1000(
+           "Tab.ContextMenu.NewTabToRight.SelectedTabsCount",
+@@ -3108,9 +3141,14 @@ void TabStripModel::ExecuteCloseTabs(
+     base::RepeatingCallback<std::vector<tabs::TabInterface*>()>
+         get_tabs_to_close,
+     uint32_t close_types) {
+-  ReentrancyCheck reentrancy_check(&reentrancy_guard_);
+   const std::vector<tabs::TabInterface*> tabs_to_close =
+       std::move(get_tabs_to_close).Run();
++  if (base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++          "close-window-with-last-tab") == "never" &&
++      static_cast<int>(tabs_to_close.size()) == count()) {
++    delegate()->AddTabAt(GURL(), -1, true);
++  }
++  ReentrancyCheck reentrancy_check(&reentrancy_guard_);
+ 
+   CreateHistoricalSplitIfClosing(tabs_to_close, close_types);
+ 
+diff --git a/chrome/browser/ui/tabs/tab_strip_model.h b/chrome/browser/ui/tabs/tab_strip_model.h
+index cf144a9..978cd69 100644
+--- a/chrome/browser/ui/tabs/tab_strip_model.h
++++ b/chrome/browser/ui/tabs/tab_strip_model.h
+@@ -769,6 +769,7 @@ class TabStripModel {
+     CommandGlicCreateNewChat,
+     CommandGlicSwitchToRecentConversation,
+     CommandGlicUnshare,
++    CommandEmberSleepTab,
+     CommandLast
+   };
+   // LINT.ThenChange(//tools/metrics/histograms/metadata/tab/histograms.xml:TabContextMenuCommand)
+diff --git a/chrome/browser/ui/views/tabs/dragging/dragging_tabs_session.cc b/chrome/browser/ui/views/tabs/dragging/dragging_tabs_session.cc
+index 710350f..5748182 100644
+--- a/chrome/browser/ui/views/tabs/dragging/dragging_tabs_session.cc
++++ b/chrome/browser/ui/views/tabs/dragging/dragging_tabs_session.cc
+@@ -43,11 +43,13 @@ DraggingTabsSession::DraggingTabsSession(
+     TabDragContext& attached_context,
+     TabDragPositioningDelegate& drag_position_delegate,
+     bool initial_move,
+-    gfx::Point start_point_in_screen)
++    gfx::Point start_point_in_screen,
++    bool is_background_tab_drag)
+     : drag_data_(drag_data),
+       attached_context_(attached_context),
+       drag_position_delegate_(drag_position_delegate),
+       mouse_offset_(CalculateMouseOffset(drag_data_)),
++      is_background_tab_drag_(is_background_tab_drag),
+       initial_move_(initial_move),
+       last_move_attached_context_loc_(
+           views::View::ConvertPointFromScreen(&attached_context,
+@@ -135,6 +137,15 @@ void DraggingTabsSession::MoveAttachedImpl(gfx::Point point_in_screen,
+     if (drag_data_.group_header_drag_data_.has_value()) {
+       attached_model->MoveGroupTo(
+           drag_data_.group_header_drag_data_.value().group, to_index);
++    } else if (is_background_tab_drag_) {
++      // A plain drag leaves the visible tab selected. Move the dragged tab,
++      // not the selection, so reordering never changes the displayed page.
++      const int from_index = attached_model->GetIndexOfWebContents(
++          drag_data_.source_view_drag_data()->contents);
++      if (from_index != TabStripModel::kNoTab) {
++        attached_model->MoveWebContentsAt(from_index, to_index,
++                                          /*select_after_move=*/false);
++      }
+     } else {
+       attached_model->MoveSelectedTabsTo(
+           to_index, CalculateGroupForDraggedTabs(to_index));
+diff --git a/chrome/browser/ui/views/tabs/dragging/dragging_tabs_session.h b/chrome/browser/ui/views/tabs/dragging/dragging_tabs_session.h
+index 395eb06..202dd2d 100644
+--- a/chrome/browser/ui/views/tabs/dragging/dragging_tabs_session.h
++++ b/chrome/browser/ui/views/tabs/dragging/dragging_tabs_session.h
+@@ -28,7 +28,8 @@ class DraggingTabsSession final {
+       TabDragContext& attached_context,
+       TabDragPositioningDelegate& drag_position_delegate,
+       bool initial_move,
+-      gfx::Point point_in_screen);
++      gfx::Point point_in_screen,
++      bool is_background_tab_drag = false);
+   ~DraggingTabsSession();
+ 
+   void MoveAttached(gfx::Point point_in_screen);
+@@ -65,6 +66,7 @@ class DraggingTabsSession final {
+   // first tab where dragging began. This is used to ensure that the dragged
+   // tabs are always positioned at the correct location during the drag.
+   const int mouse_offset_;
++  const bool is_background_tab_drag_;
+ 
+   // True if MoveAttached() has never been called, and `attached_context_` is
+   // the source context in which the drag originated.
+diff --git a/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.cc b/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.cc
+index 04e22e8..18ad1be 100644
+--- a/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.cc
++++ b/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.cc
+@@ -63,17 +63,25 @@
+ #include "content/public/common/content_features.h"
+ #include "ui/base/clipboard/clipboard_constants.h"
+ #include "ui/base/dragdrop/os_exchange_data_provider_factory.h"
++#include "ui/base/models/image_model.h"
+ #include "ui/base/mojom/window_show_state.mojom.h"
+ #include "ui/base/resource/resource_bundle.h"
++#include "ui/compositor/layer.h"
+ #include "ui/compositor/presentation_time_recorder.h"
++#include "ui/compositor/scoped_layer_animation_settings.h"
+ #include "ui/display/display.h"
+ #include "ui/display/screen.h"
+ #include "ui/events/gestures/gesture_recognizer.h"
+ #include "ui/events/types/event_type.h"
++#include "ui/gfx/animation/tween.h"
+ #include "ui/gfx/geometry/rect.h"
+ #include "ui/gfx/geometry/vector2d.h"
++#include "ui/gfx/image/image.h"
+ #include "ui/gfx/image/image_skia_operations.h"
+ #include "ui/gfx/range/range.h"
++#include "ui/snapshot/snapshot.h"
++#include "ui/views/background.h"
++#include "ui/views/controls/image_view.h"
+ #include "ui/views/drag_utils.h"
+ #include "ui/views/event_monitor.h"
+ #include "ui/views/interaction/element_tracker_views.h"
+@@ -977,6 +985,10 @@ TabDragController::Liveness TabDragController::ContinueDragging(
+ 
+   DCHECK(attached_context_);
+ 
++  const bool floating_background_tab =
++      is_background_tab_drag_ &&
++      UpdateEmberFloatingBackgroundTab(point_in_screen);
++
+   TabDragContext* target_context = source_context_;
+   if (detach_behavior_ == DetachBehavior::kDetachable) {
+     auto [alive, context, drop_target] = GetDragTargetForPoint(point_in_screen);
+@@ -984,7 +996,12 @@ TabDragController::Liveness TabDragController::ContinueDragging(
+       return Liveness::kDeleted;
+     }
+     target_context = context;
+-    UpdateDragTarget(drop_target, point_in_screen);
++    // Keep the tab-bar magnet generous: horizontal motion is always a normal
++    // reorder until the pointer has visibly left the strip.
++    UpdateDragTarget(floating_background_tab || !is_background_tab_drag_
++                         ? drop_target
++                         : nullptr,
++                     point_in_screen);
+     if (current_drag_target_) {
+       TabDragContext* delegate_context =
+           current_drag_target_->OnTabDragUpdated(*this, point_in_screen);
+@@ -1015,12 +1032,124 @@ TabDragController::Liveness TabDragController::ContinueDragging(
+   }
+ 
+   if (current_state_ == DragState::kDraggingTabs &&
+-      attached_context_->GetPositioningDelegate()) {
++      attached_context_->GetPositioningDelegate() && !floating_background_tab) {
+     dragging_tabs_session_->MoveAttached(point_in_screen);
+   }
+   return Liveness::kAlive;
+ }
+ 
++bool TabDragController::UpdateEmberFloatingBackgroundTab(
++    const gfx::Point& point_in_screen) {
++  constexpr int kBackgroundTabReleaseDistance = 28;
++  constexpr int kBackgroundTabReattachDistance = 14;
++  gfx::Rect strip_bounds = GetTabstripScreenBounds(source_context_);
++  const int magnetism = ember_floating_tab_widget_
++                            ? kBackgroundTabReattachDistance
++                            : kBackgroundTabReleaseDistance;
++  if (point_in_screen.y() >= strip_bounds.y() - magnetism &&
++      point_in_screen.y() <= strip_bounds.bottom() + magnetism) {
++    CloseEmberFloatingBackgroundTab();
++    return false;
++  }
++
++  TabSlotView* dragged_view = drag_data_.source_view_drag_data()->attached_view;
++  if (!dragged_view) {
++    return false;
++  }
++  const gfx::Size tab_size = dragged_view->size();
++  const gfx::Point origin(
++      point_in_screen.x() -
++          base::ClampRound(drag_data_.mouse_offset_to_size_ratios.x() *
++                           tab_size.width()),
++      point_in_screen.y() - tab_size.height() / 2);
++  if (!ember_floating_tab_widget_) {
++    views::Widget::InitParams params(
++        views::Widget::InitParams::CLIENT_OWNS_WIDGET,
++        views::Widget::InitParams::TYPE_POPUP);
++    params.z_order = ui::ZOrderLevel::kFloatingUIElement;
++    params.opacity = views::Widget::InitParams::WindowOpacity::kTranslucent;
++    params.accept_events = false;
++    params.context = source_context_->GetWidget()->GetNativeWindow();
++    params.bounds = gfx::Rect(origin, tab_size);
++    ember_floating_tab_widget_ = std::make_unique<views::Widget>();
++    ember_floating_tab_widget_->Init(std::move(params));
++    auto image_view = std::make_unique<views::ImageView>();
++    image_view->SetBackground(views::CreateRoundedRectBackground(
++        SkColorSetARGB(0xEE, 0x33, 0x2A, 0x26), 8));
++    ember_floating_tab_image_ =
++        ember_floating_tab_widget_->SetContentsView(std::move(image_view));
++    ember_floating_source_view_ =
++        std::make_unique<views::ViewTracker>(dragged_view);
++
++    gfx::Rect capture_bounds = dragged_view->GetBoundsInScreen();
++    const gfx::Rect window_bounds =
++        source_context_->GetWidget()->GetWindowBoundsInScreen();
++    capture_bounds.Offset(-window_bounds.x(), -window_bounds.y());
++    const int generation = ++ember_floating_tab_generation_;
++    ui::GrabViewSnapshot(
++        source_context_->GetWidget()->GetNativeView(), capture_bounds,
++        base::BindOnce(
++            [](base::WeakPtr<TabDragController> controller, int generation,
++               gfx::Image snapshot) {
++              if (!controller || !controller->ember_floating_tab_image_ ||
++                  controller->ember_floating_tab_generation_ != generation ||
++                  snapshot.IsEmpty()) {
++                return;
++              }
++              controller->ember_floating_tab_image_->SetImage(
++                  ui::ImageModel::FromImageSkia(snapshot.AsImageSkia()));
++              if (views::View* original =
++                      controller->ember_floating_source_view_->view()) {
++                controller->ember_floating_source_created_layer_ =
++                    !original->layer();
++                if (controller->ember_floating_source_created_layer_) {
++                  original->SetPaintToLayer();
++                  original->layer()->SetFillsBoundsOpaquely(false);
++                }
++                controller->ember_floating_source_original_opacity_ =
++                    original->layer()->opacity();
++                original->layer()->SetOpacity(0.f);
++              }
++            },
++            weak_factory_.GetWeakPtr(), generation));
++
++    ember_floating_tab_widget_->Show();
++#if defined(USE_AURA)
++    ui::Layer* layer = ember_floating_tab_widget_->GetNativeWindow()->layer();
++    layer->SetOpacity(0.f);
++    ui::ScopedLayerAnimationSettings animation(layer->GetAnimator());
++    animation.SetTransitionDuration(base::Milliseconds(180));
++    animation.SetTweenType(gfx::Tween::FAST_OUT_SLOW_IN);
++    layer->SetOpacity(1.f);
++#endif
++  } else {
++    ember_floating_tab_widget_->SetBounds(gfx::Rect(origin, tab_size));
++  }
++  return true;
++}
++
++void TabDragController::CloseEmberFloatingBackgroundTab() {
++  ++ember_floating_tab_generation_;
++  ember_floating_tab_image_ = nullptr;
++  if (ember_floating_source_view_) {
++    if (views::View* original = ember_floating_source_view_->view()) {
++      if (original->layer()) {
++        original->layer()->SetOpacity(ember_floating_source_original_opacity_);
++        if (ember_floating_source_created_layer_) {
++          original->DestroyLayer();
++        }
++      }
++    }
++    ember_floating_source_view_.reset();
++    ember_floating_source_created_layer_ = false;
++    ember_floating_source_original_opacity_ = 1.f;
++  }
++  if (ember_floating_tab_widget_) {
++    ember_floating_tab_widget_->CloseNow();
++    ember_floating_tab_widget_.reset();
++  }
++}
++
+ TabDragController::Liveness TabDragController::DragBrowserToNewTabStrip(
+     TabDragContext* target_context,
+     const gfx::Point& point_in_screen) {
+@@ -1875,6 +2004,7 @@ std::vector<TabSlotView*> TabDragController::GetViewsMatchingDraggedContents(
+ }
+ 
+ void TabDragController::EndDragImpl(EndDragType type) {
++  CloseEmberFloatingBackgroundTab();
+   VLOG(1) << __func__ << " type=" << static_cast<int>(type)
+           << " state=" << static_cast<int>(current_state_);
+ 
+@@ -2969,7 +3099,7 @@ void TabDragController::StartDraggingTabsSession(
+   dragging_tabs_session_ = std::make_unique<DraggingTabsSession>(
+       drag_data_, *attached_context_,
+       *attached_context_->GetPositioningDelegate(), initial_move,
+-      start_point_in_screen);
++      start_point_in_screen, is_background_tab_drag_);
+ }
+ 
+ void TabDragController::UpdateSelectionModel(
+diff --git a/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.h b/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.h
+index 12254d9..27d6ba3 100644
+--- a/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.h
++++ b/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.h
+@@ -50,6 +50,7 @@ class ListSelectionModel;
+ class PresentationTimeRecorder;
+ }  // namespace ui
+ namespace views {
++class ImageView;
+ class View;
+ class ViewTracker;
+ }  // namespace views
+@@ -348,6 +349,8 @@ class TabDragController : public views::WidgetObserver,
+   // Invoked once a drag has started to determine the appropriate context to
+   // drag to (which may be the currently attached one).
+   [[nodiscard]] Liveness ContinueDragging(const gfx::Point& point_in_screen);
++  bool UpdateEmberFloatingBackgroundTab(const gfx::Point& point_in_screen);
++  void CloseEmberFloatingBackgroundTab();
+ 
+   // Transitions dragging from `attached_context_` to `target_context`.
+   // `target_context` is nullptr if the mouse is not over a valid tab strip.
+@@ -634,6 +637,12 @@ class TabDragController : public views::WidgetObserver,
+   // the source renderer attached and the original page selected until an
+   // explicit split/Favorites drop consumes the drag.
+   bool is_background_tab_drag_ = false;
++  std::unique_ptr<views::Widget> ember_floating_tab_widget_;
++  raw_ptr<views::ImageView> ember_floating_tab_image_ = nullptr;
++  std::unique_ptr<views::ViewTracker> ember_floating_source_view_;
++  bool ember_floating_source_created_layer_ = false;
++  float ember_floating_source_original_opacity_ = 1.f;
++  int ember_floating_tab_generation_ = 0;
+ 
+   // The selection model of `attached_context_` before the tabs were attached.
+   ui::ListSelectionModel selection_model_before_attach_;
+diff --git a/chrome/browser/ui/webui/settings/appearance_handler.cc b/chrome/browser/ui/webui/settings/appearance_handler.cc
+index 5e6b7b9..42af3f2 100644
+--- a/chrome/browser/ui/webui/settings/appearance_handler.cc
++++ b/chrome/browser/ui/webui/settings/appearance_handler.cc
+@@ -4,32 +4,70 @@
+ 
+ #include "chrome/browser/ui/webui/settings/appearance_handler.h"
+ 
++#include <optional>
++
+ #include "base/check.h"
+ #include "base/functional/bind.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/task/single_thread_task_runner.h"
+ #include "base/values.h"
+ #include "build/build_config.h"
+ #include "chrome/app/chrome_command_ids.h"
++#include "chrome/browser/bookmarks/bookmark_model_factory.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/themes/theme_service_factory.h"
+ #include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/browser_commands.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
++#include "chrome/browser/ui/ember_favorites.h"
+ #include "chrome/browser/ui/tabs/vertical_tab_strip_metrics.h"
+ #include "chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.h"
+ #include "chrome/common/pref_names.h"
++#include "components/bookmarks/browser/bookmark_model.h"
++#include "components/bookmarks/browser/bookmark_node.h"
++#include "components/bookmarks/common/bookmark_metrics.h"
+ #include "content/public/browser/web_ui.h"
+ 
+ namespace settings {
+ 
+ AppearanceHandler::AppearanceHandler(content::WebUI* webui)
+-    : profile_(Profile::FromWebUI(webui)) {}
++    : profile_(Profile::FromWebUI(webui)) {
++  if (auto* model = BookmarkModelFactory::GetForBrowserContext(profile_)) {
++    bookmark_model_observation_.Observe(model);
++  }
++}
+ 
+ AppearanceHandler::~AppearanceHandler() = default;
+ 
+ void AppearanceHandler::OnJavascriptAllowed() {}
+ void AppearanceHandler::OnJavascriptDisallowed() {}
+ 
++void AppearanceHandler::BookmarkModelChanged() {
++  // Folder creation and editing synchronously notify observers. Defer the
++  // settings snapshot until the bookmark transaction has unwound.
++  if (favorites_notify_pending_) {
++    return;
++  }
++  favorites_notify_pending_ = true;
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE, base::BindOnce(&AppearanceHandler::NotifyEmberFavoritesChanged,
++                                weak_ptr_factory_.GetWeakPtr()));
++}
++
++void AppearanceHandler::BookmarkModelBeingDeleted() {
++  bookmark_model_observation_.Reset();
++}
++
++void AppearanceHandler::NotifyEmberFavoritesChanged() {
++  favorites_notify_pending_ = false;
++  if (IsJavascriptAllowed()) {
++    FireWebUIListener("ember-favorites-changed",
++                      base::Value(BuildEmberFavoritesState()));
++  }
++}
++
+ void AppearanceHandler::RegisterMessages() {
+   web_ui()->RegisterMessageCallback(
+       "useDefaultTheme",
+@@ -67,6 +105,122 @@ void AppearanceHandler::RegisterMessages() {
+       base::BindRepeating(
+           &AppearanceHandler::HandleRecordVerticalTabStripModeChanged,
+           base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "emberFavoritesGet",
++      base::BindRepeating(&AppearanceHandler::GetEmberFavorites,
++                          base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "emberFavoriteAdd",
++      base::BindRepeating(&AppearanceHandler::AddEmberFavorite,
++                          base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "emberFavoriteUpdate",
++      base::BindRepeating(&AppearanceHandler::UpdateEmberFavorite,
++                          base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "emberFavoriteRemove",
++      base::BindRepeating(&AppearanceHandler::RemoveEmberFavorite,
++                          base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "emberFavoriteMove",
++      base::BindRepeating(&AppearanceHandler::MoveEmberFavorite,
++                          base::Unretained(this)));
++}
++
++base::DictValue AppearanceHandler::BuildEmberFavoritesState() const {
++  base::ListValue favorites;
++  auto* model = BookmarkModelFactory::GetForBrowserContext(profile_);
++  if (model && model->loaded()) {
++    ember_favorites::EnsureFolder(model);
++    for (const auto* node : ember_favorites::GetNodes(model)) {
++      base::DictValue favorite;
++      favorite.Set("id", base::NumberToString(node->id()));
++      favorite.Set("title", node->GetTitle());
++      favorite.Set("url", node->url().spec());
++      favorites.Append(std::move(favorite));
++    }
++  }
++  base::DictValue state;
++  state.Set("favorites", std::move(favorites));
++  return state;
++}
++
++void AppearanceHandler::GetEmberFavorites(const base::ListValue& args) {
++  CHECK_EQ(1U, args.size());
++  AllowJavascript();
++  ResolveJavascriptCallback(args[0], base::Value(BuildEmberFavoritesState()));
++}
++
++void AppearanceHandler::AddEmberFavorite(const base::ListValue& args) {
++  CHECK_EQ(3U, args.size());
++  const std::string* title = args[1].GetIfString();
++  const std::string* url_text = args[2].GetIfString();
++  auto* model = BookmarkModelFactory::GetForBrowserContext(profile_);
++  const GURL url(url_text ? *url_text : std::string());
++  if (!model || !model->loaded() || !title || title->empty() ||
++      !url.is_valid() || !url.SchemeIsHTTPOrHTTPS()) {
++    RejectJavascriptCallback(args[0],
++                             base::Value("Use a valid HTTP(S) URL and name"));
++    return;
++  }
++  ember_favorites::Add(model, url, base::UTF8ToUTF16(*title),
++                       ember_favorites::GetNodes(model).size());
++  ResolveJavascriptCallback(args[0], base::Value(BuildEmberFavoritesState()));
++}
++
++void AppearanceHandler::UpdateEmberFavorite(const base::ListValue& args) {
++  CHECK_EQ(4U, args.size());
++  const std::string* id_text = args[1].GetIfString();
++  const std::string* title = args[2].GetIfString();
++  const std::string* url_text = args[3].GetIfString();
++  int64_t id = 0;
++  const GURL url(url_text ? *url_text : std::string());
++  auto* model = BookmarkModelFactory::GetForBrowserContext(profile_);
++  if (!model || !id_text || !base::StringToInt64(*id_text, &id) || !title ||
++      title->empty() || !url.is_valid() || !url.SchemeIsHTTPOrHTTPS()) {
++    RejectJavascriptCallback(args[0],
++                             base::Value("Use a valid HTTP(S) URL and name"));
++    return;
++  }
++  for (const auto* node : ember_favorites::GetNodes(model)) {
++    if (node->id() == id) {
++      model->SetTitle(node, base::UTF8ToUTF16(*title),
++                      bookmarks::metrics::BookmarkEditSource::kUser);
++      model->SetURL(node, url, bookmarks::metrics::BookmarkEditSource::kUser);
++      ResolveJavascriptCallback(args[0],
++                                base::Value(BuildEmberFavoritesState()));
++      return;
++    }
++  }
++  RejectJavascriptCallback(args[0], base::Value("Favorite no longer exists"));
++}
++
++void AppearanceHandler::RemoveEmberFavorite(const base::ListValue& args) {
++  CHECK_EQ(2U, args.size());
++  const std::string* id_text = args[1].GetIfString();
++  int64_t id = 0;
++  auto* model = BookmarkModelFactory::GetForBrowserContext(profile_);
++  if (!model || !id_text || !base::StringToInt64(*id_text, &id) ||
++      !ember_favorites::Remove(model, id)) {
++    RejectJavascriptCallback(args[0], base::Value("Favorite no longer exists"));
++    return;
++  }
++  ResolveJavascriptCallback(args[0], base::Value(BuildEmberFavoritesState()));
++}
++
++void AppearanceHandler::MoveEmberFavorite(const base::ListValue& args) {
++  CHECK_EQ(3U, args.size());
++  const std::string* id_text = args[1].GetIfString();
++  const std::optional<int> destination = args[2].GetIfInt();
++  int64_t id = 0;
++  auto* model = BookmarkModelFactory::GetForBrowserContext(profile_);
++  if (!model || !id_text || !base::StringToInt64(*id_text, &id) ||
++      !destination.has_value() || *destination < 0 ||
++      !ember_favorites::Move(model, id, *destination)) {
++    RejectJavascriptCallback(args[0], base::Value("Favorite no longer exists"));
++    return;
++  }
++  ResolveJavascriptCallback(args[0], base::Value(BuildEmberFavoritesState()));
+ }
+ 
+ void AppearanceHandler::HandleUseTheme(ui::SystemTheme system_theme,
+diff --git a/chrome/browser/ui/webui/settings/appearance_handler.h b/chrome/browser/ui/webui/settings/appearance_handler.h
+index a1abf1e..215122a 100644
+--- a/chrome/browser/ui/webui/settings/appearance_handler.h
++++ b/chrome/browser/ui/webui/settings/appearance_handler.h
+@@ -7,9 +7,16 @@
+ 
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
++#include "base/scoped_observation.h"
++#include "base/values.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/themes/theme_service.h"
+ #include "chrome/browser/ui/webui/settings/settings_page_ui_handler.h"
++#include "components/bookmarks/browser/base_bookmark_model_observer.h"
++
++namespace bookmarks {
++class BookmarkModel;
++}
+ 
+ namespace content {
+ class WebUI;
+@@ -20,7 +27,8 @@ class Profile;
+ namespace settings {
+ 
+ // Chrome "Appearance" settings page UI handler.
+-class AppearanceHandler : public SettingsPageUIHandler {
++class AppearanceHandler : public SettingsPageUIHandler,
++                          public bookmarks::BaseBookmarkModelObserver {
+  public:
+   explicit AppearanceHandler(content::WebUI* webui);
+ 
+@@ -33,6 +41,8 @@ class AppearanceHandler : public SettingsPageUIHandler {
+   void RegisterMessages() override;
+   void OnJavascriptAllowed() override;
+   void OnJavascriptDisallowed() override;
++  void BookmarkModelChanged() override;
++  void BookmarkModelBeingDeleted() override;
+ 
+  private:
+   // Changes the UI theme to the specified `system_theme`.
+@@ -48,8 +58,19 @@ class AppearanceHandler : public SettingsPageUIHandler {
+   void PinnedToolbarActionsAreDefault(const base::ListValue& args);
+   // Records the vertical tab strip mode change.
+   void HandleRecordVerticalTabStripModeChanged(const base::ListValue& args);
++  void GetEmberFavorites(const base::ListValue& args);
++  void AddEmberFavorite(const base::ListValue& args);
++  void UpdateEmberFavorite(const base::ListValue& args);
++  void RemoveEmberFavorite(const base::ListValue& args);
++  void MoveEmberFavorite(const base::ListValue& args);
++  base::DictValue BuildEmberFavoritesState() const;
++  void NotifyEmberFavoritesChanged();
+ 
+   raw_ptr<Profile> profile_;  // Weak pointer.
++  base::ScopedObservation<bookmarks::BookmarkModel,
++                          bookmarks::BaseBookmarkModelObserver>
++      bookmark_model_observation_{this};
++  bool favorites_notify_pending_ = false;
+ 
+   base::WeakPtrFactory<AppearanceHandler> weak_ptr_factory_{this};
+ };
+diff --git a/tools/metrics/histograms/metadata/tab/histograms.xml b/tools/metrics/histograms/metadata/tab/histograms.xml
+index 6a0e464..54628a4 100644
+--- a/tools/metrics/histograms/metadata/tab/histograms.xml
++++ b/tools/metrics/histograms/metadata/tab/histograms.xml
+@@ -82,6 +82,7 @@ chromium-metrics-reviews@9oo91e.qjz9zk.
+       summary="the Close Tabs to the Right command"/>
+   <variant name="CopyURL" summary="the Copy URL command"/>
+   <variant name="Duplicate" summary="the Duplicate command"/>
++  <variant name="EmberSleepTab" summary="the manually sleep tab command"/>
+   <variant name="GlicCreateNewChat"
+       summary="the Start New Chat with Gemini command"/>
+   <variant name="GlicShare" summary="the Share with Gemini command"/>

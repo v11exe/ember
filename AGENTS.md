@@ -189,6 +189,12 @@ test/                          node:test contracts/integration fixtures
   element by default. In Ember's compact toolbar that rule can snap its width
   to zero even when `SetVisible(true)` is called; keep it outside responsive
   overflow and let `IDC_FORWARD` own enabled state and navigation.
+- Native plain-unselected-tab drags are flagged explicitly and stay attached
+  until dropped; a nonempty saved selection model alone is not enough to tell
+  them from modifier selection. Their split preview uses `MultiContentsView`'s
+  existing target with `DragType::kBackgroundTab` so it occupies the hovered
+  half immediately; ordinary selected-tab drags retain Chromium's `kTab` entry
+  size, timer and window-detach path.
 - The default New Tab Web Store tile is seeded from `IDS_WEBSTORE_URL` in
   `chrome/app/resources/locale_settings.grd`, not the extension URL constants.
   Ungoogled's `qjz9zk` placeholder host is rewritten in `URLRequest` to the
@@ -216,6 +222,24 @@ test/                          node:test contracts/integration fixtures
 - Frosted glass gets its readability from blur, never from opacity. Pushing
   `--frost-fill` towards opaque turns every overlay into a painted panel; the
   capture blur and the specular rim are what make it a surface.
+- Native EmberGlass capture must normalize non-opaque renderer pixels before
+  blur/displacement. A transparent New Tab surface exposes DWM material that is
+  absent from `CopyFromSurface()`; its hidden RGB is not a valid refraction
+  source. Fully opaque website captures keep the fast path.
+- A Views `ScrollView` owns an opaque dialog background by default and
+  propagates it to its viewport/contents. Clearing only translucent child cards
+  does not reveal EmberGlass; clear the owning scroll background too.
+- Page context-menu coordinates are renderer-native-view local, not BrowserView
+  overlay local. Convert renderer view → screen → overlay before anchoring and
+  clamp only after that conversion.
+- New-tab creation must leave focus in Ember's NTP WebUI search field; explicit
+  address commands such as Ctrl+L belong to the visible sidebar textfield.
+  Closing the final normal tab reseeds a Chromium New Tab unless the browser is
+  already in a window/quit/closing-all path.
+- Moving the final tab into another window also empties its source strip, but
+  must close that source window. `Browser::TabStripEmpty()` distinguishes the
+  preceding `kInsertedIntoOtherTabStrip` removal from a user close; reseeding
+  New Tab during `TabDragController::Detach()` reenters the model and crashes.
 - Windows' own Snap Layouts flyout is unreachable: it belongs to the shell and
   appears only for a window the OS is moving, or one answering WM_NCHITTEST
   with HTMAXBUTTON — the first needs a native drag region a `WebContentsView`
@@ -266,6 +290,46 @@ test/                          node:test contracts/integration fixtures
   permits same-site and exact duplicates with distinct tile IDs, and never
   destroys the source tab. Favorite open state includes matching background and
   sleeping tabs; removal does not close them.
+- A native background-tab drag must not select the dragged tab even transiently:
+  selection wakes discarded tabs and replaces the visible split-preview page.
+  Only a selected-tab drag takes Chromium's ordinary detach path. Do not offer
+  a new split drop target while the active tab already belongs to a split;
+  Chromium's two-pane split delegate cannot commit it.
+- The background drag's floating visual is a live native Views surface, not a
+  captured tab bitmap. Keep the source Tab attached to its strip/model and
+  hide it only visually while floating. A Windows window lookup can still
+  return the event-transparent popup HWND; resolve background-drag points
+  within the source browser against the browser HWND before asking its split
+  and Favorite targets. Selected-tab detach is unaffected.
+- Explicit tab sleep uses Chromium's EXTERNAL discard reason. Its tab UI still
+  needs a `TabUIHelper::WasDiscarded()` change notification even when Chromium
+  does not show proactive discard status, or grayscale/title/marker stale.
+- Favorite grid controls in Chromium Settings write through `settingsPrivate`:
+  the row and column pref keys must be on its numeric allowlist. `BrowserView`
+  already observes them and rebuilds the rail; there is no Save action.
+- Plain background-tab drags reorder with `MoveWebContentsAt(..., false)`, not
+  `MoveSelectedTabsTo()`: the latter moves the visible selected tab. Keep a
+  generous vertical tab-strip release zone (28 DIP, 14 DIP reattach). Outside
+  it, an event-transparent live Views tab surface follows the pointer while
+  the source remains attached for Favorite and split targets.
+- Native Favorite rail capacity controls its geometry, not the number of
+  painted buttons: unfilled cells are invisible layout spacers. A tab dragged
+  over the rail previews an inserted favicon tile; existing bookmark-ID tiles
+  animate from their old positions to new positions over 180ms. At full
+  capacity the hovered Favorite is replaced, matching Electron; reducing grid
+  dimensions alone preserves hidden bookmarks. The configured tile width and
+  19px icon size remain stable during previews.
+- Chromium's split target normally animates entry/exit but snaps when an
+  already-open background-tab preview switches directly left↔right. Restart
+  the existing drop-target slide from the new edge on that side change; keep
+  Chromium's ordinary tab/link drag behavior and reduced-motion preference.
+- The New Tab CSS in the resource overlay must match the installed checkout
+  before direct Ninja builds: `port.js build` copies resources, but invoking
+  Ninja directly does not. Center the hero in both rather than relying on a
+  later overlay copy.
+- Native New Tab content stays limited to the Ember brand and search. Favorite
+  grid dimensions and an ordered, editable Favorite list belong to Chromium
+  Settings Appearance, backed by the same BookmarkModel folder as the rail.
 - Top, sidebar, frame and corner-mask views receive window-relative shell metrics
   and sample `shell-material.css`. Keep that single material synchronized on every
   resize/collapse frame rather than restoring independent regional gradients.
@@ -302,6 +366,10 @@ test/                          node:test contracts/integration fixtures
 - `win.setFullScreen()` is unreliable on the transparent frameless Windows
   window; F11 uses Ember's manual display-bounds path.
 - Full-page native-glass pages must not paint an opaque page background.
+- Native Chromium NTP transparency must clear every owning layer together:
+  `ContentsWebView`, `BrowserView`, the native widget brush, Aura content/root
+  windows and the compositor. `Widget::SetBackgroundColor()` takes a ColorId;
+  use the native widget/compositor SkColor APIs for `SK_ColorTRANSPARENT`.
 - Overlay glass over light pages switches palette via `backdrop-contrast.js`.
 - `ember://extensions` is the dropdown document and relies on `window.emberPanel`;
   it is not currently a normal internal tab.
@@ -497,6 +565,46 @@ Git is the history archive.
 ---
 
 ## 4. Work Log
+
+### 2026-09-23 — Codex — Native last-tab cross-window transfer crash
+- **Status / Branch:** source/focused validation complete; user incremental build/runtime pending · `chromium-port`
+- **Touches:** Browser tab-strip-empty lifecycle, native follow-up patch, focused contract, port ledger
+- **Summary:** Patch 0034 distinguishes a transferred final tab from a closed final tab before Ember reseeds New Tab; preserves Chromium's source-window closure during drag transfer. `browser.obj` compiled, 34 patches reverse in scratch, contracts 53/53, repository tests 436/436 and Electron smoke PASS. User incremental link/runtime pending; other Batch 2 behavior reported complete by user.
+
+### 2026-09-23 — Codex — Native Batch 2 runtime regression repair
+- **Status / Branch:** source/cheap validation complete; user full build and runtime pending · `chromium-port`
+- **Touches:** native tab drag surface/targets, sleeping tab rendering, Favorites settings observer, focused contracts
+- **Summary:** Patch 0032 replaces the static drag snapshot with a live native Views surface and fixes HWND target lookup, makes explicit discard notify tab UI and dim inactive titles, and allowlists Settings' Favorite row/column prefs. Four objects compile; 32 patches reverse/reapply in scratch; focused contracts 51/51, repository tests 434/434, Electron smoke PASS (three no-frame skips). Preserve the graph; full build and runtime acceptance remain user-owned.
+
+### 2026-09-23 — Codex — Native Favorite reflow and split preview motion
+- **Status / Branch:** source/focused validation complete; user full build and runtime pending · `chromium-port`
+- **Touches:** native Favorite rail/drop target, native split drop-target motion, New Tab CSS resource, patch contracts and port ledger
+- **Summary:** Patch 0033 removes painted empty Favorite buttons, previews a dragged tab as an inserted favicon tile, animates bookmark-ID tile reflow, and preserves Electron's full-grid replacement without discarding entries merely hidden by grid reduction. It restores centered New Tab CSS in the prepared checkout and animates direct split-side changes through Chromium's existing slide. Both native objects and New Tab CSS actions compile, 33 patches round-trip in scratch, port contracts 52/52, repository tests 435/435, Electron smoke PASS. Preserve the external checkout and full-build graph; final browser build/runtime remain user-owned.
+
+### 2026-09-23 — Codex — Resource allowlist build fix
+- **Status / Branch:** source complete; user incremental build pending · `chromium-port`
+- **Touches:** native resource-allowlist generator, follow-up patch, build ledger
+- **Summary:** User's preserved incremental build reached 934/1266 but the VS 2026 `undname` text parser rejected an allowlisted-resource symbol. Patch 0031 decodes the exact MSVC `$0` A–P integer template encoding directly, with `undname` fallback for other forms. The failed generation action now succeeds with 18,863 IDs. All 31 patches reverse/reapply in scratch; patch contracts 50/50 and repository tests 433/433 pass. No full `chrome` target run; preserve the incremental graph.
+
+### 2026-09-23 — Codex — Batch 2 drag, manual sleep and Favorites settings follow-up
+- **Status / Branch:** source complete; user full build/runtime pending · `chromium-port`
+- **Touches:** native tab drag/controller, tab menu/discard, Chromium Settings Favorites management, clean New Tab, focused contracts
+- **Summary:** Patch 0030 adds attached background reorder, a 28/14 DIP release/reattach zone and animated pointer-following full-tab snapshot; a manual native discard menu command disabled on active/visible split tabs; and moves Favorite dimensions/editing to Settings while cleaning New Tab content. Five changed native objects compile; Settings and New Tab WebUI build/lint pass; 30-patch stack reverses/reapplies in scratch; patch suite 49/49, repository tests 432/432, Electron smoke PASS (three no-frame skips). Preserve the pinned checkout and incremental graph. Full `chrome` build and runtime acceptance remain user-owned.
+
+### 2026-09-21 — Codex — Native port Batch 2 lifecycle and interaction parity
+- **Status / Branch:** source pass complete; user full build/runtime pending · `chromium-port`
+- **Touches:** native Favorites model/grid/sidebar/NTP, background-tab drag targets, New Tab-button incognito menu, Memory Saver defaults, tab sleeping/loading visuals, focused port contracts
+- **Summary:** Items 6–10 are implemented in patch 0029 with focused production compilation, New Tab WebUI build/lint, patch suite 48/48, repository tests 431/431 and Electron smoke PASS. The user's first full build exposed a `tab_icon.obj` Skia/cc color-filter type mismatch; patch 0029 now uses `cc::ColorFilter::MakeMatrix`, and that object recompiles `[1/1]`. Full binary and runtime acceptance remain with the user. Background drags preserve modifier selection and stock active-tab detach timing; BookmarkModel, native split drag targets, OffTheRecord profiles and Chromium discard own their respective state. Full Profiles and Batch 3 remain deferred.
+
+### 2026-09-21 — Codex — Batch 1 native corrective follow-up
+- **Status / Branch:** rebuilt and packaged; B1-01 manual acceptance pending · `chromium-port`
+- **Touches:** native EmberGlass popup coverage/capture, context-menu geometry, Ctrl+Tab state, New Tab focus/favicon, final-tab lifecycle, focused port contracts and light artifact cleanup
+- **Summary:** User runtime review accepts B1-02, B1-03 and B1-05 through B1-08; B1-04 is intentionally not pursued further. B1-07 now separates the square product-logo favicon from the long NTP masthead and is runtime verified. B1-01 now removes the section fill and disables the transparent scroll layer that resolved black; the preserved 347-action build links/packages and all focused, repository and smoke gates pass, but the native popup still needs user acceptance. Batch 2 was not started.
+
+### 2026-09-19 — Codex — Native port Batch 1 foundations
+- **Status / Branch:** corrective follow-up in progress after user runtime review · `chromium-port`
+- **Touches:** Web Store/extension integration, native session and window lifecycle, New Tab/WebUI and Windows material, patch contracts and port ledger
+- **Summary:** Patch 0027 completed the original Batch 1 foundation slice, but user runtime review reopened B1-01, B1-02, B1-03, B1-05 and B1-07. Patch 0028 is being corrected against those screenshots; B1-04 is intentionally not being pushed further, while B1-06 and B1-08 remain accepted. Batch 2 has not started.
 
 ### 2026-09-12 — Codex — Native tab title and close alignment
 - **Status / Branch:** rebuilt and screen-captured · `chromium-port`

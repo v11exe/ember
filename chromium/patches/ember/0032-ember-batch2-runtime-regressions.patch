@@ -1,0 +1,237 @@
+diff --git a/chrome/browser/extensions/api/settings_private/prefs_util.cc b/chrome/browser/extensions/api/settings_private/prefs_util.cc
+index 0fbf5ee..d32ca4e 100644
+--- a/chrome/browser/extensions/api/settings_private/prefs_util.cc
++++ b/chrome/browser/extensions/api/settings_private/prefs_util.cc
+@@ -267,6 +267,10 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
+       settings_api::PrefType::kDictionary;
+   (*s_allowlist)[::prefs::kVerticalTabsEnabled] =
+       settings_api::PrefType::kBoolean;
++  (*s_allowlist)[::prefs::kEmberFavoritesColumns] =
++      settings_api::PrefType::kNumber;
++  (*s_allowlist)[::prefs::kEmberFavoritesRows] =
++      settings_api::PrefType::kNumber;
+   (*s_allowlist)[::prefs::kVerticalTabsExpandOnHoverEnabled] =
+       settings_api::PrefType::kBoolean;
+   (*s_allowlist)[::prefs::kTabSearchPinnedToTabstrip] =
+diff --git a/chrome/browser/ui/tab_ui_helper.cc b/chrome/browser/ui/tab_ui_helper.cc
+index 90c8439..a6aca5b 100644
+--- a/chrome/browser/ui/tab_ui_helper.cc
++++ b/chrome/browser/ui/tab_ui_helper.cc
+@@ -292,10 +292,10 @@ void TabUIHelper::OnVisibilityChanged(content::Visibility visiblity) {
+ }
+ 
+ void TabUIHelper::WasDiscarded() {
+-  // Notify observers that the tab should update its UI to show discard status.
+-  if (ShouldShowDiscardStatus()) {
+-    tab_ui_change_callbacks_.Notify();
+-  }
++  // Even an explicit EXTERNAL discard must refresh the favicon, title and
++  // sleeping marker. ShouldShowDiscardStatus() only gates Chrome's proactive
++  // status treatment, not the tab's actual discarded state.
++  tab_ui_change_callbacks_.Notify();
+ }
+ 
+ void TabUIHelper::DidFinishNavigation(
+diff --git a/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.cc b/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.cc
+index 18ad1be..d5931f7 100644
+--- a/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.cc
++++ b/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.cc
+@@ -79,12 +79,14 @@
+ #include "ui/gfx/image/image.h"
+ #include "ui/gfx/image/image_skia_operations.h"
+ #include "ui/gfx/range/range.h"
+-#include "ui/snapshot/snapshot.h"
+ #include "ui/views/background.h"
++#include "ui/views/border.h"
+ #include "ui/views/controls/image_view.h"
++#include "ui/views/controls/label.h"
+ #include "ui/views/drag_utils.h"
+ #include "ui/views/event_monitor.h"
+ #include "ui/views/interaction/element_tracker_views.h"
++#include "ui/views/layout/box_layout.h"
+ #include "ui/views/view.h"
+ #include "ui/views/view_tracker.h"
+ #include "ui/views/widget/widget.h"
+@@ -1053,7 +1055,8 @@ bool TabDragController::UpdateEmberFloatingBackgroundTab(
+   }
+ 
+   TabSlotView* dragged_view = drag_data_.source_view_drag_data()->attached_view;
+-  if (!dragged_view) {
++  Tab* source_tab = views::AsViewClass<Tab>(dragged_view);
++  if (!source_tab) {
+     return false;
+   }
+   const gfx::Size tab_size = dragged_view->size();
+@@ -1073,64 +1076,64 @@ bool TabDragController::UpdateEmberFloatingBackgroundTab(
+     params.bounds = gfx::Rect(origin, tab_size);
+     ember_floating_tab_widget_ = std::make_unique<views::Widget>();
+     ember_floating_tab_widget_->Init(std::move(params));
+-    auto image_view = std::make_unique<views::ImageView>();
+-    image_view->SetBackground(views::CreateRoundedRectBackground(
+-        SkColorSetARGB(0xEE, 0x33, 0x2A, 0x26), 8));
+-    ember_floating_tab_image_ =
+-        ember_floating_tab_widget_->SetContentsView(std::move(image_view));
++    // Build a live native Views tab, not a screenshot of a previous frame.
++    // Its favicon/title continue to reflect the source while it is dragged.
++    auto tab_surface = std::make_unique<views::View>();
++    tab_surface->SetBackground(views::CreateRoundedRectBackground(
++        SkColorSetARGB(0xF5, 0x36, 0x2B, 0x25), 8));
++    tab_surface->SetBorder(views::CreateRoundedRectBorder(
++        1, 8, SkColorSetARGB(0x88, 0xFF, 0x8A, 0x42)));
++    auto* layout =
++        tab_surface->SetLayoutManager(std::make_unique<views::BoxLayout>(
++            views::BoxLayout::Orientation::kHorizontal, gfx::Insets::VH(0, 11),
++            7));
++    layout->set_cross_axis_alignment(views::LayoutAlignment::kCenter);
++    ember_floating_tab_favicon_ =
++        tab_surface->AddChildView(std::make_unique<views::ImageView>());
++    ember_floating_tab_favicon_->SetImageSize(gfx::Size(16, 16));
++    ember_floating_tab_title_ =
++        tab_surface->AddChildView(std::make_unique<views::Label>());
++    ember_floating_tab_title_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++    ember_floating_tab_title_->SetElideBehavior(gfx::ELIDE_TAIL);
++    ember_floating_tab_title_->SetEnabledColor(SK_ColorWHITE);
++    layout->SetFlexForView(ember_floating_tab_title_, 1);
++    ember_floating_tab_widget_->SetContentsView(std::move(tab_surface));
+     ember_floating_source_view_ =
+         std::make_unique<views::ViewTracker>(dragged_view);
+-
+-    gfx::Rect capture_bounds = dragged_view->GetBoundsInScreen();
+-    const gfx::Rect window_bounds =
+-        source_context_->GetWidget()->GetWindowBoundsInScreen();
+-    capture_bounds.Offset(-window_bounds.x(), -window_bounds.y());
+-    const int generation = ++ember_floating_tab_generation_;
+-    ui::GrabViewSnapshot(
+-        source_context_->GetWidget()->GetNativeView(), capture_bounds,
+-        base::BindOnce(
+-            [](base::WeakPtr<TabDragController> controller, int generation,
+-               gfx::Image snapshot) {
+-              if (!controller || !controller->ember_floating_tab_image_ ||
+-                  controller->ember_floating_tab_generation_ != generation ||
+-                  snapshot.IsEmpty()) {
+-                return;
+-              }
+-              controller->ember_floating_tab_image_->SetImage(
+-                  ui::ImageModel::FromImageSkia(snapshot.AsImageSkia()));
+-              if (views::View* original =
+-                      controller->ember_floating_source_view_->view()) {
+-                controller->ember_floating_source_created_layer_ =
+-                    !original->layer();
+-                if (controller->ember_floating_source_created_layer_) {
+-                  original->SetPaintToLayer();
+-                  original->layer()->SetFillsBoundsOpaquely(false);
+-                }
+-                controller->ember_floating_source_original_opacity_ =
+-                    original->layer()->opacity();
+-                original->layer()->SetOpacity(0.f);
+-              }
+-            },
+-            weak_factory_.GetWeakPtr(), generation));
++    ember_floating_source_created_layer_ = !dragged_view->layer();
++    if (ember_floating_source_created_layer_) {
++      dragged_view->SetPaintToLayer();
++      dragged_view->layer()->SetFillsBoundsOpaquely(false);
++    }
++    ember_floating_source_original_opacity_ = dragged_view->layer()->opacity();
++    dragged_view->layer()->SetOpacity(0.f);
+ 
+     ember_floating_tab_widget_->Show();
+ #if defined(USE_AURA)
+     ui::Layer* layer = ember_floating_tab_widget_->GetNativeWindow()->layer();
+     layer->SetOpacity(0.f);
++    const gfx::Rect source_bounds = dragged_view->GetBoundsInScreen();
++    gfx::Transform from_strip;
++    from_strip.Translate(source_bounds.x() - origin.x(),
++                         source_bounds.y() - origin.y());
++    layer->SetTransform(from_strip);
+     ui::ScopedLayerAnimationSettings animation(layer->GetAnimator());
+     animation.SetTransitionDuration(base::Milliseconds(180));
+     animation.SetTweenType(gfx::Tween::FAST_OUT_SLOW_IN);
+     layer->SetOpacity(1.f);
++    layer->SetTransform(gfx::Transform());
+ #endif
+   } else {
+     ember_floating_tab_widget_->SetBounds(gfx::Rect(origin, tab_size));
+   }
++  ember_floating_tab_favicon_->SetImage(source_tab->data().favicon);
++  ember_floating_tab_title_->SetText(source_tab->data().title);
+   return true;
+ }
+ 
+ void TabDragController::CloseEmberFloatingBackgroundTab() {
+-  ++ember_floating_tab_generation_;
+-  ember_floating_tab_image_ = nullptr;
++  ember_floating_tab_favicon_ = nullptr;
++  ember_floating_tab_title_ = nullptr;
+   if (ember_floating_source_view_) {
+     if (views::View* original = ember_floating_source_view_->view()) {
+       if (original->layer()) {
+@@ -1422,6 +1425,17 @@ TabDragController::GetDragTargetForPoint(gfx::Point point_in_screen) {
+     return std::tuple(Liveness::kDeleted, nullptr, nullptr);
+   }
+ 
++  // The floating visual is an event-transparent popup, but Windows' window
++  // finder can still return its HWND instead of the browser underneath it.
++  // Background drags never detach the source tab, so resolve points inside
++  // that browser against its real HWND. This restores sidebar and split
++  // targets without changing ordinary selected-tab detach behavior.
++  if (is_background_tab_drag_ && source_context_->GetWidget() &&
++      source_context_->GetWidget()->GetWindowBoundsInScreen().Contains(
++          point_in_screen)) {
++    local_window = source_context_->GetWidget()->GetNativeWindow();
++  }
++
+   if (local_window && CanAttachTo(local_window)) {
+     BrowserView* browser_view =
+         BrowserView::GetBrowserViewForNativeWindow(local_window);
+diff --git a/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.h b/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.h
+index 27d6ba3..8a8e393 100644
+--- a/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.h
++++ b/chrome/browser/ui/views/tabs/dragging/tab_drag_controller.h
+@@ -51,6 +51,7 @@ class PresentationTimeRecorder;
+ }  // namespace ui
+ namespace views {
+ class ImageView;
++class Label;
+ class View;
+ class ViewTracker;
+ }  // namespace views
+@@ -638,11 +639,11 @@ class TabDragController : public views::WidgetObserver,
+   // explicit split/Favorites drop consumes the drag.
+   bool is_background_tab_drag_ = false;
+   std::unique_ptr<views::Widget> ember_floating_tab_widget_;
+-  raw_ptr<views::ImageView> ember_floating_tab_image_ = nullptr;
++  raw_ptr<views::ImageView> ember_floating_tab_favicon_ = nullptr;
++  raw_ptr<views::Label> ember_floating_tab_title_ = nullptr;
+   std::unique_ptr<views::ViewTracker> ember_floating_source_view_;
+   bool ember_floating_source_created_layer_ = false;
+   float ember_floating_source_original_opacity_ = 1.f;
+-  int ember_floating_tab_generation_ = 0;
+ 
+   // The selection model of `attached_context_` before the tabs were attached.
+   ui::ListSelectionModel selection_model_before_attach_;
+diff --git a/chrome/browser/ui/views/tabs/tab.cc b/chrome/browser/ui/views/tabs/tab.cc
+index 5aa12a4..02b476f 100644
+--- a/chrome/browser/ui/views/tabs/tab.cc
++++ b/chrome/browser/ui/views/tabs/tab.cc
+@@ -1340,7 +1340,9 @@ int Tab::GetWidthOfLargestSelectableRegion() const {
+ 
+ void Tab::UpdateForegroundColors() {
+   TabStyle::TabColors colors = tab_style_views()->CalculateTargetColors();
+-  title_->SetEnabledColor(colors.foreground_color);
++  title_->SetEnabledColor(data().is_tab_discarded && !IsActive()
++                              ? SkColorSetA(colors.foreground_color, 0x88)
++                              : colors.foreground_color);
+   close_button_->SetColors(colors);
+   alert_indicator_button_->OnParentTabButtonColorChanged();
+   // There may be no focus ring when the tab is closing.
+@@ -1415,6 +1417,9 @@ void Tab::OnTabDataChanged(TabChangeType tab_change_type,
+   tabs::TabData old(std::move(data_));
+   data_ = tab_data;
+   icon_->SetData(data_);
++  if (old.is_tab_discarded != data_.is_tab_discarded) {
++    UpdateForegroundColors();
++  }
+   icon_->SetCanPaintToLayer(controller_->CanPaintThrobberToLayer());
+   UpdateTabIconAttention();
+   if (tabs::ShouldUpdateAccessibleName(old, data_)) {

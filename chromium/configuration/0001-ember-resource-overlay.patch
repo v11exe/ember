@@ -10,7 +10,7 @@ diff --git a/build.py b/build.py
  from pathlib import Path
  
  sys.path.insert(0, str(Path(__file__).resolve().parent / 'ungoogled-chromium' / 'utils'))
-@@ -104,6 +106,61 @@ def _make_tmp_paths():
+@@ -104,6 +106,63 @@ def _make_tmp_paths():
          tmp_path.mkdir()
  
  
@@ -39,13 +39,15 @@ diff --git a/build.py b/build.py
 +            raise ValueError(f'Unsafe Ember resource destination: {destination_value}')
 +        if not source.is_file():
 +            raise FileNotFoundError(f'Missing Ember resource: {source}')
-+        if not destination.is_file():
-+            raise FileNotFoundError(f'Missing Chromium resource destination: {destination}')
++        if not destination.parent.is_dir():
++            raise FileNotFoundError(f'Missing Chromium resource directory: {destination.parent}')
++        if destination.exists() and not destination.is_file():
++            raise ValueError(f'Chromium resource destination is not a file: {destination}')
 +        source_bytes = source.read_bytes()
 +        overlay_hash.update(source_value.encode(ENCODING))
 +        overlay_hash.update(destination_value.encode(ENCODING))
 +        overlay_hash.update(source_bytes)
-+        if destination.read_bytes() != source_bytes:
++        if not destination.is_file() or destination.read_bytes() != source_bytes:
 +            shutil.copy2(source, destination)
 +            print(f'Copied Ember resource {source_value} to {destination_value}')
 +
@@ -72,7 +74,7 @@ diff --git a/build.py b/build.py
  def main():
      """CLI Entrypoint"""
      parser = argparse.ArgumentParser(description=__doc__)
-@@ -236,6 +293,8 @@ def main():
+@@ -236,6 +295,8 @@ def main():
              None
          )
  
@@ -81,7 +83,7 @@ diff --git a/build.py b/build.py
      # Check if rust-toolchain folder has been populated
      HOST_CPU_IS_64BIT = sys.maxsize > 2**32
      RUST_DIR_DST = source_tree / 'third_party' / 'rust-toolchain'
-@@ -272,9 +331,9 @@ def main():
+@@ -272,9 +333,9 @@ def main():
          with open(RUST_FLAG_FILE, 'w') as f:
              subprocess.run([source_tree / 'third_party' / 'rust-toolchain-x64' / 'rustc' / 'bin' / 'rustc.exe', '--version'], stdout=f)
  

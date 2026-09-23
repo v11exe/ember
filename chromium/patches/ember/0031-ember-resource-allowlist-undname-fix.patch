@@ -1,0 +1,89 @@
+diff --git a/tools/resources/generate_resource_allowlist.py b/tools/resources/generate_resource_allowlist.py
+index 94ea65e..a71cb1e 100644
+--- a/tools/resources/generate_resource_allowlist.py
++++ b/tools/resources/generate_resource_allowlist.py
+@@ -18,6 +18,7 @@ INPUTS and writes it to OUTPUT.
+ 
+ import argparse
+ import os
++import re
+ import subprocess
+ import sys
+ 
+@@ -61,7 +62,7 @@ def GetResourceAllowlistPDB(path):
+   pdbutil = subprocess.Popen(
+       [os.path.join(llvm_bindir, 'llvm-pdbutil'), 'dump', '-publics', path],
+       stdout=subprocess.PIPE)
+-  names = ''
++  names = set()
+   for line in pdbutil.stdout:
+     line = line.decode('utf8')
+     # Read a line of the form
+@@ -75,31 +76,48 @@ def GetResourceAllowlistPDB(path):
+     # Example: __profd_??$AllowlistedResource@$0BGPH@@ui@@YAXXZ
+     # C++ mangled names are supposed to begin with `?`, so check for that.
+     if 'AllowlistedResource' in sym_name and sym_name.startswith('?'):
+-      names += sym_name + '\n'
++      names.add(sym_name)
+   exit_code = pdbutil.wait()
+   if exit_code != 0:
+     raise Exception('llvm-pdbutil exited with exit code %d' % exit_code)
+ 
+-  undname = subprocess.Popen([os.path.join(llvm_bindir, 'llvm-undname')],
+-                             stdin=subprocess.PIPE,
+-                             stdout=subprocess.PIPE)
+-  stdout, _ = undname.communicate(names.encode('utf8'))
+   resource_ids = set()
+-  for line in stdout.split(b'\n'):
+-    line = line.decode('utf8')
+-    # Read a line of the form
+-    # "void __cdecl ui::AllowlistedResource<5484>(void)".
+-    prefix = ' ui::AllowlistedResource<'
+-    pos = line.find(prefix)
+-    if pos == -1:
++  # MSVC encodes non-type integer template arguments after `$0` as hexadecimal
++  # nibbles A-P. Parse this exact symbol shape directly: newer undname versions
++  # can change their human-readable spelling, and launching it once per symbol
++  # is expensive for a large PDB. Retain undname for other symbol shapes.
++  encoded_resource = re.compile(
++      r'^\?\?\$AllowlistedResource@\$0([A-P]+)@@ui@@YAXXZ$')
++  for name in names:
++    match = encoded_resource.fullmatch(name)
++    if match:
++      resource_id = 0
++      for digit in match.group(1):
++        resource_id = resource_id * 16 + ord(digit) - ord('A')
++      resource_ids.add(resource_id)
+       continue
+-    try:
+-      resource_ids.add(int(line[pos + len(prefix):line.rfind('>')]))
+-    except ValueError:
+-      continue
+-  exit_code = undname.wait()
+-  if exit_code != 0:
+-    raise Exception('llvm-undname exited with exit code %d' % exit_code)
++    undname = subprocess.Popen(['undname', name],
++                               stdout=subprocess.PIPE)
++    found = False
++    for line in undname.stdout:
++      line = line.decode('utf8')
++      # Read a line of the form
++      # "void __cdecl ui::AllowlistedResource<5484>(void)".
++      prefix = ' ui::AllowlistedResource<'
++      pos = line.find(prefix)
++      if pos == -1:
++        continue
++      try:
++        resource_ids.add(int(line[pos + len(prefix):line.rfind('>')]))
++      except ValueError:
++        continue
++      found = True
++      break
++    exit_code = undname.wait()
++    if exit_code != 0:
++      raise Exception('llvm-undname exited with exit code %d' % exit_code)
++    if not found:
++      raise Exception('Unexpected undname output for %r' % name)
+   return resource_ids
+ 
+ 

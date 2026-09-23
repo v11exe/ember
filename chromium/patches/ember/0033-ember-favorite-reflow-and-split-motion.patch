@@ -1,0 +1,450 @@
+diff --git a/chrome/browser/resources/new_tab_page_third_party/ember-newtab.css b/chrome/browser/resources/new_tab_page_third_party/ember-newtab.css
+index 993ad8e..1cdb334 100644
+--- a/chrome/browser/resources/new_tab_page_third_party/ember-newtab.css
++++ b/chrome/browser/resources/new_tab_page_third_party/ember-newtab.css
+@@ -24,7 +24,7 @@ body {
+   color: var(--text);
+   font-family: var(--font);
+   display: grid;
+-  place-items: start center;
++  place-items: center;
+   overflow: hidden;
+ }
+ ::selection { background: var(--accent-halo); }
+@@ -48,7 +48,7 @@ body {
+   to { opacity: 1; transform: none; }
+ }
+ 
+-.hero { position: relative; z-index: 1; width: min(680px, 90vw); text-align: center; margin-top: clamp(44px, 10vh, 116px); }
++.hero { position: relative; z-index: 1; width: min(680px, 90vw); text-align: center; margin-top: -6vh; }
+ 
+ /* ---------- logo ---------- */
+ .logo { margin-bottom: 14px; }
+@@ -119,58 +119,6 @@ body {
+ .liquid-glass-search > button:active { transform: scale(.94); }
+ .liquid-glass-search-glyph { display: grid; place-items: center; }
+ 
+-/* ---------- Favorites: one bookmark model, two synchronized surfaces ---------- */
+-.favorites { margin-top: 34px; text-align: left; }
+-.favorites__header { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 12px; }
+-.favorites__header h2 { margin: 0; color: rgba(255,255,255,.92); font: 650 13px/1 var(--font); letter-spacing: .02em; }
+-.favorites__controls { display: flex; align-items: center; gap: 8px; }
+-.favorites__controls label { display: flex; align-items: center; gap: 5px; color: rgba(255,255,255,.62); font: 600 10px/1 var(--font); }
+-.favorites__controls select,
+-.favorites__controls button,
+-.favorite-dialog__actions button {
+-  height: 27px; border: 1px solid rgba(255,255,255,.13); border-radius: 8px;
+-  background: rgba(255,255,255,.08); color: #fff; font: 600 11px/1 var(--font);
+-  outline: none;
+-}
+-.favorites__controls select { min-width: 44px; padding: 0 5px; }
+-.favorites__controls button { padding: 0 11px; cursor: pointer; }
+-.favorites__controls button:hover { background: rgba(255,255,255,.15); }
+-.favorites__grid {
+-  display: grid; grid-template-columns: repeat(var(--favorite-columns, 2), minmax(0, 1fr));
+-  grid-auto-rows: var(--favorite-tile-height, 43px); gap: var(--favorite-gap, 10px);
+-  min-height: var(--favorite-grid-height, 98px);
+-}
+-.favorite-tile {
+-  position: relative; display: grid; place-items: center; min-width: 0; padding: 0;
+-  border: 1px solid rgba(255,255,255,.06); border-radius: 7px;
+-  background: rgba(255,255,255,.075); color: #fff; cursor: pointer;
+-  transition: background 130ms ease, border-color 130ms ease, transform 130ms ease;
+-}
+-.favorite-tile:hover, .favorite-tile[data-drop="true"] { background: rgba(255,255,255,.15); border-color: rgba(255,255,255,.22); }
+-.favorite-tile:active { transform: scale(.97); }
+-.favorite-tile--empty { background: rgba(255,255,255,.018); border-style: dashed; cursor: default; }
+-.favorite-tile img { width: 19px; height: 19px; object-fit: contain; }
+-.favorite-tile__remove {
+-  position: absolute; top: 3px; right: 4px; width: 18px; height: 18px; padding: 0;
+-  border: 0; border-radius: 50%; background: rgba(0,0,0,.34); color: rgba(255,255,255,.86);
+-  opacity: 0; cursor: pointer; font: 13px/18px var(--font); transition: opacity 100ms ease;
+-}
+-.favorite-tile:hover .favorite-tile__remove, .favorite-tile__remove:focus-visible { opacity: 1; }
+-#favorite-dialog { width: min(380px, 86vw); padding: 0; border: 1px solid rgba(255,255,255,.2); border-radius: 16px; background: rgba(28,31,38,.94); color: #fff; box-shadow: 0 24px 80px rgba(0,0,0,.5); }
+-#favorite-dialog::backdrop { background: rgba(0,0,0,.38); backdrop-filter: blur(8px); }
+-#favorite-form { display: grid; gap: 15px; padding: 22px; }
+-#favorite-form h2 { margin: 0 0 2px; font: 650 17px/1.2 var(--font); }
+-#favorite-form label { display: grid; gap: 7px; color: rgba(255,255,255,.72); font: 600 11px/1 var(--font); }
+-#favorite-form input { height: 38px; padding: 0 11px; border: 1px solid rgba(255,255,255,.14); border-radius: 9px; background: rgba(255,255,255,.08); color: #fff; outline: none; font: 500 13px/1 var(--font); }
+-#favorite-form input:focus { border-color: rgba(255,255,255,.38); }
+-.favorite-dialog__actions { display: flex; justify-content: flex-end; gap: 8px; }
+-.favorite-dialog__actions button { padding: 0 13px; cursor: pointer; }
+-
+-@media (max-height: 700px) {
+-  .hero { margin-top: 28px; }
+-  .favorites { margin-top: 22px; }
+-}
+-
+ @media (prefers-reduced-motion: reduce) {
+   * { transition: none !important; animation: none !important; }
+   .liquid-glass-root { transform: none !important; }
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+index 0b05b42..59f2d31 100644
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -345,6 +345,7 @@
+ #include "ui/color/color_id.h"
+ #include "ui/compositor/layer.h"
+ #include "ui/compositor/paint_recorder.h"
++#include "ui/compositor/scoped_layer_animation_settings.h"
+ #include "ui/content_accelerators/accelerator_util.h"
+ #include "ui/display/screen.h"
+ #include "ui/events/event_utils.h"
+@@ -819,6 +820,9 @@ class EmberFavoriteButton : public views::LabelButton {
+   EmberFavoriteButton& operator=(const EmberFavoriteButton&) = delete;
+   ~EmberFavoriteButton() override = default;
+ 
++  void SetFavoriteNodeId(int64_t id) { favorite_node_id_ = id; }
++  int64_t favorite_node_id() const { return favorite_node_id_; }
++
+   void SetOpen(bool is_open) {
+     if (is_open_ == is_open) {
+       return;
+@@ -878,6 +882,7 @@ class EmberFavoriteButton : public views::LabelButton {
+   }
+ 
+  private:
++  int64_t favorite_node_id_ = 0;
+   int TargetFillAlpha() const {
+     if (is_drop_target_) {
+       return 0x42;
+@@ -991,7 +996,8 @@ bool IsEmberFavoriteMatch(const GURL& favorite_url, const GURL& tab_url) {
+ 
+ class EmberFavoritesDropTargetController final : public TabDragTarget {
+  public:
+-  using PreviewCallback = base::RepeatingCallback<void(std::optional<size_t>)>;
++  using PreviewCallback = base::RepeatingCallback<void(std::optional<size_t>,
++                                                       content::WebContents*)>;
+   using DropCallback =
+       base::RepeatingCallback<void(content::WebContents*, size_t)>;
+ 
+@@ -1061,9 +1067,9 @@ class EmberFavoritesDropTargetController final : public TabDragTarget {
+ 
+  private:
+   void SetTarget(std::optional<size_t> index, content::WebContents* contents) {
+-    if (target_index_ != index) {
++    if (target_index_ != index || dragged_contents_ != contents) {
+       target_index_ = index;
+-      preview_callback_.Run(index);
++      preview_callback_.Run(index, contents);
+     }
+     dragged_contents_ = contents;
+   }
+@@ -1905,7 +1911,11 @@ BrowserView::~BrowserView() {
+   ember_favorite_urls_.clear();
+   ember_favorite_titles_.clear();
+   ember_favorite_buttons_.clear();
+-  ember_favorite_slots_.clear();
++  ember_favorite_button_urls_.clear();
++  ember_favorite_preview_button_ = nullptr;
++  ember_favorite_preview_index_.reset();
++  ember_favorite_preview_title_.clear();
++  ember_favorite_preview_icon_ = gfx::ImageSkia();
+   ember_sidebar_ = nullptr;
+   ember_sidebar_address_row_ = nullptr;
+   ember_sidebar_address_ = nullptr;
+@@ -4036,12 +4046,40 @@ void BrowserView::RebuildEmberFavorites(bool force) {
+     return;
+   }
+ 
++  // Record the rendered positions before rebuilding. The bookmark order is
++  // authoritative, but a drag preview temporarily inserts a new visual tile.
++  std::map<int64_t, gfx::Rect> previous_bounds;
++  for (views::LabelButton* button : ember_favorite_buttons_) {
++    auto* favorite_button = static_cast<EmberFavoriteButton*>(button);
++    previous_bounds[favorite_button->favorite_node_id()] =
++        button->parent()->GetBoundsInScreen();
++  }
++  if (ember_favorite_preview_button_) {
++    previous_bounds[0] =
++        ember_favorite_preview_button_->parent()->GetBoundsInScreen();
++  }
++
++  // No empty Favorite is painted. A tab drag inserts one temporary tile at
++  // the hovered reading-order position, which pushes its neighbors aside.
++  const bool show_preview = ember_favorite_preview_index_.has_value() &&
++                            !ember_favorite_preview_title_.empty();
++  if (show_preview) {
++    const size_t index =
++        std::min(*ember_favorite_preview_index_, favorite_nodes.size());
++    if (favorite_nodes.size() < visible_capacity) {
++      favorite_nodes.insert(favorite_nodes.begin() + index, nullptr);
++    } else if (index < favorite_nodes.size()) {
++      favorite_nodes[index] = nullptr;
++    }
++  }
++
+   ember_favorites_columns_ = columns;
+   ember_favorites_rows_ = rows;
+   ember_favorite_urls_ = favorite_urls;
+   ember_favorite_titles_ = favorite_titles;
+   ember_favorite_buttons_.clear();
+-  ember_favorite_slots_.clear();
++  ember_favorite_button_urls_.clear();
++  ember_favorite_preview_button_ = nullptr;
+   ember_sidebar_favorites_->RemoveAllChildViews();
+   const int gap = ember_favorites::GetGridGap(rows);
+   const int tile_height = ember_favorites::GetGridTileHeight(rows);
+@@ -4051,9 +4089,9 @@ void BrowserView::RebuildEmberFavorites(bool force) {
+       views::BoxLayout::Orientation::kVertical, gfx::Insets(), gap));
+   views::View* row = nullptr;
+   views::BoxLayout* row_layout = nullptr;
+-  for (size_t index = 0; index < visible_capacity; ++index) {
+-    const bookmarks::BookmarkNode* child =
+-        index < favorite_nodes.size() ? favorite_nodes[index] : nullptr;
++  for (size_t index = 0; index < favorite_nodes.size(); ++index) {
++    const bookmarks::BookmarkNode* child = favorite_nodes[index];
++    const bool is_preview = show_preview && !child;
+     if (index % columns == 0) {
+       row = ember_sidebar_favorites_->AddChildView(
+           std::make_unique<views::View>());
+@@ -4068,14 +4106,19 @@ void BrowserView::RebuildEmberFavorites(bool force) {
+                   &BrowserView::OpenEmberFavorite,
+                   weak_ptr_factory_.GetWeakPtr(), child->url()))
+             : std::make_unique<EmberFavoriteButton>(base::BindRepeating([] {}));
+-    button->SetPreferredSize(gfx::Size(1, tile_height));
++    static_cast<EmberFavoriteButton*>(button.get())
++        ->SetFavoriteNodeId(child ? child->id() : 0);
+     button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+     button->SetFocusRingCornerRadius(kEmberFavoriteCornerRadius);
+     if (child) {
++      std::u16string title = child->GetTitle();
++      if (title.empty()) {
++        title = base::UTF8ToUTF16(EmberFavoriteHost(child->url()));
++      }
+       button->SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
+-      button->SetTooltipText(favorite_titles[index]);
++      button->SetTooltipText(title);
+       std::u16string accessible_name = u"Open ";
+-      accessible_name += favorite_titles[index];
++      accessible_name += title;
+       button->GetViewAccessibility().SetName(accessible_name);
+       const gfx::Image& favicon = ember_bookmark_model_->GetFavicon(child);
+       const gfx::ImageSkia source_favicon =
+@@ -4087,21 +4130,87 @@ void BrowserView::RebuildEmberFavorites(bool force) {
+               gfx::Size(19, 19));
+       button->SetImageModel(views::Button::STATE_NORMAL,
+                             ui::ImageModel::FromImageSkia(resized));
+-    } else {
+-      button->SetEnabled(false);
++    } else if (is_preview) {
++      button->SetTooltipText(ember_favorite_preview_title_);
++      static_cast<EmberFavoriteButton*>(button.get())->SetDropTarget(true);
+       button->GetViewAccessibility().SetIsIgnored(true);
++      const gfx::ImageSkia favicon =
++          ember_favorite_preview_icon_.isNull()
++              ? *favicon::GetDefaultFavicon().ToImageSkia()
++              : ember_favorite_preview_icon_;
++      button->SetImageModel(views::Button::STATE_NORMAL,
++                            ui::ImageModel::FromImageSkia(
++                                gfx::ImageSkiaOperations::CreateResizedImage(
++                                    favicon, skia::ImageOperations::RESIZE_BEST,
++                                    gfx::Size(19, 19))));
+     }
+ 
+-    views::LabelButton* button_ptr = row->AddChildView(std::move(button));
+-    row_layout->SetFlexForView(button_ptr, 1);
+-    ember_favorite_slots_.push_back(button_ptr);
++    auto tile = std::make_unique<views::View>();
++    tile->SetPreferredSize(gfx::Size(1, tile_height));
++    tile->SetPaintToLayer();
++    tile->layer()->SetFillsBoundsOpaquely(false);
++    tile->SetLayoutManager(std::make_unique<views::FillLayout>());
++    views::LabelButton* button_ptr = tile->AddChildView(std::move(button));
++    views::View* tile_ptr = row->AddChildView(std::move(tile));
++    row_layout->SetFlexForView(tile_ptr, 1);
+     if (child) {
+       ember_favorite_buttons_.push_back(button_ptr);
++      ember_favorite_button_urls_.push_back(child->url());
++    } else if (is_preview) {
++      ember_favorite_preview_button_ = button_ptr;
++    }
++  }
++
++  // Invisible layout spacers preserve the configured cell width without
++  // making unfilled positions look like actionable shortcuts.
++  if (row && favorite_nodes.size() % columns != 0) {
++    for (size_t remaining = columns - favorite_nodes.size() % columns;
++         remaining > 0; --remaining) {
++      views::View* spacer = row->AddChildView(std::make_unique<views::View>());
++      spacer->SetPreferredSize(gfx::Size(1, tile_height));
++      row_layout->SetFlexForView(spacer, 1);
+     }
+   }
+ 
+   UpdateEmberFavoriteOpenStates();
+   ember_sidebar_favorites_->InvalidateLayout();
++  if (GetWidget() && !previous_bounds.empty() &&
++      !gfx::Animation::PrefersReducedMotion()) {
++    GetWidget()->GetRootView()->DeprecatedLayoutImmediately();
++    auto animate_tile = [&previous_bounds](views::LabelButton* button) {
++      auto* favorite_button = static_cast<EmberFavoriteButton*>(button);
++      views::View* tile = button->parent();
++      ui::Layer* layer = tile->layer();
++      const gfx::Rect after = tile->GetBoundsInScreen();
++      auto before = previous_bounds.find(favorite_button->favorite_node_id());
++      if (before != previous_bounds.end() && !before->second.IsEmpty() &&
++          !after.IsEmpty()) {
++        gfx::Transform from;
++        from.Translate(before->second.x() - after.x(),
++                       before->second.y() - after.y());
++        from.Scale(
++            static_cast<float>(before->second.width()) / after.width(),
++            static_cast<float>(before->second.height()) / after.height());
++        layer->SetTransform(from);
++        ui::ScopedLayerAnimationSettings animation(layer->GetAnimator());
++        animation.SetTransitionDuration(base::Milliseconds(180));
++        animation.SetTweenType(gfx::Tween::FAST_OUT_SLOW_IN);
++        layer->SetTransform(gfx::Transform());
++      } else {
++        layer->SetOpacity(0.f);
++        ui::ScopedLayerAnimationSettings animation(layer->GetAnimator());
++        animation.SetTransitionDuration(base::Milliseconds(170));
++        animation.SetTweenType(gfx::Tween::FAST_OUT_SLOW_IN);
++        layer->SetOpacity(1.f);
++      }
++    };
++    for (views::LabelButton* button : ember_favorite_buttons_) {
++      animate_tile(button);
++    }
++    if (ember_favorite_preview_button_) {
++      animate_tile(ember_favorite_preview_button_);
++    }
++  }
+   ember_sidebar_favorites_->SchedulePaint();
+ }
+ 
+@@ -4139,10 +4248,13 @@ content::WebContents* BrowserView::FindEmberFavoriteTab(
+ }
+ 
+ void BrowserView::UpdateEmberFavoriteOpenStates() {
+-  const size_t count =
+-      std::min(ember_favorite_urls_.size(), ember_favorite_buttons_.size());
++  // A full-grid preview can temporarily omit the replaced Bookmark button.
++  // Match each painted button to its own URL, never to the stored list index.
++  const size_t count = std::min(ember_favorite_button_urls_.size(),
++                                ember_favorite_buttons_.size());
+   for (size_t index = 0; index < count; ++index) {
+-    const bool is_open = FindEmberFavoriteTab(ember_favorite_urls_[index]);
++    const bool is_open =
++        FindEmberFavoriteTab(ember_favorite_button_urls_[index]);
+     static_cast<EmberFavoriteButton*>(ember_favorite_buttons_[index].get())
+         ->SetOpen(is_open);
+   }
+@@ -4183,11 +4295,30 @@ void BrowserView::OpenEmberFavorite(GURL favorite_url) {
+   chrome::AddTabAt(browser_.get(), favorite_url, -1, true);
+ }
+ 
+-void BrowserView::SetEmberFavoriteDropPreview(std::optional<size_t> index) {
+-  for (size_t slot = 0; slot < ember_favorite_slots_.size(); ++slot) {
+-    static_cast<EmberFavoriteButton*>(ember_favorite_slots_[slot].get())
+-        ->SetDropTarget(index.has_value() && *index == slot);
++void BrowserView::SetEmberFavoriteDropPreview(std::optional<size_t> index,
++                                              content::WebContents* contents) {
++  if (!index || !contents) {
++    if (!ember_favorite_preview_index_) {
++      return;
++    }
++    ember_favorite_preview_index_.reset();
++    ember_favorite_preview_title_.clear();
++    ember_favorite_preview_icon_ = gfx::ImageSkia();
++  } else {
++    if (ember_favorite_preview_index_ == index) {
++      return;
++    }
++    ember_favorite_preview_index_ = index;
++    ember_favorite_preview_title_ = contents->GetTitle();
++    if (ember_favorite_preview_title_.empty()) {
++      ember_favorite_preview_title_ =
++          base::UTF8ToUTF16(EmberFavoriteHost(contents->GetVisibleURL()));
++    }
++    const gfx::Image icon = favicon::TabFaviconFromWebContents(contents);
++    ember_favorite_preview_icon_ =
++        icon.IsEmpty() ? gfx::ImageSkia() : icon.AsImageSkia();
+   }
++  RebuildEmberFavorites(/*force=*/true);
+ }
+ 
+ void BrowserView::AddDraggedTabToEmberFavorites(content::WebContents* contents,
+@@ -4203,12 +4334,14 @@ void BrowserView::AddDraggedTabToEmberFavorites(content::WebContents* contents,
+   if (title.empty()) {
+     title = base::UTF8ToUTF16(EmberFavoriteHost(url));
+   }
+-  for (const bookmarks::BookmarkNode* existing :
+-       ember_favorites::GetNodes(ember_bookmark_model_)) {
+-    if (existing->url() == url) {
+-      ember_favorites::Move(ember_bookmark_model_, existing->id(), index);
+-      return;
+-    }
++  const size_t capacity = static_cast<size_t>(
++      ember_favorites::GetColumns(browser_->profile()->GetPrefs()) *
++      ember_favorites::GetRows(browser_->profile()->GetPrefs()));
++  const auto existing = ember_favorites::GetNodes(ember_bookmark_model_);
++  if (existing.size() >= capacity && index < existing.size()) {
++    // Match Electron's full-grid drop: replace the hovered Favorite, while
++    // changing grid dimensions alone never removes hidden saved entries.
++    ember_favorites::Remove(ember_bookmark_model_, existing[index]->id());
+   }
+   ember_favorites::Add(ember_bookmark_model_, url, title, index);
+ }
+diff --git a/chrome/browser/ui/views/frame/browser_view.h b/chrome/browser/ui/views/frame/browser_view.h
+index 982eb51..9884d28 100644
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -57,6 +57,7 @@
+ #include "ui/base/metadata/metadata_header_macros.h"
+ #include "ui/base/mojom/window_show_state.mojom-forward.h"
+ #include "ui/base/pointer/touch_ui_controller.h"
++#include "ui/gfx/image/image_skia.h"
+ #include "ui/gfx/native_ui_types.h"
+ #include "ui/views/controls/button/button.h"
+ #include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
+@@ -936,7 +937,8 @@ class BrowserView : public BrowserWindow,
+   void UpdateEmberFavoriteOpenStatesForProfile();
+   content::WebContents* FindEmberFavoriteTab(const GURL& favorite_url) const;
+   void OpenEmberFavorite(GURL favorite_url);
+-  void SetEmberFavoriteDropPreview(std::optional<size_t> index);
++  void SetEmberFavoriteDropPreview(std::optional<size_t> index,
++                                   content::WebContents* contents);
+   void AddDraggedTabToEmberFavorites(content::WebContents* contents,
+                                      size_t index);
+ 
+@@ -1213,7 +1215,11 @@ class BrowserView : public BrowserWindow,
+   std::vector<GURL> ember_favorite_urls_;
+   std::vector<std::u16string> ember_favorite_titles_;
+   std::vector<raw_ptr<views::LabelButton>> ember_favorite_buttons_;
+-  std::vector<raw_ptr<views::View>> ember_favorite_slots_;
++  std::vector<GURL> ember_favorite_button_urls_;
++  raw_ptr<views::LabelButton> ember_favorite_preview_button_ = nullptr;
++  std::optional<size_t> ember_favorite_preview_index_;
++  std::u16string ember_favorite_preview_title_;
++  gfx::ImageSkia ember_favorite_preview_icon_;
+   std::unique_ptr<TabDragTarget> ember_favorites_drop_target_;
+   int ember_favorites_columns_ = 0;
+   int ember_favorites_rows_ = 0;
+diff --git a/chrome/browser/ui/views/frame/multi_contents_drop_target_view.cc b/chrome/browser/ui/views/frame/multi_contents_drop_target_view.cc
+index db4df06..1a68e2b 100644
+--- a/chrome/browser/ui/views/frame/multi_contents_drop_target_view.cc
++++ b/chrome/browser/ui/views/frame/multi_contents_drop_target_view.cc
+@@ -224,6 +224,20 @@ void MultiContentsDropTargetView::Show(DropSide side,
+   // Bottom side should not show a nudge.
+   CHECK(side != DropSide::BOTTOM || state == DropTargetState::kFull);
+ 
++  // A background-tab drag can cross straight from one half to the other.
++  // Merely changing side_ while the slide is fully open swaps the two halves
++  // in one frame. Re-enter from the new edge so the existing layout animation
++  // compresses the page into its opposite half again.
++  const bool switching_background_side =
++      drag_type == DragType::kBackgroundTab && GetVisible() && side_ &&
++      *side_ != side;
++  if (switching_background_side && ShouldShowAnimation()) {
++    animation_.Reset(0);
++    SetVisible(false);
++  }
++  animation_.SetSlideDuration(base::Milliseconds(
++      switching_background_side ? 180 : kAnimationDurationMs));
++
+   // If transitioning from a nudge to full state, start a new animation.
+   if (state == DropTargetState::kNudgeToFull &&
+       state_ == MultiContentsDropTargetView::DropTargetState::kNudge) {

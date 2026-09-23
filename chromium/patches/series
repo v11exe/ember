@@ -24,3 +24,11 @@ ember/0023-ember-browser-chrome-cleanup.patch
 ember/0024-ember-browser-chrome-corrective.patch
 ember/0025-ember-native-browser-chrome-verified-repair.patch
 ember/0026-ember-native-tab-title-and-close-alignment.patch
+ember/0027-ember-batch1-foundations.patch
+ember/0028-ember-batch1-corrective-pass.patch
+ember/0029-ember-batch2-lifecycle-interactions.patch
+ember/0030-ember-drag-sleep-favorites-settings.patch
+ember/0031-ember-resource-allowlist-undname-fix.patch
+ember/0032-ember-batch2-runtime-regressions.patch
+ember/0033-ember-favorite-reflow-and-split-motion.patch
+ember/0034-ember-last-tab-transfer-crash.patch

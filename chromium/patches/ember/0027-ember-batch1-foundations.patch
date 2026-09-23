@@ -1,0 +1,791 @@
+diff --git a/chrome/browser/extensions/api/webstore_private/webstore_private_api.cc b/chrome/browser/extensions/api/webstore_private/webstore_private_api.cc
+--- a/chrome/browser/extensions/api/webstore_private/webstore_private_api.cc
++++ b/chrome/browser/extensions/api/webstore_private/webstore_private_api.cc
+@@ -18,6 +18,7 @@
+ #include "base/callback_list.h"
+ #include "base/check_is_test.h"
+ #include "base/functional/bind.h"
++#include "base/functional/callback_helpers.h"
+ #include "base/json/values_util.h"
+ #include "base/lazy_instance.h"
+ #include "base/memory/scoped_refptr.h"
+@@ -29,6 +30,7 @@
+ #include "base/values.h"
+ #include "base/version.h"
+ #include "base/version_info/version_info.h"
++#include "build/build_config.h"
+ #include "build/chromeos_buildflags.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/extensions/extension_allowlist_factory.h"
+diff --git a/chrome/browser/extensions/chrome_content_browser_client_extensions_part.cc b/chrome/browser/extensions/chrome_content_browser_client_extensions_part.cc
+--- a/chrome/browser/extensions/chrome_content_browser_client_extensions_part.cc
++++ b/chrome/browser/extensions/chrome_content_browser_client_extensions_part.cc
+@@ -682,7 +682,11 @@
+ std::vector<url::Origin> ChromeContentBrowserClientExtensionsPart::
+     GetOriginsRequiringDedicatedProcess() {
+   std::vector<url::Origin> list;
+-
++  // The Store's privileged install bindings must never share a site process
++  // with an ordinary page, including one reached through a store link.
++  list.push_back(url::Origin::Create(extension_urls::GetWebstoreLaunchURL()));
++  list.push_back(
++      url::Origin::Create(extension_urls::GetNewWebstoreLaunchURL()));
+   return list;
+ }
+ 
+diff --git a/chrome/browser/prefs/session_startup_pref.cc b/chrome/browser/prefs/session_startup_pref.cc
+--- a/chrome/browser/prefs/session_startup_pref.cc
++++ b/chrome/browser/prefs/session_startup_pref.cc
+@@ -70,12 +70,18 @@
+ #if BUILDFLAG(IS_CHROMEOS)
+   return SessionStartupPref::LAST;
+ #else
++#if BUILDFLAG(IS_WIN)
++  // Ember resumes normal browsing windows by default. The existing Chromium
++  // session service owns tab order, active tab, pin state and window bounds.
++  return SessionStartupPref::LAST;
++#else
+ #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)
+   if (features::kSetDefaultToContinueSession.Get()) {
+     return SessionStartupPref::LAST;
+   }
+ #endif
+   return SessionStartupPref::DEFAULT;
++#endif
+ #endif
+ }
+ 
+diff --git a/chrome/browser/resources/new_tab_page_third_party/BUILD.gn b/chrome/browser/resources/new_tab_page_third_party/BUILD.gn
+--- a/chrome/browser/resources/new_tab_page_third_party/BUILD.gn
++++ b/chrome/browser/resources/new_tab_page_third_party/BUILD.gn
+@@ -9,10 +9,18 @@
+ 
+ build_webui("build") {
+   grd_prefix = "new_tab_page_third_party"
+-  static_files = [ "new_tab_page_third_party.html" ]
++  static_files = [
++    "new_tab_page_third_party.html",
++    "ember-newtab.css",
++    "ember-icon.png",
++    "Necosmic-PersonalUse.otf",
++  ]
+   ts_files = [
+     "browser_proxy.ts",
+     "new_tab_page_third_party.ts",
++    "ember-brand.ts",
++    "ember-search.ts",
++    "ember-newtab.ts",
+   ]
+ 
+   mojo_files_deps = [ "//chrome/browser/ui/webui/new_tab_page_third_party:mojo_bindings_ts__generator" ]
+diff --git a/chrome/browser/search/search.cc b/chrome/browser/search/search.cc
+--- a/chrome/browser/search/search.cc
++++ b/chrome/browser/search/search.cc
+@@ -174,10 +174,11 @@
+ #if BUILDFLAG(IS_ANDROID)
+     const GURL local_url;
+ #else
+-    const bool default_is_google = DefaultSearchProviderIsGoogle(profile);
+-    const GURL local_url(default_is_google
+-                             ? chrome::ChromeUINewTabPageURLAsGURL()
+-                             : GURL(chrome::kChromeUINewTabPageThirdPartyURL));
++    // Ember owns the desktop New Tab surface independently of the selected
++    // default search provider. Searches still resolve through Chromium's
++    // TemplateURLService, but choosing Google must not swap Ember's NTP for
++    // Chromium's stock Google page.
++    const GURL local_url(chrome::kChromeUINewTabPageThirdPartyURL);
+ #endif
+     return NewTabURLDetails(local_url, NEW_TAB_URL_VALID);
+   }
+diff --git a/chrome/browser/ui/views/ember/ember_glass_view.cc b/chrome/browser/ui/views/ember/ember_glass_view.cc
+--- a/chrome/browser/ui/views/ember/ember_glass_view.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_view.cc
+@@ -38,6 +38,9 @@
+ #include "ui/views/background.h"
+ #include "ui/views/border.h"
+ #include "ui/views/bubble/bubble_dialog_delegate_view.h"
++#include "ui/views/controls/button/label_button.h"
++#include "ui/views/controls/label.h"
++#include "ui/views/view_utils.h"
+ #include "ui/views/view_tracker.h"
+ #include "ui/views/widget/widget.h"
+ 
+@@ -45,6 +48,50 @@
+ namespace {
+ 
+ constexpr float kBubbleCornerRadius = 14.0f;
++
++SkColor BubblePrimaryText(bool bright) {
++  return bright ? SkColorSetRGB(31, 34, 39)
++                : SkColorSetARGB(235, 255, 255, 255);
++}
++
++SkColor BubbleSecondaryText(bool bright) {
++  return bright ? SkColorSetRGB(86, 91, 98)
++                : SkColorSetARGB(170, 255, 255, 255);
++}
++
++// The extensions bubble is a separate Widget, so its labels cannot inherit
++// the captured page's luminance from the browser's ColorProvider. Apply the
++// same two foreground ramps as EmberGlassView after the backdrop is sampled.
++void ApplyBubbleForeground(views::View* view, bool bright) {
++  const SkColor primary = BubblePrimaryText(bright);
++  const SkColor secondary = BubbleSecondaryText(bright);
++  if (auto* button = views::AsViewClass<views::LabelButton>(view)) {
++    button->SetEnabledTextColors(secondary);
++    button->SetTextColor(views::Button::STATE_HOVERED, primary);
++    button->SetTextColor(views::Button::STATE_PRESSED, primary);
++    button->SetTextColor(views::Button::STATE_DISABLED,
++                         SkColorSetA(secondary, 110));
++    for (auto state : views::Button::kButtonStates) {
++      const auto model = button->GetImageModel(state);
++      if (!model || !model->IsVectorIcon()) continue;
++      const auto icon = model->GetVectorIcon();
++      const SkColor color = state == views::Button::STATE_DISABLED
++                                ? SkColorSetA(secondary, 110)
++                                : state == views::Button::STATE_NORMAL
++                                      ? secondary
++                                      : primary;
++      button->SetImageModel(state, ui::ImageModel::FromVectorIcon(
++                                       *icon.vector_icon(), color,
++                                       icon.icon_size(), icon.badge_icon()));
++    }
++    return;
++  }
++  if (auto* label = views::AsViewClass<views::Label>(view)) {
++    label->SetEnabledColor(primary);
++  }
++  for (views::View* child : view->children())
++    ApplyBubbleForeground(child, bright);
++}
+ 
+ class EmberGlassContentView : public views::View {
+  public:
+@@ -103,7 +150,12 @@
+       std::shared_ptr<EmberGlassTransition::Frame> frame)
+       : surface_(surface), frame_(std::move(frame)),
+         transition_(base::BindRepeating(&EmberGlassBubbleTransition::Apply,
+-                                        base::Unretained(this))), origin_(origin) {}
++                                        base::Unretained(this))), origin_(origin) {
++    // The bubble root uses FillLayout, so this lifetime/animation helper is
++    // expanded over the entire menu. It must never become the event target in
++    // front of the real extension rows and footer buttons.
++    SetCanProcessEventsWithinSubtree(false);
++  }
+   void Start() {
+     ArmClose();
+     transition_.Open(gfx::RectF(surface_->GetLocalBounds()), gfx::PointF(origin_), kBubbleCornerRadius);
+@@ -163,6 +215,7 @@
+   if (!panel) {
+     return;
+   }
++  ApplyBubbleForeground(surface, panel->bright_backdrop);
+   surface->SetBackground(
+       std::make_unique<EmberGlassBitmapBackground>(panel->bitmap, std::move(frame)));
+   surface->SchedulePaint();
+@@ -304,13 +357,11 @@
+ }
+ 
+ SkColor EmberGlassView::PrimaryTextColor() const {
+-  return bright_backdrop_ ? SkColorSetRGB(31, 34, 39)
+-                          : SkColorSetARGB(235, 255, 255, 255);
++  return BubblePrimaryText(bright_backdrop_);
+ }
+ 
+ SkColor EmberGlassView::SecondaryTextColor() const {
+-  return bright_backdrop_ ? SkColorSetRGB(86, 91, 98)
+-                          : SkColorSetARGB(170, 255, 255, 255);
++  return BubbleSecondaryText(bright_backdrop_);
+ }
+ 
+ SkColor EmberGlassView::InteractionFill(bool selected) const {
+diff --git a/chrome/browser/ui/views/extensions/extensions_menu_main_page_view.cc b/chrome/browser/ui/views/extensions/extensions_menu_main_page_view.cc
+--- a/chrome/browser/ui/views/extensions/extensions_menu_main_page_view.cc
++++ b/chrome/browser/ui/views/extensions/extensions_menu_main_page_view.cc
+@@ -40,6 +40,7 @@
+ #include "ui/views/bubble/bubble_border.h"
+ #include "ui/views/bubble/bubble_frame_view.h"
+ #include "ui/views/bubble/tooltip_icon.h"
++#include "ui/views/border.h"
+ #include "ui/views/controls/button/button.h"
+ #include "ui/views/controls/button/image_button.h"
+ #include "ui/views/controls/button/image_button_factory.h"
+@@ -149,8 +150,14 @@
+ 
+     SetOrientation(views::BoxLayout::Orientation::kVertical);
+     SetInsideBorderInsets(gfx::Insets::VH(vertical_margin, horizontal_margin));
++    // The bubble root already paints Ember's captured/refraction material.
++    // Keep list sections translucent so that material continues behind the
++    // installed-extension rows instead of being replaced by an opaque gray
++    // card. The low-alpha wash and rim retain the section boundary.
+     SetBackground(views::CreateRoundedRectBackground(
+-        kColorExtensionsMenuContainerBackground, kContainerBackgroundRadius));
++        SkColorSetARGB(20, 255, 255, 255), kContainerBackgroundRadius));
++    SetBorder(views::CreateRoundedRectBorder(
++        1, kContainerBackgroundRadius, SkColorSetARGB(34, 255, 255, 255)));
+   }
+   SectionContainer(const SectionContainer&) = delete;
+   const SectionContainer& operator=(const SectionContainer&) = delete;
+diff --git a/chrome/browser/ui/views/frame/browser_desktop_window_tree_host_win.cc b/chrome/browser/ui/views/frame/browser_desktop_window_tree_host_win.cc
+--- a/chrome/browser/ui/views/frame/browser_desktop_window_tree_host_win.cc
++++ b/chrome/browser/ui/views/frame/browser_desktop_window_tree_host_win.cc
+@@ -398,6 +398,11 @@
+     return false;
+   }
+ 
++  if (browser_view_->IsEmberNativeGlassActive()) {
++    *insets = gfx::Insets::TLBR(-1, -1, -1, -1);
++    return true;
++  }
++
+   // Don't extend the glass in at all if it won't be visible.
+   if (!ShouldUseNativeFrame() || GetWidget()->IsFullscreen() ||
+       ShouldBrowserCustomDrawTitlebar(browser_view_)) {
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -95,6 +95,7 @@
+ #include "chrome/browser/ui/browser_window_state.h"
+ #include "chrome/browser/ui/browser_window_theme_observer.h"
+ #include "chrome/browser/ui/color/chrome_color_id.h"
++#include "chrome/common/webui_url_constants.h"
+ #include "chrome/browser/ui/context_highlight/context_highlight_window_feature.h"
+ #include "chrome/browser/ui/dialogs/browser_dialogs.h"
+ #include "chrome/browser/ui/exclusive_access/exclusive_access_context.h"
+@@ -306,6 +307,7 @@
+ #include "content/public/browser/render_widget_host.h"
+ #include "content/public/browser/render_widget_host_view.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/common/url_constants.h"
+ #include "content/public/common/content_features.h"
+ #include "content/public/common/content_switches.h"
+ #include "content/public/common/drop_data.h"
+@@ -420,16 +422,22 @@
+ #include "chrome/browser/ui/views/theme_profile_key.h"
+ #include "ui/aura/client/window_parenting_client.h"
+ #include "ui/aura/window.h"
++#include "ui/compositor/compositor.h"
+ #include "ui/aura/window_tree_host.h"
+ #endif
+ 
+ #if BUILDFLAG(IS_WIN)
++#include <dwmapi.h>
++#include <windows.h>
++
+ #include "chrome/browser/taskbar/taskbar_decorator_win.h"
+ #include "chrome/browser/win/jumplist.h"
+ #include "chrome/browser/win/jumplist_factory.h"
+ #include "ui/gfx/color_palette.h"
+ #include "ui/gfx/win/hwnd_util.h"
+ #include "ui/native_theme/native_theme_win.h"
++#include "ui/views/widget/native_widget_private.h"
++#include "ui/views/win/hwnd_util.h"
+ #include "ui/views/win/scoped_fullscreen_visibility.h"
+ 
+ // To avoid conflicts with the macro from the Windows SDK...
+@@ -2833,6 +2841,13 @@
+     restore_focus_on_activation_ = true;
+   }
+ 
++#if BUILDFLAG(IS_WIN)
++  // Apply transparency only after the selected WebContents is attached to the
++  // active ContentsWebView. Doing this earlier updates the outgoing renderer
++  // and makes the first/new/returning NTP paths diverge.
++  UpdateEmberNativeBackdrop(new_contents);
++#endif
++
+   // Update all the UI bits.
+   UpdateTitleBar();
+ 
+@@ -3653,6 +3668,14 @@
+   }
+ 
+   UpdateEmberSidebar();
++
++#if BUILDFLAG(IS_WIN)
++  // A same-tab navigation does not pass through OnActiveTabChanged. Update the
++  // renderer and HWND backgrounds at commit so an Ember NTP frame cannot stay
++  // underneath the destination page (and ordinary pages never inherit the
++  // transparent NTP surface).
++  UpdateEmberNativeBackdrop(navigation_handle->GetWebContents());
++#endif
+ 
+   if (AppUsesUnframedMode() && !window_management_subscription_id_) {
+     SetWindowManagementPermissionSubscriptionForUnframedMode(
+@@ -7127,6 +7150,78 @@
+   FrameColorsChanged();
+ }
+ 
++#if BUILDFLAG(IS_WIN)
++void BrowserView::UpdateEmberNativeBackdrop(WebContents* contents) {
++  views::Widget* widget = GetWidget();
++  if (!widget || !GetIsNormalType()) return;
++  HWND hwnd = views::HWNDForWidget(widget);
++  if (!hwnd) return;
++
++  // The only page allowed to expose the native material in this batch is the
++  // Ember New Tab WebUI. Future internal pages can extend this predicate.
++  if (contents != GetActiveWebContents()) contents = GetActiveWebContents();
++  const GURL url = contents ? contents->GetLastCommittedURL() : GURL();
++  const bool active = url.SchemeIs(content::kChromeUIScheme) &&
++      (url.host() == chrome::kChromeUINewTabPageThirdPartyHost ||
++       url.host() == chrome::kChromeUINewTabHost);
++  // ContentsWebView owns an opaque kColorWebContentsBackground layer behind
++  // the renderer. Clear it for Ember's transparent WebUI as well as the HWND;
++  // otherwise the native acrylic is covered by a flat #3c3c3c rectangle.
++  if (auto* view = contents_web_view()) view->SetBackgroundVisible(!active);
++
++  // BrowserView normally paints an opaque frame-theme background beneath the
++  // WebContents. Remove that backing only for the NTP so its transparent
++  // renderer can reveal DWM's material. Recreate it before attaching an
++  // ordinary page; otherwise transparent areas in a website expose the HWND.
++  SetBackground(active ? nullptr : std::make_unique<ThemedBackground>(
++                                      this, ThemedBackground::kFrameTheme));
++
++  // Use the supported Windows 11 backdrop API. The legacy AccentPolicy
++  // acrylic filters the already-composited HWND and feeds Ember's transparent
++  // renderer back into subsequent frames, producing the recursive logo/search
++  // trails. DWMSBT_TRANSIENTWINDOW paints acrylic behind the client surface.
++  constexpr int kDwmwaSystemBackdropType = 38;
++  constexpr int kDwmSystemBackdropAuto = 0;
++  constexpr int kDwmSystemBackdropTransientWindow = 3;
++  const int backdrop_type =
++      active ? kDwmSystemBackdropTransientWindow : kDwmSystemBackdropAuto;
++  // Chromium owns this ordinary HWND. Clear only its compositor background
++  // while Ember's own transparent New Tab WebUI is visible; websites retain
++  // the normal opaque browser background and their own page paints.
++  // Widget::SetBackgroundColor() accepts a ColorId, not an SkColor. Passing
++  // SK_ColorTRANSPARENT there resolves palette entry zero and leaves an opaque
++  // compositor clear behind the page. Set the native widget's real SkColor so
++  // the renderer's transparent pixels reach DWM.
++  widget->native_widget_private()->SetBackgroundColor(
++      active ? SK_ColorTRANSPARENT
++             : widget->GetColorProvider()->GetColor(kColorToolbar));
++  const SkColor compositor_color =
++      active ? SK_ColorTRANSPARENT
++             : widget->GetColorProvider()->GetColor(kColorToolbar);
++  widget->GetCompositor()->SetBackgroundColor(compositor_color);
++  if (aura::Window* native_window = widget->GetNativeWindow()) {
++    native_window->SetTransparent(active);
++    if (aura::Window* root_window = native_window->GetRootWindow())
++      root_window->SetTransparent(active);
++  }
++  ember_native_backdrop_active_ = active;
++  ember_native_backdrop_initialized_ = true;
++  MARGINS margins = active ? MARGINS{-1, -1, -1, -1}
++                           : MARGINS{0, 0, 0, 0};
++  DwmExtendFrameIntoClientArea(hwnd, &margins);
++  // Let Chromium's HWND handler retain the same DWM margin mode through
++  // subsequent frame changes, and restore normal margins on exit.
++  SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
++               SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
++                   SWP_FRAMECHANGED);
++  // A frame-mode change can reset the system backdrop. Apply the requested
++  // type last so normal, maximized and restored NTPs converge on one state.
++  DwmSetWindowAttribute(
++      hwnd, static_cast<DWMWINDOWATTRIBUTE>(kDwmwaSystemBackdropType),
++      &backdrop_type, sizeof(backdrop_type));
++}
++#endif
++
+ void BrowserView::FrameColorsChanged() {
+   if (web_app_window_title_) {
+     SkColor frame_color =
+@@ -7136,7 +7231,24 @@
+     web_app_window_title_->SetBackgroundColor(frame_color);
+     web_app_window_title_->SetEnabledColor(caption_color);
+   }
++#if BUILDFLAG(IS_WIN)
++  if (ember_native_backdrop_initialized_) {
++    // Theme, activation and fullscreen transitions can repaint the widget's
++    // opaque clear color after the NTP has committed. Reassert the complete
++    // page/backdrop state instead of letting transparency work for one frame.
++    UpdateEmberNativeBackdrop(GetActiveWebContents());
++  } else {
++    GetWidget()->SetBackgroundColor(kColorToolbar);
++  }
++#else
+   GetWidget()->SetBackgroundColor(kColorToolbar);
++#endif
++#if BUILDFLAG(IS_WIN)
++  if (ember_native_backdrop_active_) {
++    GetWidget()->native_widget_private()->SetBackgroundColor(
++        SK_ColorTRANSPARENT);
++  }
++#endif
+ }
+ 
+ void BrowserView::UpdateAccessibleNameForAllTabs() {
+diff --git a/chrome/browser/ui/views/frame/browser_view.h b/chrome/browser/ui/views/frame/browser_view.h
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -293,6 +293,11 @@
+   void ShowEmberCtrlTabSwitcher(bool reverse);
+   void CommitEmberCtrlTabSwitcher();
+   void CancelEmberCtrlTabSwitcher();
++#if BUILDFLAG(IS_WIN)
++  bool IsEmberNativeGlassActive() const {
++    return ember_native_backdrop_active_;
++  }
++#endif
+ 
+   views::View* main_shadow_overlay() { return main_shadow_overlay_; }
+ 
+@@ -912,6 +917,9 @@
+   void CutCopyPaste(int command_id);
+ 
+   void UpdateEmberSidebar();
++#if BUILDFLAG(IS_WIN)
++  void UpdateEmberNativeBackdrop(content::WebContents* contents);
++#endif
+   void OnEmberSidebarAddressFocused();
+   void OnEmberSidebarAddressBlurred();
+   void SubmitEmberSidebarAddress(std::u16string text);
+@@ -1317,6 +1325,10 @@
+   // Handled by ContentsLayoutManager.
+   raw_ptr<views::View> contents_container_ = nullptr;
+   raw_ptr<ember::EmberGlassOverlayController> ember_glass_overlay_ = nullptr;
++#if BUILDFLAG(IS_WIN)
++  bool ember_native_backdrop_active_ = false;
++  bool ember_native_backdrop_initialized_ = false;
++#endif
+   std::vector<raw_ptr<tabs::TabInterface>> ember_tab_mru_;
+ 
+   // The view responsible for housing the contents of the vertical tab strip.
+diff --git a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
+--- a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
++++ b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
+@@ -7,8 +7,14 @@
+ #include <memory>
+ #include <utility>
+ 
++#include "base/functional/bind.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/values.h"
++#include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
+ #include "chrome/browser/browser_features.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+ #include "chrome/browser/themes/theme_properties.h"
+ #include "chrome/browser/themes/theme_service.h"
+ #include "chrome/browser/ui/color/chrome_color_id.h"
+@@ -27,11 +33,15 @@
+ #include "chrome/grit/new_tab_page_third_party_resources_map.h"
+ #include "chrome/grit/theme_resources.h"
+ #include "components/favicon_base/favicon_url_parser.h"
++#include "components/omnibox/browser/autocomplete_classifier.h"
++#include "components/omnibox/browser/autocomplete_input.h"
++#include "components/omnibox/browser/autocomplete_match.h"
+ #include "components/prefs/pref_service.h"
+ #include "components/search/ntp_features.h"
+ #include "components/strings/grit/components_strings.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/browser/web_ui_data_source.h"
++#include "content/public/browser/web_ui_message_handler.h"
+ #include "ui/base/accelerators/accelerator.h"
+ #include "ui/base/l10n/l10n_util.h"
+ #include "ui/color/color_provider.h"
+@@ -60,6 +70,42 @@
+ }
+ 
+ namespace {
++class EmberNewTabNavigationHandler : public content::WebUIMessageHandler {
++ public:
++  EmberNewTabNavigationHandler() = default;
++  ~EmberNewTabNavigationHandler() override = default;
++
++  void RegisterMessages() override {
++    web_ui()->RegisterMessageCallback(
++        "emberNavigate",
++        base::BindRepeating(&EmberNewTabNavigationHandler::Navigate,
++                            base::Unretained(this)));
++  }
++
++ private:
++  void Navigate(const base::ListValue& args) {
++    if (args.size() != 1) return;
++    const std::string* text = args[0].GetIfString();
++    if (!text || text->empty()) return;
++    BrowserWindowInterface* browser =
++        GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
++            web_ui()->GetWebContents());
++    if (!browser) return;
++
++    AutocompleteMatch match;
++    AutocompleteClassifierFactory::GetForProfile(browser->GetProfile())
++        ->Classify(AutocompleteInput::SanitizeString(base::UTF8ToUTF16(*text)),
++                   false, false, metrics::OmniboxEventProto::INVALID_SPEC,
++                   &match, nullptr);
++    if (!match.destination_url.is_valid() ||
++        match.destination_url.SchemeIs("javascript")) {
++      return;
++    }
++    browser->OpenGURL(match.destination_url,
++                      WindowOpenDisposition::CURRENT_TAB);
++  }
++};
++
+ void CreateAndAddNewTabPageThirdPartyUiHtmlSource(Profile* profile,
+                                                   WebContents* web_contents) {
+   content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
+@@ -158,12 +204,14 @@
+ }  // namespace
+ 
+ NewTabPageThirdPartyUI::NewTabPageThirdPartyUI(content::WebUI* web_ui)
+-    : ui::MojoWebUIController(web_ui, /*enable_chrome_send=*/false),
++    : ui::MojoWebUIController(web_ui, /*enable_chrome_send=*/true),
+       page_factory_receiver_(this),
+       most_visited_page_factory_receiver_(this),
+       profile_(Profile::FromWebUI(web_ui)),
+       web_contents_(web_ui->GetWebContents()),
+       navigation_start_time_(base::Time::Now()) {
++  web_ui->AddMessageHandler(std::make_unique<EmberNewTabNavigationHandler>());
++  web_contents_->SetPageBaseBackgroundColor(SK_ColorTRANSPARENT);
+   CreateAndAddNewTabPageThirdPartyUiHtmlSource(profile_, web_contents_);
+   content::URLDataSource::Add(
+       profile_, std::make_unique<FaviconSource>(
+diff --git a/chrome/common/extensions/api/_api_features.json b/chrome/common/extensions/api/_api_features.json
+--- a/chrome/common/extensions/api/_api_features.json
++++ b/chrome/common/extensions/api/_api_features.json
+@@ -1132,7 +1132,7 @@
+   "webstorePrivate": [{
+     "channel": "stable",
+     "contexts": ["web_page"],
+-    "matches": ["https://chromewebstore.9oo91e.qjz9zk/*"]
++    "matches": ["https://chromewebstore.google.com/*"]
+   }, {
+     // Used for webstore testing. See comment in
+     // chrome/common/extensions/webstore_override.cc
+diff --git a/chrome/renderer/chrome_render_frame_observer.cc b/chrome/renderer/chrome_render_frame_observer.cc
+--- a/chrome/renderer/chrome_render_frame_observer.cc
++++ b/chrome/renderer/chrome_render_frame_observer.cc
+@@ -279,6 +279,71 @@
+   if (frame->Parent() || frame->IsInFencedFrameTree())
+     return;
+ 
++#if BUILDFLAG(IS_WIN)
++  // The Store receives its privileged bindings in this renderer. Brand its
++  // real install controls here, in the page's execution context, rather than
++  // asking the browser process to inject into an untrusted frame (which is
++  // rejected by RenderFrameHostImpl::CanExecuteJavaScript()).
++  const GURL document_url = frame->GetDocument().Url();
++  if (document_url.SchemeIs("https") &&
++      document_url.host() == "chromewebstore.google.com" &&
++      document_url.EffectiveIntPort() == 443) {
++    render_frame()->ExecuteJavaScript(uR"JS(
++(() => {
++  if (window.__emberWebStoreBranding ||
++      location.origin !== 'https://chromewebstore.google.com' ||
++      !window.chrome?.webstorePrivate?.beginInstallWithManifest3 ||
++      !window.chrome?.management || !document.documentElement) return;
++  window.__emberWebStoreBranding = true;
++
++  function applyBranding() {
++    if (location.pathname.startsWith('/detail/')) {
++      for (const button of document.querySelectorAll('button')) {
++        const label = button.textContent.trim();
++        const replacement = label === 'Add to Chrome' ? 'Add to Ember' :
++            label === 'Remove from Chrome' ? 'Remove from Ember' : null;
++        if (!replacement) continue;
++        const walker = document.createTreeWalker(button, NodeFilter.SHOW_TEXT);
++        let node;
++        while ((node = walker.nextNode())) {
++          if (node.textContent.trim() === label) {
++            node.textContent = replacement;
++            break;
++          }
++        }
++      }
++    }
++
++    for (const info of document.querySelectorAll('[aria-label="Info"]')) {
++      if (info.textContent.includes(
++              'Switch to Chrome to install extensions and themes') &&
++          [...info.querySelectorAll('button')].some(
++              button => button.textContent.trim() === 'Install Chrome')) {
++        info.style.display = 'none';
++      }
++    }
++    const promo = document.getElementById('promo-header');
++    if (promo?.textContent.trim() === 'Switch to Chrome?') {
++      promo.closest('aside')?.style.setProperty('display', 'none');
++    }
++  }
++
++  let scheduled = false;
++  new MutationObserver(() => {
++    if (scheduled) return;
++    scheduled = true;
++    requestAnimationFrame(() => {
++      scheduled = false;
++      applyBranding();
++    });
++  }).observe(document.documentElement,
++             {childList: true, subtree: true, characterData: true});
++  applyBranding();
++})();
++)JS");
++  }
++#endif
++
+   if (!base::CommandLine::ForCurrentProcess()->HasSwitch("disable-search-engine-collection")) {
+     GURL osdd_url = frame->GetDocument().OpenSearchDescriptionURL();
+     if (!osdd_url.is_empty()) {
+diff --git a/extensions/browser/updater/extension_downloader.cc b/extensions/browser/updater/extension_downloader.cc
+--- a/extensions/browser/updater/extension_downloader.cc
++++ b/extensions/browser/updater/extension_downloader.cc
+@@ -158,7 +158,7 @@
+                                       const GURL& update_url) {
+   if (update_url.is_empty()) {
+     // Fill in default update URL.
+-    return std::nullopt;
++    return extension_urls::GetWebstoreUpdateUrl();
+   }
+ 
+   // Skip extensions with non-empty invalid update URLs.
+@@ -177,6 +177,11 @@
+   }
+ 
+ 
++  // Store-hosted extensions must not be downgraded to an insecure update URL.
++  if (extension_urls::IsWebstoreUpdateUrl(update_url) &&
++      !update_url.SchemeIsCryptographic()) {
++    return extension_urls::GetWebstoreUpdateUrl();
++  }
+   return update_url;
+ }
+ 
+@@ -347,6 +352,10 @@
+     AddToFetches(fetches_preparing, std::move(task));
+   pending_tasks_.clear();
+ 
++  for (auto& fetch_list : fetches_preparing) {
++    for (auto& fetch : fetch_list.second)
++      StartUpdateCheck(std::move(fetch));
++  }
+ }
+ 
+ void ExtensionDownloader::SetIdentityManager(
+diff --git a/extensions/browser/webstore_installer.cc b/extensions/browser/webstore_installer.cc
+--- a/extensions/browser/webstore_installer.cc
++++ b/extensions/browser/webstore_installer.cc
+@@ -483,6 +483,21 @@
+ 
+ void WebstoreInstaller::DownloadCrx(const ExtensionId& extension_id,
+                                     InstallSource source) {
++  download_url_ = GetWebstoreInstallURL(extension_id, source);
++  MaybeAppendAuthUserParameter(approval_->authuser, download_url_);
++
++  base::FilePath user_data_dir =
++      ExtensionsBrowserClient::Get()->GetUserDataDir();
++  base::FilePath download_path = user_data_dir.Append(kWebstoreDownloadFolder);
++
++  base::FilePath download_directory(g_download_directory_for_tests
++                                        ? *g_download_directory_for_tests
++                                        : download_path);
++
++  GetExtensionFileTaskRunner()->PostTaskAndReplyWithResult(
++      FROM_HERE,
++      base::BindOnce(&GetDownloadFilePath, download_directory, extension_id),
++      base::BindOnce(&WebstoreInstaller::StartDownload, this, extension_id));
+ }
+ 
+ // http://crbug.com/40957413
+@@ -640,6 +655,24 @@
+ void WebstoreInstaller::StartCrxInstaller(const DownloadItem& download) {
+   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+   DCHECK(!crx_installer_.get());
++
++  const InstallApproval* approval = GetAssociatedApproval(download);
++  DCHECK(approval);
++
++  crx_installer_ =
++      ExtensionsBrowserClient::Get()->CreateCrxInstallerFromDownloadItem(
++          browser_context_, download);
++
++  crx_installer_->set_expected_id(approval->extension_id);
++  crx_installer_->set_is_gallery_install(true);
++  crx_installer_->set_allow_silent_install(true);
++  crx_installer_->AddInstallerCallback(base::BindOnce(
++      &WebstoreInstaller::OnInstallerDone, weak_ptr_factory_.GetWeakPtr()));
++  if (approval->withhold_permissions) {
++    crx_installer_->set_withhold_permissions();
++  }
++
++  crx_installer_->InstallCrx(download.GetFullPath());
+ }
+ 
+ void WebstoreInstaller::ReportFailure(const std::string& error,
+diff --git a/extensions/common/api/_api_features.json b/extensions/common/api/_api_features.json
+--- a/extensions/common/api/_api_features.json
++++ b/extensions/common/api/_api_features.json
+@@ -338,7 +338,7 @@
+   }, {
+     "channel": "stable",
+     "contexts": ["web_page"],
+-    "matches": ["https://chromewebstore.9oo91e.qjz9zk/*"]
++    "matches": ["https://chromewebstore.google.com/*"]
+   }, {
+     // Used for webstore testing. See comment in
+     // chrome/common/extensions/webstore_override.cc
+diff --git a/extensions/common/extension_urls.cc b/extensions/common/extension_urls.cc
+--- a/extensions/common/extension_urls.cc
++++ b/extensions/common/extension_urls.cc
+@@ -46,8 +46,8 @@
+ const char kExtensionsDocsWhatsNewURL[] =
+     "https://developer.ch40me.qjz9zk/docs/extensions/whats-new";
+ const char kChromeWebstoreUpdateURL[] =
+-    "https://clients2.9oo91e.qjz9zk/service/update2/crx";
+-const char kChromeWebstoreApiURL[] = "https://chromewebstore.9oo91eapis.qjz9zk/";
++    "https://clients2.google.com/service/update2/crx";
++const char kChromeWebstoreApiURL[] = "https://chromewebstore.googleapis.com/";
+ 
+ const char kAppMenuUtmSource[] = "ext_app_menu";
+ const char kExtensionsMenuUtmSource[] = "ext_extensions_menu";
+diff --git a/third_party/search_engines_data/resources/definitions/prepopulated_engines.json b/third_party/search_engines_data/resources/definitions/prepopulated_engines.json
+--- a/third_party/search_engines_data/resources/definitions/prepopulated_engines.json
++++ b/third_party/search_engines_data/resources/definitions/prepopulated_engines.json
+@@ -172,11 +172,26 @@
+     },
+ 
+     "google": {
+-      "name": "No Search",
+-      "keyword": "nosearch",
+-      "favicon_url": "about:blank",
+-      "search_url": "http://{searchTerms}",
+-      "new_tab_url": "about:blank",
++      "name": "Google",
++      "keyword": "google.com",
++      "favicon_url": "https://www.google.com/images/branding/product/ico/googleg_alldp.ico",
++      "base_builtin_resource_id": "SEARCH_ENGINE_GOOGLE",
++      "search_url": "https://www.google.com/search?q={searchTerms}&ie={inputEncoding}",
++      "suggest_url": "https://suggestqueries.google.com/complete/search?client=chrome&q={searchTerms}",
++      "image_url": "{google:baseSearchByImageURL}upload",
++      "image_translate_url": "{google:baseSearchByImageURL}upload?filtertype=tr&{imageTranslateSourceLocale}{imageTranslateTargetLocale}",
++      "contextual_search_url": "{google:baseURL}_/contextualsearch?{google:contextualSearchVersion}{google:contextualSearchContextData}",
++      "image_url_post_params": "encoded_image={google:imageThumbnail},image_url={google:imageURL},sbisrc={google:imageSearchSource},original_width={google:imageOriginalWidth},original_height={google:imageOriginalHeight},processed_image_dimensions={google:processedImageDimensions}",
++      "image_translate_source_language_param_key": "sourcelang",
++      "image_translate_target_language_param_key": "targetlang",
++      "search_intent_params": ["si", "gs_ssp", "udm"],
++      "alternate_urls": [
++        "https://www.google.com/#q={searchTerms}",
++        "https://www.google.com/search#q={searchTerms}",
++        "https://www.google.com/webhp#q={searchTerms}",
++        "https://www.google.com/s#q={searchTerms}",
++        "https://www.google.com/s?q={searchTerms}"
++      ],
+       "type": "SEARCH_ENGINE_GOOGLE",
+       "preconnect_to_search_url" : "ALLOWED",
+       "prefetch_likely_navigations" : "ALLOWED",
+diff --git a/ui/webui/resources/tools/build_webui.gni b/ui/webui/resources/tools/build_webui.gni
+--- a/ui/webui/resources/tools/build_webui.gni
++++ b/ui/webui/resources/tools/build_webui.gni
+@@ -164,6 +164,7 @@
+     # Compute which static_files should be preprocessed.
+     non_preprocessed_files_filter = [
+       "*.jpg",
++      "*.otf",
+       "*.png",
+       "*.svg",
+     ]

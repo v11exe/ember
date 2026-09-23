@@ -69,6 +69,14 @@ test('the Ember patch series is ordered, local, and complete', () => {
     'ember/0024-ember-browser-chrome-corrective.patch',
     'ember/0025-ember-native-browser-chrome-verified-repair.patch',
     'ember/0026-ember-native-tab-title-and-close-alignment.patch',
+    'ember/0027-ember-batch1-foundations.patch',
+    'ember/0028-ember-batch1-corrective-pass.patch',
+    'ember/0029-ember-batch2-lifecycle-interactions.patch',
+    'ember/0030-ember-drag-sleep-favorites-settings.patch',
+    'ember/0031-ember-resource-allowlist-undname-fix.patch',
+    'ember/0032-ember-batch2-runtime-regressions.patch',
+    'ember/0033-ember-favorite-reflow-and-split-motion.patch',
+    'ember/0034-ember-last-tab-transfer-crash.patch',
   ]);
   for (const entry of entries) {
     assert.equal(fs.existsSync(path.join(port.PATCHES_ROOT, ...entry.split('/'))), true);
@@ -243,8 +251,8 @@ test('the visible product patch brands window, About, accessibility, and default
 
 test('the native resource overlay is path-safe and carries valid Ember raster and ICO assets', () => {
   const manifest = port.readResourceManifest();
-  assert.equal(manifest.files.length, 30);
-  assert.equal(new Set(manifest.files.map((item) => item.destination)).size, 30);
+  assert.equal(manifest.files.length, 37);
+  assert.equal(new Set(manifest.files.map((item) => item.destination)).size, 37);
   assert.match(port.resourceOverlayHash(manifest), /^[0-9a-f]{64}$/);
   assert.equal(
     manifest.files.some((item) => item.destination.endsWith('/chromium/win/chromium.ico')),
@@ -335,6 +343,13 @@ test('resource copying verifies exact destinations and the build hook rejects tr
     port.copyResourceOverlay(manifest, destinationRoot);
     assert.equal(fs.statSync(destination).mtimeMs, stableTime.getTime());
 
+    manifest.files.push({ source: 'asset.bin', destination: 'new.bin' });
+    assert.deepEqual(port.copyResourceOverlay(manifest, destinationRoot), ['target.bin', 'new.bin']);
+    assert.equal(fs.readFileSync(path.join(destinationRoot, 'new.bin'), 'utf8'), 'ember');
+    manifest.files.push({ source: 'asset.bin', destination: 'missing/target.bin' });
+    assert.throws(() => port.copyResourceOverlay(manifest, destinationRoot), /Missing Chromium resource directory/);
+    manifest.files.pop();
+
     const unsafeManifest = path.join(fixtureRoot, 'unsafe.json');
     fs.writeFileSync(unsafeManifest, JSON.stringify({
       schemaVersion: 1,
@@ -354,7 +369,7 @@ test('resource copying verifies exact destinations and the build hook rejects tr
   assert.match(configurationPatch, /\.ember-resource-overlay\.sha256/);
   assert.match(configurationPatch, /chrome_initial\/chrome_exe\.res/);
   assert.match(configurationPatch, /chrome_dll_resources\/chrome_dll\.res/);
-  assert.match(configurationPatch, /if destination\.read_bytes\(\) != source_bytes:/);
+  assert.match(configurationPatch, /if not destination\.is_file\(\) or destination\.read_bytes\(\) != source_bytes:/);
   assert.equal(port.isManagedConfigurationPath('build.py'), true);
   assert.equal(port.isManagedConfigurationPath('ember-resources/manifest.json'), true);
   assert.equal(port.isManagedConfigurationPath('ember-resources/foreign.bin'), false);
@@ -857,6 +872,274 @@ test('the native chrome follow-up keeps Forward visible and Web Store links publ
   assert.match(additions, /https:\/\/chromewebstore\.google\.com\/\?hl=\[GRITLANGCODE\]/);
   assert.match(additions, /https:\/\/chrome\.google\.com\/webstore/);
   assert.doesNotMatch(additions, /9oo91e\.qjz9zk\/webstore|chromewebstore\.9oo91e/);
+});
+
+test('Batch 1 keeps native transparency, Store branding, search, and extension menus safe', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0027-ember-batch1-foundations.patch'),
+    'utf8',
+  );
+  const additions = patchText.split(/\r?\n/)
+    .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
+    .join('\n');
+
+  assert.match(additions, /kDwmSystemBackdropTransientWindow = 3/);
+  assert.match(additions, /DwmSetWindowAttribute/);
+  assert.match(additions, /MARGINS\{0, 0, 0, 0\}/);
+  assert.match(additions, /Widget::SetBackgroundColor\(\) accepts a ColorId/);
+  assert.match(additions, /widget->native_widget_private\(\)->SetBackgroundColor/);
+  assert.match(additions, /widget->GetCompositor\(\)->SetBackgroundColor\(compositor_color\)/);
+  assert.match(additions, /native_window->SetTransparent\(active\)/);
+  assert.match(additions, /root_window->SetTransparent\(active\)/);
+  assert.doesNotMatch(additions, /widget->SetBackgroundColor\(\s*active \? SK_ColorTRANSPARENT/);
+  assert.doesNotMatch(additions, /AccentPolicy policy = \{active \? 4/);
+  assert.match(additions, /UpdateEmberNativeBackdrop\(navigation_handle->GetWebContents\(\)\)/);
+  assert.match(additions, /SetCanProcessEventsWithinSubtree\(false\)/);
+  assert.match(patchText, /chrome\/renderer\/chrome_render_frame_observer\.cc/);
+  assert.match(additions, /document_url\.host\(\) == "chromewebstore\.google\.com"/);
+  assert.match(additions, /render_frame\(\)->ExecuteJavaScript/);
+  assert.doesNotMatch(additions, /frame->ExecuteJavaScript/);
+  assert.match(additions, /"name": "Google"/);
+  assert.match(additions, /"keyword": "google\.com"/);
+  assert.match(additions, /https:\/\/www\.google\.com\/search\?q=\{searchTerms\}/);
+  assert.doesNotMatch(additions, /\{google:baseURL\}search\?q=\{searchTerms\}/);
+  assert.match(additions, /choosing Google must not swap Ember's NTP/);
+  assert.match(additions, /const GURL local_url\(chrome::kChromeUINewTabPageThirdPartyURL\)/);
+  assert.match(additions, /installed-extension rows instead of being replaced by an opaque gray/);
+  assert.match(additions, /SkColorSetARGB\(20, 255, 255, 255\)/);
+
+  const ntpCss = fs.readFileSync(
+    path.join(port.RESOURCES_ROOT, 'newtab', 'ember-newtab.css'), 'utf8');
+  const ntpSearch = fs.readFileSync(
+    path.join(port.RESOURCES_ROOT, 'newtab', 'ember-search.ts'), 'utf8');
+  assert.doesNotMatch(ntpCss, /\.ember-meteor\s*\{[^}]*filter:/s);
+  assert.doesNotMatch(ntpSearch, /feTurbulence|feDisplacementMap|backdropFilter/);
+  assert.match(ntpSearch, /repeatedly sampled Chromium's transparent surface/);
+});
+
+test('Batch 1 corrective pass keeps glass, menus, focus, and tab lifecycle coherent', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0028-ember-batch1-corrective-pass.patch'),
+    'utf8',
+  );
+  const additions = patchText.split(/\r?\n/)
+    .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
+    .join('\n');
+
+  assert.match(additions, /SetBackgroundColor\(std::nullopt\)/);
+  assert.match(additions, /ScrollWithLayers::kDisabled/);
+  assert.match(additions, /SetBackground\(nullptr\)/);
+  assert.match(additions, /preferred_row_width \+ kMenuInset \* 2/);
+  assert.match(additions, /MeasuredContentWidth\(\)/);
+  assert.match(additions, /gfx::GetStringWidth/);
+  assert.doesNotMatch(additions, /kMenuContentWidthPadding/);
+  assert.doesNotMatch(additions, /reserve_icon_column/);
+  assert.match(additions, /ConvertPointToScreen\(target_window/);
+  assert.match(additions, /switcher_panel_->SchedulePaint\(\)/);
+  assert.match(additions, /GetAsyncKeyState\(VK_CONTROL\)/);
+  assert.match(additions, /ctrl_tab_modifier_timer_\.Start/);
+  assert.match(additions, /CompositeTransparentPixel/);
+  assert.match(additions, /pixel\.a == 255/);
+  assert.match(additions, /active_contents->Focus\(\)/);
+  assert.match(additions, /GetPendingEntry\(\)/);
+  assert.match(additions, /ember_sidebar_address_->RequestFocus\(\)/);
+  assert.match(additions, /chrome::NewTab\(this, NewTabTypes::kNoUserAction\)/);
+  assert.match(additions, /!IsAttemptingToCloseBrowser\(\)/);
+  assert.match(patchText, /location_bar_bubble_delegate_view\.cc/);
+  assert.match(additions, /ConfigureEmberGlassBubble\(GetWidget\(\)->GetRootView\(\), this\)/);
+  assert.match(patchText, /tab_hover_card_controller\.cc/);
+  assert.match(additions, /intended_target->GetAnchor\(\)\.GetAnchorRect/);
+  assert.match(patchText, /extension_install_dialog_view\.cc/);
+  assert.match(additions, /CaptureEmberGlassBubbleBackdrop/);
+
+  const ntpHtml = fs.readFileSync(
+    path.join(port.RESOURCES_ROOT, 'newtab', 'new_tab_page_third_party.html'),
+    'utf8',
+  );
+  assert.match(ntpHtml, /rel="icon"[^>]+href="chrome:\/\/theme\/IDR_PRODUCT_LOGO_32"/);
+
+  const resourceManifest = JSON.parse(fs.readFileSync(
+    path.join(port.RESOURCES_ROOT, 'manifest.json'),
+    'utf8',
+  ));
+  const faviconOverlay = resourceManifest.files.find(
+    ({ destination }) => destination.endsWith('/default_100_percent/chromium/product_logo_32.png'),
+  );
+  assert.equal(faviconOverlay.source, 'branding/app-32.png');
+  const heroOverlay = resourceManifest.files.find(
+    ({ destination }) => destination.endsWith('/new_tab_page_third_party/ember-icon.png'),
+  );
+  assert.equal(heroOverlay.source, 'newtab/ember-icon.png');
+  assert.doesNotMatch(additions, /"ember-favicon\.png"/);
+});
+
+test('Batch 2 owns Favorites, drag intent, incognito, and native sleeping end to end', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0029-ember-batch2-lifecycle-interactions.patch'),
+    'utf8',
+  );
+  const additions = patchText.split(/\r?\n/)
+    .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
+    .join('\n');
+
+  // Favorites use Chromium's persisted BookmarkModel and retain entries that
+  // fall outside the selected presentation capacity.
+  assert.match(patchText, /chrome\/browser\/ui\/ember_favorites\.cc/);
+  assert.match(additions, /kMaxColumns = 4/);
+  assert.match(additions, /kMaxRows = 7/);
+  assert.match(additions, /kDefaultColumns = 2/);
+  assert.match(additions, /kDefaultRows = 2/);
+  assert.match(additions, /kTileHeight = 43/);
+  assert.match(additions, /kDefaultGap = 10/);
+  assert.match(additions, /kFourRowInnerHeight = kTileHeight \* 4 \+ kDefaultGap \* 3/);
+  assert.match(additions, /BookmarkModelFactory::GetForBrowserContext/);
+  assert.match(additions, /hidden favorites remain saved/);
+  assert.doesNotMatch(additions, /resize\(visible_capacity\)[\s\S]{0,200}Remove/);
+  assert.match(additions, /emberFavoriteAdd/);
+  assert.match(additions, /emberFavoriteRemove/);
+  assert.match(additions, /emberFavoriteMove/);
+  assert.match(additions, /insertion_index > old_child_index/);
+  assert.match(additions, /insertion_index \+ 1/);
+  assert.match(additions, /existing->url\(\) == url/);
+  assert.match(additions, /existing->id\(\), index/);
+
+  // A plain background-tab drag preserves selection and stays attached while
+  // native split/Favorites targets consume it; the active path remains stock.
+  assert.match(additions, /deferred_background_drag/);
+  assert.match(additions, /is_background_tab_drag_/);
+  assert.match(additions, /current_state_ == DragState::kDraggingWindow \|\|/);
+  assert.match(additions, /EmberFavoritesDropTargetController/);
+  assert.match(additions, /row \* columns \+ column/);
+  assert.match(additions, /web_contents_size \/ 2/);
+  assert.match(additions, /DragType::kBackgroundTab/);
+  assert.match(additions, /BackgroundTabUsesHalfPagePreview/);
+  assert.match(additions, /point_in_parent\.x\(\) < drop_target_parent_view_->width\(\) \/ 2/);
+  assert.match(additions, /drop_target_view_->Show\(/);
+  assert.match(additions, /drag_data\.source_dragged_contents\(\) !=/);
+
+  // The New Tab menu uses a real OTR Profile and respects incognito policy.
+  assert.match(additions, /New incognito tab/);
+  assert.match(additions, /IDC_NEW_INCOGNITO_WINDOW/);
+  assert.match(additions, /IsIncognitoAllowed/);
+  assert.match(additions, /profile->IsOffTheRecord\(\)/);
+  assert.match(additions, /profile->GetOriginalProfile\(\) == original/);
+  assert.match(additions, /chrome::NewIncognitoWindow\(original\)/);
+  assert.match(additions, /ShowEmberContextMenuAtScreenPoint/);
+
+  // Chromium's native discard lifecycle is enabled at Ember's established
+  // 30-minute default, and the tab renderer gives audio precedence over sleep.
+  assert.match(additions, /MemorySaverModeState::kEnabled/);
+  assert.match(additions, /MemorySaverModeAggressiveness::kAggressive/);
+  assert.match(additions, /base::Minutes\(30\)/);
+  assert.match(additions, /data\(\)\.is_tab_discarded && !has_alert_icon/);
+  assert.match(additions, /EmberSleepIndicatorView/);
+  assert.match(additions, /cc::ColorFilter::MakeMatrix/);
+  assert.match(additions, /favicon_size_animation_\.Reset\(1\)/);
+});
+
+test('Batch 2 follow-up reorders background tabs and moves Favorite editing into Settings', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0030-ember-drag-sleep-favorites-settings.patch'),
+    'utf8',
+  );
+  const additions = patchText.split(/\r?\n/)
+    .filter(line => line.startsWith('+') && !line.startsWith('+++'))
+    .join('\n');
+  assert.match(additions, /MoveWebContentsAt\(from_index, to_index/);
+  assert.match(additions, /kBackgroundTabReleaseDistance = 28/);
+  assert.match(additions, /kBackgroundTabReattachDistance = 14/);
+  assert.match(additions, /ui::GrabViewSnapshot/);
+  assert.match(additions, /ember_floating_tab_widget_->SetBounds/);
+  assert.match(additions, /original->layer\(\)->SetOpacity\(0\.f\)/);
+  assert.match(additions, /CommandEmberSleepTab/);
+  assert.match(additions, /IsTabSelected\(context_index\)/);
+  assert.match(additions, /GetSplitForTab\(context_index\)/);
+  assert.match(additions, /LifecycleUnitDiscardReason::EXTERNAL/);
+  assert.match(additions, /emberFavoriteUpdate/);
+  assert.match(additions, /emberFavoriteAdd/);
+  assert.match(additions, /emberFavoriteRemove/);
+  assert.match(additions, /emberFavoriteMove/);
+  assert.match(additions, /emberFavoriteNewTitle/);
+  assert.match(additions, /emberFavoriteNewUrl/);
+  const ntpHtml = fs.readFileSync(
+    path.join(port.RESOURCES_ROOT, 'newtab', 'new_tab_page_third_party.html'), 'utf8');
+  assert.doesNotMatch(ntpHtml, /favorites-grid|favorite-dialog|favorites-columns/);
+  assert.match(ntpHtml, /id="ember-brand"/);
+  assert.match(ntpHtml, /id="native-liquid-glass"/);
+});
+
+test('resource allowlist decodes standard MSVC symbols without brittle undname text', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0031-ember-resource-allowlist-undname-fix.patch'),
+    'utf8',
+  );
+  const additions = patchText.split(/\r?\n/)
+    .filter(line => line.startsWith('+') && !line.startsWith('+++'))
+    .join('\n');
+  assert.match(additions, /encoded_resource = re\.compile/);
+  assert.match(additions, /\[A-P\]\+/);
+  assert.match(additions, /resource_id = resource_id \* 16/);
+  assert.match(additions, /Unexpected undname output for/);
+});
+
+test('Batch 2 runtime follow-up keeps a live native drag surface and refreshes sleeping/Favorites state', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0032-ember-batch2-runtime-regressions.patch'),
+    'utf8',
+  );
+  const additions = patchText.split(/\r?\n/)
+    .filter(line => line.startsWith('+') && !line.startsWith('+++'))
+    .join('\n');
+  assert.match(additions, /kEmberFavoritesColumns/);
+  assert.match(additions, /kEmberFavoritesRows/);
+  assert.match(additions, /tab_ui_change_callbacks_\.Notify\(\)/);
+  assert.match(additions, /SkColorSetA\(colors\.foreground_color, 0x88\)/);
+  assert.match(additions, /std::make_unique<views::Label>/);
+  assert.match(additions, /std::make_unique<views::ImageView>/);
+  assert.match(additions, /source_tab->data\(\)\.favicon/);
+  assert.match(additions, /source_tab->data\(\)\.title/);
+  assert.match(additions, /local_window = source_context_->GetWidget\(\)->GetNativeWindow\(\)/);
+  assert.doesNotMatch(additions, /GrabViewSnapshot/);
+});
+
+test('Favorite insertion reflows real tiles and a direct split-side crossing animates', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0033-ember-favorite-reflow-and-split-motion.patch'),
+    'utf8',
+  );
+  const additions = patchText.split(/\r?\n/)
+    .filter(line => line.startsWith('+') && !line.startsWith('+++'))
+    .join('\n');
+  assert.match(additions, /place-items: center/);
+  assert.match(additions, /favorite_nodes\.insert\(favorite_nodes\.begin\(\) \+ index, nullptr\)/);
+  assert.match(additions, /Invisible layout spacers preserve the configured cell width/);
+  assert.match(additions, /ScopedLayerAnimationSettings animation/);
+  assert.match(additions, /TabFaviconFromWebContents\(contents\)/);
+  assert.match(additions, /ember_favorite_button_urls_\.push_back\(child->url\(\)\)/);
+  assert.match(additions, /ember_favorites::Remove\(ember_bookmark_model_, existing\[index\]->id\(\)\)/);
+  assert.match(additions, /switching_background_side/);
+  assert.match(additions, /animation_\.SetSlideDuration/);
+  assert.match(patchText, /ember_favorites::Add\(ember_bookmark_model_, url, title, index\)/);
+  const oracle = fs.readFileSync(path.join(__dirname, '../src/renderer/sidebar.js'), 'utf8');
+  assert.match(oracle, /previewFavoritePlacement/);
+  assert.match(oracle, /const previous = new Map/);
+  assert.match(oracle, /node\.animate\(/);
+});
+
+test('last-tab transfer closes the source window without reseeding during detach', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0034-ember-last-tab-transfer-crash.patch'),
+    'utf8',
+  );
+  const additions = patchText.split(/\r?\n/)
+    .filter(line => line.startsWith('+') && !line.startsWith('+++'))
+    .join('\n');
+  assert.match(additions, /TabRemovedReason::kInsertedIntoOtherTabStrip/);
+  assert.match(additions, /tab_strip_model->empty\(\)/);
+  assert.match(additions, /!ember_last_tab_was_transferred_/);
+  assert.match(patchText, /case TabStripModelChange::kInserted:[\s\S]*ember_last_tab_was_transferred_ = false/);
+  assert.match(patchText, /void Browser::TabStripEmpty\(\)/);
+  assert.doesNotMatch(additions, /chrome::NewTab\(/);
 });
 
 test('packaging normalizes pinned artifacts to Ember names without overwriting conflicts', () => {

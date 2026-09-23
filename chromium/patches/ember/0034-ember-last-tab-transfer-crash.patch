@@ -1,0 +1,56 @@
+diff --git a/chrome/browser/ui/browser.cc b/chrome/browser/ui/browser.cc
+index 8af8219..0e118fb 100644
+--- a/chrome/browser/ui/browser.cc
++++ b/chrome/browser/ui/browser.cc
+@@ -1217,6 +1217,7 @@ void Browser::OnTabStripModelChanged(TabStripModel* tab_strip_model,
+                tab_strip_model, "change", change);
+   switch (change.type()) {
+     case TabStripModelChange::kInserted: {
++      ember_last_tab_was_transferred_ = false;
+       // Initialize find bar controller when tab having active find session
+       // is inserted in a new window.
+       find_in_page::FindTabHelper* find_tab_helper =
+@@ -1231,7 +1232,16 @@ void Browser::OnTabStripModelChanged(TabStripModel* tab_strip_model,
+       break;
+     }
+     case TabStripModelChange::kRemoved: {
++      // TabStripEmpty() also runs when the final tab is moved to another
++      // window. Do not create a replacement tab in the middle of that detach:
++      // TabDragController still owns the transfer and the source window should
++      // follow Chromium's ordinary empty-strip close path.
++      ember_last_tab_was_transferred_ =
++          tab_strip_model->empty() && !change.GetRemove()->contents.empty();
+       for (const auto& contents : change.GetRemove()->contents) {
++        ember_last_tab_was_transferred_ &=
++            contents.remove_reason ==
++            TabRemovedReason::kInsertedIntoOtherTabStrip;
+         bool had_active_modal_dialog = false;
+         if (TabRemoveReasonUtils::WillDeleteTab(contents.remove_reason)) {
+           OnTabClosing(contents.tab, &had_active_modal_dialog);
+@@ -1266,8 +1276,8 @@ void Browser::OnTabStripModelChanged(TabStripModel* tab_strip_model,
+ 
+ 
+ void Browser::TabStripEmpty() {
+-  if (is_type_normal() && !IsAttemptingToCloseBrowser() &&
+-      !tab_strip_model_->closing_all()) {
++  if (is_type_normal() && !ember_last_tab_was_transferred_ &&
++      !IsAttemptingToCloseBrowser() && !tab_strip_model_->closing_all()) {
+     // Closing the last ordinary tab is a tab-strip action, not a request to
+     // destroy the browser window. Re-seed the strip through Chromium's normal
+     // New Tab command so selection, focus, session bookkeeping and profile
+diff --git a/chrome/browser/ui/browser.h b/chrome/browser/ui/browser.h
+index 6b6290b..1249932 100644
+--- a/chrome/browser/ui/browser.h
++++ b/chrome/browser/ui/browser.h
+@@ -1100,6 +1100,11 @@ class Browser : public TabStripModelObserver,
+   std::unique_ptr<TabStripModelDelegate> const tab_strip_model_delegate_;
+   std::unique_ptr<TabStripModel> const tab_strip_model_;
+ 
++  // The final tab was detached for transfer, not closed by the user. The
++  // following TabStripEmpty() must close this source window instead of
++  // reentrantly inserting a New Tab during the drag controller's detach.
++  bool ember_last_tab_was_transferred_ = false;
++
+   // The application name that is also the name of the window to the shell.
+   // This name should be set when:
+   // 1) we launch an application via an application shortcut or extension API.

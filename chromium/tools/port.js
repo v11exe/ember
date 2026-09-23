@@ -541,8 +541,11 @@ function copyResourceOverlay(manifest, destinationRoot) {
     const source = path.join(manifest.resourceRoot, ...item.source.split('/'));
     const destination = path.join(destinationRoot, ...item.destination.split('/'));
     if (!fs.existsSync(source)) throw new Error(`Missing Ember resource: ${source}`);
-    if (!fs.existsSync(destination)) {
-      throw new Error(`Missing Chromium resource destination: ${destination}`);
+    if (!fs.existsSync(path.dirname(destination)) || !fs.statSync(path.dirname(destination)).isDirectory()) {
+      throw new Error(`Missing Chromium resource directory: ${path.dirname(destination)}`);
+    }
+    if (fs.existsSync(destination) && !fs.statSync(destination).isFile()) {
+      throw new Error(`Chromium resource destination is not a file: ${destination}`);
     }
     return {
       source,
@@ -552,7 +555,7 @@ function copyResourceOverlay(manifest, destinationRoot) {
     };
   });
   for (const item of copies) {
-    if (!item.sourceBytes.equals(fs.readFileSync(item.destination))) {
+    if (!fs.existsSync(item.destination) || !item.sourceBytes.equals(fs.readFileSync(item.destination))) {
       fs.copyFileSync(item.source, item.destination);
     }
   }
@@ -877,11 +880,11 @@ function prepare(workRootValue) {
   }
   const overlayPlan = configurationOverlayPlan(paths, baseline);
   const overlayPaths = overlayPlan.files.map((item) => item.relativePath);
-  assertNoUnexpectedConfigurationChanges(paths.configurationRoot, entries, overlayPaths);
   let allowManagedUpgrade = false;
+  let priorFiles = [];
   if (fs.existsSync(paths.stampPath)) {
     const priorStamp = JSON.parse(fs.readFileSync(paths.stampPath, 'utf8'));
-    const priorFiles = Array.isArray(priorStamp.configurationOverlayFiles)
+    const stampedFiles = Array.isArray(priorStamp.configurationOverlayFiles)
       ? priorStamp.configurationOverlayFiles.map((item) => ({
         relativePath: safeRelativeResourcePath(item?.relativePath, 'configuration overlay'),
         text: item?.text === true,
@@ -889,10 +892,15 @@ function prepare(workRootValue) {
       : null;
     allowManagedUpgrade = priorStamp.schemaVersion === 3
       && typeof priorStamp.configurationOverlaySha256 === 'string'
-      && priorFiles !== null
-      && existingConfigurationOverlayHash(paths, { files: priorFiles })
+      && stampedFiles !== null
+      && existingConfigurationOverlayHash(paths, { files: stampedFiles })
         === priorStamp.configurationOverlaySha256;
+    if (allowManagedUpgrade) priorFiles = stampedFiles;
   }
+  assertNoUnexpectedConfigurationChanges(
+    paths.configurationRoot, entries,
+    [...overlayPaths, ...priorFiles.map((item) => item.relativePath)],
+  );
 
   runInherited('git', [
     '-C', paths.configurationRoot, 'submodule', 'update', '--init', '--depth=1',
@@ -917,6 +925,13 @@ function prepare(workRootValue) {
     'utf8',
   );
   prepareConfigurationOverlay(paths, overlayPlan, allowManagedUpgrade);
+  if (allowManagedUpgrade) {
+    for (const item of priorFiles) {
+      if (overlayPaths.includes(item.relativePath)) continue;
+      const obsolete = path.join(paths.configurationRoot, ...item.relativePath.split('/'));
+      fs.rmSync(obsolete);
+    }
+  }
   fs.writeFileSync(
     paths.stampPath,
     `${JSON.stringify(expectedStamp(baseline, entries, overlayPlan), null, 2)}\n`,
