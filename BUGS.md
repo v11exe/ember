@@ -327,64 +327,66 @@ normalisation, while page targets remain exact-host/path. Tab drags always use a
 fresh preview candidate, so their insertion preview matches the persisted result.
 
 ### B37 — Native sleeping tabs do not read as asleep
-**Status:** 🟡 In progress · **Owner:** Codex · **Area:** Chromium tab favicon/title rendering
+**Status:** ✅ User-confirmed fixed · **Owner:** Codex · **Area:** Chromium tab favicon/title rendering
 
 Manual discard succeeds, but the native tab lacks the Electron oracle's gray
 favicon, dimmed title, and settled/recessed tab treatment.
-Patch 0032 refreshes UI on explicit discard and dims inactive titles; native
-runtime confirmation remains pending.
+Patch 0032 refreshes UI on explicit discard and dims inactive titles; the user
+confirms the rebuilt Batch 2 behavior works.
 
 ### B38 — Native background drag ghost misses Favorite and split targets
-**Status:** 🟡 In progress · **Owner:** Codex · **Area:** Chromium tab dragging/targets
+**Status:** ✅ User-confirmed fixed · **Owner:** Codex · **Area:** Chromium tab dragging/targets
 
 The 0030 snapshot popup is not a physical tab surface. Pointer movement shown
 in the 2026-09-23 recording produces neither Favorite interaction nor split
 preview/commit, and background reorder feels worse than the prior path.
 Patch 0032 replaces the bitmap with a live native Views tab surface and routes
-hit testing to the source browser HWND; native pointer acceptance remains pending.
+hit testing to the source browser HWND; the user confirms the rebuilt Batch 2
+behavior works.
 
 ### B39 — Native Favorite settings do not update the sidebar
-**Status:** 🟡 In progress · **Owner:** Codex · **Area:** Chromium Settings prefs/sidebar
+**Status:** ✅ User-confirmed fixed · **Owner:** Codex · **Area:** Chromium Settings prefs/sidebar
 
 Changing row or column counts in Settings appears not to resize the sidebar
 rail. These controls should apply immediately; there is no Save button.
-Patch 0032 adds both pref keys to `settingsPrivate`'s numeric allowlist;
-runtime Settings/sidebar confirmation remains pending.
+Patch 0032 adds both pref keys to `settingsPrivate`'s numeric allowlist; the
+user confirms the rebuilt Batch 2 behavior works.
 
 ### B40 — Native Favorite rail exposes empty cells and snaps on insertion
-**Status:** 🟡 In progress · **Owner:** Codex · **Area:** Chromium Favorite rail/drop target
+**Status:** ✅ User-confirmed fixed · **Owner:** Codex · **Area:** Chromium Favorite rail/drop target
 
 The native grid paints unused tiles and highlights one fixed cell instead of
 previewing an inserted Favorite with neighboring icons shifting into place.
 Patch 0033 replaces unused buttons with invisible width spacers and animates
-the temporary inserted favicon tile plus neighboring Bookmark-ID tiles;
-native runtime confirmation remains pending.
+the temporary inserted favicon tile plus neighboring Bookmark-ID tiles; the
+user confirms the rebuilt Batch 2 behavior works.
 
 ### B41 — Native New Tab hero sits at the top
-**Status:** 🟡 In progress · **Owner:** Codex · **Area:** Chromium New Tab resource overlay
+**Status:** ✅ User-confirmed fixed · **Owner:** Codex · **Area:** Chromium New Tab resource overlay
 
 The saved CSS specifies centering, but the prepared checkout still contains
 the earlier top-aligned stylesheet. The resource source and installed overlay
 must agree before the incremental build.
-Patch 0033 restores centered CSS in the prepared checkout; the New Tab
-resource actions passed, but the final browser rendering remains unverified.
+Patch 0033 restores centered CSS in the prepared checkout; the user confirms
+the rebuilt Batch 2 behavior works.
 
 ### B42 — Direct left/right split-target crossing snaps
-**Status:** 🟡 In progress · **Owner:** Codex · **Area:** Chromium split drag target
+**Status:** ✅ User-confirmed fixed · **Owner:** Codex · **Area:** Chromium split drag target
 
 Entry and exit animate, but changing the displayed target side while it is
 fully expanded only changes layout direction and skips the animation.
 Patch 0033 restarts the existing slide from the newly hovered edge in 180ms;
-native pointer acceptance remains pending.
+the user confirms the rebuilt Batch 2 behavior works.
 
 ### B43 — Cross-window transfer of the final tab crashes
-**Status:** 🟡 Source fix compiled; runtime pending · **Owner:** Codex · **Area:** Chromium tab transfer/window lifecycle
+**Status:** ✅ User-confirmed fixed · **Owner:** Codex · **Area:** Chromium tab transfer/window lifecycle
 
 The source window's final tab is removed for insertion into another strip.
 Ember's last-tab-close rule incorrectly creates a New Tab from the empty-strip
 callback while Chromium's drag controller still owns that detach. Patch 0034
 uses the removal reason to retain Chromium's source-window close path for a
 transfer, while a genuinely closed final normal tab still reseeds New Tab.
+The user confirms cross-window transfer now works without a crash.
 ---
 
 ## Second pass — B1, B2/B13/B15, B5, B10, B17, B19

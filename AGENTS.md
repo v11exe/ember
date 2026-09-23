@@ -567,9 +567,9 @@ Git is the history archive.
 ## 4. Work Log
 
 ### 2026-09-23 — Codex — Native last-tab cross-window transfer crash
-- **Status / Branch:** source/focused validation complete; user incremental build/runtime pending · `chromium-port`
+- **Status / Branch:** user runtime accepted · `chromium-port`
 - **Touches:** Browser tab-strip-empty lifecycle, native follow-up patch, focused contract, port ledger
-- **Summary:** Patch 0034 distinguishes a transferred final tab from a closed final tab before Ember reseeds New Tab; preserves Chromium's source-window closure during drag transfer. `browser.obj` compiled, 34 patches reverse in scratch, contracts 53/53, repository tests 436/436 and Electron smoke PASS. User incremental link/runtime pending; other Batch 2 behavior reported complete by user.
+- **Summary:** Patch 0034 distinguishes a transferred final tab from a closed final tab before Ember reseeds New Tab; preserves Chromium's source-window closure during drag transfer. `browser.obj` compiled, 34 patches reverse in scratch, contracts 53/53, repository tests 436/436 and Electron smoke PASS. User completed the incremental build and confirms cross-window transfer and the rest of Batch 2 work.
 
 ### 2026-09-23 — Codex — Native Batch 2 runtime regression repair
 - **Status / Branch:** source/cheap validation complete; user full build and runtime pending · `chromium-port`

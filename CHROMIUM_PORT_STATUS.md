@@ -23,9 +23,9 @@ Focused validation: `obj/chrome/browser/ui/ui/browser.obj` compiled in the
 preserved `out\\Default` graph; all **34** applied patches reverse in an
 isolated 166-file scratch tree, patch hunk check passes, native port contracts
 pass **53/53**, `npm test` passes **436/436**, and Electron smoke passes (three
-known no-frame skips). The user reports the other Batch 2 behavior complete.
-Final incremental `chrome` link and cross-window runtime confirmation remain
-with the user. No Batch 3 work was started.
+known no-frame skips). The user completed the incremental `chrome` build and
+confirmed that the cross-window transfer and remaining Batch 2 behavior work.
+No Batch 3 work was started.
 
 ## 2026-09-23 Favorite and split-motion follow-up — patch 0033
 
