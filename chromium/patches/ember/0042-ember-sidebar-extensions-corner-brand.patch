@@ -1,0 +1,165 @@
+diff --git a/chrome/app/theme/theme_resources.grd b/chrome/app/theme/theme_resources.grd
+index 345b2d7..c143c8a 100644
+--- a/chrome/app/theme/theme_resources.grd
++++ b/chrome/app/theme/theme_resources.grd
+@@ -166,6 +166,7 @@
+       <structure type="chrome_scaled_image" name="IDR_PLUGINS_FAVICON" file="common/favicon_plugins.png" />
+       <structure type="chrome_scaled_image" name="IDR_PRERENDER" file="common/prerender_succeed_icon.png" />
+       <structure type="chrome_scaled_image" name="IDR_PRODUCT_LOGO_32" file="${branding_path_component}/product_logo_32.png" />
++      <structure type="chrome_scaled_image" name="IDR_EMBER_CHROME_MARK" file="chromium/ember_chrome_mark.png" />
+       <if expr="not is_android">
+           <structure type="chrome_scaled_image" name="IDR_PRICE_TRACKING_ON_IOS_ICON" file="common/price_tracking_on_ios.png" />
+       </if>
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+index d5c5cc8..4ae081c 100644
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -1800,6 +1800,19 @@ BrowserView::BrowserView(Browser* browser)
+             base::BindRepeating(&BrowserView::AddDraggedTabToEmberFavorites,
+                                 weak_ptr_factory_.GetWeakPtr()));
+     InitializeEmberFavorites();
++    auto* sidebar_spacer =
++        ember_sidebar_->AddChildView(std::make_unique<views::View>());
++    static_cast<views::BoxLayout*>(ember_sidebar_->GetLayoutManager())
++        ->SetFlexForView(sidebar_spacer, 1);
++    ember_sidebar_footer_ =
++        ember_sidebar_->AddChildView(std::make_unique<views::View>());
++    ember_sidebar_footer_->SetPreferredSize(gfx::Size(0, 32));
++    auto* footer_layout = ember_sidebar_footer_->SetLayoutManager(
++        std::make_unique<views::BoxLayout>(
++            views::BoxLayout::Orientation::kHorizontal));
++    footer_layout->set_main_axis_alignment(
++        views::BoxLayout::MainAxisAlignment::kEnd);
++    ember_sidebar_footer_->SetVisible(ember_sidebar_open_);
+     UpdateEmberSidebar();
+   }
+ 
+@@ -2054,6 +2067,7 @@ BrowserView::~BrowserView() {
+   ember_favorite_preview_title_.clear();
+   ember_favorite_preview_icon_ = gfx::ImageSkia();
+   ember_sidebar_ = nullptr;
++  ember_sidebar_footer_ = nullptr;
+   ember_sidebar_address_row_ = nullptr;
+   ember_sidebar_address_ = nullptr;
+   ember_sidebar_copy_link_ = nullptr;
+@@ -4072,6 +4086,9 @@ void BrowserView::SetEmberSidebarWidth(int width) {
+   }
+   ember_sidebar_width_ = width;
+   ember_sidebar_->SetPreferredSize(gfx::Size(width, 0));
++  if (ember_sidebar_footer_) {
++    ember_sidebar_footer_->SetVisible(width >= 48);
++  }
+   InvalidateLayout();
+   if (GetWidget()) {
+     GetWidget()->GetRootView()->DeprecatedLayoutImmediately();
+@@ -6680,6 +6697,9 @@ void BrowserView::AddedToWidget() {
+ #endif
+ 
+   toolbar_->Init();
++  if (ember_sidebar_footer_) {
++    toolbar_->MoveExtensionsToSidebar(ember_sidebar_footer_);
++  }
+ 
+   if (omnibox::IsWebUIOmniboxInBrowserViewEnabled()) {
+     // When the WebUI Omnibox is embedded directly in the `BrowserView` (instead
+diff --git a/chrome/browser/ui/views/frame/browser_view.h b/chrome/browser/ui/views/frame/browser_view.h
+index 23b0b09..284f187 100644
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -1222,6 +1222,7 @@ class BrowserView : public BrowserWindow,
+ 
+   // The persistent Ember shell rail shown by normal browser windows.
+   raw_ptr<views::View> ember_sidebar_ = nullptr;
++  raw_ptr<views::View> ember_sidebar_footer_ = nullptr;
+   bool ember_sidebar_open_ = true;
+   int ember_sidebar_width_ = 168;
+   int ember_sidebar_motion_from_ = 168;
+diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.cc b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+index f5843b1..27e7976 100644
+--- a/chrome/browser/ui/views/toolbar/toolbar_view.cc
++++ b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+@@ -135,6 +135,7 @@
+ #include "ui/accessibility/ax_node_data.h"
+ #include "ui/base/interaction/element_identifier.h"
+ #include "ui/base/l10n/l10n_util.h"
++#include "ui/base/resource/resource_bundle.h"
+ #include "ui/base/metadata/metadata_impl_macros.h"
+ #include "ui/base/theme_provider.h"
+ #include "ui/base/ui_base_features.h"
+@@ -180,6 +181,35 @@ DEFINE_UI_CLASS_PROPERTY_KEY(bool, kActionItemUnderlineIndicatorKey, false)
+ 
+ namespace {
+ 
++class EmberCornerBrand final : public views::LabelButton {
++ public:
++  explicit EmberCornerBrand(Browser* browser)
++      : views::LabelButton(base::BindRepeating(
++            [](Browser* browser, const ui::Event&) {
++              chrome::ExecuteCommand(browser, IDC_NEW_TAB);
++            },
++            base::Unretained(browser))) {
++    SetPreferredSize(gfx::Size(64, 30));
++    SetAccessibleName(u"Ember — new tab");
++    SetTooltipText(u"New tab");
++    SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
++  }
++
++  void OnPaintBackground(gfx::Canvas* canvas) override {
++    views::LabelButton::OnPaintBackground(canvas);
++    if (GetState() == STATE_HOVERED || GetState() == STATE_PRESSED) {
++      cc::PaintFlags tile;
++      tile.setAntiAlias(true);
++      tile.setColor(SkColorSetARGB(0x13, 0xFF, 0xFF, 0xFF));
++      canvas->DrawRoundRect(gfx::RectF(1, 1, 62, 28), 6, tile);
++    }
++    const gfx::ImageSkia& mark = *ui::ResourceBundle::GetSharedInstance()
++                                      .GetImageSkiaNamed(IDR_EMBER_CHROME_MARK);
++    canvas->DrawImageInt(mark, 0, 0, mark.width(), mark.height(),
++                         4, 8, 56, 14, true);
++  }
++};
++
+ class EmberSidebarToggle final : public views::LabelButton {
+  public:
+   explicit EmberSidebarToggle(BrowserView* browser_view)
+@@ -448,6 +478,9 @@ void ToolbarView::Init() {
+ 
+   // Always add children in order from left to right, for accessibility.
+   if (display_mode_ == DisplayMode::kNormal && browser_->is_type_normal()) {
++    std::unique_ptr<views::View> corner_brand =
++        std::make_unique<EmberCornerBrand>(browser_);
++    AddChildView(std::move(corner_brand));
+     std::unique_ptr<views::View> sidebar_toggle =
+         std::make_unique<EmberSidebarToggle>(browser_view_);
+     AddChildView(std::move(sidebar_toggle));
+@@ -1748,6 +1781,16 @@ ExtensionsToolbarDesktop* ToolbarView::GetExtensionsToolbarDesktop() {
+   return extensions_container_;
+ }
+ 
++void ToolbarView::MoveExtensionsToSidebar(views::View* sidebar_footer) {
++  if (!extensions_container_ || !sidebar_footer ||
++      extensions_container_->parent() != this) {
++    return;
++  }
++  extensions_container_->ClearProperty(views::kFlexBehaviorKey);
++  sidebar_footer->AddChildView(RemoveChildViewT(extensions_container_.get()));
++  InvalidateLayout();
++}
++
+ PinnedToolbarActions* ToolbarView::GetPinnedToolbarActions() {
+   return pinned_toolbar_actions_;
+ }
+diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.h b/chrome/browser/ui/views/toolbar/toolbar_view.h
+index c2d82dc..10373ec 100644
+--- a/chrome/browser/ui/views/toolbar/toolbar_view.h
++++ b/chrome/browser/ui/views/toolbar/toolbar_view.h
+@@ -170,6 +170,9 @@ class ToolbarView : public views::AccessiblePaneView,
+   ExtensionsToolbarDesktop* extensions_container() const {
+     return extensions_container_;
+   }
++  // Keep the existing extensions container and its coordinator while placing
++  // its controls in Ember's sidebar footer.
++  void MoveExtensionsToSidebar(views::View* sidebar_footer);
+   ToolbarButton* forward_button() const { return forward_; }
+   ExtensionsToolbarButton* GetExtensionsButton() const;
+   ReloadButton* reload_button() const { return reload_; }

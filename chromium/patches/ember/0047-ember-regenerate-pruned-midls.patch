@@ -1,0 +1,13 @@
+diff --git a/build/toolchain/win/midl.py b/build/toolchain/win/midl.py
+--- a/build/toolchain/win/midl.py
++++ b/build/toolchain/win/midl.py
+@@ -397,5 +397,9 @@ def main(arch, gendir, outdir, dynamic_guids, tlb, h, dlldata, iid, proxy,
+       # third_party\win_build_output\midl.
+       open(file_path, 'wb').close()
++    if source_file == tlb and os.path.getsize(file_path) == 0:
++      # Some source distributions prune binary type libraries to empty files.
++      # Let MIDL regenerate them before applying dynamic GUID substitutions.
++      source_exists = False
+     shutil.copy(file_path, outdir)
+
+   if dynamic_guids != 'none':

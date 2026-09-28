@@ -1,0 +1,295 @@
+diff --git a/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc b/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
+index c0cf935..4bf56c9 100644
+--- a/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
++++ b/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
+@@ -4,16 +4,11 @@
+ 
+ #include "chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.h"
+ 
+-#include <algorithm>
+-#include <cmath>
+-
+ #include "base/command_line.h"
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/task/single_thread_task_runner.h"
+-#include "base/time/time.h"
+-#include "base/timer/timer.h"
+ #include "build/build_config.h"
+ #include "build/buildflag.h"
+ #include "chrome/browser/glic/public/features.h"
+@@ -64,16 +59,13 @@
+ #include "ui/base/ui_base_features.h"
+ #include "ui/compositor/layer.h"
+ #include "ui/compositor/layer_type.h"
+-#include "ui/events/event.h"
+ #include "ui/gfx/geometry/insets.h"
+ #include "ui/gfx/geometry/point.h"
+-#include "ui/gfx/geometry/transform.h"
+ #include "ui/views/accessible_pane_view.h"
+ #include "ui/views/actions/action_view_controller.h"
+ #include "ui/views/border.h"
+ #include "ui/views/cascading_property.h"
+ #include "ui/views/controls/button/image_button.h"
+-#include "ui/views/controls/scroll_view.h"
+ #include "ui/views/interaction/view_subregion_anchor.h"
+ #include "ui/views/layout/flex_layout.h"
+ #include "ui/views/layout/flex_layout_types.h"
+@@ -90,160 +82,6 @@ namespace {
+ 
+ constexpr int kEmberTopChromeHeight = 32;
+ 
+-}  // namespace
+-
+-class TabStripScrollContent : public views::View {
+- public:
+-  explicit TabStripScrollContent(std::unique_ptr<TabStrip> strip) {
+-    tab_strip_ = AddChildView(std::move(strip));
+-  }
+-
+-  int MinimumWidth() const { return tab_strip_->GetMinimumSize().width(); }
+-
+-  int NaturalWidth() const { return tab_strip_->GetPreferredSize({}).width(); }
+-
+-  gfx::Size CalculatePreferredSize(
+-      const views::SizeBounds& available_size) const override {
+-    return gfx::Size(std::max(MinimumWidth(),
+-                              available_size.width().value_or(NaturalWidth())),
+-                     kEmberTopChromeHeight);
+-  }
+-
+-  void Layout(PassKey) override { tab_strip_->SetBoundsRect(GetLocalBounds()); }
+-
+- private:
+-  raw_ptr<TabStrip> tab_strip_ = nullptr;
+-};
+-
+-class TabStripScrollContainer : public views::ScrollView {
+-  METADATA_HEADER(TabStripScrollContainer, views::ScrollView)
+- public:
+-  explicit TabStripScrollContainer(std::unique_ptr<TabStrip> strip)
+-      : views::ScrollView(ScrollWithLayers::kDisabled) {
+-    SetHorizontalScrollBarMode(ScrollBarMode::kHiddenButEnabled);
+-    SetVerticalScrollBarMode(ScrollBarMode::kDisabled);
+-    SetBackgroundColor(std::nullopt);
+-    SetDrawOverflowIndicator(false);
+-    auto* contents =
+-        SetContents(std::make_unique<TabStripScrollContent>(std::move(strip)));
+-    contents->SetPaintToLayer();
+-    contents->layer()->SetFillsBoundsOpaquely(false);
+-  }
+-
+-  void InitializeTabWidth(TabStrip* tab_strip) {
+-    tab_strip->SetAvailableWidthCallback(base::BindRepeating(
+-        &TabStripScrollContainer::AvailableTabWidth, base::Unretained(this)));
+-  }
+-
+-  gfx::Size GetMinimumSize() const override {
+-    return gfx::Size(0, kEmberTopChromeHeight);
+-  }
+-
+-  gfx::Size CalculatePreferredSize(
+-      const views::SizeBounds& available_size) const override {
+-    return gfx::Size(ScrollContent()->NaturalWidth(), kEmberTopChromeHeight);
+-  }
+-
+-  bool OnMouseWheel(const ui::MouseWheelEvent& event) override {
+-    const int delta = event.y_offset() ? event.y_offset() : event.x_offset();
+-    if (!delta || !contents()) {
+-      return false;
+-    }
+-    const float maximum = MaximumOffset();
+-    if (maximum <= 1) {
+-      return false;
+-    }
+-
+-    const base::TimeTicks now = base::TimeTicks::Now();
+-    const double gap =
+-        last_wheel_.is_null() ? 1000.0 : (now - last_wheel_).InMillisecondsF();
+-    last_wheel_ = now;
+-    const double urgency = gap >= 0 && gap < 230
+-                               ? std::min(2.8, 1.0 + (230.0 - gap) / 150.0)
+-                               : 1.0;
+-    const double stride = std::min(430.0, 132.0 * urgency) *
+-                          std::clamp(std::abs(delta) / 120.0, 0.5, 3.0);
+-    target_ = std::clamp(target_, 0.0, static_cast<double>(maximum));
+-    const double next = target_ - std::copysign(stride, delta);
+-    if (next < 0 && target_ < 0.5) {
+-      overscroll_ = std::min(44.0, overscroll_ + 17.0);
+-    } else if (next > maximum && target_ > maximum - 0.5) {
+-      overscroll_ = std::max(-44.0, overscroll_ - 17.0);
+-    } else {
+-      target_ = std::clamp(next, 0.0, static_cast<double>(maximum));
+-    }
+-    if (!timer_.IsRunning()) {
+-      last_tick_ = now;
+-      timer_.Start(FROM_HERE, base::Milliseconds(16), this,
+-                   &TabStripScrollContainer::Animate);
+-    }
+-    return true;
+-  }
+-
+-  void Layout(PassKey) override {
+-    LayoutSuperclass<views::ScrollView>(this);
+-    target_ = std::clamp(target_, 0.0, static_cast<double>(MaximumOffset()));
+-    if (CurrentOffset().x() > MaximumOffset()) {
+-      ScrollToOffset(gfx::PointF(MaximumOffset(), 0));
+-    }
+-  }
+-
+-  void ScrollRectToVisible(const gfx::Rect& rect) override {
+-    views::ScrollView::ScrollRectToVisible(rect);
+-    target_ = CurrentOffset().x();
+-  }
+-
+- private:
+-  const TabStripScrollContent* ScrollContent() const {
+-    return static_cast<const TabStripScrollContent*>(contents());
+-  }
+-
+-  int AvailableTabWidth() const {
+-    return std::max({1, contents()->width(), ScrollContent()->MinimumWidth()});
+-  }
+-
+-  float MaximumOffset() const {
+-    return contents()
+-               ? std::max(0, contents()->width() - GetVisibleRect().width())
+-               : 0;
+-  }
+-
+-  void Animate() {
+-    const base::TimeTicks now = base::TimeTicks::Now();
+-    const double elapsed =
+-        std::clamp((now - last_tick_).InMillisecondsF(), 0.0, 64.0);
+-    last_tick_ = now;
+-    const double fraction = 1.0 - std::pow(0.78, elapsed / 16.667);
+-    const double current = CurrentOffset().x();
+-    const double next = current + (target_ - current) * fraction;
+-    ScrollToOffset(gfx::PointF(
+-        std::clamp(next, 0.0, static_cast<double>(MaximumOffset())), 0));
+-    overscroll_ *= std::pow(0.7, elapsed / 16.667);
+-    if (std::abs(overscroll_) < 0.4) {
+-      overscroll_ = 0;
+-    }
+-    gfx::Transform transform;
+-    transform.Translate(overscroll_, 0);
+-    transform.Scale(1.0 + std::min(0.06, std::abs(overscroll_) / 900.0), 1.0);
+-    contents()->SetTransform(transform);
+-    if (std::abs(target_ - next) < 0.5 && overscroll_ == 0) {
+-      ScrollToOffset(gfx::PointF(target_, 0));
+-      timer_.Stop();
+-    }
+-  }
+-
+-  base::RepeatingTimer timer_;
+-  base::TimeTicks last_wheel_;
+-  base::TimeTicks last_tick_;
+-  double target_ = 0;
+-  double overscroll_ = 0;
+-};
+-
+-BEGIN_METADATA(TabStripScrollContainer)
+-END_METADATA
+-
+-namespace {
+-
+ class FrameGrabHandle : public views::View {
+   METADATA_HEADER(FrameGrabHandle, views::View)
+ 
+@@ -273,10 +111,7 @@ class FrameGrabHandle : public views::View {
+     // Reserve some space for the frame to be grabbed by, even if the tabstrip
+     // is full.
+     // TODO(tbergquist): Define this relative to the NTB insets again.
+-    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+-            "remove-grab-handle")) {
+-      return gfx::Size(0, 0);
+-    }
++    if (base::CommandLine::ForCurrentProcess()->HasSwitch("remove-grab-handle")) return gfx::Size(0, 0);
+     return gfx::Size(96, 0);
+   }
+ 
+@@ -396,11 +231,7 @@ HorizontalTabStripRegionView::HorizontalTabStripRegionView(
+     }
+   }
+ 
+-  auto strip = CreateTabStrip(this, browser_view);
+-  tab_strip_ = strip.get();
+-  tab_strip_scroll_container_ =
+-      AddChildView(std::make_unique<TabStripScrollContainer>(std::move(strip)));
+-  tab_strip_container_ = tab_strip_scroll_container_;
++  tab_strip_ = AddChildView(CreateTabStrip(this, browser_view));
+ 
+   // Allow the |tab_strip_| to grow into the free space available in
+   // the HorizontalTabStripRegionView.
+@@ -408,8 +239,7 @@ HorizontalTabStripRegionView::HorizontalTabStripRegionView(
+       views::FlexSpecification(views::LayoutOrientation::kHorizontal,
+                                views::MinimumFlexSizeRule::kScaleToZero,
+                                views::MaximumFlexSizeRule::kPreferred);
+-  tab_strip_scroll_container_->SetProperty(views::kFlexBehaviorKey,
+-                                           tab_strip_flex_spec);
++  tab_strip_->SetProperty(views::kFlexBehaviorKey, tab_strip_flex_spec);
+ 
+   if (ShouldShowNewTabButton(browser)) {
+     std::unique_ptr<TabStripControlButton> tab_strip_control_button =
+@@ -427,11 +257,13 @@ HorizontalTabStripRegionView::HorizontalTabStripRegionView(
+     new_tab_button_->GetViewAccessibility().SetName(
+         l10n_util::GetStringUTF16(IDS_ACCNAME_NEWTAB));
+ 
++#if BUILDFLAG(IS_LINUX)
+     // On Linux, middle-clicking the New Tab Button triggers
+     // paste and navigate, either to URLs or to search queries.
+     new_tab_button_->SetTriggerableEventFlags(
+         new_tab_button_->GetTriggerableEventFlags() |
+         ui::EF_MIDDLE_MOUSE_BUTTON);
++#endif
+   }
+ 
+   reserved_grab_handle_space_ =
+@@ -485,7 +317,7 @@ bool HorizontalTabStripRegionView::IsPositionInWindowCaption(
+   // the |tab_strip_| and the |tab_strip_| but not over the same
+   // pixels. This could lead to this returning false when it should be returning
+   // true.
+-  if (IsHitInView(tab_strip_scroll_container_, point)) {
++  if (IsHitInView(tab_strip_, point)) {
+     gfx::RectF rect_in_target_coords_f(gfx::Rect(point, gfx::Size(1, 1)));
+     View::ConvertRectToTarget(this, tab_strip_, &rect_in_target_coords_f);
+     return tab_strip_->IsRectInWindowCaption(
+@@ -495,9 +327,8 @@ bool HorizontalTabStripRegionView::IsPositionInWindowCaption(
+   // The child could have a non-rectangular shape, so if the rect is not in the
+   // visual portions of the child view we treat it as a click to the caption.
+   for (View* const child : children()) {
+-    if (child != tab_strip_scroll_container_ &&
+-        child != reserved_grab_handle_space_ && child->GetVisible() &&
+-        IsHitInView(child, point)) {
++    if (child != tab_strip_ && child != reserved_grab_handle_space_ &&
++        child->GetVisible() && IsHitInView(child, point)) {
+       return false;
+     }
+   }
+@@ -509,7 +340,7 @@ views::View::Views HorizontalTabStripRegionView::GetChildrenInZOrder() {
+   views::View::Views children;
+ 
+   if (tab_strip_) {
+-    children.emplace_back(tab_strip_scroll_container_.get());
++    children.emplace_back(tab_strip_.get());
+   }
+ 
+   if (new_tab_button_) {
+@@ -568,7 +399,7 @@ void HorizontalTabStripRegionView::Layout(PassKey) {
+     // The y position is measured from the bottom of the tabstrip, and then
+     // padding and button height are removed.
+     constexpr int kEmberTabGap = 8;
+-    const int x = tab_strip_scroll_container_->bounds().right() + kEmberTabGap;
++    const int x = tab_strip_->bounds().right() + kEmberTabGap;
+ 
+     const gfx::Point button_new_position(x,
+                                          (height() - button_size.height()) / 2);
+@@ -672,7 +503,6 @@ void HorizontalTabStripRegionView::InitializeTabStrip() {
+   }
+ 
+   tab_strip_->Initialize();
+-  tab_strip_scroll_container_->InitializeTabWidth(tab_strip_);
+   static_cast<BrowserTabStripController*>(tab_strip_->controller())
+       ->InitFromModel(tab_strip_);
+   tab_strip_set_ = true;

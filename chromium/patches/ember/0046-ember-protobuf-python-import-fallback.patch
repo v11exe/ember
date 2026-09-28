@@ -1,0 +1,12 @@
+diff --git a/third_party/protobuf/python/google/protobuf/internal/api_implementation.py b/third_party/protobuf/python/google/protobuf/internal/api_implementation.py
+--- a/third_party/protobuf/python/google/protobuf/internal/api_implementation.py
++++ b/third_party/protobuf/python/google/protobuf/internal/api_implementation.py
+@@ -42,7 +42,7 @@ def _CanImport(mod_name):
+     if not mod:
+       raise ImportError(mod_name + ' import succeeded but was None')
+     return True
+-  except ImportError:
++  except (ImportError, AttributeError):
+     return False
+
+

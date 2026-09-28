@@ -77,6 +77,23 @@ test('the Ember patch series is ordered, local, and complete', () => {
     'ember/0032-ember-batch2-runtime-regressions.patch',
     'ember/0033-ember-favorite-reflow-and-split-motion.patch',
     'ember/0034-ember-last-tab-transfer-crash.patch',
+    'ember/0035-ember-batch3-sidebar-upload-ntp.patch',
+    'ember/0036-ember-batch4-glass-bangs-routes-tab-wheel.patch',
+    'ember/0037-ember-tab-strip-scroll-startup.patch',
+    'ember/0038-ember-restore-visible-tabs.patch',
+    'ember/0039-ember-simplify-quick-search-settings.patch',
+    'ember/0040-ember-batch4-dialog-tab-overflow.patch',
+    'ember/0041-ember-chatgpt-submit-and-tab-glide.patch',
+    'ember/0042-ember-sidebar-extensions-corner-brand.patch',
+    'ember/0043-ember-selection-conversions.patch',
+    'ember/0044-ember-unsplash-newtab-sidebar-layout.patch',
+    'ember/0045-ember-windows-bindings-memory.patch',
+    'ember/0046-ember-protobuf-python-import-fallback.patch',
+    'ember/0047-ember-regenerate-pruned-midls.patch',
+    'ember/0048-ember-unsplash-webui-csp-order.patch',
+    'ember/0049-ember-unsplash-browser-fetch.patch',
+    'ember/0050-ember-unsplash-browser-image.patch',
+    'ember/0051-ember-unsplash-topics.patch',
   ]);
   for (const entry of entries) {
     assert.equal(fs.existsSync(path.join(port.PATCHES_ROOT, ...entry.split('/'))), true);
@@ -159,6 +176,39 @@ test('prepared build verification reverses dependent patches in isolated scratch
   }
 });
 
+test('prepared verification ignores patch hunks superseded by a checked resource overlay', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ember-overlaid-patch-fixture-'));
+  try {
+    const source = path.join(root, 'source');
+    fs.mkdirSync(source);
+    fs.writeFileSync(path.join(source, 'native.txt'), 'after\n');
+    fs.writeFileSync(path.join(source, 'resource.txt'), 'overlay\n');
+    const patch = path.join(root, 'patch.patch');
+    fs.writeFileSync(patch, [
+      'diff --git a/native.txt b/native.txt',
+      '--- a/native.txt',
+      '+++ b/native.txt',
+      '@@ -1 +1 @@',
+      '-before',
+      '+after',
+      'diff --git a/resource.txt b/resource.txt',
+      '--- a/resource.txt',
+      '+++ b/resource.txt',
+      '@@ -1 +1 @@',
+      '-old',
+      '+patched',
+      '',
+    ].join('\n'));
+    assert.deepEqual(
+      port.verifyAppliedPatchSequenceInScratch(source, [patch], ['resource.txt']),
+      ['native.txt', 'resource.txt'],
+    );
+    assert.equal(fs.readFileSync(path.join(source, 'resource.txt'), 'utf8'), 'overlay\n');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('resume repairs a partial GN bootstrap without discarding generated build files', () => {
   const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ember-gn-resume-fixture-'));
   try {
@@ -181,31 +231,15 @@ test('resume repairs a partial GN bootstrap without discarding generated build f
   }
 });
 
-test('the Electron oracle manifest names 30 valid deterministic PNG references', () => {
+test('the retained conversion oracle images are valid PNGs', () => {
   const referenceRoot = path.join(port.REPO_ROOT, 'chromium', 'reference', 'electron', '9ae3217');
-  const manifest = JSON.parse(fs.readFileSync(path.join(referenceRoot, 'manifest.json'), 'utf8'));
-  const files = Object.values(manifest.scenarios).flat();
-
-  assert.equal(manifest.oracleCommit, '9ae3217b20f72bc05a9ce1b11d9d84ce544c746d');
-  assert.equal(manifest.environment.EMBER_CAPTURE_OFFLINE, '1');
-  assert.equal(files.length, 30);
-  assert.equal(new Set(files).size, files.length);
-  for (const file of files) {
+  for (const file of ['conversion-dark.png', 'conversion-light.png', 'conversion-photo.png',
+    'conversion-copy-hover.png', 'conversion-copy-pressed.png']) {
     const data = fs.readFileSync(path.join(referenceRoot, file));
     assert.equal(data.subarray(1, 4).toString('ascii'), 'PNG', file);
     assert.ok(data.readUInt32BE(16) > 0, file);
     assert.ok(data.readUInt32BE(20) > 0, file);
   }
-  assert.deepEqual(manifest.geometry.wide.viewport, [1570, 796]);
-  assert.deepEqual(manifest.geometry.compact.viewport, [620, 336]);
-});
-
-test('the Electron oracle capture has a deterministic offline mode and bounded paint wait', () => {
-  const capture = fs.readFileSync(path.join(port.REPO_ROOT, 'scripts', 'capture-ui.js'), 'utf8');
-
-  assert.match(capture, /process\.env\.EMBER_CAPTURE_OFFLINE === '1'/);
-  assert.match(capture, /settleTimer = setTimeout\(\(\) => finish\(null\), 300\)/);
-  assert.match(capture, /paint timed out: \$\{file\}[\s\S]*3000/);
 });
 
 test('the first native patch assigns Ember-owned Windows integration identities', () => {
@@ -251,8 +285,8 @@ test('the visible product patch brands window, About, accessibility, and default
 
 test('the native resource overlay is path-safe and carries valid Ember raster and ICO assets', () => {
   const manifest = port.readResourceManifest();
-  assert.equal(manifest.files.length, 37);
-  assert.equal(new Set(manifest.files.map((item) => item.destination)).size, 37);
+  assert.equal(manifest.files.length, 40);
+  assert.equal(new Set(manifest.files.map((item) => item.destination)).size, 40);
   assert.match(port.resourceOverlayHash(manifest), /^[0-9a-f]{64}$/);
   assert.equal(
     manifest.files.some((item) => item.destination.endsWith('/chromium/win/chromium.ico')),
@@ -914,7 +948,9 @@ test('Batch 1 keeps native transparency, Store branding, search, and extension m
     path.join(port.RESOURCES_ROOT, 'newtab', 'ember-search.ts'), 'utf8');
   assert.doesNotMatch(ntpCss, /\.ember-meteor\s*\{[^}]*filter:/s);
   assert.doesNotMatch(ntpSearch, /feTurbulence|feDisplacementMap|backdropFilter/);
-  assert.match(ntpSearch, /repeatedly sampled Chromium's transparent surface/);
+  assert.match(ntpSearch, /transparent DWM mode cannot supply a stable renderer backdrop/);
+  assert.match(ntpCss, /body\.unsplash-mode \.glass__warp::before\s*\{[^}]*background-image: var\(--unsplash-photo\);[^}]*filter: blur\(55px\)/s);
+  assert.match(ntpCss, /body\.unsplash-mode \.glass__warp::after\s*\{[^}]*background: rgba\(20, 25, 30, \.35\)/s);
 });
 
 test('Batch 1 corrective pass keeps glass, menus, focus, and tab lifecycle coherent', () => {
@@ -1120,10 +1156,6 @@ test('Favorite insertion reflows real tiles and a direct split-side crossing ani
   assert.match(additions, /switching_background_side/);
   assert.match(additions, /animation_\.SetSlideDuration/);
   assert.match(patchText, /ember_favorites::Add\(ember_bookmark_model_, url, title, index\)/);
-  const oracle = fs.readFileSync(path.join(__dirname, '../src/renderer/sidebar.js'), 'utf8');
-  assert.match(oracle, /previewFavoritePlacement/);
-  assert.match(oracle, /const previous = new Map/);
-  assert.match(oracle, /node\.animate\(/);
 });
 
 test('last-tab transfer closes the source window without reseeding during detach', () => {
@@ -1140,6 +1172,28 @@ test('last-tab transfer closes the source window without reseeding during detach
   assert.match(patchText, /case TabStripModelChange::kInserted:[\s\S]*ember_last_tab_was_transferred_ = false/);
   assert.match(patchText, /void Browser::TabStripEmpty\(\)/);
   assert.doesNotMatch(additions, /chrome::NewTab\(/);
+});
+
+test('Extensions use the sidebar footer and the corner uses the official Ember mark', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0042-ember-sidebar-extensions-corner-brand.patch'), 'utf8');
+  assert.match(patchText, /MoveExtensionsToSidebar/);
+  assert.match(patchText, /ember_sidebar_footer_/);
+  assert.match(patchText, /IDR_EMBER_CHROME_MARK/);
+  assert.doesNotMatch(patchText, /IDR_EMBER_CONVERSIONS_SCRIPT/);
+});
+
+test('selection conversions use the active renderer and profile preferences', () => {
+  const patchText = fs.readFileSync(
+    path.join(port.PATCHES_ROOT, 'ember', '0043-ember-selection-conversions.patch'), 'utf8');
+  assert.match(patchText, /OnTextSelectionChanged/);
+  assert.match(patchText, /GetTextSelectionBounds/);
+  assert.match(patchText, /IsRenderFrameLive/);
+  assert.match(patchText, /kEmberConversionsEnabled/);
+  assert.match(patchText, /IDR_EMBER_CONVERSIONS_SCRIPT/);
+  assert.match(patchText, /api\.frankfurter\.app\/latest\?from=EUR/);
+  assert.match(patchText, /CredentialsMode::kOmit/);
+  assert.match(patchText, /CaptureEmberGlassBubbleBackdrop/);
 });
 
 test('packaging normalizes pinned artifacts to Ember names without overwriting conflicts', () => {
@@ -1327,182 +1381,7 @@ test('version comparison accepts patch differences while enforcing the minimum m
   assert.equal(port.versionAtLeast([3, 10, 9], [3, 11]), false);
 });
 
-// The native parity specs are hand-copied numbers. Nothing stops the Electron
-// oracle from moving underneath them, and a stale spec is worse than none: the
-// next native slice would be built to a measurement that is no longer true.
-// These read the oracle back and fail when the two disagree.
 const ORACLE_ROOT = path.join(__dirname, '..');
-const SPECS_ROOT = path.join(ORACLE_ROOT, 'docs', 'superpowers', 'specs');
-
-function cssBlock(text, selector) {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const block = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(text);
-  if (!block) throw new Error(`Missing CSS rule: ${selector}`);
-  return block[1];
-}
-
-function cssDeclaration(text, selector, property) {
-  const declaration = new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`)
-    .exec(cssBlock(text, selector));
-  if (!declaration) throw new Error(`Missing ${property} in ${selector}`);
-  return declaration[1].trim();
-}
-
-test('the native sidebar parity spec still matches the Electron oracle it measured', () => {
-  const sidebarCss = fs.readFileSync(
-    path.join(ORACLE_ROOT, 'src', 'renderer', 'sidebar.css'), 'utf8',
-  );
-  const sidebarJs = fs.readFileSync(
-    path.join(ORACLE_ROOT, 'src', 'renderer', 'sidebar.js'), 'utf8',
-  );
-  const manifest = JSON.parse(fs.readFileSync(
-    path.join(ORACLE_ROOT, 'chromium', 'reference', 'electron', '9ae3217', 'manifest.json'),
-    'utf8',
-  ));
-
-  // The rail's coordinate system, which every native inset is derived from.
-  assert.equal(cssDeclaration(sidebarCss, '.sidebar-surface', 'padding'), '34px 9px 8px');
-  assert.equal(cssDeclaration(sidebarCss, '.sidebar-content', 'grid-template-rows'), '33px auto');
-  assert.equal(cssDeclaration(sidebarCss, '.sidebar-content', 'gap'), '10px');
-  assert.deepEqual(manifest.geometry.sidebar.address, [9, 34, 159, 67]);
-  assert.deepEqual(manifest.geometry.sidebar.favoritesOrigin, [9, 77]);
-  // 168 rail less 9 px of padding on each side is a 150 px content column.
-  assert.equal(
-    manifest.geometry.shell.sidebarWidth - 18,
-    manifest.geometry.sidebar.address[2] - manifest.geometry.sidebar.address[0],
-  );
-
-  // Address row.
-  assert.equal(cssDeclaration(sidebarCss, '.sidebar-address', 'height'), '33px');
-  assert.equal(cssDeclaration(sidebarCss, '.sidebar-address', 'border-radius'), '7px');
-  assert.equal(
-    cssDeclaration(sidebarCss, '.sidebar-address', 'background'),
-    'rgba(255, 255, 255, .075)',
-  );
-  assert.equal(
-    cssDeclaration(sidebarCss, '.sidebar-address', 'border'),
-    '1px solid rgba(255, 255, 255, .025)',
-  );
-  assert.equal(
-    cssDeclaration(sidebarCss, '.sidebar-address input', 'color'),
-    'rgba(255, 255, 255, .82)',
-  );
-  assert.equal(cssDeclaration(sidebarCss, '.sidebar-address-copy', 'width'), '26px');
-  assert.equal(cssDeclaration(sidebarCss, '.sidebar-address-copy img', 'width'), '12px');
-  assert.equal(cssDeclaration(sidebarCss, '.sidebar-address-copy img', 'height'), '7px');
-  // The oracle strips the scheme for https as well as http, and a leading www.
-  assert.match(sidebarJs, /\^https\?:\\\/\\\//);
-  assert.match(sidebarJs, /replace\(\/\^www\\\./);
-
-  // Favorite tiles.
-  assert.equal(cssDeclaration(sidebarCss, ':root', '--favorite-tile-height'), '43px');
-  assert.equal(cssDeclaration(sidebarCss, ':root', '--favorite-gap'), '10px');
-  assert.equal(cssDeclaration(sidebarCss, ':root', '--favorite-grid-height'), '98px');
-  assert.equal(cssDeclaration(sidebarCss, '.favorite', 'border-radius'), '7px');
-  assert.equal(
-    cssDeclaration(sidebarCss, '.favorite', 'background'),
-    'rgba(255, 255, 255, .075)',
-  );
-  assert.equal(cssDeclaration(sidebarCss, '.favorite', 'border'),
-    '1px solid rgba(255, 255, 255, .025)');
-  assert.equal(cssDeclaration(sidebarCss, '.favorite img', 'width'), '19px');
-  // Icon-only: the tile centres a single image and carries no title text.
-  assert.equal(cssDeclaration(sidebarCss, '.favorite', 'place-items'), 'center');
-  assert.match(sidebarCss, /\.favorite\.is-open \{ background: rgba\(255, 255, 255, \.18\)/);
-
-  const spec = fs.readFileSync(
-    path.join(SPECS_ROOT, '2026-09-01-native-sidebar-visual-parity.md'), 'utf8',
-  );
-  for (const quoted of ['34px 9px 8px', '150', '33', '0x13', '0x06', '12×7', '19×19']) {
-    assert.ok(spec.includes(quoted), `sidebar parity spec no longer quotes ${quoted}`);
-  }
-});
-
-test('the native top-chrome parity spec still matches the Electron oracle it measured', () => {
-  const layout = require('../src/shared/chrome-layout');
-  const scroll = require('../src/shared/tab-scroll');
-  const chromeCss = fs.readFileSync(
-    path.join(ORACLE_ROOT, 'src', 'renderer', 'chrome.css'), 'utf8',
-  );
-
-  assert.equal(layout.TOPBAR_HEIGHT, 32);
-  assert.equal(layout.SIDEBAR_WIDTH, 168);
-  assert.equal(layout.TAB_MIN_WIDTH, 95);
-  assert.equal(layout.TAB_MAX_WIDTH, 190);
-  assert.equal(layout.TAB_GAP, 8);
-  assert.equal(layout.NEW_TAB_WIDTH, 34);
-  assert.equal(layout.DRAG_RESERVE, 96);
-  assert.equal(cssDeclaration(chromeCss, ':root', '--tab-height'), '28px');
-  assert.equal(cssDeclaration(chromeCss, ':root', '--tab-radius'), '6px');
-  assert.equal(cssDeclaration(chromeCss, ':root', '--caption-width'), '138px');
-
-  // The dynamic width formula the native strip has to reproduce exactly.
-  assert.equal(layout.dynamicTabMax({ availableWidth: 0, count: 0 }), 190);
-  assert.equal(layout.dynamicTabMax({ availableWidth: 2000, count: 4 }), 190);
-  assert.equal(layout.dynamicTabMax({ availableWidth: 400, count: 4 }), 95);
-  assert.equal(
-    layout.dynamicTabMax({ availableWidth: 900, count: 5 }),
-    Math.floor((900 - 34 - 96 - 8 * 4) / 5),
-  );
-
-  // Wheel physics.
-  assert.equal(scroll.STEP, 132);
-  assert.equal(scroll.STEP_MAX, 430);
-  assert.equal(scroll.OVERSCROLL_LIMIT, 44);
-  assert.equal(scroll.OVERSCROLL_STEP, 17);
-  assert.equal(scroll.strideFor(Number.POSITIVE_INFINITY), 132);
-
-  const spec = fs.readFileSync(
-    path.join(SPECS_ROOT, '2026-09-01-native-top-chrome-parity.md'), 'utf8',
-  );
-  for (const quoted of ['132 px base stride', '430 px', '44 px', '17 px', '138 px', '28 px']) {
-    assert.ok(spec.includes(quoted), `top-chrome parity spec no longer quotes ${quoted}`);
-  }
-});
-
-test('the tab states the native strip has to reproduce are still the oracle values', () => {
-  const chromeCss = fs.readFileSync(
-    path.join(ORACLE_ROOT, 'src', 'renderer', 'chrome.css'), 'utf8',
-  );
-
-  // Sampled from the running oracle on 2026-09-02, 320ms after each class
-  // change so the 120ms transitions had finished. Reading these at t=0 returns
-  // the outgoing state, which is how they were mismeasured the first time.
-  assert.equal(cssDeclaration(chromeCss, '.tab', 'background'), 'rgba(255, 255, 255, .075)');
-  assert.equal(cssDeclaration(chromeCss, '.tab', 'border'), '1px solid rgba(255, 255, 255, .035)');
-  assert.equal(cssDeclaration(chromeCss, '.tab', 'color'), 'rgba(255, 255, 255, .70)');
-  assert.equal(cssDeclaration(chromeCss, '.tab', 'font-size'), '12.5px');
-  assert.equal(cssDeclaration(chromeCss, '.tab', 'padding'), '0 9px');
-  assert.equal(cssDeclaration(chromeCss, '.tab', 'gap'), '7px');
-  assert.equal(cssDeclaration(chromeCss, '.tab.active', 'background'), 'rgba(24, 20, 19, .82)');
-  assert.equal(cssDeclaration(chromeCss, '.tab.active', 'border-color'), 'rgba(255, 91, 0, .80)');
-  assert.equal(cssDeclaration(chromeCss, '.tab.active', 'color'), 'rgba(255, 255, 255, .94)');
-  assert.equal(
-    cssDeclaration(chromeCss, '.tab.asleep', 'background'), 'rgba(255, 255, 255, .025)',
-  );
-  assert.equal(cssDeclaration(chromeCss, '.tab.asleep', 'color'), 'rgba(255, 255, 255, .43)');
-  assert.match(chromeCss, /\.tab:hover \{ background: rgba\(255, 255, 255, \.10\)/);
-  assert.match(chromeCss, /\.tab\.dragging \{ opacity: \.34/);
-  // Close button: only present on hover, and inset 5px from the tab's edge.
-  assert.equal(cssDeclaration(chromeCss, '.tab-close', 'width'), '28px');
-  assert.equal(cssDeclaration(chromeCss, '.tab-close', 'right'), '5px');
-  assert.equal(cssDeclaration(chromeCss, '.tab-close', 'opacity'), '0');
-  assert.equal(cssDeclaration(chromeCss, '.tab-close', 'background'), 'rgba(35, 29, 27, .96)');
-  // The sleeping glyph pair.
-  assert.equal(cssDeclaration(chromeCss, '.tab-sleep', 'width'), '16px');
-  assert.equal(cssDeclaration(chromeCss, '.tab-sleep', 'height'), '18px');
-  assert.equal(cssDeclaration(chromeCss, '.tab-sleep', 'color'), 'rgba(255, 255, 255, .38)');
-
-  const spec = fs.readFileSync(
-    path.join(SPECS_ROOT, '2026-09-01-native-top-chrome-parity.md'), 'utf8',
-  );
-  assert.ok(spec.includes('Runtime-verified measurements'),
-    'the runtime measurement section is gone from the top-chrome spec');
-  for (const quoted of ['rgba(24,20,19,.82)', 'rgba(255,91,0,.80)', 'grayscale(1)',
-    'innerHeight: 32', '--tab-max-width: 100px']) {
-    assert.ok(spec.includes(quoted), `top-chrome spec no longer quotes ${quoted}`);
-  }
-});
 
 test('the native capture runner targets the exact oracle viewports', () => {
   const capture = require('../chromium/tools/capture-native');

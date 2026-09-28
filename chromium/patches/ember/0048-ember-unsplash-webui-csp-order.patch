@@ -1,0 +1,32 @@
+diff --git a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
+--- a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
++++ b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
+@@ -432,12 +432,6 @@ void CreateAndAddNewTabPageThirdPartyUiHtmlSource(Profile* profile,
+                                                   WebContents* web_contents) {
+   content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
+       profile, chrome::kChromeUINewTabPageThirdPartyHost);
+-  source->OverrideContentSecurityPolicy(
+-      network::mojom::CSPDirectiveName::ConnectSrc,
+-      "connect-src 'self' https://api.unsplash.com;");
+-  source->OverrideContentSecurityPolicy(
+-      network::mojom::CSPDirectiveName::ImgSrc,
+-      "img-src 'self' data: chrome: https:;");
+   ui::Accelerator undo_accelerator(ui::VKEY_Z, ui::EF_PLATFORM_ACCELERATOR);
+   source->AddString("undoDescription", l10n_util::GetStringFUTF16(
+                                            IDS_UNDO_DESCRIPTION,
+@@ -529,4 +523,15 @@ void CreateAndAddNewTabPageThirdPartyUiHtmlSource(Profile* profile,
+   webui::SetupWebUIDataSource(
+       source, kNewTabPageThirdPartyResources,
+       IDR_NEW_TAB_PAGE_THIRD_PARTY_NEW_TAB_PAGE_THIRD_PARTY_HTML);
++  // SetupWebUIDataSource installs its standard CSP last, so keep the
++  // Unsplash exceptions here or they are overwritten before navigation.
++  source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::ConnectSrc,
++      "connect-src chrome://webui-test chrome://resources chrome://theme "
++      "'self' https://api.unsplash.com;");
++  source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::ImgSrc,
++      "img-src chrome://resources chrome://theme chrome://image "
++      "chrome://favicon2 chrome://app-icon chrome://extension-icon "
++      "chrome://fileicon blob: data: 'self' https://images.unsplash.com;");
+ }

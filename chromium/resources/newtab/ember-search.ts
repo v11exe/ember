@@ -66,16 +66,18 @@
     highlight.className = 'liquid-glass-highlight'
     const highlightOverlay = document.createElement('span')
     highlightOverlay.className = 'liquid-glass-highlight liquid-glass-highlight-overlay'
-    // The whole NTP already reveals Windows' native backdrop. Renderer-side
-    // SVG/backdrop filters repeatedly sampled Chromium's transparent surface
-    // and fed prior frames back into the next one, duplicating the logo and
-    // search contents after tab switches and fullscreen transitions.
+    // The transparent DWM mode cannot supply a stable renderer backdrop for
+    // SVG filters. Photo mode blurs a copy of its opaque image in the lens.
     root.append(glass, highlight, highlightOverlay)
     host.replaceChildren(root)
 
     let active = false
     let point = { x: 0, y: 0 }
     function calculateDirectionalScale() {
+      if (root.dataset.autocompleteActive === 'true') {
+        root.style.transform = 'none'
+        return
+      }
       const rect = root.getBoundingClientRect()
       const centerX = rect.left + rect.width / 2
       const centerY = rect.top + rect.height / 2

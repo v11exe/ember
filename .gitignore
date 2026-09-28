@@ -1,4 +1,17 @@
 node_modules/
 package-lock.json
 dist/
-ember-diag.log
+
+# Native checkout, build and local QA output belong outside this repository.
+/out/
+/build/
+/artifacts/
+/captures/
+/qa/
+/logs/
+/.scratch/
+*.log
+*.dmp
+*.tmp
+.ninja_deps
+.ninja_log

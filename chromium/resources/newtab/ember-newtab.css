@@ -20,6 +20,31 @@
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; background: transparent; }
+body.unsplash-mode { background: #20252c; }
+#ember-unsplash-background {
+  position: fixed;
+  inset: 0;
+  background-position: center center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+body.unsplash-mode #ember-unsplash-background::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, .18);
+}
+#ember-unsplash-credit {
+  position: fixed;
+  z-index: 2;
+  left: 18px;
+  bottom: 14px;
+  color: #fff;
+  font: 12px/1.3 var(--font);
+  text-shadow: 0 1px 4px #000;
+}
+#ember-unsplash-credit[hidden] { display: none; }
 body {
   color: var(--text);
   font-family: var(--font);
@@ -71,7 +96,7 @@ body {
 }
 
 /* ---------- LiquidGlass search: the glass owns every optical layer ---------- */
-#native-liquid-glass { height: 58px; }
+#native-liquid-glass { height: 58px; position: relative; }
 .liquid-glass-root { position: relative; width: 100%; height: 58px; transition: transform .2s ease-out; will-change: transform; }
 .liquid-glass-filter { position: absolute; width: 100%; height: 100%; pointer-events: none; }
 .glass { position: relative; display: inline-flex; align-items: center; width: 100%; height: 100%; padding: var(--glass-padding); overflow: hidden; border-radius: var(--glass-radius); box-sizing: border-box; box-shadow: 0 12px 40px rgba(0, 0, 0, .25); transition: all .2s ease-in-out; }
@@ -79,42 +104,142 @@ body {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: rgba(18, 20, 25, .18);
+  background: rgba(18, 20, 25, .3);
   box-shadow: 0 0 0 .5px rgba(255, 255, 255, .18) inset;
+}
+/* CSS backdrop-filter computes but leaves the composited photo sharp in this
+   WebUI. Paint the same viewport-anchored image inside the clipped lens and
+   blur that layer; its colors remain while its details dissolve. */
+body.unsplash-mode .glass__warp {
+  background: none;
+}
+body.unsplash-mode .glass__warp::before {
+  content: '';
+  position: absolute;
+  inset: -80px;
+  background-image: var(--unsplash-photo);
+  background-position: center;
+  background-size: cover;
+  background-attachment: fixed;
+  filter: blur(55px);
+  pointer-events: none;
+}
+body.unsplash-mode .glass__warp::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 25, 30, .35);
+  pointer-events: none;
 }
 .glass__content { position: relative; z-index: 1; width: 100%; color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.4); }
 .liquid-glass-highlight { position: absolute; inset: 0; padding: 1.5px; pointer-events: none; border-radius: var(--glass-radius); mix-blend-mode: screen; opacity: .2; background: linear-gradient(var(--glass-angle, 135deg), transparent 0%, rgba(255,255,255,var(--glass-highlight,.12)) 36%, rgba(255,255,255,.45) 66%, transparent 100%); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; box-shadow: 0 0 0 .5px rgba(255,255,255,.5) inset, 0 1px 3px rgba(255,255,255,.25) inset, 0 1px 4px rgba(0,0,0,.35); }
 .liquid-glass-highlight-overlay { mix-blend-mode: overlay; }
-.liquid-glass-search { display: flex; align-items: center; gap: 13px; width: 100%; height: 100%; min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; color: #fff; }
+.liquid-glass-search { position: relative; display: flex; align-items: center; gap: 13px; width: 100%; height: 100%; min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; color: #fff; }
 .liquid-glass-search-icon { display: block; width: 21px; height: 21px; flex: none; color: #fff; opacity: .98; pointer-events: none; }
-/* Names the quick search the typed keyword resolves to, the same as the
-   toolbar omnibox does, so the two entry points behave alike. */
+/* The active engine occupies only the icon lane; its name is input placeholder
+   text and disappears as the user types. */
 .liquid-glass-search-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   flex: none;
-  max-width: 38%;
-  padding: 4px 11px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .22);
-  color: #fff;
-  font: 600 12.5px/1.3 var(--font);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  text-shadow: 0 1px 6px rgba(0,0,0,.35);
+  padding-right: 4px;
 }
 .liquid-glass-search-chip[hidden] { display: none; }
-/* Committed to, rather than merely recognised: the chip stops being a preview
-   and becomes the engine the empty box is now searching. */
-.liquid-glass-search-chip[data-engaged="true"] {
-  background: rgba(255, 108, 24, .82);
-  box-shadow: 0 0 0 1px rgba(255, 178, 122, .5), 0 2px 8px rgba(255, 92, 0, .28);
+.liquid-glass-search-chip img {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+.liquid-glass-search-chip-divider {
+  width: 1px;
+  height: 15px;
+  flex: none;
+  background: rgba(255,255,255,.42);
 }
 
 .liquid-glass-search input { flex: 1; min-width: 0; height: 100%; margin: 0; padding: 0; border: 0; outline: none; appearance: none; background: transparent; color: #fff; caret-color: #fff; font: 600 15.5px/1 var(--font); text-shadow: 0 2px 12px rgba(0,0,0,.4); }
 .liquid-glass-search input:focus, .liquid-glass-search input:focus-visible { outline: 0 !important; border: 0 !important; box-shadow: none !important; }
 .liquid-glass-search input::placeholder { color: rgba(255,255,255,.92); opacity: 1; }
 .liquid-glass-search input::-webkit-search-cancel-button { display: none; }
+.liquid-glass-search input.has-autofill { color: transparent; }
+.liquid-glass-search input.autofill-middle { caret-color: transparent; }
+.ember-autofill {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  pointer-events: none;
+  white-space: pre;
+  font: 600 15.5px/1 var(--font);
+  text-align: left;
+  text-shadow: 0 2px 12px rgba(0,0,0,.4);
+}
+.ember-autofill-typed { color: #fff; }
+.ember-autofill-added { color: rgba(237,237,237,.48); }
+.ember-autofill-caret {
+  height: 18px;
+  margin-left: -1px;
+  border-left: 1px solid #fff;
+  animation: ember-caret 1s steps(1) infinite;
+}
+@keyframes ember-caret { 50% { opacity: 0; } }
+
+.ember-recommendations {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 100%;
+  height: 0;
+  overflow: hidden;
+  border-radius: 18px;
+  --glass-radius: 18px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.25), 0 0 0 .5px rgba(255,255,255,.22) inset,
+      0 1px 3px rgba(255,255,255,.16) inset;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: height var(--dur-3) var(--ease),
+      opacity var(--dur-3) var(--ease),
+      transform var(--dur-3) var(--ease);
+}
+.ember-recommendation-list { position: relative; z-index: 1; padding: 5px; }
+.ember-recommendations[hidden] { display: none; }
+.ember-recommendations.open { opacity: 1; transform: none; }
+.ember-recommendation {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 37px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+  font: 500 13px/1.25 var(--font);
+  transition: background var(--dur-3) var(--ease), box-shadow var(--dur-3) var(--ease);
+}
+.ember-recommendation.selected,
+.ember-recommendation:hover {
+  background: rgba(255,255,255,.17);
+  box-shadow: 0 0 0 .5px rgba(255,255,255,.24) inset,
+      0 1px 2px rgba(255,255,255,.13) inset, 0 5px 14px rgba(0,0,0,.12);
+}
+.ember-recommendation-icon { width: 17px; height: 17px; flex: none; object-fit: contain; }
+.ember-recommendation-text { display: flex; min-width: 0; flex: 1; gap: 12px; align-items: baseline; }
+.ember-recommendation-title,
+.ember-recommendation-description { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ember-recommendation-description { color: rgba(255,255,255,.52); font-size: 11px; }
+.ember-recommendation-enter { flex: none; color: rgba(255,255,255,.7); font-size: 17px; }
+.ember-recommendation-enter[hidden] { display: none; }
 /* Both the glyph and the word run the search, so both say so with the
    pointer and lift a little under it. */
 .liquid-glass-search > button { flex: none; padding: 0; border: 0; outline: none; background: transparent; color: #fff; font: 600 13px/1 var(--font); cursor: pointer; transition: opacity 120ms ease, transform 120ms ease; }
+.liquid-glass-search > button[hidden] { display: none; }
 .liquid-glass-search > button:hover { opacity: .78; }
 .liquid-glass-search > button:active { transform: scale(.94); }
 .liquid-glass-search-glyph { display: grid; place-items: center; }

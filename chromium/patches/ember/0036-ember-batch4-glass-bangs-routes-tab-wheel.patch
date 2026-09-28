@@ -1,0 +1,2309 @@
+diff --git a/chrome/browser/search_engines/chrome_template_url_service_client.cc b/chrome/browser/search_engines/chrome_template_url_service_client.cc
+index 12dff25..081e136 100644
+--- a/chrome/browser/search_engines/chrome_template_url_service_client.cc
++++ b/chrome/browser/search_engines/chrome_template_url_service_client.cc
+@@ -4,25 +4,184 @@
+ 
+ #include "chrome/browser/search_engines/chrome_template_url_service_client.h"
+ 
++#include <array>
++#include <memory>
++#include <vector>
++
+ #include "base/feature_list.h"
++#include "base/functional/bind.h"
++#include "base/strings/string_split.h"
++#include "base/strings/string_util.h"
++#include "chrome/browser/search_engines/ember_bangs.h"
++#include "chrome/common/pref_names.h"
+ #include "components/history/core/browser/features.h"
+ #include "components/history/core/browser/history_types.h"
++#include "components/prefs/pref_service.h"
++#include "components/search_engines/template_url.h"
++#include "components/search_engines/template_url_data.h"
+ #include "components/search_engines/template_url_service.h"
+ 
++namespace ember {
++namespace {
++
++struct Bang {
++  const char16_t* alias;
++  const char16_t* name;
++  const char* url;
++  const char* favicon;
++};
++
++// Sourced from Electron's src/shared/bangs.js, with Chromium's native
++// {searchTerms} placeholder in place of %s. The last entry is Batch 4's new
++// ChatGPT bang.
++constexpr std::array kDefaults = {
++    Bang{u"g", u"Google", "https://www.google.com/search?q={searchTerms}",
++         "https://www.google.com/favicon.ico"},
++    Bang{u"yt", u"YouTube",
++         "https://www.youtube.com/results?search_query={searchTerms}",
++         "https://www.youtube.com/favicon.ico"},
++    Bang{u"gh", u"GitHub", "https://github.com/search?q={searchTerms}",
++         "https://github.com/favicon.ico"},
++    Bang{u"wiki", u"Wikipedia",
++         "https://en.wikipedia.org/w/index.php?search={searchTerms}",
++         "https://en.wikipedia.org/favicon.ico"},
++    Bang{u"r", u"Reddit", "https://www.reddit.com/search/?q={searchTerms}",
++         "https://www.reddit.com/favicon.ico"},
++    Bang{u"so", u"Stack Overflow",
++         "https://stackoverflow.com/search?q={searchTerms}",
++         "https://stackoverflow.com/favicon.ico"},
++    Bang{u"mdn", u"MDN",
++         "https://developer.mozilla.org/en-US/search?q={searchTerms}",
++         "https://developer.mozilla.org/favicon.ico"},
++    Bang{u"npm", u"npm", "https://www.npmjs.com/search?q={searchTerms}",
++         "https://www.npmjs.com/favicon.ico"},
++    Bang{u"maps", u"Google Maps",
++         "https://www.google.com/maps/search/{searchTerms}",
++         "https://www.google.com/favicon.ico"},
++    Bang{u"img", u"Google Images",
++         "https://www.google.com/search?tbm=isch&q={searchTerms}",
++         "https://www.google.com/favicon.ico"},
++    Bang{u"a", u"Amazon", "https://www.amazon.co.uk/s?k={searchTerms}",
++         "https://www.amazon.co.uk/favicon.ico"},
++    Bang{u"imdb", u"IMDb", "https://www.imdb.com/find/?q={searchTerms}",
++         "https://www.imdb.com/favicon.ico"},
++    Bang{u"tr", u"Google Translate",
++         "https://translate.google.com/?text={searchTerms}",
++         "https://translate.google.com/favicon.ico"},
++    Bang{u"x", u"X", "https://x.com/search?q={searchTerms}",
++         "https://x.com/favicon.ico"},
++    Bang{u"w", u"Wolfram Alpha",
++         "https://www.wolframalpha.com/input?i={searchTerms}",
++         "https://www.wolframalpha.com/favicon.ico"},
++    Bang{u"ddg", u"DuckDuckGo", "https://duckduckgo.com/?q={searchTerms}",
++         "https://duckduckgo.com/favicon.ico"},
++    Bang{u"gpt", u"ChatGPT", "https://chatgpt.com/?q={searchTerms}",
++         "https://chatgpt.com/favicon.ico"},
++};
++
++void AddBang(TemplateURLService* service, const Bang& bang) {
++  TemplateURLData data;
++  data.SetShortName(bang.name);
++  data.SetKeyword(bang.alias);
++  data.SetURL(bang.url);
++  data.favicon_url = GURL(bang.favicon);
++  data.safe_for_autoreplace = false;
++  data.is_active = TemplateURLData::ActiveStatus::kTrue;
++  service->Add(std::make_unique<TemplateURL>(data));
++}
++
++}  // namespace
++
++void SeedDefaultBangs(TemplateURLService* service, PrefService* prefs) {
++  if (!service || !service->loaded() || !prefs ||
++      prefs->GetBoolean(prefs::kEmberBangsSeeded)) {
++    return;
++  }
++  for (const Bang& bang : kDefaults) {
++    if (!service->GetTemplateURLForKeyword(bang.alias)) {
++      AddBang(service, bang);
++    }
++  }
++  prefs->SetBoolean(prefs::kEmberBangsSeeded, true);
++}
++
++void RestoreDefaultBangs(TemplateURLService* service) {
++  if (!service || !service->loaded()) {
++    return;
++  }
++  for (const Bang& bang : kDefaults) {
++    if (const TemplateURL* existing =
++            service->GetTemplateURLForKeyword(bang.alias)) {
++      service->Remove(existing);
++    }
++    AddBang(service, bang);
++  }
++}
++
++GURL ResolveBangInput(TemplateURLService* service,
++                      const std::u16string& input) {
++  if (!service || !service->loaded()) {
++    return GURL();
++  }
++  const std::vector<std::u16string> words = base::SplitString(
++      input, u" \t\r\n", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
++  if (words.empty()) {
++    return GURL();
++  }
++  const bool trailing = words.size() > 1 && words.back().starts_with(u"!");
++  std::u16string alias =
++      base::ToLowerASCII(trailing ? words.back() : words.front());
++  const bool explicit_bang = alias.starts_with(u"!");
++  if (explicit_bang) {
++    alias.erase(0, 1);
++  }
++  if (alias.empty() || alias.size() > 24 ||
++      (!explicit_bang && alias == u"localhost")) {
++    return GURL();
++  }
++  for (char16_t c : alias) {
++    if (!((c >= u'a' && c <= u'z') || (c >= u'0' && c <= u'9') || c == u'_' ||
++          c == u'+' || c == u'-')) {
++      return GURL();
++    }
++  }
++  const TemplateURL* bang = service->GetTemplateURLForKeyword(alias);
++  if (!bang) {
++    return GURL();
++  }
++  std::u16string query;
++  for (size_t i = trailing ? 0 : 1; i < words.size() - (trailing ? 1 : 0);
++       ++i) {
++    if (!query.empty()) {
++      query += u' ';
++    }
++    query += words[i];
++  }
++  const GURL expanded(bang->url_ref().ReplaceSearchTerms(
++      TemplateURLRef::SearchTermsArgs(query), service->search_terms_data()));
++  const GURL target = query.empty() ? expanded.GetWithEmptyPath() : expanded;
++  return target.is_valid() && target.SchemeIsHTTPOrHTTPS() ? target : GURL();
++}
++
++}  // namespace ember
++
+ ChromeTemplateURLServiceClient::ChromeTemplateURLServiceClient(
+-    history::HistoryService* history_service)
+-    : owner_(nullptr), history_service_(history_service) {
++    history::HistoryService* history_service,
++    PrefService* prefs)
++    : prefs_(prefs), owner_(nullptr), history_service_(history_service) {
+   // TODO(sky): bug 1166191. The keywords should be moved into the history
+   // db, which will mean we no longer need this notification and the history
+   // backend can handle automatically adding the search terms as the user
+   // navigates.
+-  if (history_service_)
++  if (history_service_) {
+     history_service_observation_.Observe(history_service_.get());
++  }
+ }
+ 
+ ChromeTemplateURLServiceClient::~ChromeTemplateURLServiceClient() = default;
+ 
+ void ChromeTemplateURLServiceClient::Shutdown() {
++  loaded_subscription_ = {};
+   // ChromeTemplateURLServiceClient is owned by TemplateURLService which is a
+   // KeyedService with a dependency on HistoryService, thus |history_service_|
+   // outlives the ChromeTemplateURLServiceClient.
+@@ -36,38 +195,55 @@ void ChromeTemplateURLServiceClient::Shutdown() {
+ void ChromeTemplateURLServiceClient::SetOwner(TemplateURLService* owner) {
+   DCHECK(!owner_);
+   owner_ = owner;
++  if (prefs_) {
++    if (owner_->loaded()) {
++      OnKeywordsLoaded();
++    } else {
++      loaded_subscription_ = owner_->RegisterOnLoadedCallback(
++          base::BindOnce(&ChromeTemplateURLServiceClient::OnKeywordsLoaded,
++                         base::Unretained(this)));
++    }
++  }
++}
++
++void ChromeTemplateURLServiceClient::OnKeywordsLoaded() {
++  ember::SeedDefaultBangs(owner_, prefs_);
+ }
+ 
+ void ChromeTemplateURLServiceClient::DeleteAllSearchTermsForKeyword(
+     TemplateURLID id) {
+-  if (history_service_)
++  if (history_service_) {
+     history_service_->DeleteAllSearchTermsForKeyword(id);
++  }
+ }
+ 
+ void ChromeTemplateURLServiceClient::SetKeywordSearchTermsForURL(
+     const GURL& url,
+     TemplateURLID id,
+     const std::u16string& term) {
+-  if (history_service_)
++  if (history_service_) {
+     history_service_->SetKeywordSearchTermsForURL(url, id, term);
++  }
+ }
+ 
+ void ChromeTemplateURLServiceClient::AddKeywordGeneratedVisit(const GURL& url) {
+-  if (history_service_)
++  if (history_service_) {
+     history_service_->AddPage(
+         url, base::Time::Now(), /*context_id=*/0, /*nav_entry_id=*/0,
+         /*referrer=*/GURL(), history::RedirectList(),
+         ui::PAGE_TRANSITION_KEYWORD_GENERATED, history::SOURCE_BROWSED,
+         history::VisitResponseCodeCategory::kNot404,
+         /*did_replace_entry=*/false);
++  }
+ }
+ 
+ void ChromeTemplateURLServiceClient::OnURLVisited(
+     history::HistoryService* history_service,
+     const history::VisitedURLInfo& visited_url_info) {
+   DCHECK_EQ(history_service_, history_service);
+-  if (!owner_)
++  if (!owner_) {
+     return;
++  }
+   // Filter out 404 visits to prevent them from informing search
+   // recommendations and impacting user journeys.
+   if (visited_url_info.response_code_category ==
+diff --git a/chrome/browser/search_engines/chrome_template_url_service_client.h b/chrome/browser/search_engines/chrome_template_url_service_client.h
+index 1dfbc8c..ca064f5 100644
+--- a/chrome/browser/search_engines/chrome_template_url_service_client.h
++++ b/chrome/browser/search_engines/chrome_template_url_service_client.h
+@@ -5,19 +5,23 @@
+ #ifndef CHROME_BROWSER_SEARCH_ENGINES_CHROME_TEMPLATE_URL_SERVICE_CLIENT_H_
+ #define CHROME_BROWSER_SEARCH_ENGINES_CHROME_TEMPLATE_URL_SERVICE_CLIENT_H_
+ 
++#include "base/callback_list.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/scoped_observation.h"
+ #include "components/history/core/browser/history_service.h"
+ #include "components/history/core/browser/history_service_observer.h"
+ #include "components/search_engines/template_url_service_client.h"
+ 
++class PrefService;
++
+ // ChromeTemplateURLServiceClient provides keyword related history
+ // functionality for TemplateURLService.
+ class ChromeTemplateURLServiceClient : public TemplateURLServiceClient,
+                                        public history::HistoryServiceObserver {
+  public:
+   explicit ChromeTemplateURLServiceClient(
+-      history::HistoryService* history_service);
++      history::HistoryService* history_service,
++      PrefService* prefs = nullptr);
+ 
+   ChromeTemplateURLServiceClient(const ChromeTemplateURLServiceClient&) =
+       delete;
+@@ -40,6 +44,10 @@ class ChromeTemplateURLServiceClient : public TemplateURLServiceClient,
+                     const history::VisitedURLInfo& visited_url_info) override;
+ 
+  private:
++  void OnKeywordsLoaded();
++
++  raw_ptr<PrefService> prefs_ = nullptr;
++  base::CallbackListSubscription loaded_subscription_;
+   raw_ptr<TemplateURLService> owner_;
+   base::ScopedObservation<history::HistoryService,
+                           history::HistoryServiceObserver>
+diff --git a/chrome/browser/search_engines/template_url_service_factory.cc b/chrome/browser/search_engines/template_url_service_factory.cc
+index d703013..2527c07 100644
+--- a/chrome/browser/search_engines/template_url_service_factory.cc
++++ b/chrome/browser/search_engines/template_url_service_factory.cc
+@@ -17,6 +17,7 @@
+ #include "chrome/browser/profiles/profile_selections.h"
+ #include "chrome/browser/search_engine_choice/search_engine_choice_service_factory.h"
+ #include "chrome/browser/search_engines/chrome_template_url_service_client.h"
++#include "chrome/common/pref_names.h"
+ #include "chrome/browser/search_engines/template_url_prepopulate_data_resolver_factory.h"
+ #include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
+ #include "chrome/browser/webdata_services/web_data_service_factory.h"
+@@ -76,7 +77,8 @@ std::unique_ptr<KeyedService> TemplateURLServiceFactory::BuildInstanceFor(
+       std::unique_ptr<TemplateURLServiceClient>(
+           new ChromeTemplateURLServiceClient(
+               HistoryServiceFactory::GetForProfile(
+-                  profile, ServiceAccessType::EXPLICIT_ACCESS))),
++                  profile, ServiceAccessType::EXPLICIT_ACCESS),
++              profile->GetPrefs())),
+       dsp_change_callback);
+ }
+ 
+@@ -125,6 +127,7 @@ TemplateURLServiceFactory::BuildServiceInstanceForBrowserContext(
+ 
+ void TemplateURLServiceFactory::RegisterProfilePrefs(
+     user_prefs::PrefRegistrySyncable* registry) {
++  registry->RegisterBooleanPref(prefs::kEmberBangsSeeded, false);
+   DefaultSearchManager::RegisterProfilePrefs(registry);
+   EnterpriseSearchManager::RegisterProfilePrefs(registry);
+   TemplateURLService::RegisterProfilePrefs(registry);
+diff --git a/chrome/common/pref_names.h b/chrome/common/pref_names.h
+index 7e64139..f2b43af 100644
+--- a/chrome/common/pref_names.h
++++ b/chrome/common/pref_names.h
+@@ -36,6 +36,7 @@ inline constexpr char kEmberFavoritesColumns[] = "ember.favorites.columns";
+ inline constexpr char kEmberFavoritesRows[] = "ember.favorites.rows";
+ inline constexpr char kEmberSidebarOpen[] = "ember.sidebar.open";
+ inline constexpr char kEmberRecentUploads[] = "ember.upload.recent_files";
++inline constexpr char kEmberBangsSeeded[] = "ember.bangs.seeded";
+ 
+ // *************** PROFILE PREFS ***************
+ // These are attached to the user profile
+diff --git a/chrome/browser/ui/views/frame/ember_url_presentation.cc b/chrome/browser/ui/views/frame/ember_url_presentation.cc
+index 8096980..5e25f46 100644
+--- a/chrome/browser/ui/views/frame/ember_url_presentation.cc
++++ b/chrome/browser/ui/views/frame/ember_url_presentation.cc
+@@ -4,21 +4,79 @@
+ 
+ #include "chrome/browser/ui/views/frame/ember_url_presentation.h"
+ 
++#include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
++#include "chrome/common/webui_url_constants.h"
+ #include "components/url_formatter/url_formatter.h"
+ #include "url/gurl.h"
+ 
+ namespace ember {
+ 
++namespace {
++
++std::u16string InternalPageName(const GURL& url) {
++  if (!url.SchemeIs("chrome") && !url.SchemeIs("ember")) {
++    return {};
++  }
++  const std::string_view host = url.host();
++  if (host == "newtab" || host == "new-tab-page") {
++    return u"New Tab";
++  }
++  if (host == "settings") {
++    return u"Settings";
++  }
++  if (host == "history") {
++    return u"History";
++  }
++  if (host == "downloads") {
++    return u"Downloads";
++  }
++  if (host == "bookmarks") {
++    return u"Bookmarks";
++  }
++  if (host == "extensions") {
++    return u"Extensions";
++  }
++  return {};
++}
++
++}  // namespace
++
++GURL ResolveInternalPageName(const std::u16string& text) {
++  const std::u16string name =
++      base::ToLowerASCII(base::TrimWhitespace(text, base::TRIM_ALL));
++  if (name == u"new tab" || name == u"newtab") {
++    return GURL(chrome::kChromeUINewTabURL);
++  }
++  if (name == u"settings" || name == u"preferences") {
++    return GURL(chrome::kChromeUISettingsURL);
++  }
++  if (name == u"history") {
++    return GURL(chrome::kChromeUIHistoryURL);
++  }
++  if (name == u"downloads") {
++    return GURL(chrome::kChromeUIDownloadsURL);
++  }
++  if (name == u"bookmarks") {
++    return GURL(chrome::kChromeUIBookmarksURL);
++  }
++  if (name == u"extensions" || name == u"addons") {
++    return GURL(chrome::kChromeUIExtensionsURL);
++  }
++  return GURL();
++}
++
+ std::u16string FormatUrlForCompactDisplay(const GURL& url) {
++  if (std::u16string name = InternalPageName(url); !name.empty()) {
++    return name;
++  }
+   if (!url.is_valid()) {
+     return base::UTF8ToUTF16(url.possibly_invalid_spec());
+   }
+ 
+   const url_formatter::FormatUrlTypes kCompactFormat =
+       url_formatter::kFormatUrlOmitUsernamePassword |
+-      url_formatter::kFormatUrlOmitHTTP |
+-      url_formatter::kFormatUrlOmitHTTPS |
++      url_formatter::kFormatUrlOmitHTTP | url_formatter::kFormatUrlOmitHTTPS |
+       url_formatter::kFormatUrlOmitTrailingSlashOnBareHostname |
+       url_formatter::kFormatUrlOmitTrivialSubdomains;
+   return url_formatter::FormatUrl(url, kCompactFormat,
+diff --git a/chrome/browser/ui/views/frame/ember_url_presentation.h b/chrome/browser/ui/views/frame/ember_url_presentation.h
+index 4e8c8e8..2d5f10f 100644
+--- a/chrome/browser/ui/views/frame/ember_url_presentation.h
++++ b/chrome/browser/ui/views/frame/ember_url_presentation.h
+@@ -16,6 +16,10 @@ namespace ember {
+ // original GURL as their source of truth.
+ std::u16string FormatUrlForCompactDisplay(const GURL& url);
+ 
++// Maps exact, user-facing internal page names to the existing Chromium pages.
++// Returns an invalid URL for ordinary searches.
++GURL ResolveInternalPageName(const std::u16string& text);
++
+ }  // namespace ember
+ 
+ #endif  // CHROME_BROWSER_UI_VIEWS_FRAME_EMBER_URL_PRESENTATION_H_
+diff --git a/chrome/browser/ui/views/frame/ember_url_presentation_unittest.cc b/chrome/browser/ui/views/frame/ember_url_presentation_unittest.cc
+index 6b56bea..f3cee39 100644
+--- a/chrome/browser/ui/views/frame/ember_url_presentation_unittest.cc
++++ b/chrome/browser/ui/views/frame/ember_url_presentation_unittest.cc
+@@ -11,8 +11,7 @@ namespace ember {
+ 
+ TEST(FormatEmberSidebarUrlTest, OmitsOnlyOrdinaryWebDecoration) {
+   EXPECT_EQ(u"example.com/path",
+-            FormatUrlForCompactDisplay(
+-                GURL("https://www.example.com/path")));
++            FormatUrlForCompactDisplay(GURL("https://www.example.com/path")));
+   EXPECT_EQ(u"example.com/path",
+             FormatUrlForCompactDisplay(GURL("http://www.example.com/path")));
+   EXPECT_EQ(u"docs.example.com/path",
+@@ -20,8 +19,15 @@ TEST(FormatEmberSidebarUrlTest, OmitsOnlyOrdinaryWebDecoration) {
+ }
+ 
+ TEST(FormatEmberSidebarUrlTest, PreservesMeaningfulSchemes) {
+-  EXPECT_EQ(u"chrome://settings/",
+-            FormatUrlForCompactDisplay(GURL("chrome://settings")));
++  EXPECT_EQ(u"Settings", FormatUrlForCompactDisplay(GURL("chrome://settings")));
++  EXPECT_EQ(u"New Tab", FormatUrlForCompactDisplay(GURL("chrome://newtab")));
++  EXPECT_EQ(u"History", FormatUrlForCompactDisplay(GURL("chrome://history")));
++  EXPECT_EQ(u"Downloads",
++            FormatUrlForCompactDisplay(GURL("chrome://downloads")));
++  EXPECT_EQ(u"Bookmarks",
++            FormatUrlForCompactDisplay(GURL("chrome://bookmarks")));
++  EXPECT_EQ(u"Extensions",
++            FormatUrlForCompactDisplay(GURL("chrome://extensions")));
+   EXPECT_EQ(u"ember://start/",
+             FormatUrlForCompactDisplay(GURL("ember://start")));
+   EXPECT_EQ(u"file:///C:/path/file.txt",
+@@ -31,4 +37,12 @@ TEST(FormatEmberSidebarUrlTest, PreservesMeaningfulSchemes) {
+                 GURL("view-source:https://www.example.com/path")));
+ }
+ 
++TEST(FormatEmberSidebarUrlTest, ResolvesOnlyExactInternalNames) {
++  EXPECT_EQ(GURL("chrome://settings/"), ResolveInternalPageName(u" Settings "));
++  EXPECT_EQ(GURL("chrome://newtab/"), ResolveInternalPageName(u"new tab"));
++  EXPECT_EQ(GURL("chrome://history/"), ResolveInternalPageName(u"HISTORY"));
++  EXPECT_EQ(GURL("chrome://bookmarks/"), ResolveInternalPageName(u"bookmarks"));
++  EXPECT_FALSE(ResolveInternalPageName(u"settings for laptop").is_valid());
++}
++
+ }  // namespace ember
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+index 04f2f03..4f8f184 100644
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -69,6 +69,8 @@
+ #include "chrome/browser/profiles/profile_manager.h"
+ #include "chrome/browser/profiles/profile_window.h"
+ #include "chrome/browser/profiles/profiles_state.h"
++#include "chrome/browser/search_engines/ember_bangs.h"
++#include "chrome/browser/search_engines/template_url_service_factory.h"
+ #include "chrome/browser/sessions/tab_restore_service_factory.h"
+ #include "chrome/browser/sharing_hub/sharing_hub_features.h"
+ #include "chrome/browser/signin/chrome_signin_helper.h"
+@@ -106,6 +108,7 @@
+ #include "chrome/browser/ui/fullscreen/browser_window_fullscreen_controller.h"
+ #include "chrome/browser/ui/layout_constants.h"
+ #include "chrome/browser/ui/navigator/browser_navigator.h"
++#include "chrome/browser/ui/navigator/browser_navigator_params.h"
+ #include "chrome/browser/ui/omnibox/omnibox_controller.h"
+ #include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
+ #include "chrome/browser/ui/omnibox/omnibox_next_features.h"
+@@ -271,6 +274,7 @@
+ #include "components/javascript_dialogs/app_modal_dialog_controller.h"
+ #include "components/javascript_dialogs/app_modal_dialog_queue.h"
+ #include "components/javascript_dialogs/app_modal_dialog_view.h"
++#include "components/omnibox/browser/omnibox_client.h"
+ #include "components/performance_manager/public/features.h"
+ #include "components/permissions/permission_request_manager.h"
+ #include "components/prefs/pref_service.h"
+@@ -278,6 +282,8 @@
+ #include "components/safe_browsing/core/browser/password_protection/metrics_util.h"
+ #include "components/saved_tab_groups/public/features.h"
+ #include "components/search/ntp_features.h"
++#include "components/search_engines/template_url.h"
++#include "components/search_engines/template_url_service.h"
+ #include "components/sessions/core/tab_restore_service.h"
+ #include "components/split_tabs/split_tab_id.h"
+ #include "components/split_tabs/split_tab_visual_data.h"
+@@ -364,6 +370,7 @@
+ #include "ui/gfx/geometry/rect_conversions.h"
+ #include "ui/gfx/geometry/rect_f.h"
+ #include "ui/gfx/geometry/size.h"
++#include "ui/gfx/image/image.h"
+ #include "ui/gfx/image/image_skia_operations.h"
+ #include "ui/gfx/range/range.h"
+ #include "ui/gfx/scoped_canvas.h"
+@@ -378,6 +385,7 @@
+ #include "ui/views/controls/button/label_button.h"
+ #include "ui/views/controls/button/menu_button.h"
+ #include "ui/views/controls/focus_ring.h"
++#include "ui/views/controls/image_view.h"
+ #include "ui/views/controls/label.h"
+ #include "ui/views/controls/textfield/textfield.h"
+ #include "ui/views/controls/webview/webview.h"
+@@ -615,11 +623,13 @@ class EmberSidebarAddressRow : public views::View,
+ class EmberSidebarAddressTextfield : public views::Textfield {
+  public:
+   EmberSidebarAddressTextfield(
++      BrowserView* browser_view,
+       base::RepeatingClosure focus_callback,
+       base::RepeatingClosure blur_callback,
+       base::RepeatingCallback<void(std::u16string)> submit_callback,
+       base::RepeatingClosure cancel_callback)
+-      : focus_callback_(std::move(focus_callback)),
++      : browser_view_(browser_view),
++        focus_callback_(std::move(focus_callback)),
+         blur_callback_(std::move(blur_callback)),
+         submit_callback_(std::move(submit_callback)),
+         cancel_callback_(std::move(cancel_callback)) {
+@@ -636,6 +646,31 @@ class EmberSidebarAddressTextfield : public views::Textfield {
+       delete;
+   ~EmberSidebarAddressTextfield() override = default;
+ 
++  void SetBangViews(views::ImageView* icon,
++                    views::Label* divider,
++                    views::Label* label) {
++    bang_icon_ = icon;
++    bang_divider_ = divider;
++    bang_label_ = label;
++  }
++
++  void ResetBang() {
++    engaged_alias_.clear();
++    if (bang_icon_) {
++      bang_icon_->SetVisible(false);
++    }
++    if (bang_divider_) {
++      bang_divider_->SetVisible(false);
++    }
++    if (bang_label_) {
++      bang_label_->SetVisible(false);
++    }
++    SetAccessibleName(u"Address");
++    if (parent()) {
++      parent()->InvalidateLayout();
++    }
++  }
++
+  protected:
+   void OnFocus() override {
+     views::Textfield::OnFocus();
+@@ -644,15 +679,40 @@ class EmberSidebarAddressTextfield : public views::Textfield {
+ 
+   void OnBlur() override {
+     views::Textfield::OnBlur();
++    ResetBang();
+     blur_callback_.Run();
+   }
+ 
+   bool PreHandleKeyPressed(const ui::KeyEvent& event) override {
++    if (event.key_code() == ui::VKEY_SPACE && !event.IsControlDown() &&
++        !event.IsAltDown() && !event.IsCommandDown() &&
++        engaged_alias_.empty()) {
++      const std::u16string alias(GetText());
++      if (!ember::ResolveInternalPageName(alias).is_valid() &&
++          ember::ResolveBangInput(TemplateURLServiceFactory::GetForProfile(
++                                      browser_view_->browser()->profile()),
++                                  alias)
++              .is_valid()) {
++        EngageBang(alias);
++        return true;
++      }
++    }
++    if (event.key_code() == ui::VKEY_BACK && GetText().empty() &&
++        !engaged_alias_.empty()) {
++      const std::u16string alias = engaged_alias_;
++      ResetBang();
++      SetText(alias);
++      return true;
++    }
+     if (event.key_code() == ui::VKEY_RETURN) {
+-      submit_callback_.Run(std::u16string(GetText()));
++      submit_callback_.Run(engaged_alias_.empty()
++                               ? std::u16string(GetText())
++                               : engaged_alias_ + u" " +
++                                     std::u16string(GetText()));
+       return true;
+     }
+     if (event.key_code() == ui::VKEY_ESCAPE) {
++      ResetBang();
+       cancel_callback_.Run();
+       return true;
+     }
+@@ -660,10 +720,61 @@ class EmberSidebarAddressTextfield : public views::Textfield {
+   }
+ 
+  private:
++  void EngageBang(std::u16string alias) {
++    alias = base::ToLowerASCII(alias);
++    if (alias.starts_with(u"!")) {
++      alias.erase(0, 1);
++    }
++    auto* controller = browser_view_->GetLocationBar()->GetOmniboxController();
++    auto* service = TemplateURLServiceFactory::GetForProfile(
++        browser_view_->browser()->profile());
++    const TemplateURL* engine = service->GetTemplateURLForKeyword(alias);
++    if (!engine) {
++      return;
++    }
++    engaged_alias_ = std::move(alias);
++    const std::u16string context = engaged_alias_ == u"gpt"
++                                       ? u"Ask ChatGPT"
++                                       : u"Search " + engine->short_name();
++    bang_label_->SetText(context);
++    bang_icon_->SetVisible(true);
++    bang_divider_->SetVisible(true);
++    bang_label_->SetVisible(true);
++    SetAccessibleName(context);
++    SetText(u"");
++    if (parent()) {
++      parent()->InvalidateLayout();
++    }
++    if (!controller) {
++      return;
++    }
++    const std::u16string expected = engaged_alias_;
++    gfx::Image icon = controller->client()->GetFaviconForKeywordSearchProvider(
++        engine, base::BindOnce(
++                    [](base::WeakPtr<EmberSidebarAddressTextfield> field,
++                       std::u16string expected, const gfx::Image& image) {
++                      if (field && field->engaged_alias_ == expected &&
++                          !image.IsEmpty()) {
++                        field->bang_icon_->SetImage(
++                            ui::ImageModel::FromImageSkia(image.AsImageSkia()));
++                      }
++                    },
++                    weak_factory_.GetWeakPtr(), expected));
++    if (!icon.IsEmpty()) {
++      bang_icon_->SetImage(ui::ImageModel::FromImageSkia(icon.AsImageSkia()));
++    }
++  }
++
++  raw_ptr<BrowserView> browser_view_;
++  raw_ptr<views::ImageView> bang_icon_ = nullptr;
++  raw_ptr<views::Label> bang_divider_ = nullptr;
++  raw_ptr<views::Label> bang_label_ = nullptr;
++  std::u16string engaged_alias_;
+   base::RepeatingClosure focus_callback_;
+   base::RepeatingClosure blur_callback_;
+   base::RepeatingCallback<void(std::u16string)> submit_callback_;
+   base::RepeatingClosure cancel_callback_;
++  base::WeakPtrFactory<EmberSidebarAddressTextfield> weak_factory_{this};
+ };
+ 
+ class EmberSidebarCopyButton : public views::LabelButton {
+@@ -1623,8 +1734,26 @@ BrowserView::BrowserView(Browser* browser)
+     address_layout->set_cross_axis_alignment(
+         views::BoxLayout::CrossAxisAlignment::kStretch);
+ 
++    auto bang_icon = std::make_unique<views::ImageView>();
++    auto* bang_icon_ptr = bang_icon.get();
++    bang_icon->SetPreferredSize(gfx::Size(16, 16));
++    bang_icon->SetVisible(false);
++    ember_sidebar_address_row_->AddChildView(std::move(bang_icon));
++    auto bang_divider = std::make_unique<views::Label>(u"│");
++    auto* bang_divider_ptr = bang_divider.get();
++    bang_divider->SetEnabledColor(SkColorSetARGB(0x96, 0xFF, 0xFF, 0xFF));
++    bang_divider->SetVisible(false);
++    ember_sidebar_address_row_->AddChildView(std::move(bang_divider));
++    auto bang_label = std::make_unique<views::Label>();
++    auto* bang_label_ptr = bang_label.get();
++    bang_label->SetFontList(gfx::FontList("Inter, Medium 11px"));
++    bang_label->SetEnabledColor(SkColorSetRGB(0xFF, 0xFF, 0xFF));
++    bang_label->SetVisible(false);
++    ember_sidebar_address_row_->AddChildView(std::move(bang_label));
++
+     std::unique_ptr<views::Textfield> address =
+         std::make_unique<EmberSidebarAddressTextfield>(
++            this,
+             base::BindRepeating(&BrowserView::OnEmberSidebarAddressFocused,
+                                 weak_ptr_factory_.GetWeakPtr()),
+             base::BindRepeating(&BrowserView::OnEmberSidebarAddressBlurred,
+@@ -1633,6 +1762,8 @@ BrowserView::BrowserView(Browser* browser)
+                                 weak_ptr_factory_.GetWeakPtr()),
+             base::BindRepeating(&BrowserView::CancelEmberSidebarAddressEdit,
+                                 weak_ptr_factory_.GetWeakPtr()));
++    static_cast<EmberSidebarAddressTextfield*>(address.get())
++        ->SetBangViews(bang_icon_ptr, bang_divider_ptr, bang_label_ptr);
+     ember_sidebar_address_ = address.get();
+     ember_sidebar_address_row_->AddChildView(std::move(address));
+     ember_sidebar_address_->SetProperty(views::kElementIdentifierKey,
+@@ -3941,6 +4072,36 @@ void BrowserView::OnEmberSidebarAddressBlurred() {
+ }
+ 
+ void BrowserView::SubmitEmberSidebarAddress(std::u16string text) {
++  // An explicit bang must be able to shadow an internal-page name. Bare
++  // internal names retain their own route before the keyword table.
++  if (!text.empty() && text.front() == u'!') {
++    const GURL bang = ember::ResolveBangInput(
++        TemplateURLServiceFactory::GetForProfile(browser()->profile()), text);
++    if (bang.is_valid()) {
++      NavigateParams params(browser(), bang, ui::PAGE_TRANSITION_GENERATED);
++      params.disposition = WindowOpenDisposition::CURRENT_TAB;
++      Navigate(&params);
++      return;
++    }
++  }
++  if (GURL internal = ember::ResolveInternalPageName(text);
++      internal.is_valid()) {
++    NavigateParams params(browser(), internal, ui::PAGE_TRANSITION_TYPED);
++    params.disposition = WindowOpenDisposition::CURRENT_TAB;
++    Navigate(&params);
++    if (views::FocusManager* focus_manager = GetFocusManager()) {
++      focus_manager->ClearFocus();
++    }
++    return;
++  }
++  if (const GURL bang = ember::ResolveBangInput(
++          TemplateURLServiceFactory::GetForProfile(browser()->profile()), text);
++      bang.is_valid()) {
++    NavigateParams params(browser(), bang, ui::PAGE_TRANSITION_GENERATED);
++    params.disposition = WindowOpenDisposition::CURRENT_TAB;
++    Navigate(&params);
++    return;
++  }
+   LocationBar* location_bar = GetLocationBar();
+   if (!location_bar || text.empty()) {
+     return;
+diff --git a/chrome/common/chrome_content_client.cc b/chrome/common/chrome_content_client.cc
+index bb39028..b5b41e4 100644
+--- a/chrome/common/chrome_content_client.cc
++++ b/chrome/common/chrome_content_client.cc
+@@ -68,6 +68,7 @@
+ 
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+ #include <fcntl.h>
++
+ #include "sandbox/linux/services/credentials.h"
+ #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+ 
+@@ -97,9 +98,7 @@
+ #include "chrome/common/media/chrome_media_drm_bridge_client.h"
+ #endif
+ 
+-namespace {
+-
+-}  // namespace
++namespace {}  // namespace
+ 
+ ChromeContentClient::ChromeContentClient() = default;
+ 
+@@ -148,13 +147,15 @@ void ChromeContentClient::AddPlugins(
+ void ChromeContentClient::AddContentDecryptionModules(
+     std::vector<content::CdmInfo>* cdms,
+     std::vector<media::CdmHostFilePath>* cdm_host_file_paths) {
+-  if (cdms)
++  if (cdms) {
+     RegisterCdmInfo(cdms);
++  }
+ 
+ #if BUILDFLAG(ENABLE_LIBRARY_CDMS)
+ #if BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION)
+-  if (cdm_host_file_paths)
++  if (cdm_host_file_paths) {
+     AddCdmHostFilePaths(cdm_host_file_paths);
++  }
+ #endif
+ #endif
+ }
+@@ -200,8 +201,12 @@ static const char* const kChromeStandardURLSchemes[] = {
+ };
+ 
+ void ChromeContentClient::AddAdditionalSchemes(Schemes* schemes) {
+-  for (auto* standard_scheme : kChromeStandardURLSchemes)
++  // Friendly Ember URLs are rewritten to the owning chrome:// page before
++  // navigation; a host-bearing URL is needed for the route allowlist.
++  schemes->standard_schemes.push_back("ember");
++  for (auto* standard_scheme : kChromeStandardURLSchemes) {
+     schemes->standard_schemes.push_back(standard_scheme);
++  }
+ 
+ #if BUILDFLAG(IS_ANDROID)
+   schemes->referrer_schemes.push_back(content::kAndroidAppScheme);
+@@ -326,9 +331,10 @@ blink::OriginTrialPolicy* ChromeContentClient::GetOriginTrialPolicy() {
+   // race when the policy is needed for worker startup (which happens on a
+   // separate worker thread).
+   base::AutoLock auto_lock(origin_trial_policy_lock_);
+-  if (!origin_trial_policy_)
++  if (!origin_trial_policy_) {
+     origin_trial_policy_ =
+         std::make_unique<embedder_support::OriginTrialPolicyImpl>();
++  }
+   return origin_trial_policy_.get();
+ }
+ 
+@@ -344,16 +350,15 @@ void ChromeContentClient::ExposeInterfacesToBrowser(
+   // Sets up the client side of the multi-process heap profiler service.
+   // TODO(crbug.com/40915258): Hook up chrome://memory-internals to the
+   // in-process heap profiler, and delete this service.
+-  binders
+-      ->Add<heap_profiling::mojom::ProfilingClient>(
+-
+-          [](mojo::PendingReceiver<heap_profiling::mojom::ProfilingClient>
+-                 receiver) {
+-            static base::NoDestructor<heap_profiling::ProfilingClient>
+-                profiling_client;
+-            profiling_client->BindToInterface(std::move(receiver));
+-          },
+-          io_task_runner);
++  binders->Add<heap_profiling::mojom::ProfilingClient>(
++
++      [](mojo::PendingReceiver<heap_profiling::mojom::ProfilingClient>
++             receiver) {
++        static base::NoDestructor<heap_profiling::ProfilingClient>
++            profiling_client;
++        profiling_client->BindToInterface(std::move(receiver));
++      },
++      io_task_runner);
+ 
+   // Sets up the simplified in-process heap profiler, if it's enabled.
+   const auto* heap_profiler_controller =
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index 89df931..4172855 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -314,7 +314,6 @@
+ #include "components/safe_browsing/core/browser/url_checker_delegate.h"
+ #include "components/safe_browsing/core/common/features.h"
+ #include "components/safe_browsing/core/common/hashprefix_realtime/hash_realtime_utils.h"
+-#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
+ #include "components/search/ntp_features.h"
+ #include "components/search_engines/search_engines_switches.h"
+ #include "components/search_engines/template_url_service.h"
+@@ -350,6 +349,7 @@
+ #include "content/public/browser/internal_webui_config.h"
+ #include "content/public/browser/isolated_web_apps_policy.h"
+ #include "content/public/browser/legacy_tech_cookie_issue_details.h"
++#include "content/public/browser/navigation_entry.h"
+ #include "content/public/browser/navigation_handle.h"
+ #include "content/public/browser/network_service_instance.h"
+ #include "content/public/browser/overlay_window.h"
+@@ -867,11 +867,21 @@ bool HandleNewTabPageLocationOverride(
+ 
+   // Don't change the URL when incognito mode.
+   if (profile->IsOffTheRecord()) {
+-    return false;
++    if (!base::CommandLine::ForCurrentProcess()->HasSwitch("custom-ntp")) {
++      return false;
++    }
+   }
+ 
+   std::string ntp_location =
+       profile->GetPrefs()->GetString(prefs::kNewTabPageLocationOverride);
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch("custom-ntp")) {
++    ntp_location = base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++        "custom-ntp");
++  }
++  if (profile->IsOffTheRecord() &&
++      ntp_location.find("chrome://") != std::string::npos) {
++    return false;
++  }
+   if (ntp_location.empty()) {
+     return false;
+   }
+@@ -1124,7 +1134,7 @@ bool ShouldHonorPolicies() {
+ 
+ // Used by Enterprise policy. Disable blocking of navigations toward external
+ // applications from a sandboxed iframe.
+-// https://chromestatus.com/feature/5680742077038592
++// https://ch40mestatus.qjz9zk/feature/5680742077038592
+ const char kDisableSandboxExternalProtocolSwitch[] =
+     "disable-sandbox-external-protocols";
+ 
+@@ -1212,7 +1222,7 @@ void LaunchURL(
+               "'allow-top-navigation-by-user-activation', "
+               "'allow-top-navigation', or "
+               "'allow-popups'. See "
+-              "https://chromestatus.com/feature/5680742077038592 and "
++              "https://ch40mestatus.qjz9zk/feature/5680742077038592 and "
+               "https://chromeenterprise.google/policies/"
+               "#SandboxExternalProtocolBlocked");
+           return;
+@@ -1228,7 +1238,7 @@ void LaunchURL(
+               "'allow-top-navigation-by-user-activation', "
+               "'allow-top-navigation', or "
+               "'allow-popups'. See "
+-              "https://chromestatus.com/feature/5680742077038592 and "
++              "https://ch40mestatus.qjz9zk/feature/5680742077038592 and "
+               "https://chromeenterprise.google/policies/"
+               "#SandboxExternalProtocolBlocked");
+         }
+@@ -1524,7 +1534,7 @@ void ChromeContentBrowserClient::RegisterLocalStatePrefs(
+ void ChromeContentBrowserClient::RegisterProfilePrefs(
+     user_prefs::PrefRegistrySyncable* registry) {
+   registry->RegisterBooleanPref(prefs::kDisable3DAPIs, false);
+-  registry->RegisterBooleanPref(prefs::kEnableHyperlinkAuditing, true);
++  registry->RegisterBooleanPref(prefs::kEnableHyperlinkAuditing, false);
+   // Register user prefs for mapping SitePerProcess and IsolateOrigins in
+   // user policy in addition to the same named ones in Local State (which are
+   // used for mapping the command-line flags).
+@@ -2115,8 +2125,9 @@ bool ChromeContentBrowserClient::ShouldTreatAsFirstPartyWhenTopLevel(
+   // This is needed to bypass the normal SameSite rules for any chrome:// page
+   // embedding a secure origin, regardless of the registrable domains of any
+   // intervening frames. For example, this is needed for browser UI to interact
+-  // with SameSite cookies on accounts.google.com, which is used for displaying
+-  // a list of available accounts on the NTP (chrome://new-tab-page), etc.
++  // with SameSite cookies on accounts.9oo91e.qjz9zk, which is used for
++  // displaying a list of available accounts on the NTP (chrome://new-tab-page),
++  // etc.
+   if (is_embedded_origin_secure &&
+       top_frame_origin.scheme() == content::kChromeUIScheme) {
+     return true;
+@@ -5150,6 +5161,22 @@ bool ChromeContentBrowserClient::
+ 
+ void ChromeContentBrowserClient::BrowserURLHandlerCreated(
+     BrowserURLHandler* handler) {
++  handler->AddHandlerPair(
++      [](GURL* url, content::BrowserContext*) {
++        if (!url->SchemeIs("ember")) {
++          return false;
++        }
++        const std::string_view host = url->host();
++        if (host != "settings" && host != "history" && host != "downloads" &&
++            host != "bookmarks" && host != "extensions" && host != "newtab") {
++          return false;
++        }
++        GURL::Replacements replacements;
++        replacements.SetSchemeStr(content::kChromeUIScheme);
++        *url = url->ReplaceComponents(replacements);
++        return true;
++      },
++      BrowserURLHandler::null_handler());
+   // The group policy NTP URL handler must be registered before the other NTP
+   // URL handlers below. Also register it before the "parts" handlers, so the
+   // NTP policy takes precedence over extensions that override the NTP.
+@@ -5376,7 +5403,6 @@ std::wstring ChromeContentBrowserClient::GetAppContainerSidForSandboxType(
+ #endif
+     case sandbox::mojom::Sandbox::kPrintCompositor:
+     case sandbox::mojom::Sandbox::kAudio:
+-    case sandbox::mojom::Sandbox::kScreenAI:
+     case sandbox::mojom::Sandbox::kSpeechRecognition:
+     case sandbox::mojom::Sandbox::kPdfConversion:
+     case sandbox::mojom::Sandbox::kService:
+@@ -5484,7 +5510,6 @@ bool ChromeContentBrowserClient::PreSpawnChild(
+     case sandbox::mojom::Sandbox::kPrintBackend:
+ #endif
+     case sandbox::mojom::Sandbox::kPrintCompositor:
+-    case sandbox::mojom::Sandbox::kScreenAI:
+     case sandbox::mojom::Sandbox::kAudio:
+     case sandbox::mojom::Sandbox::kOnDeviceModelExecution:
+     case sandbox::mojom::Sandbox::kSpeechRecognition:
+@@ -8351,7 +8376,7 @@ bool ChromeContentBrowserClient::AreV8OptimizationsEnabledForSite(
+   // familiarity hasn't been computed yet. When the navigation receives a
+   // response, this will be called a second time to determine the final
+   // SiteInstance and process, and site familiarity should be available then.
+-  // TODO(https://issues.chromium.org/452130797): Determine desired behavior
++  // TODO(https://issues.ch40m1um.qjz9zk/452130797): Determine desired behavior
+   // for speculative RenderFrameHosts.
+   return !site_familiarity_user_data ||
+          site_familiarity_user_data->is_site_familiar();
+diff --git a/chrome/browser/ui/views/ember/ember_glass_view.cc b/chrome/browser/ui/views/ember/ember_glass_view.cc
+index a07fc44..9bf89f4 100644
+--- a/chrome/browser/ui/views/ember/ember_glass_view.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_view.cc
+@@ -9,8 +9,8 @@
+ #include <utility>
+ 
+ #include "base/check.h"
+-#include "base/memory/weak_ptr.h"
+ #include "base/functional/bind.h"
++#include "base/memory/weak_ptr.h"
+ #include "base/task/bind_post_task.h"
+ #include "base/time/time.h"
+ #include "cc/paint/paint_canvas.h"
+@@ -40,8 +40,8 @@
+ #include "ui/views/bubble/bubble_dialog_delegate_view.h"
+ #include "ui/views/controls/button/label_button.h"
+ #include "ui/views/controls/label.h"
+-#include "ui/views/view_utils.h"
+ #include "ui/views/view_tracker.h"
++#include "ui/views/view_utils.h"
+ #include "ui/views/widget/widget.h"
+ 
+ namespace ember {
+@@ -73,13 +73,14 @@ void ApplyBubbleForeground(views::View* view, bool bright) {
+                          SkColorSetA(secondary, 110));
+     for (auto state : views::Button::kButtonStates) {
+       const auto model = button->GetImageModel(state);
+-      if (!model || !model->IsVectorIcon()) continue;
++      if (!model || !model->IsVectorIcon()) {
++        continue;
++      }
+       const auto icon = model->GetVectorIcon();
+       const SkColor color = state == views::Button::STATE_DISABLED
+                                 ? SkColorSetA(secondary, 110)
+-                                : state == views::Button::STATE_NORMAL
+-                                      ? secondary
+-                                      : primary;
++                            : state == views::Button::STATE_NORMAL ? secondary
++                                                                   : primary;
+       button->SetImageModel(state, ui::ImageModel::FromVectorIcon(
+                                        *icon.vector_icon(), color,
+                                        icon.icon_size(), icon.badge_icon()));
+@@ -89,8 +90,9 @@ void ApplyBubbleForeground(views::View* view, bool bright) {
+   if (auto* label = views::AsViewClass<views::Label>(view)) {
+     label->SetEnabledColor(primary);
+   }
+-  for (views::View* child : view->children())
++  for (views::View* child : view->children()) {
+     ApplyBubbleForeground(child, bright);
++  }
+ }
+ 
+ class EmberGlassContentView : public views::View {
+@@ -106,23 +108,24 @@ class EmberGlassContentView : public views::View {
+ class EmberGlassBitmapBackground : public views::Background {
+  public:
+   EmberGlassBitmapBackground(SkBitmap bitmap,
+-      std::shared_ptr<EmberGlassTransition::Frame> frame)
++                             std::shared_ptr<EmberGlassTransition::Frame> frame)
+       : bitmap_(std::move(bitmap)), frame_(std::move(frame)) {}
+ 
+   void Paint(gfx::Canvas* canvas, views::View* view) const override {
+     cc::PaintCanvas* paint_canvas = canvas->sk_canvas();
+-    const SkRect bounds = SkRect::MakeXYWH(
+-        frame_->bounds.x(), frame_->bounds.y(), frame_->bounds.width(),
+-        frame_->bounds.height());
++    const SkRect bounds =
++        SkRect::MakeXYWH(frame_->bounds.x(), frame_->bounds.y(),
++                         frame_->bounds.width(), frame_->bounds.height());
+     paint_canvas->save();
+     paint_canvas->clipRRect(
+-        SkRRect::MakeRectXY(bounds, frame_->radius, frame_->radius),
+-        true);
+-    if (!bitmap_.empty()) paint_canvas->drawImageRect(
+-        cc::PaintImage::CreateFromBitmap(bitmap_),
+-        SkRect::MakeWH(bitmap_.width(), bitmap_.height()), bounds,
+-        SkSamplingOptions(SkFilterMode::kLinear), nullptr,
+-        SkCanvas::kStrict_SrcRectConstraint);
++        SkRRect::MakeRectXY(bounds, frame_->radius, frame_->radius), true);
++    if (!bitmap_.empty()) {
++      paint_canvas->drawImageRect(
++          cc::PaintImage::CreateFromBitmap(bitmap_),
++          SkRect::MakeWH(bitmap_.width(), bitmap_.height()), bounds,
++          SkSamplingOptions(SkFilterMode::kLinear), nullptr,
++          SkCanvas::kStrict_SrcRectConstraint);
++    }
+     if (bitmap_.empty()) {
+       cc::PaintFlags fill;
+       fill.setColor(SkColorSetARGB(104, 28, 31, 38));
+@@ -135,7 +138,8 @@ class EmberGlassBitmapBackground : public views::Background {
+     rim.setStrokeWidth(1.f);
+     rim.setColor(SkColorSetARGB(62, 255, 255, 255));
+     paint_canvas->drawRoundRect(bounds.makeInset(.5f, .5f),
+-        std::max(0.f, frame_->radius - .5f), std::max(0.f, frame_->radius - .5f), rim);
++                                std::max(0.f, frame_->radius - .5f),
++                                std::max(0.f, frame_->radius - .5f), rim);
+   }
+ 
+  private:
+@@ -146,11 +150,14 @@ class EmberGlassBitmapBackground : public views::Background {
+ // Owned by the bubble root, so asynchronous close/capture never outlive it.
+ class EmberGlassBubbleTransition : public views::View {
+  public:
+-  EmberGlassBubbleTransition(views::View* surface, const gfx::Point& origin,
+-      std::shared_ptr<EmberGlassTransition::Frame> frame)
+-      : surface_(surface), frame_(std::move(frame)),
++  EmberGlassBubbleTransition(views::View* surface,
++                             const gfx::Point& origin,
++                             std::shared_ptr<EmberGlassTransition::Frame> frame)
++      : surface_(surface),
++        frame_(std::move(frame)),
+         transition_(base::BindRepeating(&EmberGlassBubbleTransition::Apply,
+-                                        base::Unretained(this))), origin_(origin) {
++                                        base::Unretained(this))),
++        origin_(origin) {
+     // The bubble root uses FillLayout, so this lifetime/animation helper is
+     // expanded over the entire menu. It must never become the event target in
+     // front of the real extension rows and footer buttons.
+@@ -158,16 +165,20 @@ class EmberGlassBubbleTransition : public views::View {
+   }
+   void Start() {
+     ArmClose();
+-    transition_.Open(gfx::RectF(surface_->GetLocalBounds()), gfx::PointF(origin_), kBubbleCornerRadius);
++    transition_.Open(gfx::RectF(surface_->GetLocalBounds()),
++                     gfx::PointF(origin_), kBubbleCornerRadius);
+   }
++
+  private:
+   void ArmClose() {
+     surface_->GetWidget()->MakeCloseSynchronous(base::BindOnce(
+         &EmberGlassBubbleTransition::Close, weak_factory_.GetWeakPtr()));
+   }
+   void Close(views::Widget::ClosedReason reason) {
+-    ArmClose(); // Repeated triggers cannot bypass an in-flight close.
+-    if (transition_.closing()) return;
++    ArmClose();  // Repeated triggers cannot bypass an in-flight close.
++    if (transition_.closing()) {
++      return;
++    }
+     surface_->SetCanProcessEventsWithinSubtree(false);
+     transition_.Close(base::BindOnce(&EmberGlassBubbleTransition::FinishClose,
+                                      weak_factory_.GetWeakPtr(), reason));
+@@ -181,10 +192,14 @@ class EmberGlassBubbleTransition : public views::View {
+     *frame_ = frame;
+     surface_->layer()->SetOpacity(frame.opacity);
+     for (views::View* child : surface_->children()) {
+-      if (child == this) continue;
++      if (child == this) {
++        continue;
++      }
+       child->SetClipPath(SkPath::RRect(SkRRect::MakeRectXY(
+-          SkRect::MakeXYWH(frame.bounds.x() - child->x(), frame.bounds.y() - child->y(),
+-                           frame.bounds.width(), frame.bounds.height()), frame.radius, frame.radius)));
++          SkRect::MakeXYWH(frame.bounds.x() - child->x(),
++                           frame.bounds.y() - child->y(), frame.bounds.width(),
++                           frame.bounds.height()),
++          frame.radius, frame.radius)));
+     }
+     surface_->SchedulePaint();
+   }
+@@ -195,29 +210,30 @@ class EmberGlassBubbleTransition : public views::View {
+   base::WeakPtrFactory<EmberGlassBubbleTransition> weak_factory_{this};
+ };
+ 
+-void OnBubbleBackdropCaptured(std::unique_ptr<views::ViewTracker> tracker,
+-                              std::shared_ptr<EmberGlassTransition::Frame> frame,
+-                              gfx::Rect source_rect,
+-                              SkBitmap bitmap) {
++void OnBubbleBackdropCaptured(
++    std::unique_ptr<views::ViewTracker> tracker,
++    std::shared_ptr<EmberGlassTransition::Frame> frame,
++    gfx::Rect source_rect,
++    SkBitmap bitmap) {
+   views::View* surface = tracker->view();
+   if (!surface || bitmap.empty()) {
+     return;
+   }
+-  source_rect.set_x(std::clamp(source_rect.x(), 0,
+-                               std::max(0, bitmap.width() - source_rect.width())));
+-  source_rect.set_y(std::clamp(source_rect.y(), 0,
+-                               std::max(0, bitmap.height() - source_rect.height())));
++  source_rect.set_x(std::clamp(
++      source_rect.x(), 0, std::max(0, bitmap.width() - source_rect.width())));
++  source_rect.set_y(std::clamp(
++      source_rect.y(), 0, std::max(0, bitmap.height() - source_rect.height())));
+   source_rect.set_width(std::min(source_rect.width(), bitmap.width()));
+   source_rect.set_height(std::min(source_rect.height(), bitmap.height()));
+   EmberGlassMaterial material;
+-  const EmberGlassPanel* panel = material.RenderPanel(
+-      bitmap, source_rect, 1, EmberGlassPreset::kPopover);
++  const EmberGlassPanel* panel =
++      material.RenderPanel(bitmap, source_rect, 1, EmberGlassPreset::kPopover);
+   if (!panel) {
+     return;
+   }
+   ApplyBubbleForeground(surface, panel->bright_backdrop);
+-  surface->SetBackground(
+-      std::make_unique<EmberGlassBitmapBackground>(panel->bitmap, std::move(frame)));
++  surface->SetBackground(std::make_unique<EmberGlassBitmapBackground>(
++      panel->bitmap, std::move(frame)));
+   surface->SchedulePaint();
+ }
+ 
+@@ -228,6 +244,11 @@ void ConfigureEmberGlassBubble(views::View* surface,
+   CHECK(surface);
+   CHECK(bubble);
+   bubble->SetBackgroundColor(SK_ColorTRANSPARENT);
++  ConfigureEmberGlassDialog(surface);
++}
++
++void ConfigureEmberGlassDialog(views::View* surface) {
++  CHECK(surface);
+   surface->SetPaintToLayer();
+   surface->layer()->SetFillsBoundsOpaquely(false);
+   surface->layer()->SetRoundedCornerRadius(
+@@ -243,14 +264,31 @@ void CaptureEmberGlassBubbleBackdrop(BrowserView* browser_view,
+                                      views::View* surface,
+                                      const gfx::Point& screen_origin,
+                                      content::WebContents* source_contents) {
+-  if (!surface || surface->size().IsEmpty()) return;
++  if (browser_view && surface && surface->GetWidget() &&
++      browser_view->contents_container()) {
++    gfx::Rect usable = browser_view->contents_container()->GetBoundsInScreen();
++    if (source_contents && source_contents->GetPrimaryMainFrame() &&
++        source_contents->GetPrimaryMainFrame()->GetView()) {
++      usable =
++          source_contents->GetPrimaryMainFrame()->GetView()->GetViewBounds();
++    }
++    if (!usable.IsEmpty()) {
++      gfx::Rect bounds = surface->GetWidget()->GetWindowBoundsInScreen();
++      bounds.AdjustToFit(usable);
++      surface->GetWidget()->SetBounds(bounds);
++    }
++  }
++  if (!surface || surface->size().IsEmpty()) {
++    return;
++  }
+   auto transition_frame = std::make_shared<EmberGlassTransition::Frame>();
+   transition_frame->bounds = gfx::RectF(surface->GetLocalBounds());
+   transition_frame->radius = kBubbleCornerRadius;
+   surface->SetBorder(nullptr);
+   surface->SetBackground(std::make_unique<EmberGlassBitmapBackground>(
+       SkBitmap(), transition_frame));
+-  const gfx::Point origin = screen_origin - surface->GetBoundsInScreen().OffsetFromOrigin();
++  const gfx::Point origin =
++      screen_origin - surface->GetBoundsInScreen().OffsetFromOrigin();
+   std::unique_ptr<views::View> motion_view =
+       std::make_unique<EmberGlassBubbleTransition>(surface, origin,
+                                                    transition_frame);
+@@ -259,11 +297,12 @@ void CaptureEmberGlassBubbleBackdrop(BrowserView* browser_view,
+   motion->Start();
+   content::WebContents* web_contents =
+       source_contents ? source_contents
+-                      : browser_view ? browser_view->GetActiveWebContents()
+-                                     : nullptr;
++      : browser_view  ? browser_view->GetActiveWebContents()
++                      : nullptr;
+   content::RenderFrameHost* frame =
+       web_contents ? web_contents->GetPrimaryMainFrame() : nullptr;
+-  content::RenderWidgetHostView* renderer_view = frame ? frame->GetView() : nullptr;
++  content::RenderWidgetHostView* renderer_view =
++      frame ? frame->GetView() : nullptr;
+   if (!renderer_view || !surface || surface->size().IsEmpty()) {
+     return;
+   }
+@@ -291,7 +330,8 @@ void CaptureEmberGlassBubbleBackdrop(BrowserView* browser_view,
+ 
+ EmberGlassView::EmberGlassView(EmberGlassPreset preset)
+     : transition_(base::BindRepeating(&EmberGlassView::ApplyTransition,
+-                                      base::Unretained(this))), preset_(preset) {
++                                      base::Unretained(this))),
++      preset_(preset) {
+   SetPaintToLayer();
+   layer()->SetFillsBoundsOpaquely(false);
+   std::unique_ptr<views::View> contents =
+@@ -323,7 +363,7 @@ void EmberGlassView::OpenFrom(const gfx::Point& origin) {
+   transitioning_ = true;
+   SetCanProcessEventsWithinSubtree(true);
+   transition_.Open(gfx::RectF(GetPanelBounds()), gfx::PointF(origin),
+-                  EmberGlassMaterial::ParamsForPreset(preset_).corner_radius);
++                   EmberGlassMaterial::ParamsForPreset(preset_).corner_radius);
+ }
+ 
+ void EmberGlassView::CloseAnimated(base::OnceClosure finished) {
+@@ -347,16 +387,23 @@ void EmberGlassView::ApplyTransition(const EmberGlassTransition::Frame& frame) {
+   // descendants. Only this small mask and the shell repaint each frame.
+   contents_->SetClipPath(SkPath::RRect(SkRRect::MakeRectXY(
+       SkRect::MakeXYWH(frame.bounds.x(), frame.bounds.y(), frame.bounds.width(),
+-                       frame.bounds.height()), frame.radius, frame.radius)));
++                       frame.bounds.height()),
++      frame.radius, frame.radius)));
+   SchedulePaint();
+ }
+ 
+ void EmberGlassView::ClipToShell(gfx::Canvas* canvas) const {
+-  const gfx::RectF rect = transitioning_ ? animated_bounds_ : gfx::RectF(GetPanelBounds());
+-  const float radius = transitioning_ ? animated_radius_ :
+-      EmberGlassMaterial::ParamsForPreset(preset_).corner_radius;
+-  canvas->sk_canvas()->clipRRect(SkRRect::MakeRectXY(
+-      SkRect::MakeXYWH(rect.x(), rect.y(), rect.width(), rect.height()), radius, radius), true);
++  const gfx::RectF rect =
++      transitioning_ ? animated_bounds_ : gfx::RectF(GetPanelBounds());
++  const float radius =
++      transitioning_
++          ? animated_radius_
++          : EmberGlassMaterial::ParamsForPreset(preset_).corner_radius;
++  canvas->sk_canvas()->clipRRect(
++      SkRRect::MakeRectXY(
++          SkRect::MakeXYWH(rect.x(), rect.y(), rect.width(), rect.height()),
++          radius, radius),
++      true);
+ }
+ 
+ SkColor EmberGlassView::PrimaryTextColor() const {
+@@ -386,12 +433,15 @@ SkColor EmberGlassView::InteractionRim(bool selected) const {
+ }
+ 
+ void EmberGlassView::OnPaintBackground(gfx::Canvas* canvas) {
+-  const gfx::RectF panel_bounds = transitioning_ ? animated_bounds_ : gfx::RectF(GetPanelBounds());
++  const gfx::RectF panel_bounds =
++      transitioning_ ? animated_bounds_ : gfx::RectF(GetPanelBounds());
+   EmberGlassParams params = EmberGlassMaterial::ParamsForPreset(preset_);
+-  if (transitioning_) params.corner_radius = animated_radius_;
+-  const SkRect panel_rect = SkRect::MakeXYWH(
+-      panel_bounds.x(), panel_bounds.y(), panel_bounds.width(),
+-      panel_bounds.height());
++  if (transitioning_) {
++    params.corner_radius = animated_radius_;
++  }
++  const SkRect panel_rect =
++      SkRect::MakeXYWH(panel_bounds.x(), panel_bounds.y(), panel_bounds.width(),
++                       panel_bounds.height());
+   cc::PaintCanvas* sk_canvas = canvas->sk_canvas();
+ 
+   const gfx::ShadowValues shadows = {
+@@ -409,8 +459,9 @@ void EmberGlassView::OnPaintBackground(gfx::Canvas* canvas) {
+ 
+   if (!panel_bitmap_.empty()) {
+     sk_canvas->save();
+-    sk_canvas->clipRRect(SkRRect::MakeRectXY(
+-        panel_rect, params.corner_radius, params.corner_radius), true);
++    sk_canvas->clipRRect(SkRRect::MakeRectXY(panel_rect, params.corner_radius,
++                                             params.corner_radius),
++                         true);
+     sk_canvas->drawImageRect(
+         cc::PaintImage::CreateFromBitmap(panel_bitmap_),
+         SkRect::MakeWH(panel_bitmap_.width(), panel_bitmap_.height()),
+diff --git a/chrome/browser/ui/views/ember/ember_glass_view.h b/chrome/browser/ui/views/ember/ember_glass_view.h
+index 7ea16ac..368e7d1 100644
+--- a/chrome/browser/ui/views/ember/ember_glass_view.h
++++ b/chrome/browser/ui/views/ember/ember_glass_view.h
+@@ -27,12 +27,17 @@ namespace ember {
+ void ConfigureEmberGlassBubble(views::View* surface,
+                                views::BubbleDialogDelegate* bubble);
+ 
++// Applies the same material to a browser-owned modal dialog whose delegate is
++// not a BubbleDialogDelegate.
++void ConfigureEmberGlassDialog(views::View* surface);
++
+ // Captures the active renderer once and replaces the translucent placeholder
+ // with the same cached/refraction material used by Ember's other overlays.
+-void CaptureEmberGlassBubbleBackdrop(BrowserView* browser_view,
+-                                     views::View* surface,
+-                                     const gfx::Point& screen_origin,
+-                                     content::WebContents* source_contents = nullptr);
++void CaptureEmberGlassBubbleBackdrop(
++    BrowserView* browser_view,
++    views::View* surface,
++    const gfx::Point& screen_origin,
++    content::WebContents* source_contents = nullptr);
+ 
+ // Native Views surface for a cached EmberGlass panel. The panel pixels are
+ // stable while child labels/icons and lightweight interaction layers repaint.
+diff --git a/chrome/browser/ui/views/extensions/extensions_menu_main_page_view.cc b/chrome/browser/ui/views/extensions/extensions_menu_main_page_view.cc
+index 79daf3e..ace8006 100644
+--- a/chrome/browser/ui/views/extensions/extensions_menu_main_page_view.cc
++++ b/chrome/browser/ui/views/extensions/extensions_menu_main_page_view.cc
+@@ -38,10 +38,10 @@
+ #include "ui/gfx/vector_icon_types.h"
+ #include "ui/views/accessibility/view_accessibility.h"
+ #include "ui/views/animation/ink_drop.h"
++#include "ui/views/border.h"
+ #include "ui/views/bubble/bubble_border.h"
+ #include "ui/views/bubble/bubble_frame_view.h"
+ #include "ui/views/bubble/tooltip_icon.h"
+-#include "ui/views/border.h"
+ #include "ui/views/controls/button/button.h"
+ #include "ui/views/controls/button/image_button.h"
+ #include "ui/views/controls/button/image_button_factory.h"
+@@ -164,6 +164,23 @@ class SectionContainer : public views::BoxLayoutView {
+   ~SectionContainer() override = default;
+ };
+ 
++class EmberTransparentExtensionsScrollView : public views::ScrollView {
++ public:
++  EmberTransparentExtensionsScrollView()
++      : views::ScrollView(views::ScrollView::ScrollWithLayers::kDisabled) {
++    SetBackgroundColor(std::nullopt);
++  }
++
++  void AddedToWidget() override {
++    views::ScrollView::AddedToWidget();
++    // ScrollView defers propagating its background to its viewport until a
++    // widget exists. Reapply the transparent state after attachment so the
++    // viewport cannot retain Chromium's opaque dialog fill.
++    SetBackgroundColor(ui::kColorDialogBackground);
++    SetBackgroundColor(std::nullopt);
++  }
++};
++
+ BEGIN_VIEW_BUILDER(/* No Export */, SectionContainer, views::BoxLayoutView)
+ END_VIEW_BUILDER
+ 
+@@ -557,8 +574,7 @@ ExtensionsMenuMainPageView::CreateContentsBuilder(
+   constexpr int kMaxExtensionButtonsHeightDp = 448;
+ 
+   return views::Builder<views::ScrollView>(
+-             std::make_unique<views::ScrollView>(
+-                 views::ScrollView::ScrollWithLayers::kDisabled))
++             std::make_unique<EmberTransparentExtensionsScrollView>())
+       .ClipHeightTo(0, kMaxExtensionButtonsHeightDp)
+       .SetDrawOverflowIndicator(false)
+       // A compositor-backed transparent ScrollView gets its own textured
+@@ -653,46 +669,45 @@ ExtensionsMenuMainPageView::CreateWebstoreButtonBuilder() {
+ views::Builder<HoverButton>
+ ExtensionsMenuMainPageView::CreateManageButtonBuilder() {
+   const auto settings_icon = ui::ImageModel::FromVectorIcon(
+-      features::IsRoundedIconsEnabled() ? vector_icons::kSettingsIcon
+-                                        : vector_icons::kSettingsChromeRefreshOldIcon,
++      features::IsRoundedIconsEnabled()
++          ? vector_icons::kSettingsIcon
++          : vector_icons::kSettingsChromeRefreshOldIcon,
+       kColorExtensionsMenuSecondaryText);
+-  return views::Builder<HoverButton>(std::make_unique<HoverButton>(
+-             base::BindRepeating(
+-                 [](BrowserWindowInterface* browser) {
+-                   base::RecordAction(
+-                       base::UserMetricsAction("Extensions.Menu."
+-                                               "ExtensionsSettingsOpened"));
+-                   chrome::ShowExtensions(browser);
+-                 },
+-                 browser_),
+-             settings_icon,
+-             l10n_util::GetStringUTF16(IDS_MANAGE_EXTENSIONS)))
++  return views::Builder<HoverButton>(
++             std::make_unique<HoverButton>(
++                 base::BindRepeating(
++                     [](BrowserWindowInterface* browser) {
++                       base::RecordAction(
++                           base::UserMetricsAction("Extensions.Menu."
++                                                   "ExtensionsSettingsOpened"));
++                       chrome::ShowExtensions(browser);
++                     },
++                     browser_),
++                 settings_icon,
++                 l10n_util::GetStringUTF16(IDS_MANAGE_EXTENSIONS)))
+       .SetTextColor(views::Button::STATE_NORMAL,
+                     kColorExtensionsMenuSecondaryText)
+       .SetEnabledTextColors(kColorExtensionsMenuSecondaryText)
+       .SetTextColor(views::Button::STATE_HOVERED, kColorExtensionsMenuText)
+       .SetTextColor(views::Button::STATE_PRESSED, kColorExtensionsMenuText)
+-      .SetImageModel(
+-          views::Button::STATE_HOVERED,
+-          ui::ImageModel::FromVectorIcon(
+-              features::IsRoundedIconsEnabled()
+-                  ? vector_icons::kSettingsIcon
+-                  : vector_icons::kSettingsChromeRefreshOldIcon,
+-              kColorExtensionsMenuText))
+-      .SetImageModel(
+-          views::Button::STATE_PRESSED,
+-          ui::ImageModel::FromVectorIcon(
+-              features::IsRoundedIconsEnabled()
+-                  ? vector_icons::kSettingsIcon
+-                  : vector_icons::kSettingsChromeRefreshOldIcon,
+-              kColorExtensionsMenuText))
+-      .SetImageModel(
+-          views::Button::STATE_DISABLED,
+-          ui::ImageModel::FromVectorIcon(
+-              features::IsRoundedIconsEnabled()
+-                  ? vector_icons::kSettingsIcon
+-                  : vector_icons::kSettingsChromeRefreshOldIcon,
+-              ui::kColorLabelForegroundDisabled))
++      .SetImageModel(views::Button::STATE_HOVERED,
++                     ui::ImageModel::FromVectorIcon(
++                         features::IsRoundedIconsEnabled()
++                             ? vector_icons::kSettingsIcon
++                             : vector_icons::kSettingsChromeRefreshOldIcon,
++                         kColorExtensionsMenuText))
++      .SetImageModel(views::Button::STATE_PRESSED,
++                     ui::ImageModel::FromVectorIcon(
++                         features::IsRoundedIconsEnabled()
++                             ? vector_icons::kSettingsIcon
++                             : vector_icons::kSettingsChromeRefreshOldIcon,
++                         kColorExtensionsMenuText))
++      .SetImageModel(views::Button::STATE_DISABLED,
++                     ui::ImageModel::FromVectorIcon(
++                         features::IsRoundedIconsEnabled()
++                             ? vector_icons::kSettingsIcon
++                             : vector_icons::kSettingsChromeRefreshOldIcon,
++                         ui::kColorLabelForegroundDisabled))
+       .SetProperty(views::kElementIdentifierKey,
+                    kExtensionsMenuManageExtensionsElementId);
+ }
+diff --git a/chrome/browser/ui/views/tabs/tab_strip.cc b/chrome/browser/ui/views/tabs/tab_strip.cc
+index b1e521e..8cae0e5 100644
+--- a/chrome/browser/ui/views/tabs/tab_strip.cc
++++ b/chrome/browser/ui/views/tabs/tab_strip.cc
+@@ -1527,6 +1527,9 @@ void TabStrip::SetSelection(const ui::ListSelectionModel& new_selection) {
+            no_longer_selected, newly_selected)) {
+     tab_at(tab_index)->SelectedStateChanged();
+   }
++  if (new_active_tab != old_active_tab) {
++    new_active_tab->ScrollRectToVisible(new_active_tab->GetLocalBounds());
++  }
+ }
+ 
+ TabGroup* TabStrip::GetTabGroup(const tab_groups::TabGroupId& id) const {
+diff --git a/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc b/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
+index 4bf56c9..4a23fcd 100644
+--- a/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
++++ b/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
+@@ -4,11 +4,16 @@
+ 
+ #include "chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.h"
+ 
++#include <algorithm>
++#include <cmath>
++
+ #include "base/command_line.h"
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/task/single_thread_task_runner.h"
++#include "base/time/time.h"
++#include "base/timer/timer.h"
+ #include "build/build_config.h"
+ #include "build/buildflag.h"
+ #include "chrome/browser/glic/public/features.h"
+@@ -59,13 +64,16 @@
+ #include "ui/base/ui_base_features.h"
+ #include "ui/compositor/layer.h"
+ #include "ui/compositor/layer_type.h"
++#include "ui/events/event.h"
+ #include "ui/gfx/geometry/insets.h"
+ #include "ui/gfx/geometry/point.h"
++#include "ui/gfx/geometry/transform.h"
+ #include "ui/views/accessible_pane_view.h"
+ #include "ui/views/actions/action_view_controller.h"
+ #include "ui/views/border.h"
+ #include "ui/views/cascading_property.h"
+ #include "ui/views/controls/button/image_button.h"
++#include "ui/views/controls/scroll_view.h"
+ #include "ui/views/interaction/view_subregion_anchor.h"
+ #include "ui/views/layout/flex_layout.h"
+ #include "ui/views/layout/flex_layout_types.h"
+@@ -82,6 +90,118 @@ namespace {
+ 
+ constexpr int kEmberTopChromeHeight = 32;
+ 
++}  // namespace
++
++class TabStripScrollContainer : public views::ScrollView {
++  METADATA_HEADER(TabStripScrollContainer, views::ScrollView)
++ public:
++  explicit TabStripScrollContainer(std::unique_ptr<TabStrip> strip)
++      : views::ScrollView(ScrollWithLayers::kDisabled) {
++    SetHorizontalScrollBarMode(ScrollBarMode::kHiddenButEnabled);
++    SetVerticalScrollBarMode(ScrollBarMode::kDisabled);
++    SetBackgroundColor(std::nullopt);
++    SetDrawOverflowIndicator(false);
++    auto* contents = SetContents(std::move(strip));
++    contents->SetPaintToLayer();
++    contents->layer()->SetFillsBoundsOpaquely(false);
++  }
++
++  gfx::Size GetMinimumSize() const override {
++    return gfx::Size(0, kEmberTopChromeHeight);
++  }
++
++  bool OnMouseWheel(const ui::MouseWheelEvent& event) override {
++    const int delta = event.y_offset() ? event.y_offset() : event.x_offset();
++    if (!delta || !contents()) {
++      return false;
++    }
++    const float maximum = MaximumOffset();
++    if (maximum <= 1) {
++      return false;
++    }
++
++    const base::TimeTicks now = base::TimeTicks::Now();
++    const double gap =
++        last_wheel_.is_null() ? 1000.0 : (now - last_wheel_).InMillisecondsF();
++    last_wheel_ = now;
++    const double urgency = gap >= 0 && gap < 230
++                               ? std::min(2.8, 1.0 + (230.0 - gap) / 150.0)
++                               : 1.0;
++    const double stride = std::min(430.0, 132.0 * urgency) *
++                          std::clamp(std::abs(delta) / 120.0, 0.5, 3.0);
++    target_ = std::clamp(target_, 0.0, static_cast<double>(maximum));
++    const double next = target_ - std::copysign(stride, delta);
++    if (next < 0 && target_ < 0.5) {
++      overscroll_ = std::min(44.0, overscroll_ + 17.0);
++    } else if (next > maximum && target_ > maximum - 0.5) {
++      overscroll_ = std::max(-44.0, overscroll_ - 17.0);
++    } else {
++      target_ = std::clamp(next, 0.0, static_cast<double>(maximum));
++    }
++    if (!timer_.IsRunning()) {
++      last_tick_ = now;
++      timer_.Start(FROM_HERE, base::Milliseconds(16), this,
++                   &TabStripScrollContainer::Animate);
++    }
++    return true;
++  }
++
++  void Layout(PassKey) override {
++    LayoutSuperclass<views::ScrollView>(this);
++    target_ = std::clamp(target_, 0.0, static_cast<double>(MaximumOffset()));
++    if (CurrentOffset().x() > MaximumOffset()) {
++      ScrollToOffset(gfx::PointF(MaximumOffset(), 0));
++    }
++  }
++
++  void ScrollRectToVisible(const gfx::Rect& rect) override {
++    views::ScrollView::ScrollRectToVisible(rect);
++    target_ = CurrentOffset().x();
++  }
++
++ private:
++  float MaximumOffset() const {
++    return contents()
++               ? std::max(0, contents()->width() - GetVisibleRect().width())
++               : 0;
++  }
++
++  void Animate() {
++    const base::TimeTicks now = base::TimeTicks::Now();
++    const double elapsed =
++        std::clamp((now - last_tick_).InMillisecondsF(), 0.0, 64.0);
++    last_tick_ = now;
++    const double fraction = 1.0 - std::pow(0.78, elapsed / 16.667);
++    const double current = CurrentOffset().x();
++    const double next = current + (target_ - current) * fraction;
++    ScrollToOffset(gfx::PointF(
++        std::clamp(next, 0.0, static_cast<double>(MaximumOffset())), 0));
++    overscroll_ *= std::pow(0.7, elapsed / 16.667);
++    if (std::abs(overscroll_) < 0.4) {
++      overscroll_ = 0;
++    }
++    gfx::Transform transform;
++    transform.Translate(overscroll_, 0);
++    transform.Scale(1.0 + std::min(0.06, std::abs(overscroll_) / 900.0), 1.0);
++    contents()->SetTransform(transform);
++    if (std::abs(target_ - next) < 0.5 && overscroll_ == 0) {
++      ScrollToOffset(gfx::PointF(target_, 0));
++      timer_.Stop();
++    }
++  }
++
++  base::RepeatingTimer timer_;
++  base::TimeTicks last_wheel_;
++  base::TimeTicks last_tick_;
++  double target_ = 0;
++  double overscroll_ = 0;
++};
++
++BEGIN_METADATA(TabStripScrollContainer)
++END_METADATA
++
++namespace {
++
+ class FrameGrabHandle : public views::View {
+   METADATA_HEADER(FrameGrabHandle, views::View)
+ 
+@@ -111,7 +231,10 @@ class FrameGrabHandle : public views::View {
+     // Reserve some space for the frame to be grabbed by, even if the tabstrip
+     // is full.
+     // TODO(tbergquist): Define this relative to the NTB insets again.
+-    if (base::CommandLine::ForCurrentProcess()->HasSwitch("remove-grab-handle")) return gfx::Size(0, 0);
++    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++            "remove-grab-handle")) {
++      return gfx::Size(0, 0);
++    }
+     return gfx::Size(96, 0);
+   }
+ 
+@@ -231,7 +354,11 @@ HorizontalTabStripRegionView::HorizontalTabStripRegionView(
+     }
+   }
+ 
+-  tab_strip_ = AddChildView(CreateTabStrip(this, browser_view));
++  auto strip = CreateTabStrip(this, browser_view);
++  tab_strip_ = strip.get();
++  tab_strip_scroll_container_ =
++      AddChildView(std::make_unique<TabStripScrollContainer>(std::move(strip)));
++  tab_strip_container_ = tab_strip_scroll_container_;
+ 
+   // Allow the |tab_strip_| to grow into the free space available in
+   // the HorizontalTabStripRegionView.
+@@ -239,7 +366,8 @@ HorizontalTabStripRegionView::HorizontalTabStripRegionView(
+       views::FlexSpecification(views::LayoutOrientation::kHorizontal,
+                                views::MinimumFlexSizeRule::kScaleToZero,
+                                views::MaximumFlexSizeRule::kPreferred);
+-  tab_strip_->SetProperty(views::kFlexBehaviorKey, tab_strip_flex_spec);
++  tab_strip_scroll_container_->SetProperty(views::kFlexBehaviorKey,
++                                           tab_strip_flex_spec);
+ 
+   if (ShouldShowNewTabButton(browser)) {
+     std::unique_ptr<TabStripControlButton> tab_strip_control_button =
+@@ -257,13 +385,11 @@ HorizontalTabStripRegionView::HorizontalTabStripRegionView(
+     new_tab_button_->GetViewAccessibility().SetName(
+         l10n_util::GetStringUTF16(IDS_ACCNAME_NEWTAB));
+ 
+-#if BUILDFLAG(IS_LINUX)
+     // On Linux, middle-clicking the New Tab Button triggers
+     // paste and navigate, either to URLs or to search queries.
+     new_tab_button_->SetTriggerableEventFlags(
+         new_tab_button_->GetTriggerableEventFlags() |
+         ui::EF_MIDDLE_MOUSE_BUTTON);
+-#endif
+   }
+ 
+   reserved_grab_handle_space_ =
+@@ -317,7 +443,7 @@ bool HorizontalTabStripRegionView::IsPositionInWindowCaption(
+   // the |tab_strip_| and the |tab_strip_| but not over the same
+   // pixels. This could lead to this returning false when it should be returning
+   // true.
+-  if (IsHitInView(tab_strip_, point)) {
++  if (IsHitInView(tab_strip_scroll_container_, point)) {
+     gfx::RectF rect_in_target_coords_f(gfx::Rect(point, gfx::Size(1, 1)));
+     View::ConvertRectToTarget(this, tab_strip_, &rect_in_target_coords_f);
+     return tab_strip_->IsRectInWindowCaption(
+@@ -327,8 +453,9 @@ bool HorizontalTabStripRegionView::IsPositionInWindowCaption(
+   // The child could have a non-rectangular shape, so if the rect is not in the
+   // visual portions of the child view we treat it as a click to the caption.
+   for (View* const child : children()) {
+-    if (child != tab_strip_ && child != reserved_grab_handle_space_ &&
+-        child->GetVisible() && IsHitInView(child, point)) {
++    if (child != tab_strip_scroll_container_ &&
++        child != reserved_grab_handle_space_ && child->GetVisible() &&
++        IsHitInView(child, point)) {
+       return false;
+     }
+   }
+@@ -340,7 +467,7 @@ views::View::Views HorizontalTabStripRegionView::GetChildrenInZOrder() {
+   views::View::Views children;
+ 
+   if (tab_strip_) {
+-    children.emplace_back(tab_strip_.get());
++    children.emplace_back(tab_strip_scroll_container_.get());
+   }
+ 
+   if (new_tab_button_) {
+@@ -399,7 +526,7 @@ void HorizontalTabStripRegionView::Layout(PassKey) {
+     // The y position is measured from the bottom of the tabstrip, and then
+     // padding and button height are removed.
+     constexpr int kEmberTabGap = 8;
+-    const int x = tab_strip_->bounds().right() + kEmberTabGap;
++    const int x = tab_strip_scroll_container_->bounds().right() + kEmberTabGap;
+ 
+     const gfx::Point button_new_position(x,
+                                          (height() - button_size.height()) / 2);
+diff --git a/chrome/browser/ui/webui/settings/search_engines_handler.cc b/chrome/browser/ui/webui/settings/search_engines_handler.cc
+index 79eb2cd..8247d46 100644
+--- a/chrome/browser/ui/webui/settings/search_engines_handler.cc
++++ b/chrome/browser/ui/webui/settings/search_engines_handler.cc
+@@ -25,6 +25,7 @@
+ #include "chrome/browser/regional_capabilities/regional_capabilities_service_factory.h"
+ #include "chrome/browser/safe_browsing/extension_telemetry/search_hijacking_detector.h"
+ #include "chrome/browser/search_engine_choice/search_engine_choice_service_factory.h"
++#include "chrome/browser/search_engines/ember_bangs.h"
+ #include "chrome/browser/search_engines/template_url_service_factory.h"
+ #include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
+ #include "chrome/browser/ui/search_engines/keyword_editor_controller.h"
+@@ -63,6 +64,7 @@ namespace {
+ const char kSearchEngineField[] = "searchEngine";
+ const char kKeywordField[] = "keyword";
+ const char kQueryUrlField[] = "queryUrl";
++const char kSuggestionsUrlField[] = "suggestionsUrl";
+ 
+ void ProcessGuestDsePropagation(Profile& profile,
+                                 bool save_guest_choice,
+@@ -155,6 +157,10 @@ void SearchEnginesHandler::RegisterMessages() {
+       base::BindRepeating(
+           &SearchEnginesHandler::HandleSearchEngineEditCompleted,
+           base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "restoreEmberBangs",
++      base::BindRepeating(&SearchEnginesHandler::HandleRestoreEmberBangs,
++                          base::Unretained(this)));
+ #if BUILDFLAG(IS_CHROMEOS)
+   web_ui()->RegisterMessageCallback(
+       "openBrowserSearchSettings",
+@@ -306,6 +312,8 @@ base::DictValue SearchEnginesHandler::CreateDictionaryForEngine(
+   Profile* profile = Profile::FromWebUI(web_ui());
+   dict.Set("url",
+            template_url->url_ref().DisplayURL(UIThreadSearchTermsData()));
++  dict.Set("suggestionsUrl", template_url->suggestions_url_ref().DisplayURL(
++                                 UIThreadSearchTermsData()));
+   dict.Set("urlLocked",
+            ((template_url->prepopulate_id() > 0) ||
+             (template_url->starter_pack_id() !=
+@@ -382,26 +390,6 @@ void SearchEnginesHandler::RecordSearchHijackingHeuristicMetric() {
+     return;
+   }
+ 
+-  // Look for matches in the last 7 days, per the histograms.xml description.
+-  auto status =
+-      safe_browsing::SearchHijackingDetector::GetRecentHeuristicResult(
+-          profile_->GetPrefs(), base::Days(7));
+-
+-  bool available =
+-      (status !=
+-       safe_browsing::SearchHijackingDetector::HeuristicResult::kUnknown);
+-
+-  base::UmaHistogramBoolean(
+-      "Settings.SearchEngines.SearchHijackingDetector.HeuristicAvailable",
+-      available);
+-
+-  if (available) {
+-    base::UmaHistogramBoolean(
+-        "Settings.SearchEngines.SearchHijackingDetector.HeuristicMatch",
+-        status ==
+-            safe_browsing::SearchHijackingDetector::HeuristicResult::kMatch);
+-  }
+-
+   has_recorded_hijacking_metric_ = true;
+ }
+ 
+@@ -504,13 +492,15 @@ void SearchEnginesHandler::HandleSearchEngineEditStarted(
+ void SearchEnginesHandler::OnEditedKeyword(TemplateURL* template_url,
+                                            const std::u16string& title,
+                                            const std::u16string& keyword,
+-                                           const std::string& fixed_up_url) {
++                                           const std::string& fixed_up_url,
++                                           const std::string& suggestions_url) {
+   CHECK(!fixed_up_url.empty());
+   if (template_url) {
+     list_controller_.ModifyTemplateURL(template_url, title, keyword,
+-                                       fixed_up_url);
++                                       fixed_up_url, suggestions_url);
+   } else {
+-    list_controller_.AddTemplateURL(title, keyword, fixed_up_url);
++    list_controller_.AddTemplateURL(title, keyword, fixed_up_url,
++                                    suggestions_url);
+   }
+ 
+   edit_controller_.reset();
+@@ -539,7 +529,15 @@ bool SearchEnginesHandler::CheckFieldValidity(const std::string& field_name,
+   } else if (field_name.compare(kKeywordField) == 0) {
+     is_valid = edit_controller_->IsKeywordValid(base::UTF8ToUTF16(field_value));
+   } else if (field_name.compare(kQueryUrlField) == 0) {
+-    is_valid = edit_controller_->IsURLValid(field_value);
++    std::string native_url = field_value;
++    for (size_t pos = 0;
++         (pos = native_url.find("%s", pos)) != std::string::npos;
++         pos += sizeof("{searchTerms}") - 1) {
++      native_url.replace(pos, 2, "{searchTerms}");
++    }
++    is_valid = edit_controller_->IsURLValid(native_url);
++  } else if (field_name.compare(kSuggestionsUrlField) == 0) {
++    is_valid = edit_controller_->IsSuggestionsURLValid(field_value);
+   } else {
+     NOTREACHED();
+   }
+@@ -562,21 +560,37 @@ void SearchEnginesHandler::HandleSearchEngineEditCompleted(
+     return;
+   }
+ 
+-  CHECK_EQ(3U, args.size());
++  CHECK_EQ(4U, args.size());
+   const std::string& search_engine = args[0].GetString();
+   const std::string& keyword = args[1].GetString();
+   const std::string& query_url = args[2].GetString();
++  const std::string& suggestions_url = args[3].GetString();
+ 
+   // Recheck validity. It's possible to get here with invalid input if e.g.
+   // the user calls the right JS functions directly from the web inspector.
+   if (CheckFieldValidity(kSearchEngineField, search_engine) &&
+       CheckFieldValidity(kKeywordField, keyword) &&
+-      CheckFieldValidity(kQueryUrlField, query_url)) {
++      CheckFieldValidity(kQueryUrlField, query_url) &&
++      CheckFieldValidity(kSuggestionsUrlField, suggestions_url)) {
++    std::string native_query_url = query_url;
++    for (size_t pos = 0;
++         (pos = native_query_url.find("%s", pos)) != std::string::npos;
++         pos += sizeof("{searchTerms}") - 1) {
++      native_query_url.replace(pos, 2, "{searchTerms}");
++    }
+     edit_controller_->AcceptAddOrEdit(base::UTF8ToUTF16(search_engine),
+-                                      base::UTF8ToUTF16(keyword), query_url);
++                                      base::UTF8ToUTF16(keyword),
++                                      native_query_url, suggestions_url);
+   }
+ }
+ 
++void SearchEnginesHandler::HandleRestoreEmberBangs(
++    const base::ListValue& args) {
++  AllowJavascript();
++  ember::RestoreDefaultBangs(
++      TemplateURLServiceFactory::GetForProfile(profile_));
++}
++
+ #if BUILDFLAG(IS_CHROMEOS)
+ void SearchEnginesHandler::HandleOpenBrowserSearchSettings(
+     const base::ListValue& args) {
+diff --git a/chrome/browser/ui/webui/settings/search_engines_handler.h b/chrome/browser/ui/webui/settings/search_engines_handler.h
+index 76977fc..1d0dabb 100644
+--- a/chrome/browser/ui/webui/settings/search_engines_handler.h
++++ b/chrome/browser/ui/webui/settings/search_engines_handler.h
+@@ -38,7 +38,8 @@ class SearchEnginesHandler : public SettingsPageUIHandler,
+   void OnEditedKeyword(TemplateURL* template_url,
+                        const std::u16string& title,
+                        const std::u16string& keyword,
+-                       const std::string& fixed_up_url) override;
++                       const std::string& fixed_up_url,
++                       const std::string& suggestions_url) override;
+ 
+   // SettingsPageUIHandler implementation.
+   void RegisterMessages() override;
+@@ -83,8 +84,8 @@ class SearchEnginesHandler : public SettingsPageUIHandler,
+   // to WebUI. Called from WebUI.
+   void HandleValidateSearchEngineInput(const base::ListValue& args);
+ 
+-  // Checks whether the given user input field (searchEngine, keyword, queryUrl)
+-  // is populated with a valid value.
++  // Checks whether the given user input field (searchEngine, keyword, queryUrl,
++  // suggestionsUrl) is populated with a valid value.
+   bool CheckFieldValidity(const std::string& field_name,
+                           const std::string& field_value);
+ 
+@@ -95,6 +96,7 @@ class SearchEnginesHandler : public SettingsPageUIHandler,
+   // Called when an edit is finished and should be saved.
+   // Called from WebUI.
+   void HandleSearchEngineEditCompleted(const base::ListValue& args);
++  void HandleRestoreEmberBangs(const base::ListValue& args);
+ 
+ #if BUILDFLAG(IS_CHROMEOS)
+   // Request the browser to open its search settings.
+diff --git a/chrome/browser/resources/settings/search_page/search_engines_page.html b/chrome/browser/resources/settings/search_page/search_engines_page.html
+index e00836b..4ea2a5f 100644
+--- a/chrome/browser/resources/settings/search_page/search_engines_page.html
++++ b/chrome/browser/resources/settings/search_page/search_engines_page.html
+@@ -76,7 +76,13 @@
+         <div class="flex cr-padded-text">
+           <h2>$i18n{searchEnginesSiteSearch}</h2>
+           <div class="secondary">$i18n{searchEnginesSiteSearchExplanation}</div>
++          <div class="secondary">Ember Bangs use these shortcuts. Type an alias
++            and Space in the address bar to search that site.</div>
+         </div>
++        <cr-button class="secondary-button header-aligned-button"
++                   on-click="onRestoreEmberBangsClick_">
++          Restore Ember Bangs
++        </cr-button>
+         <cr-button class="secondary-button header-aligned-button"
+                    aria-label="$i18n{searchEnginesAddButtonAriaLabel}"
+                    on-click="onAddSearchEngineClick_" id="addSearchEngine">
+diff --git a/chrome/browser/resources/settings/search_page/search_engines_page.ts b/chrome/browser/resources/settings/search_page/search_engines_page.ts
+index 609aea9..8753d28 100644
+--- a/chrome/browser/resources/settings/search_page/search_engines_page.ts
++++ b/chrome/browser/resources/settings/search_page/search_engines_page.ts
+@@ -60,6 +60,9 @@ const SettingsSearchEnginesPageElementBase = SettingsViewMixin(
+ 
+ export class SettingsSearchEnginesPageElement extends
+     SettingsSearchEnginesPageElementBase {
++  private onRestoreEmberBangsClick_() {
++    chrome.send('restoreEmberBangs');
++  }
+   static get is() {
+     return 'settings-search-engines-page';
+   }
+diff --git a/chrome/browser/ui/views/location_bar/selected_keyword_view.cc b/chrome/browser/ui/views/location_bar/selected_keyword_view.cc
+index 109c7cc..2aa1602 100644
+--- a/chrome/browser/ui/views/location_bar/selected_keyword_view.cc
++++ b/chrome/browser/ui/views/location_bar/selected_keyword_view.cc
+@@ -5,6 +5,7 @@
+ #include "chrome/browser/ui/views/location_bar/selected_keyword_view.h"
+ 
+ #include "base/check.h"
++#include "base/functional/bind.h"
+ #include "build/branding_buildflags.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
+@@ -59,7 +60,10 @@ SelectedKeywordView::GetKeywordLabelNames(const std::u16string& keyword,
+   const TemplateURL* template_url = service->GetTemplateURLForKeyword(keyword);
+   if (template_url) {
+     names.short_name = template_url->AdjustedShortNameForLocaleDirection();
+-    names.full_name = template_url->GetFullName();
++    names.full_name =
++        keyword == u"gpt" && template_url->short_name() == u"ChatGPT"
++            ? u"Ask ChatGPT"
++            : template_url->GetFullName();
+     return names;
+   }
+ 
+@@ -85,9 +89,7 @@ ui::ImageModel SelectedKeywordView::GetKeywordIcon(
+       (template_url->type() == TemplateURL::OMNIBOX_API_EXTENSION)) {
+     image = extensions::OmniboxAPI::Get(profile)->GetOmniboxIcon(
+         template_url->GetExtensionId());
+-  } else if (template_url &&
+-             template_url->policy_origin() ==
+-                 TemplateURLData::PolicyOrigin::kSearchAggregator) {
++  } else if (template_url) {
+     const SkBitmap* bitmap = omnibox_controller->edit_model()->GetIconBitmap(
+         template_url->favicon_url());
+     if (bitmap) {
+@@ -246,6 +248,30 @@ void SelectedKeywordView::SetLabelForCurrentWidth() {
+ void SelectedKeywordView::UpdateIcon() {
+   IconLabelBubbleView::SetImageModel(
+       GetKeywordIcon(keyword_, omnibox_controller_, profile_));
++  if (!profile_ || !omnibox_controller_ || keyword_.empty()) return;
++  const TemplateURLService* service =
++      TemplateURLServiceFactory::GetForProfile(profile_);
++  const TemplateURL* engine =
++      service ? service->GetTemplateURLForKeyword(keyword_) : nullptr;
++  if (!engine || !engine->favicon_url().is_valid()) return;
++  const std::u16string keyword = keyword_;
++  gfx::Image favicon = omnibox_controller_->client()
++                           ->GetFaviconForKeywordSearchProvider(
++                               engine, base::BindOnce(
++                                           [](base::WeakPtr<SelectedKeywordView> view,
++                                              std::u16string expected,
++                                              const gfx::Image& image) {
++                                             if (view && view->keyword_ == expected &&
++                                                 !image.IsEmpty()) {
++                                               view->SetImageModel(
++                                                   ui::ImageModel::FromImageSkia(
++                                                       image.AsImageSkia()));
++                                             }
++                                           },
++                                           weak_factory_.GetWeakPtr(), keyword));
++  if (!favicon.IsEmpty()) {
++    SetImageModel(ui::ImageModel::FromImageSkia(favicon.AsImageSkia()));
++  }
+ }
+ 
+ BEGIN_METADATA(SelectedKeywordView)
+diff --git a/chrome/browser/ui/views/location_bar/selected_keyword_view.h b/chrome/browser/ui/views/location_bar/selected_keyword_view.h
+index 1f92a36..7473fc5 100644
+--- a/chrome/browser/ui/views/location_bar/selected_keyword_view.h
++++ b/chrome/browser/ui/views/location_bar/selected_keyword_view.h
+@@ -8,6 +8,7 @@
+ #include <string>
+ 
+ #include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
+ #include "chrome/browser/ui/views/location_bar/icon_label_bubble_view.h"
+ #include "third_party/skia/include/core/SkColor.h"
+ #include "ui/base/metadata/metadata_header_macros.h"
+@@ -32,7 +33,7 @@ class SelectedKeywordView : public IconLabelBubbleView {
+     std::u16string full_name;
+   };
+   // Returns the short and long names that can be used to describe keyword
+-  // behavior, e.g. "Search google.com" or an equivalent translation, with
++  // behavior, e.g. "Search 9oo91e.qjz9zk" or an equivalent translation, with
+   // consideration for bidirectional text safety using |service|. Empty
+   // names are returned if service is null.
+   static KeywordLabelNames GetKeywordLabelNames(
+@@ -85,6 +86,7 @@ class SelectedKeywordView : public IconLabelBubbleView {
+   // NOTE: we don't cache the TemplateURL as it is possible for it to get
+   // deleted out from under us.
+   std::u16string keyword_;
++  base::WeakPtrFactory<SelectedKeywordView> weak_factory_{this};
+ 
+   // These labels are never visible.  They are used to size the view.  One
+   // label contains the complete description of the keyword, the second
+diff --git a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
+index 6271ac2..e7863c7 100644
+--- a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
++++ b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
+@@ -20,12 +20,15 @@
+ #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+ #include "chrome/browser/browser_features.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/search_engines/ember_bangs.h"
++#include "chrome/browser/search_engines/template_url_service_factory.h"
+ #include "chrome/browser/themes/theme_properties.h"
+ #include "chrome/browser/themes/theme_service.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+ #include "chrome/browser/ui/color/chrome_color_id.h"
+ #include "chrome/browser/ui/ember_favorites.h"
++#include "chrome/browser/ui/views/frame/ember_url_presentation.h"
+ #include "chrome/browser/ui/webui/cr_components/most_visited/most_visited_handler.h"
+ #include "chrome/browser/ui/webui/favicon_source.h"
+ #include "chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_handler.h"
+@@ -51,6 +54,8 @@
+ #include "components/prefs/pref_change_registrar.h"
+ #include "components/prefs/pref_service.h"
+ #include "components/search/ntp_features.h"
++#include "components/search_engines/template_url.h"
++#include "components/search_engines/template_url_service.h"
+ #include "components/strings/grit/components_strings.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/browser/web_ui_data_source.h"
+@@ -110,6 +115,14 @@ class EmberNewTabNavigationHandler
+         "emberNavigate",
+         base::BindRepeating(&EmberNewTabNavigationHandler::Navigate,
+                             base::Unretained(this)));
++    web_ui()->RegisterMessageCallback(
++        "emberBangLookup",
++        base::BindRepeating(&EmberNewTabNavigationHandler::LookupBang,
++                            base::Unretained(this)));
++    web_ui()->RegisterMessageCallback(
++        "emberNavigateBang",
++        base::BindRepeating(&EmberNewTabNavigationHandler::NavigateBang,
++                            base::Unretained(this)));
+     web_ui()->RegisterMessageCallback(
+         "emberFavoritesGet",
+         base::BindRepeating(&EmberNewTabNavigationHandler::GetFavorites,
+@@ -156,6 +169,67 @@ class EmberNewTabNavigationHandler
+   }
+ 
+  private:
++  const TemplateURL* FindBang(std::string alias) {
++    const bool explicit_bang = !alias.empty() && alias.front() == '!';
++    if (explicit_bang) {
++      alias.erase(0, 1);
++    }
++    if (alias.empty() || alias.size() > 24 ||
++        (alias == "localhost" && !explicit_bang)) {
++      return nullptr;
++    }
++    for (char c : alias) {
++      if (!(c >= 'a' && c <= 'z') && !(c >= '0' && c <= '9') && c != '_' &&
++          c != '+' && c != '-') {
++        return nullptr;
++      }
++    }
++    if (!explicit_bang &&
++        (alias == "settings" || alias == "preferences" || alias == "history" ||
++         alias == "downloads" || alias == "bookmarks" ||
++         alias == "extensions" || alias == "addons" || alias == "newtab")) {
++      return nullptr;
++    }
++    TemplateURLService* service =
++        TemplateURLServiceFactory::GetForProfile(profile_);
++    return service && service->loaded()
++               ? service->GetTemplateURLForKeyword(base::UTF8ToUTF16(alias))
++               : nullptr;
++  }
++
++  void LookupBang(const base::ListValue& args) {
++    if (args.size() != 2 || !args[1].is_string()) {
++      return;
++    }
++    AllowJavascript();
++    base::DictValue result;
++    if (const TemplateURL* bang = FindBang(args[1].GetString())) {
++      result.Set("alias", base::UTF16ToUTF8(bang->keyword()));
++      result.Set("name", base::UTF16ToUTF8(bang->short_name()));
++      result.Set("iconUrl", bang->favicon_url().spec());
++    }
++    ResolveJavascriptCallback(args[0], base::Value(std::move(result)));
++  }
++
++  void NavigateBang(const base::ListValue& args) {
++    if (args.size() != 2 || !args[0].is_string() || !args[1].is_string()) {
++      return;
++    }
++    const TemplateURL* bang = FindBang(args[0].GetString());
++    BrowserWindowInterface* browser = GetBrowser();
++    if (!bang || !browser) {
++      return;
++    }
++    TemplateURLService* service =
++        TemplateURLServiceFactory::GetForProfile(profile_);
++    const GURL target = ember::ResolveBangInput(
++        service,
++        bang->keyword() + u" " + base::UTF8ToUTF16(args[1].GetString()));
++    if (target.is_valid() && target.SchemeIsHTTPOrHTTPS()) {
++      browser->OpenGURL(target, WindowOpenDisposition::CURRENT_TAB);
++    }
++  }
++
+   BrowserWindowInterface* GetBrowser() {
+     return GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
+         web_ui()->GetWebContents());
+@@ -174,6 +248,20 @@ class EmberNewTabNavigationHandler
+       return;
+     }
+ 
++    if (const GURL internal =
++            ember::ResolveInternalPageName(base::UTF8ToUTF16(*text));
++        internal.is_valid()) {
++      browser->OpenGURL(internal, WindowOpenDisposition::CURRENT_TAB);
++      return;
++    }
++    if (const GURL bang = ember::ResolveBangInput(
++            TemplateURLServiceFactory::GetForProfile(profile_),
++            base::UTF8ToUTF16(*text));
++        bang.is_valid()) {
++      browser->OpenGURL(bang, WindowOpenDisposition::CURRENT_TAB);
++      return;
++    }
++
+     AutocompleteMatch match;
+     AutocompleteClassifierFactory::GetForProfile(browser->GetProfile())
+         ->Classify(AutocompleteInput::SanitizeString(base::UTF8ToUTF16(*text)),
+diff --git a/chrome/browser/ui/views/session_crashed_bubble_view.cc b/chrome/browser/ui/views/session_crashed_bubble_view.cc
+index 39acca4..2ec5fcf 100644
+--- a/chrome/browser/ui/views/session_crashed_bubble_view.cc
++++ b/chrome/browser/ui/views/session_crashed_bubble_view.cc
+@@ -29,6 +29,7 @@
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/browser/ui/views/chrome_layout_provider.h"
+ #include "chrome/browser/ui/views/chrome_typography.h"
++#include "chrome/browser/ui/views/ember/ember_glass_view.h"
+ #include "chrome/browser/ui/views/frame/app_menu_button.h"
+ #include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/frame/toolbar_button_provider.h"
+@@ -89,7 +90,7 @@ bool DoesSupportConsentCheck() {
+ 
+ void OpenUmaLink(BrowserWindowInterface* browser, const ui::Event& event) {
+   browser->OpenGURL(
+-      GURL("https://support.google.com/chrome/answer/96817"),
++      GURL("https://support.9oo91e.qjz9zk/chrome/answer/96817"),
+       ui::DispositionFromEventFlags(event.flags(),
+                                     WindowOpenDisposition::NEW_FOREGROUND_TAB));
+   RecordBubbleHistogramValue(SESSION_CRASHED_BUBBLE_HELP);
+@@ -104,12 +105,10 @@ class SessionCrashedBubbleDelegate : public ui::DialogModelDelegate {
+             ExitTypeService::GetInstanceForProfile(profile)) {
+       crashed_lock_ = exit_type_service->CreateCrashedLock();
+     }
+-
+   }
+ 
+   ~SessionCrashedBubbleDelegate() override { g_instance_for_test = nullptr; }
+ 
+-
+   void OpenStartupPages(BrowserWindowInterface* browser) {
+     ignored_ = false;
+     MaybeEnableUma();
+@@ -320,9 +319,13 @@ views::BubbleDialogDelegate* SessionCrashedBubbleView::ShowBubble(
+ 
+   views::BubbleDialogDelegate* bubble_ptr = bubble.get();
+   g_instance_for_test = bubble_ptr;
+-  views::BubbleDialogDelegate::CreateBubbleDeprecated(
+-      std::move(bubble), views::Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET)
+-      ->Show();
++  views::Widget* widget = views::BubbleDialogDelegate::CreateBubbleDeprecated(
++      std::move(bubble), views::Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET);
++  widget->Show();
++  ember::ConfigureEmberGlassBubble(widget->GetRootView(), bubble_ptr);
++  ember::CaptureEmberGlassBubbleBackdrop(
++      browser_view, widget->GetRootView(),
++      bubble_ptr->GetAnchorRect().CenterPoint());
+ 
+   RecordBubbleHistogramValue(SESSION_CRASHED_BUBBLE_SHOWN);
+   if (uma_opted_in_already) {
+diff --git a/chrome/browser/ui/views/external_protocol_dialog.cc b/chrome/browser/ui/views/external_protocol_dialog.cc
+index 952d7ad..c8fc1d7 100644
+--- a/chrome/browser/ui/views/external_protocol_dialog.cc
++++ b/chrome/browser/ui/views/external_protocol_dialog.cc
+@@ -15,8 +15,11 @@
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/shell_integration.h"
+ #include "chrome/browser/tab_contents/tab_util.h"
++#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+ #include "chrome/browser/ui/views/chrome_layout_provider.h"
+ #include "chrome/browser/ui/views/chrome_typography.h"
++#include "chrome/browser/ui/views/ember/ember_glass_view.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/common/pref_names.h"
+ #include "chrome/grit/generated_resources.h"
+ #include "components/constrained_window/constrained_window_views.h"
+@@ -176,7 +179,17 @@ ExternalProtocolDialog::ExternalProtocolDialog(
+                 OMIT_CRYPTOGRAPHIC)));
+   }
+ 
+-  constrained_window::ShowWebModalDialogViews(this, web_contents);
++  views::Widget* widget =
++      constrained_window::ShowWebModalDialogViews(this, web_contents);
++  widget->client_view()->SetBackground(nullptr);
++  message_box_view_->SetBackground(nullptr);
++  ember::ConfigureEmberGlassDialog(widget->GetRootView());
++  BrowserWindowInterface* browser =
++      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(web_contents);
++  ember::CaptureEmberGlassBubbleBackdrop(
++      browser ? BrowserView::GetBrowserViewForBrowser(browser) : nullptr,
++      widget->GetRootView(), widget->GetWindowBoundsInScreen().CenterPoint(),
++      web_contents);
+   picture_in_picture_watcher_ = std::make_unique<PictureInPictureWatcher>(this);
+ }
+ 
+diff --git a/chrome/browser/search_engines/ember_bangs.h b/chrome/browser/search_engines/ember_bangs.h
+new file mode 100644
+index 0000000..bd1b3fb
+--- /dev/null
++++ b/chrome/browser/search_engines/ember_bangs.h
+@@ -0,0 +1,27 @@
++// Copyright 2026 The Ember Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_SEARCH_ENGINES_EMBER_BANGS_H_
++#define CHROME_BROWSER_SEARCH_ENGINES_EMBER_BANGS_H_
++
++#include <string>
++
++#include "url/gurl.h"
++
++class PrefService;
++class TemplateURLService;
++
++namespace ember {
++
++// Ember's default Quick Searches are ordinary Chromium TemplateURLs. The
++// service remains the single owner of keyword activation, navigation and edits.
++void SeedDefaultBangs(TemplateURLService* service, PrefService* prefs);
++void RestoreDefaultBangs(TemplateURLService* service);
++// Resolves both `yt cats` and `cats !yt` through the current native keyword
++// table. A bare alias opens the engine's origin; invalid input returns GURL().
++GURL ResolveBangInput(TemplateURLService* service, const std::u16string& input);
++
++}  // namespace ember
++
++#endif  // CHROME_BROWSER_SEARCH_ENGINES_EMBER_BANGS_H_

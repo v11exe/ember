@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
-// Capture the built native Ember shell at the exact viewports the committed
-// Electron oracle was captured at, so the two can be compared pixel for pixel.
+// Capture the built native Ember shell at the exact viewports recorded for the
+// Electron oracle. The full historical captures remain on main/Git history.
 //
 // Everything is driven through Chromium's own remote debugging port. Synthetic
 // keyboard and mouse are deliberately avoided: they go to whichever window has

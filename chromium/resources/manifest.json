@@ -2,6 +2,10 @@
   "schemaVersion": 1,
   "files": [
     {
+      "source": "conversions.js",
+      "destination": "chrome/app/theme/chromium/ember_conversions.js"
+    },
+    {
       "source": "branding/ember.ico",
       "destination": "chrome/app/theme/chromium/win/chromium.ico"
     },
@@ -76,6 +80,14 @@
     {
       "source": "glass/displacement-map.jpg",
       "destination": "chrome/app/theme/chromium/ember_glass_displacement.jpg"
+    },
+    {
+      "source": "newtab/ember-icon.png",
+      "destination": "chrome/app/theme/default_100_percent/chromium/ember_chrome_mark.png"
+    },
+    {
+      "source": "newtab/ember-icon.png",
+      "destination": "chrome/app/theme/default_200_percent/chromium/ember_chrome_mark.png"
     },
     {
       "source": "typography/Inter-Regular.ttf",

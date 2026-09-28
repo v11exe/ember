@@ -1,0 +1,85 @@
+diff --git a/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc b/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
+index 4a23fcd..c0cf935 100644
+--- a/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
++++ b/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
+@@ -92,6 +92,29 @@ constexpr int kEmberTopChromeHeight = 32;
+ 
+ }  // namespace
+ 
++class TabStripScrollContent : public views::View {
++ public:
++  explicit TabStripScrollContent(std::unique_ptr<TabStrip> strip) {
++    tab_strip_ = AddChildView(std::move(strip));
++  }
++
++  int MinimumWidth() const { return tab_strip_->GetMinimumSize().width(); }
++
++  int NaturalWidth() const { return tab_strip_->GetPreferredSize({}).width(); }
++
++  gfx::Size CalculatePreferredSize(
++      const views::SizeBounds& available_size) const override {
++    return gfx::Size(std::max(MinimumWidth(),
++                              available_size.width().value_or(NaturalWidth())),
++                     kEmberTopChromeHeight);
++  }
++
++  void Layout(PassKey) override { tab_strip_->SetBoundsRect(GetLocalBounds()); }
++
++ private:
++  raw_ptr<TabStrip> tab_strip_ = nullptr;
++};
++
+ class TabStripScrollContainer : public views::ScrollView {
+   METADATA_HEADER(TabStripScrollContainer, views::ScrollView)
+  public:
+@@ -101,15 +124,26 @@ class TabStripScrollContainer : public views::ScrollView {
+     SetVerticalScrollBarMode(ScrollBarMode::kDisabled);
+     SetBackgroundColor(std::nullopt);
+     SetDrawOverflowIndicator(false);
+-    auto* contents = SetContents(std::move(strip));
++    auto* contents =
++        SetContents(std::make_unique<TabStripScrollContent>(std::move(strip)));
+     contents->SetPaintToLayer();
+     contents->layer()->SetFillsBoundsOpaquely(false);
+   }
+ 
++  void InitializeTabWidth(TabStrip* tab_strip) {
++    tab_strip->SetAvailableWidthCallback(base::BindRepeating(
++        &TabStripScrollContainer::AvailableTabWidth, base::Unretained(this)));
++  }
++
+   gfx::Size GetMinimumSize() const override {
+     return gfx::Size(0, kEmberTopChromeHeight);
+   }
+ 
++  gfx::Size CalculatePreferredSize(
++      const views::SizeBounds& available_size) const override {
++    return gfx::Size(ScrollContent()->NaturalWidth(), kEmberTopChromeHeight);
++  }
++
+   bool OnMouseWheel(const ui::MouseWheelEvent& event) override {
+     const int delta = event.y_offset() ? event.y_offset() : event.x_offset();
+     if (!delta || !contents()) {
+@@ -160,6 +194,14 @@ class TabStripScrollContainer : public views::ScrollView {
+   }
+ 
+  private:
++  const TabStripScrollContent* ScrollContent() const {
++    return static_cast<const TabStripScrollContent*>(contents());
++  }
++
++  int AvailableTabWidth() const {
++    return std::max({1, contents()->width(), ScrollContent()->MinimumWidth()});
++  }
++
+   float MaximumOffset() const {
+     return contents()
+                ? std::max(0, contents()->width() - GetVisibleRect().width())
+@@ -630,6 +672,7 @@ void HorizontalTabStripRegionView::InitializeTabStrip() {
+   }
+ 
+   tab_strip_->Initialize();
++  tab_strip_scroll_container_->InitializeTabWidth(tab_strip_);
+   static_cast<BrowserTabStripController*>(tab_strip_->controller())
+       ->InitFromModel(tab_strip_);
+   tab_strip_set_ = true;

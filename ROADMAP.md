@@ -2,6 +2,11 @@
 
 This is the numbered source of truth for Ember feature work. Feature numbers are stable references for coding agents.
 
+On `chromium-port`, completed items describe the retained parity feature set;
+the final linked native build and interaction acceptance are tracked in
+`CHROMIUM_PORT_STATUS.md`. Electron-specific implementation references in older
+sections refer to the preserved `main` branch, not code in this checkout.
+
 **Status:** ✅ Completed · ⬜ Planned
 
 ## Global UI rule
@@ -154,6 +159,10 @@ Preserve these rules:
 - Future workspace/profile work (#12–13) must not silently change alias semantics; any per-profile/per-workspace scoping must be explicit.
 - Future omnibox work — #14 universal tab search, #25 duplicate detection ("Already open") — shares this input path. Add kinds to `resolveInput()` and decide precedence against `bang` explicitly rather than intercepting keystrokes upstream of it.
 - #21/#22 compact and edge-hover chrome must keep the chip visible whenever the omnibox itself is visible; it is part of the field, not a separate surface.
+- In the native port, a ChatGPT Quick Search may submit its exact prefilled
+  prompt once after `chatgpt.com` loads. Keep this scoped to a user-entered
+  Bang, the current tab, and the expected prompt; if the page changes its
+  composer or Send control, leave the draft for the user to send manually.
 
 ---
 

@@ -1,0 +1,821 @@
+diff --git a/chrome/app/theme/chrome_unscaled_resources.grd b/chrome/app/theme/chrome_unscaled_resources.grd
+index 2bb7fa7..c0f4720 100644
+--- a/chrome/app/theme/chrome_unscaled_resources.grd
++++ b/chrome/app/theme/chrome_unscaled_resources.grd
+@@ -14,6 +14,7 @@
+   </outputs>
+   <release seq="1">
+     <includes>
++      <include name="IDR_EMBER_CONVERSIONS_SCRIPT" file="chromium/ember_conversions.js" type="BINDATA" />
+       <include name="IDR_EMBER_GLASS_DISPLACEMENT" file="chromium/ember_glass_displacement.jpg" type="BINDATA" />
+       <if expr="is_linux">
+         <then>
+diff --git a/chrome/browser/extensions/api/settings_private/prefs_util.cc b/chrome/browser/extensions/api/settings_private/prefs_util.cc
+index d32ca4e..1b8cce3 100644
+--- a/chrome/browser/extensions/api/settings_private/prefs_util.cc
++++ b/chrome/browser/extensions/api/settings_private/prefs_util.cc
+@@ -271,6 +271,22 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
+       settings_api::PrefType::kNumber;
+   (*s_allowlist)[::prefs::kEmberFavoritesRows] =
+       settings_api::PrefType::kNumber;
++  (*s_allowlist)[::prefs::kEmberConversionsEnabled] =
++      settings_api::PrefType::kBoolean;
++  (*s_allowlist)[::prefs::kEmberConversionsCurrency] =
++      settings_api::PrefType::kString;
++  (*s_allowlist)[::prefs::kEmberConversionsTemperature] =
++      settings_api::PrefType::kString;
++  (*s_allowlist)[::prefs::kEmberConversionsDistance] =
++      settings_api::PrefType::kString;
++  (*s_allowlist)[::prefs::kEmberConversionsWeight] =
++      settings_api::PrefType::kString;
++  (*s_allowlist)[::prefs::kEmberConversionsVolume] =
++      settings_api::PrefType::kString;
++  (*s_allowlist)[::prefs::kEmberConversionsClock] =
++      settings_api::PrefType::kString;
++  (*s_allowlist)[::prefs::kEmberConversionsTimeZone] =
++      settings_api::PrefType::kString;
+   (*s_allowlist)[::prefs::kVerticalTabsExpandOnHoverEnabled] =
+       settings_api::PrefType::kBoolean;
+   (*s_allowlist)[::prefs::kTabSearchPinnedToTabstrip] =
+diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
+index 3c2a55f..19c6039 100644
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -1731,6 +1731,15 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
+   registry->RegisterIntegerPref(prefs::kEmberFavoritesRows, 2);
+   registry->RegisterBooleanPref(prefs::kEmberSidebarOpen, true);
+   registry->RegisterListPref(prefs::kEmberRecentUploads);
++  registry->RegisterBooleanPref(prefs::kEmberConversionsEnabled, true);
++  registry->RegisterStringPref(prefs::kEmberConversionsCurrency, "GBP");
++  registry->RegisterStringPref(prefs::kEmberConversionsTemperature, "c");
++  registry->RegisterStringPref(prefs::kEmberConversionsDistance, "metric");
++  registry->RegisterStringPref(prefs::kEmberConversionsWeight, "metric");
++  registry->RegisterStringPref(prefs::kEmberConversionsVolume, "metric");
++  registry->RegisterStringPref(prefs::kEmberConversionsClock, "24");
++  registry->RegisterStringPref(prefs::kEmberConversionsTimeZone, "auto");
++  registry->RegisterDictionaryPref(prefs::kEmberConversionRates);
+   cross_device::RegisterProfilePrefs(registry);
+   enterprise::RegisterIdentifiersProfilePrefs(registry);
+   enterprise_connectors::RegisterProfilePrefs(registry);
+diff --git a/chrome/browser/resources/settings/appearance_page/appearance_page.html b/chrome/browser/resources/settings/appearance_page/appearance_page.html
+index dfe092f..5613a5f 100644
+--- a/chrome/browser/resources/settings/appearance_page/appearance_page.html
++++ b/chrome/browser/resources/settings/appearance_page/appearance_page.html
+@@ -251,6 +251,58 @@
+           </div>
+         </template>
+ 
++        <div class="cr-row hr">
++          <div class="flex cr-padded-text" aria-hidden="true">
++            Selection conversions
++            <div class="secondary">Show a small conversion near selected prices, measurements and times</div>
++          </div>
++          <settings-toggle-button pref="{{prefs.ember.conversions.enabled}}"
++              label="Selection conversions">
++          </settings-toggle-button>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Preferred currency</div>
++          <settings-dropdown-menu pref-key="ember.conversions.currency"
++              menu-options="[[emberConversionCurrencyOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Temperature</div>
++          <settings-dropdown-menu pref-key="ember.conversions.temperature"
++              menu-options="[[emberConversionTemperatureOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Distance</div>
++          <settings-dropdown-menu pref-key="ember.conversions.distance"
++              menu-options="[[emberConversionSystemOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Weight</div>
++          <settings-dropdown-menu pref-key="ember.conversions.weight"
++              menu-options="[[emberConversionSystemOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Volume</div>
++          <settings-dropdown-menu pref-key="ember.conversions.volume"
++              menu-options="[[emberConversionVolumeOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Clock</div>
++          <settings-dropdown-menu pref-key="ember.conversions.clock"
++              menu-options="[[emberConversionClockOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Time zone</div>
++          <settings-dropdown-menu pref-key="ember.conversions.time_zone"
++              menu-options="[[emberConversionTimeZoneOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++
+         <div class="cr-row hr">
+           <div class="flex cr-padded-text" aria-hidden="true">
+             Ember Favorites columns
+diff --git a/chrome/browser/resources/settings/appearance_page/appearance_page.ts b/chrome/browser/resources/settings/appearance_page/appearance_page.ts
+index c43bcf5..ce81035 100644
+--- a/chrome/browser/resources/settings/appearance_page/appearance_page.ts
++++ b/chrome/browser/resources/settings/appearance_page/appearance_page.ts
+@@ -172,6 +172,41 @@ export class SettingsAppearancePageElement extends
+       },
+ 
+       emberFavorites_: {type: Array, value: () => []},
++      emberConversionCurrencyOptions_: {
++        readOnly: true, type: Array,
++        value: () => ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD',
++          'NZD', 'CNY', 'INR', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'HUF',
++          'RON', 'BGN', 'ISK', 'ZAR', 'BRL', 'MXN', 'SGD', 'HKD', 'KRW',
++          'TRY', 'ILS', 'RUB', 'THB', 'IDR', 'PHP', 'MYR', 'TWD', 'UAH']
++          .map(value => ({value, name: value})),
++      },
++      emberConversionTemperatureOptions_: {
++        readOnly: true, type: Array,
++        value: () => [{value: 'c', name: 'Celsius'},
++          {value: 'f', name: 'Fahrenheit'}],
++      },
++      emberConversionSystemOptions_: {
++        readOnly: true, type: Array,
++        value: () => [{value: 'metric', name: 'Metric'},
++          {value: 'imperial', name: 'Imperial'}],
++      },
++      emberConversionVolumeOptions_: {
++        readOnly: true, type: Array,
++        value: () => [{value: 'metric', name: 'Metric'},
++          {value: 'imperial', name: 'Imperial'},
++          {value: 'imperial-us', name: 'US customary'}],
++      },
++      emberConversionClockOptions_: {
++        readOnly: true, type: Array,
++        value: () => [{value: '12', name: '12 hour'},
++          {value: '24', name: '24 hour'}],
++      },
++      emberConversionTimeZoneOptions_: {
++        readOnly: true, type: Array,
++        value: () => [{value: 'auto', name: 'Local time zone'},
++          ...Intl.supportedValuesOf('timeZone').map(value =>
++            ({value, name: value.replaceAll('_', ' ')}))],
++      },
+       emberFavoritesError_: {type: String, value: ''},
+ 
+       /**
+@@ -353,6 +388,12 @@ export class SettingsAppearancePageElement extends
+   declare private fontSizeOptions_: DropdownMenuOptionList;
+   declare private emberFavoritesColumnOptions_: DropdownMenuOptionList;
+   declare private emberFavoritesRowOptions_: DropdownMenuOptionList;
++  declare private emberConversionCurrencyOptions_: DropdownMenuOptionList;
++  declare private emberConversionTemperatureOptions_: DropdownMenuOptionList;
++  declare private emberConversionSystemOptions_: DropdownMenuOptionList;
++  declare private emberConversionVolumeOptions_: DropdownMenuOptionList;
++  declare private emberConversionClockOptions_: DropdownMenuOptionList;
++  declare private emberConversionTimeZoneOptions_: DropdownMenuOptionList;
+   declare private emberFavorites_: EmberFavorite[];
+   declare private emberFavoritesError_: string;
+   declare private colorSchemeModeOptions_:
+diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
+index 0002470..0146c3c 100644
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -3972,6 +3972,8 @@ static_library("ui") {
+       "views/ember/ember_glass_transition.h",
+       "views/ember/ember_glass_view.cc",
+       "views/ember/ember_glass_view.h",
++      "views/ember/ember_selection_popup.cc",
++      "views/ember/ember_selection_popup.h",
+       "views/ember/ember_upload_popup.cc",
+       "views/ember/ember_upload_popup.h",
+       "views/frame/browser_root_view.cc",
+diff --git a/chrome/browser/ui/views/ember/ember_selection_popup.cc b/chrome/browser/ui/views/ember/ember_selection_popup.cc
+new file mode 100644
+index 0000000..98add30
+--- /dev/null
++++ b/chrome/browser/ui/views/ember/ember_selection_popup.cc
+@@ -0,0 +1,421 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/views/ember/ember_selection_popup.h"
++
++#include <algorithm>
++#include <memory>
++#include <utility>
++
++#include "base/functional/bind.h"
++#include "base/json/json_reader.h"
++#include "base/json/json_writer.h"
++#include "base/strings/utf_string_conversions.h"
++#include "cc/paint/paint_flags.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/views/ember/ember_glass_view.h"
++#include "chrome/browser/ui/views/ember/ember_typography.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/common/chrome_isolated_world_ids.h"
++#include "chrome/common/pref_names.h"
++#include "chrome/grit/chrome_unscaled_resources.h"
++#include "components/prefs/pref_service.h"
++#include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/storage_partition.h"
++#include "content/public/browser/web_contents.h"
++#include "net/traffic_annotation/network_traffic_annotation.h"
++#include "services/network/public/cpp/resource_request.h"
++#include "services/network/public/cpp/simple_url_loader.h"
++#include "services/network/public/mojom/url_response_head.mojom.h"
++#include "ui/base/clipboard/scoped_clipboard_writer.h"
++#include "ui/base/resource/resource_bundle.h"
++#include "ui/gfx/animation/slide_animation.h"
++#include "ui/gfx/canvas.h"
++#include "ui/gfx/geometry/rect_f.h"
++#include "ui/views/controls/button/button.h"
++#include "ui/views/controls/label.h"
++#include "ui/views/layout/box_layout.h"
++#include "ui/views/widget/widget.h"
++#include "ui/views/window/dialog_delegate.h"
++
++namespace ember {
++namespace {
++
++constexpr int kWidth = 236;
++constexpr int kHeight = 106;
++constexpr int kGap = 8;
++constexpr int kMaxRateResponseBytes = 16 * 1024;
++constexpr base::TimeDelta kRatesMaxAge = base::Hours(12);
++
++class ConversionCopyButton final : public views::Button {
++ public:
++  explicit ConversionCopyButton(PressedCallback callback)
++      : views::Button(std::move(callback)), hover_animation_(this) {
++    SetPreferredSize(gfx::Size(kWidth - 24, 28));
++    SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
++    GetViewAccessibility().SetName(u"Copy converted value");
++    hover_animation_.SetSlideDuration(base::Milliseconds(100));
++    auto* label = AddChildView(std::make_unique<views::Label>(u"Copy"));
++    label->SetFontList(FontForStyle(TextStyle::kSecondary));
++    label->SetCanProcessEventsWithinSubtree(false);
++    SetLayoutManager(std::make_unique<views::BoxLayout>(
++        views::BoxLayout::Orientation::kHorizontal,
++        gfx::Insets(), 0))
++        ->set_main_axis_alignment(
++            views::BoxLayout::MainAxisAlignment::kCenter);
++  }
++
++  void StateChanged(ButtonState old_state) override {
++    views::Button::StateChanged(old_state);
++    const bool active = GetState() == STATE_HOVERED ||
++                        GetState() == STATE_PRESSED;
++    if (gfx::Animation::PrefersReducedMotion()) {
++      hover_animation_.Reset(active ? 1.0 : 0.0);
++    } else if (active) {
++      hover_animation_.Show();
++    } else {
++      hover_animation_.Hide();
++    }
++    SchedulePaint();
++  }
++
++  void AnimationProgressed(const gfx::Animation* animation) override {
++    views::Button::AnimationProgressed(animation);
++    SchedulePaint();
++  }
++
++  void OnPaintBackground(gfx::Canvas* canvas) override {
++    const int alpha = GetState() == STATE_PRESSED
++                          ? 62
++                          : 12 + static_cast<int>(36 * hover_animation_.GetCurrentValue());
++    cc::PaintFlags fill;
++    fill.setAntiAlias(true);
++    fill.setColor(SkColorSetARGB(alpha, 255, 255, 255));
++    canvas->DrawRoundRect(gfx::RectF(GetLocalBounds()), 8, fill);
++  }
++
++ private:
++  gfx::SlideAnimation hover_animation_;
++};
++
++constexpr net::NetworkTrafficAnnotationTag kRatesTrafficAnnotation =
++    net::DefineNetworkTrafficAnnotation("ember_selection_conversion_rates", R"(
++      semantics {
++        sender: "Ember selection conversions"
++        description: "Fetches a daily currency table after the user selects a recognized price."
++        trigger: "A selected currency amount differs from the preferred currency."
++        data: "No selected text or page URL; a fixed EUR rate-table request."
++        destination: WEBSITE
++      }
++      policy {
++        cookies_allowed: NO
++        setting: "Selection conversions can be disabled in Appearance settings."
++        policy_exception_justification: "No enterprise policy controls this request."
++      })");
++
++gfx::Rect PlaceBubble(content::WebContents* contents,
++                      const gfx::Rect& selection,
++                      const gfx::Size& size) {
++  gfx::Rect page = contents->GetViewBounds();
++  page.Inset(gfx::Insets(kGap));
++  const int width = std::min(size.width(), page.width());
++  const int height = std::min(size.height(), page.height());
++  if (width <= 0 || height <= 0) {
++    return gfx::Rect();
++  }
++  const int preferred_y = selection.y() - height - kGap;
++  const int fallback_y = selection.bottom() + kGap;
++  const int top = std::clamp(preferred_y >= page.y() ? preferred_y : fallback_y,
++                             page.y(), page.bottom() - height);
++  const int left = std::clamp(selection.x(), page.x(), page.right() - width);
++  return gfx::Rect(left, top, width, height);
++}
++
++}  // namespace
++
++EmberSelectionPopup::EmberSelectionPopup(BrowserView* browser_view)
++    : browser_view_(browser_view) {
++  const base::DictValue& saved = browser_view_->browser()->profile()->GetPrefs()
++                                        ->GetDict(prefs::kEmberConversionRates);
++  if (const auto fetched = saved.FindDouble("fetched_at")) {
++    rates_fetched_at_ = base::Time::FromSecondsSinceUnixEpoch(*fetched);
++  }
++  if (const base::DictValue* rates = saved.FindDict("table")) {
++    rates_ = rates->Clone();
++  }
++}
++
++EmberSelectionPopup::~EmberSelectionPopup() {
++  Hide();
++}
++
++void EmberSelectionPopup::Update(content::RenderFrameHost* frame,
++                                 std::u16string_view selected_text) {
++  ++generation_;
++  selection_timer_.Stop();
++  if (!frame || selected_text.empty() || selected_text.size() > 120 ||
++      !frame->IsRenderFrameLive()) {
++    Hide();
++    return;
++  }
++  if (!browser_view_->browser()->profile()->GetPrefs()->GetBoolean(
++          prefs::kEmberConversionsEnabled)) {
++    Hide();
++    return;
++  }
++  source_contents_ = content::WebContents::FromRenderFrameHost(frame);
++  if (!source_contents_ || source_contents_ !=
++                               browser_view_->GetActiveWebContents() ||
++      !source_contents_->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
++    Hide();
++    return;
++  }
++  frame_id_ = frame->GetGlobalId();
++  selected_text_ = selected_text;
++  if (bubble_) {
++    bubble_->Close();
++    bubble_ = nullptr;
++  }
++  selection_timer_.Start(
++      FROM_HERE, base::Milliseconds(180),
++      base::BindOnce(&EmberSelectionPopup::Evaluate,
++                     weak_ptr_factory_.GetWeakPtr()));
++}
++
++void EmberSelectionPopup::Evaluate() {
++  content::RenderFrameHost* frame =
++      content::RenderFrameHost::FromID(frame_id_);
++  if (!frame || !frame->IsRenderFrameLive() ||
++      content::WebContents::FromRenderFrameHost(frame) != source_contents_) {
++    Hide();
++    return;
++  }
++  const auto selection = source_contents_->GetTextSelectionBounds(frame);
++  if (!selection || selection->IsEmpty()) {
++    Hide();
++    return;
++  }
++  selection_bounds_ = *selection;
++  const std::string text_json =
++      base::WriteJson(base::Value(base::UTF16ToUTF8(selected_text_))).value();
++  const std::string prefs_json = base::WriteJson(ConversionPrefs()).value();
++  const std::string rates_json = base::WriteJson(rates_).value();
++  const std::string rules = ui::ResourceBundle::GetSharedInstance()
++                                .LoadDataResourceString(
++                                    IDR_EMBER_CONVERSIONS_SCRIPT);
++  const std::string script =
++      "(() => { const module = {exports: {}};\n" + rules +
++      "\nconst text = " + text_json + "; const detected = module.exports.detectValue(text);"
++      "return {kind: detected?.kind || '', code: detected?.code || '', description: "
++      "module.exports.convert(detected, " + prefs_json +
++      ", {rates: " + rates_json + "})}; })()";
++  frame->ExecuteJavaScriptInIsolatedWorld(
++      base::UTF8ToUTF16(script),
++      base::BindOnce(&EmberSelectionPopup::OnConverted,
++                     weak_ptr_factory_.GetWeakPtr(), generation_),
++      ISOLATED_WORLD_ID_CHROME_INTERNAL);
++}
++
++void EmberSelectionPopup::OnConverted(uint64_t generation, base::Value value) {
++  if (generation != generation_ || !source_contents_ ||
++      source_contents_ != browser_view_->GetActiveWebContents() ||
++      !value.is_dict()) {
++    return;
++  }
++  const base::DictValue& response = value.GetDict();
++  const std::string* kind = response.FindString("kind");
++  const std::string* code = response.FindString("code");
++  if (kind && *kind == "currency" && code &&
++      *code != browser_view_->browser()->profile()->GetPrefs()->GetString(
++                   prefs::kEmberConversionsCurrency) &&
++      (rates_.empty() || base::Time::Now() - rates_fetched_at_ > kRatesMaxAge)) {
++    FetchRates();
++  }
++  const base::DictValue* description = response.FindDict("description");
++  if (!description) {
++    return;
++  }
++  const std::string* from = description->FindString("from");
++  const std::string* to = description->FindString("to");
++  if (!from || !to) {
++    return;
++  }
++  if (bubble_) {
++    views::Widget* previous = bubble_;
++    bubble_ = nullptr;
++    previous->Close();
++    ++generation_;
++  }
++  const std::string* note = description->FindString("note");
++  bubble_size_ = gfx::Size(kWidth, kHeight + (note && !note->empty() ? 18 : 0));
++  const gfx::Rect bounds =
++      PlaceBubble(source_contents_, selection_bounds_, bubble_size_);
++  if (bounds.IsEmpty()) {
++    return;
++  }
++
++  auto surface = std::make_unique<views::View>();
++  surface->SetPreferredSize(bounds.size());
++  surface->SetLayoutManager(std::make_unique<views::BoxLayout>(
++      views::BoxLayout::Orientation::kVertical,
++      gfx::Insets::TLBR(10, 12, 10, 12), 4));
++  auto* source = surface->AddChildView(
++      std::make_unique<views::Label>(base::UTF8ToUTF16(*from)));
++  source->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++  source->SetFontList(FontForStyle(TextStyle::kSecondary));
++  source->SetElideBehavior(gfx::ELIDE_TAIL);
++  auto* result = surface->AddChildView(
++      std::make_unique<views::Label>(u"≈ " + base::UTF8ToUTF16(*to)));
++  result->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++  result->SetFontList(FontForStyle(TextStyle::kEmphasis));
++  result->SetElideBehavior(gfx::ELIDE_TAIL);
++  if (note && !note->empty()) {
++    auto* note_label = surface->AddChildView(
++        std::make_unique<views::Label>(base::UTF8ToUTF16(*note)));
++    note_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++    note_label->SetFontList(FontForStyle(TextStyle::kSecondary));
++  }
++  const std::u16string copied = base::UTF8ToUTF16(*to);
++  auto copy = std::make_unique<ConversionCopyButton>(
++      base::BindRepeating(&EmberSelectionPopup::Copy,
++                          weak_ptr_factory_.GetWeakPtr(), copied));
++  std::unique_ptr<views::View> copy_view = std::move(copy);
++  surface->AddChildView(std::move(copy_view));
++
++  auto delegate = std::make_unique<views::BubbleDialogDelegate>(
++      views::BubbleAnchor(), views::BubbleBorder::NONE,
++      views::BubbleBorder::NO_SHADOW);
++  delegate->set_parent_window(browser_view_->GetWidget()->GetNativeView());
++  delegate->SetAnchorRect(gfx::Rect(selection_bounds_.origin(),
++                                    gfx::Size(1, 1)));
++  delegate->set_margins(gfx::Insets());
++  delegate->SetButtons(static_cast<int>(ui::mojom::DialogButton::kNone));
++  delegate->set_close_on_deactivate(true);
++  delegate->RegisterWindowClosingCallback(base::BindOnce(
++      &EmberSelectionPopup::OnBubbleClosing,
++      weak_ptr_factory_.GetWeakPtr(), generation_));
++  ConfigureEmberGlassBubble(surface.get(), delegate.get());
++  views::View* glass_surface = delegate->SetContentsView(std::move(surface));
++  bubble_ = views::BubbleDialogDelegate::CreateBubbleDeprecated(
++      std::move(delegate),
++      views::Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET);
++  bubble_->ShowInactive();
++  bubble_->SetBounds(bounds);
++  CaptureEmberGlassBubbleBackdrop(browser_view_, glass_surface,
++                                  selection_bounds_.origin(), source_contents_);
++}
++
++base::DictValue EmberSelectionPopup::ConversionPrefs() const {
++  PrefService* prefs = browser_view_->browser()->profile()->GetPrefs();
++  base::DictValue result;
++  result.Set("enabled", prefs->GetBoolean(prefs::kEmberConversionsEnabled));
++  result.Set("currency", prefs->GetString(prefs::kEmberConversionsCurrency));
++  result.Set("temperature",
++             prefs->GetString(prefs::kEmberConversionsTemperature));
++  result.Set("distance", prefs->GetString(prefs::kEmberConversionsDistance));
++  result.Set("weight", prefs->GetString(prefs::kEmberConversionsWeight));
++  result.Set("volume", prefs->GetString(prefs::kEmberConversionsVolume));
++  result.Set("clock", prefs->GetString(prefs::kEmberConversionsClock));
++  result.Set("timeZone", prefs->GetString(prefs::kEmberConversionsTimeZone));
++  return result;
++}
++
++void EmberSelectionPopup::FetchRates() {
++  if (rates_loader_ || base::Time::Now() < next_rate_attempt_) {
++    return;
++  }
++  next_rate_attempt_ = base::Time::Now() + base::Minutes(1);
++  auto request = std::make_unique<network::ResourceRequest>();
++  request->url = GURL("https://api.frankfurter.app/latest?from=EUR");
++  request->method = "GET";
++  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
++  rates_loader_ = network::SimpleURLLoader::Create(
++      std::move(request), kRatesTrafficAnnotation);
++  rates_loader_->SetTimeoutDuration(base::Seconds(6));
++  rates_loader_->DownloadToString(
++      browser_view_->browser()->profile()->GetDefaultStoragePartition()
++          ->GetURLLoaderFactoryForBrowserProcess().get(),
++      base::BindOnce(&EmberSelectionPopup::OnRatesFetched,
++                     weak_ptr_factory_.GetWeakPtr()),
++      kMaxRateResponseBytes);
++}
++
++void EmberSelectionPopup::OnRatesFetched(std::optional<std::string> body) {
++  rates_loader_.reset();
++  if (!body) {
++    return;
++  }
++  std::optional<base::Value> parsed = base::JSONReader::Read(*body, 0);
++  if (!parsed || !parsed->is_dict()) {
++    return;
++  }
++  const base::DictValue& table = parsed->GetDict();
++  const std::string* base = table.FindString("base");
++  if (!base || *base != "EUR" ||
++      !table.FindDict("rates") || table.FindDict("rates")->empty()) {
++    return;
++  }
++  rates_ = table.Clone();
++  rates_fetched_at_ = base::Time::Now();
++  base::DictValue saved;
++  saved.Set("table", rates_.Clone());
++  saved.Set("fetched_at", rates_fetched_at_.InSecondsFSinceUnixEpoch());
++  browser_view_->browser()->profile()->GetPrefs()->SetDict(
++      prefs::kEmberConversionRates, std::move(saved));
++  if (source_contents_ && !selected_text_.empty()) {
++    Evaluate();
++  }
++}
++
++void EmberSelectionPopup::Copy(const std::u16string& text,
++                               const ui::Event& event) {
++  ui::ScopedClipboardWriter(ui::ClipboardBuffer::kCopyPaste).WriteText(text);
++  Hide();
++}
++
++void EmberSelectionPopup::OnBubbleClosing(uint64_t generation) {
++  if (generation == generation_) {
++    bubble_ = nullptr;
++  }
++}
++
++void EmberSelectionPopup::Hide() {
++  ++generation_;
++  selection_timer_.Stop();
++  source_contents_ = nullptr;
++  selected_text_.clear();
++  if (bubble_) {
++    views::Widget* closing = bubble_;
++    bubble_ = nullptr;
++    closing->Close();
++  }
++}
++
++void EmberSelectionPopup::Relayout() {
++  if (bubble_ && source_contents_) {
++    content::RenderFrameHost* frame =
++        content::RenderFrameHost::FromID(frame_id_);
++    if (!frame || content::WebContents::FromRenderFrameHost(frame) !=
++                      source_contents_) {
++      Hide();
++      return;
++    }
++    const auto selection = source_contents_->GetTextSelectionBounds(frame);
++    if (!selection || selection->IsEmpty()) {
++      Hide();
++      return;
++    }
++    selection_bounds_ = *selection;
++    const gfx::Rect bounds =
++        PlaceBubble(source_contents_, selection_bounds_, bubble_size_);
++    if (bounds.IsEmpty()) {
++      Hide();
++    } else {
++      bubble_->SetBounds(bounds);
++    }
++  }
++}
++
++}  // namespace ember
+diff --git a/chrome/browser/ui/views/ember/ember_selection_popup.h b/chrome/browser/ui/views/ember/ember_selection_popup.h
+new file mode 100644
+index 0000000..1409b04
+--- /dev/null
++++ b/chrome/browser/ui/views/ember/ember_selection_popup.h
+@@ -0,0 +1,79 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_SELECTION_POPUP_H_
++#define CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_SELECTION_POPUP_H_
++
++#include <memory>
++#include <optional>
++#include <string>
++#include <string_view>
++
++#include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
++#include "base/timer/timer.h"
++#include "base/time/time.h"
++#include "base/values.h"
++#include "content/public/browser/global_routing_id.h"
++#include "ui/gfx/geometry/rect.h"
++
++class BrowserView;
++namespace content {
++class RenderFrameHost;
++class WebContents;
++}
++namespace views {
++class Widget;
++}
++namespace ui {
++class Event;
++}
++namespace network {
++class SimpleURLLoader;
++}
++
++namespace ember {
++
++// Browser-owned, compact selection conversion bubble. Chromium supplies the
++// frame and screen-space selection bounds; the pure conversion rules execute
++// in an isolated renderer world and never expose selected text to a service.
++class EmberSelectionPopup {
++ public:
++  explicit EmberSelectionPopup(BrowserView* browser_view);
++  EmberSelectionPopup(const EmberSelectionPopup&) = delete;
++  EmberSelectionPopup& operator=(const EmberSelectionPopup&) = delete;
++  ~EmberSelectionPopup();
++
++  void Update(content::RenderFrameHost* frame, std::u16string_view selected_text);
++  void Hide();
++  void Relayout();
++
++ private:
++  void Evaluate();
++  void OnConverted(uint64_t generation, base::Value value);
++  void FetchRates();
++  void OnRatesFetched(std::optional<std::string> body);
++  base::DictValue ConversionPrefs() const;
++  void Copy(const std::u16string& text, const ui::Event& event);
++  void OnBubbleClosing(uint64_t generation);
++
++  raw_ptr<BrowserView> browser_view_;
++  raw_ptr<content::WebContents> source_contents_ = nullptr;
++  raw_ptr<views::Widget> bubble_ = nullptr;
++  content::GlobalRenderFrameHostId frame_id_;
++  std::u16string selected_text_;
++  gfx::Rect selection_bounds_;
++  gfx::Size bubble_size_;
++  base::OneShotTimer selection_timer_;
++  std::unique_ptr<network::SimpleURLLoader> rates_loader_;
++  base::DictValue rates_;
++  base::Time rates_fetched_at_;
++  base::Time next_rate_attempt_;
++  uint64_t generation_ = 0;
++  base::WeakPtrFactory<EmberSelectionPopup> weak_ptr_factory_{this};
++};
++
++}  // namespace ember
++
++#endif  // CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_SELECTION_POPUP_H_
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+index 4ae081c..d2308d0 100644
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -153,6 +153,7 @@
+ #include "chrome/browser/ui/views/download/download_in_progress_dialog_view.h"
+ #include "chrome/browser/ui/views/ember/ember_glass_overlay_controller.h"
+ #include "chrome/browser/ui/views/ember/ember_upload_popup.h"
++#include "chrome/browser/ui/views/ember/ember_selection_popup.h"
+ #include "chrome/browser/ui/views/exclusive_access_bubble_views.h"
+ #include "chrome/browser/ui/views/exclusive_access_bubble_views_context.h"
+ #include "chrome/browser/ui/views/extensions/extension_keybinding_registry_views.h"
+@@ -2026,6 +2027,7 @@ BrowserView::BrowserView(Browser* browser)
+ }
+ 
+ BrowserView::~BrowserView() {
++  ember_selection_popup_.reset();
+   // Remove the layout manager to avoid dangling. This needs to be earlier than
+   // other cleanups that destroy views referenced in the layout manager.
+   SetLayoutManager(nullptr);
+@@ -2942,6 +2944,9 @@ void BrowserView::OnActiveTabChanged(content::WebContents* old_contents,
+   }
+ 
+   WebContentsObserver::Observe(new_contents);
++  if (ember_selection_popup_) {
++    ember_selection_popup_->Hide();
++  }
+   // A pending ChatGPT send belongs to the tab in which its Bang was entered.
+   ember_chatgpt_bang_prompt_.clear();
+   UpdateEmberSidebar();
+@@ -3933,6 +3938,9 @@ void BrowserView::DidFinishNavigation(
+       !navigation_handle->HasCommitted()) {
+     return;
+   }
++  if (ember_selection_popup_) {
++    ember_selection_popup_->Hide();
++  }
+ 
+   if (!ember_chatgpt_bang_prompt_.empty() &&
+       (!navigation_handle->GetURL().SchemeIs("https") ||
+@@ -3968,6 +3976,15 @@ void BrowserView::DocumentOnLoadCompletedInPrimaryMainFrame() {
+   }
+ }
+ 
++void BrowserView::OnTextSelectionChanged(
++    content::RenderFrameHost* render_frame_host,
++    std::u16string_view selected_text) {
++  if (!ember_selection_popup_) {
++    ember_selection_popup_ = std::make_unique<ember::EmberSelectionPopup>(this);
++  }
++  ember_selection_popup_->Update(render_frame_host, selected_text);
++}
++
+ void BrowserView::ArmEmberChatGPTBang(const GURL& target) {
+   ember_chatgpt_bang_prompt_.clear();
+   std::string prompt;
+@@ -6565,6 +6582,9 @@ void BrowserView::Layout(PassKey) {
+   }
+ 
+   LayoutSuperclass<views::View>(this);
++  if (ember_selection_popup_) {
++    ember_selection_popup_->Relayout();
++  }
+ 
+   if (ember_glass_overlay_) {
+     ember_glass_overlay_->SetBoundsRect(contents_container_->GetLocalBounds());
+diff --git a/chrome/browser/ui/views/frame/browser_view.h b/chrome/browser/ui/views/frame/browser_view.h
+index 284f187..332ff3c 100644
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -122,6 +122,7 @@ class NativeTheme;
+ namespace ember {
+ class EmberGlassOverlayController;
+ class EmberUploadRequest;
++class EmberSelectionPopup;
+ }  // namespace ember
+ 
+ namespace version_info {
+@@ -756,6 +757,8 @@ class BrowserView : public BrowserWindow,
+   void DidFinishNavigation(
+       content::NavigationHandle* navigation_handle) override;
+   void DocumentOnLoadCompletedInPrimaryMainFrame() override;
++  void OnTextSelectionChanged(content::RenderFrameHost* render_frame_host,
++                              std::u16string_view selected_text) override;
+ 
+   // views::ClientView:
+   views::CloseRequestResult OnWindowCloseRequested() override;
+@@ -1362,6 +1365,7 @@ class BrowserView : public BrowserWindow,
+   raw_ptr<views::View> contents_container_ = nullptr;
+   raw_ptr<ember::EmberGlassOverlayController> ember_glass_overlay_ = nullptr;
+   std::unique_ptr<ember::EmberUploadRequest> ember_upload_request_;
++  std::unique_ptr<ember::EmberSelectionPopup> ember_selection_popup_;
+   bool ember_upload_scrim_visible_ = false;
+   bool window_modal_scrim_visible_ = false;
+ #if BUILDFLAG(IS_WIN)
+diff --git a/chrome/common/pref_names.h b/chrome/common/pref_names.h
+index f2b43af..8585c02 100644
+--- a/chrome/common/pref_names.h
++++ b/chrome/common/pref_names.h
+@@ -36,6 +36,15 @@ inline constexpr char kEmberFavoritesColumns[] = "ember.favorites.columns";
+ inline constexpr char kEmberFavoritesRows[] = "ember.favorites.rows";
+ inline constexpr char kEmberSidebarOpen[] = "ember.sidebar.open";
+ inline constexpr char kEmberRecentUploads[] = "ember.upload.recent_files";
++inline constexpr char kEmberConversionsEnabled[] = "ember.conversions.enabled";
++inline constexpr char kEmberConversionsCurrency[] = "ember.conversions.currency";
++inline constexpr char kEmberConversionsTemperature[] = "ember.conversions.temperature";
++inline constexpr char kEmberConversionsDistance[] = "ember.conversions.distance";
++inline constexpr char kEmberConversionsWeight[] = "ember.conversions.weight";
++inline constexpr char kEmberConversionsVolume[] = "ember.conversions.volume";
++inline constexpr char kEmberConversionsClock[] = "ember.conversions.clock";
++inline constexpr char kEmberConversionsTimeZone[] = "ember.conversions.time_zone";
++inline constexpr char kEmberConversionRates[] = "ember.conversions.rates";
+ inline constexpr char kEmberBangsSeeded[] = "ember.bangs.seeded";
+ 
+ // *************** PROFILE PREFS ***************

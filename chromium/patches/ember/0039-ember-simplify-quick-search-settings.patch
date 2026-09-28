@@ -1,0 +1,57 @@
+diff --git a/chrome/browser/resources/settings/search_page/search_engines_page.html b/chrome/browser/resources/settings/search_page/search_engines_page.html
+--- a/chrome/browser/resources/settings/search_page/search_engines_page.html
++++ b/chrome/browser/resources/settings/search_page/search_engines_page.html
+@@ -74,19 +74,20 @@
+ 
+     <div class="cr-row first">
+         <div class="flex cr-padded-text">
+-          <h2>$i18n{searchEnginesSiteSearch}</h2>
+-          <div class="secondary">$i18n{searchEnginesSiteSearchExplanation}</div>
+-          <div class="secondary">Ember Bangs use these shortcuts. Type an alias
+-            and Space in the address bar to search that site.</div>
++          <h2>Quick Searches</h2>
++          <div class="secondary">Type a shortcut and a space to search a site.
++            For example, <b>yt cats</b> searches YouTube.</div>
++          <div class="secondary">To add one, enter a name, a short shortcut,
++            and a search URL with <b>%s</b> where the search words go.</div>
+         </div>
+         <cr-button class="secondary-button header-aligned-button"
+                    on-click="onRestoreEmberBangsClick_">
+-          Restore Ember Bangs
++          Restore defaults
+         </cr-button>
+         <cr-button class="secondary-button header-aligned-button"
+                    aria-label="$i18n{searchEnginesAddButtonAriaLabel}"
+                    on-click="onAddSearchEngineClick_" id="addSearchEngine">
+-          $i18n{add}
++          Add Quick Search
+         </cr-button>
+     </div>
+     <div id="noActiveEngines" class="list-frame"
+diff --git a/chrome/browser/resources/settings/search_page/search_engine_edit_dialog.html b/chrome/browser/resources/settings/search_page/search_engine_edit_dialog.html
+--- a/chrome/browser/resources/settings/search_page/search_engine_edit_dialog.html
++++ b/chrome/browser/resources/settings/search_page/search_engine_edit_dialog.html
+@@ -35,13 +35,16 @@
+             error-message="$i18n{notValid}"
+             value="{{queryUrl_}}" on-focus="validate_" on-input="validate_">
+         </cr-input>
+-        <cr-input id="suggestionsUrl"
+-            label="Suggestions URL with %s in place of query"
+-            error-message="$i18n{notValid}"
+-            value="{{suggestionsUrl_}}"
+-            on-focus="validate_" on-input="validate_"
+-            disabled$="[[model.urlLocked]]">
+-        </cr-input>
++        <details>
++          <summary>Advanced: suggestions</summary>
++          <cr-input id="suggestionsUrl"
++              label="Suggestions URL with %s in place of query"
++              error-message="$i18n{notValid}"
++              value="{{suggestionsUrl_}}"
++              on-focus="validate_" on-input="validate_"
++              disabled$="[[model.urlLocked]]">
++          </cr-input>
++        </details>
+       </div>
+       <div slot="button-container">
+         <cr-button class="cancel-button" on-click="cancel_" id="cancel"

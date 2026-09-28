@@ -1,0 +1,375 @@
+diff --git a/chrome/browser/ui/views/chrome_javascript_app_modal_view_factory_views.cc b/chrome/browser/ui/views/chrome_javascript_app_modal_view_factory_views.cc
+index 3907743..ff81f4f 100644
+--- a/chrome/browser/ui/views/chrome_javascript_app_modal_view_factory_views.cc
++++ b/chrome/browser/ui/views/chrome_javascript_app_modal_view_factory_views.cc
+@@ -6,8 +6,11 @@
+ 
+ #include "build/build_config.h"
+ #include "chrome/browser/ui/blocked_content/popunder_preventer.h"
++#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+ #include "chrome/browser/ui/javascript_dialogs/chrome_app_modal_dialog_manager_delegate.h"
+ #include "chrome/browser/ui/javascript_dialogs/chrome_javascript_app_modal_dialog_view_factory.h"
++#include "chrome/browser/ui/views/ember/ember_glass_view.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/javascript_app_modal_event_blocker.h"
+ #include "components/constrained_window/constrained_window_views.h"
+ #include "components/javascript_dialogs/app_modal_dialog_controller.h"
+@@ -40,6 +43,26 @@ bool UseEventBlocker() {
+ #endif
+ }
+ 
++void CenterDialogOnPage(views::Widget* widget, content::WebContents* contents) {
++  BrowserWindowInterface* browser =
++      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(contents);
++  BrowserView* browser_view =
++      browser ? BrowserView::GetBrowserViewForBrowser(browser) : nullptr;
++  if (!browser_view || !browser_view->contents_container()) {
++    return;
++  }
++  const gfx::Rect page =
++      browser_view->contents_container()->GetBoundsInScreen();
++  if (page.IsEmpty()) {
++    return;
++  }
++  gfx::Rect bounds = widget->GetWindowBoundsInScreen();
++  bounds.set_origin(gfx::Point(page.CenterPoint().x() - bounds.width() / 2,
++                               page.CenterPoint().y() - bounds.height() / 2));
++  bounds.AdjustToFit(page);
++  widget->SetBounds(bounds);
++}
++
+ class ChromeJavaScriptAppModalDialogViews
+     : public javascript_dialogs::AppModalDialogViewViews {
+  public:
+@@ -67,12 +90,29 @@ class ChromeJavaScriptAppModalDialogViews
+           GetWidget()->GetNativeWindow());
+     }
+     AppModalDialogViewViews::ShowAppModalDialog();
++    GetWidget()->client_view()->SetBackground(nullptr);
++    GetContentsView()->SetBackground(nullptr);
++    CenterDialogOnPage(GetWidget(), controller()->web_contents());
++    if (!glass_captured_) {
++      glass_captured_ = true;
++      content::WebContents* contents = controller()->web_contents();
++      BrowserWindowInterface* browser =
++          GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(contents);
++      ember::CaptureEmberGlassBubbleBackdrop(
++          browser ? BrowserView::GetBrowserViewForBrowser(browser) : nullptr,
++          GetWidget()->GetRootView(),
++          GetWidget()->GetWindowBoundsInScreen().CenterPoint(), contents);
++    }
+   }
+ 
+   // views::DialogDelegate:
+-  void WindowClosing() override { event_blocker_.reset(); }
++  void WindowClosing() override {
++    event_blocker_.reset();
++    AppModalDialogViewViews::WindowClosing();
++  }
+ 
+  private:
++  bool glass_captured_ = false;
+   // Blocks events to other browser windows while the dialog is open.
+   std::unique_ptr<JavascriptAppModalEventBlocker> event_blocker_;
+ 
+@@ -108,6 +148,10 @@ javascript_dialogs::AppModalDialogView* CreateViewsJavaScriptDialog(
+ #endif
+   views::Widget* widget =
+       constrained_window::CreateBrowserModalDialogViews(dialog, parent_window);
++  ember::ConfigureEmberGlassDialog(widget->GetRootView());
++  widget->client_view()->SetBackground(nullptr);
++  dialog->GetContentsView()->SetBackground(nullptr);
++  CenterDialogOnPage(widget, web_contents);
+   AdjustWidgetBoundsIfOffscreen(widget);
+   return dialog;
+ }
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+index 4f8f184..5dbdd79 100644
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -301,6 +301,7 @@
+ #include "components/user_education/common/new_badge/new_badge_controller.h"
+ #include "components/user_education/common/user_education_features.h"
+ #include "components/user_education/views/help_bubble_view.h"
++#include "components/vector_icons/vector_icons.h"
+ #include "components/version_info/channel.h"
+ #include "components/web_modal/web_contents_modal_dialog_manager.h"
+ #include "components/webapps/browser/banners/app_banner_manager.h"
+@@ -646,12 +647,9 @@ class EmberSidebarAddressTextfield : public views::Textfield {
+       delete;
+   ~EmberSidebarAddressTextfield() override = default;
+ 
+-  void SetBangViews(views::ImageView* icon,
+-                    views::Label* divider,
+-                    views::Label* label) {
++  void SetBangViews(views::ImageView* icon, views::Label* divider) {
+     bang_icon_ = icon;
+     bang_divider_ = divider;
+-    bang_label_ = label;
+   }
+ 
+   void ResetBang() {
+@@ -662,9 +660,7 @@ class EmberSidebarAddressTextfield : public views::Textfield {
+     if (bang_divider_) {
+       bang_divider_->SetVisible(false);
+     }
+-    if (bang_label_) {
+-      bang_label_->SetVisible(false);
+-    }
++    SetPlaceholderText(u"");
+     SetAccessibleName(u"Address");
+     if (parent()) {
+       parent()->InvalidateLayout();
+@@ -736,10 +732,11 @@ class EmberSidebarAddressTextfield : public views::Textfield {
+     const std::u16string context = engaged_alias_ == u"gpt"
+                                        ? u"Ask ChatGPT"
+                                        : u"Search " + engine->short_name();
+-    bang_label_->SetText(context);
++    bang_icon_->SetImage(ui::ImageModel::FromVectorIcon(
++        vector_icons::kGlobeIcon, SkColorSetRGB(0xD8, 0xDE, 0xE7), 16));
+     bang_icon_->SetVisible(true);
+     bang_divider_->SetVisible(true);
+-    bang_label_->SetVisible(true);
++    SetPlaceholderText(context);
+     SetAccessibleName(context);
+     SetText(u"");
+     if (parent()) {
+@@ -768,7 +765,6 @@ class EmberSidebarAddressTextfield : public views::Textfield {
+   raw_ptr<BrowserView> browser_view_;
+   raw_ptr<views::ImageView> bang_icon_ = nullptr;
+   raw_ptr<views::Label> bang_divider_ = nullptr;
+-  raw_ptr<views::Label> bang_label_ = nullptr;
+   std::u16string engaged_alias_;
+   base::RepeatingClosure focus_callback_;
+   base::RepeatingClosure blur_callback_;
+@@ -1744,13 +1740,6 @@ BrowserView::BrowserView(Browser* browser)
+     bang_divider->SetEnabledColor(SkColorSetARGB(0x96, 0xFF, 0xFF, 0xFF));
+     bang_divider->SetVisible(false);
+     ember_sidebar_address_row_->AddChildView(std::move(bang_divider));
+-    auto bang_label = std::make_unique<views::Label>();
+-    auto* bang_label_ptr = bang_label.get();
+-    bang_label->SetFontList(gfx::FontList("Inter, Medium 11px"));
+-    bang_label->SetEnabledColor(SkColorSetRGB(0xFF, 0xFF, 0xFF));
+-    bang_label->SetVisible(false);
+-    ember_sidebar_address_row_->AddChildView(std::move(bang_label));
+-
+     std::unique_ptr<views::Textfield> address =
+         std::make_unique<EmberSidebarAddressTextfield>(
+             this,
+@@ -1763,7 +1752,7 @@ BrowserView::BrowserView(Browser* browser)
+             base::BindRepeating(&BrowserView::CancelEmberSidebarAddressEdit,
+                                 weak_ptr_factory_.GetWeakPtr()));
+     static_cast<EmberSidebarAddressTextfield*>(address.get())
+-        ->SetBangViews(bang_icon_ptr, bang_divider_ptr, bang_label_ptr);
++        ->SetBangViews(bang_icon_ptr, bang_divider_ptr);
+     ember_sidebar_address_ = address.get();
+     ember_sidebar_address_row_->AddChildView(std::move(address));
+     ember_sidebar_address_->SetProperty(views::kElementIdentifierKey,
+diff --git a/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc b/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
+index 4bf56c9..12ad844 100644
+--- a/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
++++ b/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
+@@ -59,6 +59,7 @@
+ #include "ui/base/ui_base_features.h"
+ #include "ui/compositor/layer.h"
+ #include "ui/compositor/layer_type.h"
++#include "ui/events/event.h"
+ #include "ui/gfx/geometry/insets.h"
+ #include "ui/gfx/geometry/point.h"
+ #include "ui/views/accessible_pane_view.h"
+@@ -66,6 +67,7 @@
+ #include "ui/views/border.h"
+ #include "ui/views/cascading_property.h"
+ #include "ui/views/controls/button/image_button.h"
++#include "ui/views/controls/scroll_view.h"
+ #include "ui/views/interaction/view_subregion_anchor.h"
+ #include "ui/views/layout/flex_layout.h"
+ #include "ui/views/layout/flex_layout_types.h"
+@@ -82,6 +84,56 @@ namespace {
+ 
+ constexpr int kEmberTopChromeHeight = 32;
+ 
++}  // namespace
++
++// The strip stays as direct content. Layer scrolling and preferred-size layout
++// keep its bounds wider than the viewport when tabs overflow.
++class TabStripScrollContainer : public views::ScrollView {
++  METADATA_HEADER(TabStripScrollContainer, views::ScrollView)
++ public:
++  explicit TabStripScrollContainer(std::unique_ptr<TabStrip> strip)
++      : views::ScrollView(ScrollWithLayers::kEnabled) {
++    SetHorizontalScrollBarMode(ScrollBarMode::kHiddenButEnabled);
++    SetVerticalScrollBarMode(ScrollBarMode::kDisabled);
++    SetBackgroundColor(std::nullopt);
++    SetDrawOverflowIndicator(false);
++    SetUseContentsPreferredSize(true);
++    SetContents(std::move(strip));
++    contents()->layer()->SetFillsBoundsOpaquely(false);
++  }
++
++  gfx::Size GetMinimumSize() const override {
++    return gfx::Size(0, kEmberTopChromeHeight);
++  }
++
++  int AvailableTabWidth() const {
++    const auto* strip = static_cast<const TabStrip*>(contents());
++    return std::max({1, contents()->width(), GetVisibleRect().width(),
++                     strip->GetMinimumSize().width()});
++  }
++
++  bool OnMouseWheel(const ui::MouseWheelEvent& event) override {
++    const int delta = event.y_offset() ? event.y_offset() : event.x_offset();
++    const int maximum =
++        contents() ? std::max(0, contents()->width() - GetVisibleRect().width())
++                   : 0;
++    if (!delta || !maximum) {
++      return false;
++    }
++    const int step = std::clamp(std::abs(delta), 80, 360);
++    const int next = std::clamp(
++        static_cast<int>(CurrentOffset().x()) + (delta > 0 ? -step : step), 0,
++        maximum);
++    ScrollToOffset(gfx::PointF(next, 0));
++    return true;
++  }
++};
++
++BEGIN_METADATA(TabStripScrollContainer)
++END_METADATA
++
++namespace {
++
+ class FrameGrabHandle : public views::View {
+   METADATA_HEADER(FrameGrabHandle, views::View)
+ 
+@@ -231,7 +283,11 @@ HorizontalTabStripRegionView::HorizontalTabStripRegionView(
+     }
+   }
+ 
+-  tab_strip_ = AddChildView(CreateTabStrip(this, browser_view));
++  auto strip = CreateTabStrip(this, browser_view);
++  tab_strip_ = strip.get();
++  tab_strip_scroll_container_ =
++      AddChildView(std::make_unique<TabStripScrollContainer>(std::move(strip)));
++  tab_strip_container_ = tab_strip_scroll_container_;
+ 
+   // Allow the |tab_strip_| to grow into the free space available in
+   // the HorizontalTabStripRegionView.
+@@ -239,7 +295,8 @@ HorizontalTabStripRegionView::HorizontalTabStripRegionView(
+       views::FlexSpecification(views::LayoutOrientation::kHorizontal,
+                                views::MinimumFlexSizeRule::kScaleToZero,
+                                views::MaximumFlexSizeRule::kPreferred);
+-  tab_strip_->SetProperty(views::kFlexBehaviorKey, tab_strip_flex_spec);
++  tab_strip_scroll_container_->SetProperty(views::kFlexBehaviorKey,
++                                           tab_strip_flex_spec);
+ 
+   if (ShouldShowNewTabButton(browser)) {
+     std::unique_ptr<TabStripControlButton> tab_strip_control_button =
+@@ -317,7 +374,7 @@ bool HorizontalTabStripRegionView::IsPositionInWindowCaption(
+   // the |tab_strip_| and the |tab_strip_| but not over the same
+   // pixels. This could lead to this returning false when it should be returning
+   // true.
+-  if (IsHitInView(tab_strip_, point)) {
++  if (IsHitInView(tab_strip_scroll_container_, point)) {
+     gfx::RectF rect_in_target_coords_f(gfx::Rect(point, gfx::Size(1, 1)));
+     View::ConvertRectToTarget(this, tab_strip_, &rect_in_target_coords_f);
+     return tab_strip_->IsRectInWindowCaption(
+@@ -327,8 +384,9 @@ bool HorizontalTabStripRegionView::IsPositionInWindowCaption(
+   // The child could have a non-rectangular shape, so if the rect is not in the
+   // visual portions of the child view we treat it as a click to the caption.
+   for (View* const child : children()) {
+-    if (child != tab_strip_ && child != reserved_grab_handle_space_ &&
+-        child->GetVisible() && IsHitInView(child, point)) {
++    if (child != tab_strip_scroll_container_ &&
++        child != reserved_grab_handle_space_ && child->GetVisible() &&
++        IsHitInView(child, point)) {
+       return false;
+     }
+   }
+@@ -340,7 +398,7 @@ views::View::Views HorizontalTabStripRegionView::GetChildrenInZOrder() {
+   views::View::Views children;
+ 
+   if (tab_strip_) {
+-    children.emplace_back(tab_strip_.get());
++    children.emplace_back(tab_strip_scroll_container_.get());
+   }
+ 
+   if (new_tab_button_) {
+@@ -399,7 +457,10 @@ void HorizontalTabStripRegionView::Layout(PassKey) {
+     // The y position is measured from the bottom of the tabstrip, and then
+     // padding and button height are removed.
+     constexpr int kEmberTabGap = 8;
+-    const int x = tab_strip_->bounds().right() + kEmberTabGap;
++    const int x =
++        tab_strip_scroll_container_->x() +
++        std::min(tab_strip_->width(), tab_strip_scroll_container_->width()) +
++        kEmberTabGap;
+ 
+     const gfx::Point button_new_position(x,
+                                          (height() - button_size.height()) / 2);
+@@ -503,6 +564,10 @@ void HorizontalTabStripRegionView::InitializeTabStrip() {
+   }
+ 
+   tab_strip_->Initialize();
++  tab_strip_->SetAvailableWidthCallback(base::BindRepeating(
++      &TabStripScrollContainer::AvailableTabWidth,
++      base::Unretained(static_cast<TabStripScrollContainer*>(
++          tab_strip_scroll_container_.get()))));
+   static_cast<BrowserTabStripController*>(tab_strip_->controller())
+       ->InitFromModel(tab_strip_);
+   tab_strip_set_ = true;
+@@ -663,8 +728,8 @@ void HorizontalTabStripRegionView::UpdateTabStripMargin() {
+   }
+ #endif
+ 
+-  // The new tab button overlaps the tabstrip. Render it to a layer and adjust
+-  // the tabstrip right margin to reserve space for it.
++  // The new tab button overlaps the scroll viewport. Reserve its width on the
++  // outer flex child so overflow cannot push the button beyond the window.
+   std::optional<int> tab_strip_right_margin;
+   views::View* button_to_paint_to_layer = new_tab_button_;
+ 
+@@ -732,7 +797,7 @@ void HorizontalTabStripRegionView::UpdateTabStripMargin() {
+   UpdateButtonBorders();
+ 
+   if (tab_strip_left_margin.has_value() || tab_strip_right_margin.has_value()) {
+-    tab_strip_->SetProperty(
++    tab_strip_scroll_container_->SetProperty(
+         views::kMarginsKey,
+         gfx::Insets::TLBR(0, tab_strip_left_margin.value_or(0), 0,
+                           tab_strip_right_margin.value_or(0)));
+diff --git a/chrome/browser/ui/views/session_crashed_bubble_view.cc b/chrome/browser/ui/views/session_crashed_bubble_view.cc
+index 2ec5fcf..c2b7306 100644
+--- a/chrome/browser/ui/views/session_crashed_bubble_view.cc
++++ b/chrome/browser/ui/views/session_crashed_bubble_view.cc
+@@ -267,9 +267,9 @@ views::BubbleDialogDelegate* SessionCrashedBubbleView::ShowBubble(
+     return nullptr;
+   }
+ 
+-  auto* control = browser_view->toolbar_button_provider()->GetAppMenuControl();
+-  views::BubbleAnchor anchor =
+-      control ? control->GetAnchor() : views::BubbleAnchor();
++  // The restore prompt belongs to the page surface. The toolbar app-menu
++  // anchor put it across the tab strip and moved it back after clamping.
++  views::BubbleAnchor anchor(browser_view->contents_container());
+ 
+   auto bubble_delegate_unique =
+       std::make_unique<SessionCrashedBubbleDelegate>(browser->GetProfile());
+@@ -315,14 +315,15 @@ views::BubbleDialogDelegate* SessionCrashedBubbleView::ShowBubble(
+           l10n_util::GetStringUTF16(IDS_SESSION_CRASHED_VIEW_RESTORE_BUTTON)));
+ 
+   auto bubble = std::make_unique<views::BubbleDialogModelHost>(
+-      dialog_builder.Build(), anchor, views::BubbleBorder::TOP_RIGHT);
++      dialog_builder.Build(), anchor, views::BubbleBorder::FLOAT);
+ 
+   views::BubbleDialogDelegate* bubble_ptr = bubble.get();
+   g_instance_for_test = bubble_ptr;
+   views::Widget* widget = views::BubbleDialogDelegate::CreateBubbleDeprecated(
+       std::move(bubble), views::Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET);
+-  widget->Show();
+   ember::ConfigureEmberGlassBubble(widget->GetRootView(), bubble_ptr);
++  widget->Show();
++  widget->client_view()->SetBackground(nullptr);
+   ember::CaptureEmberGlassBubbleBackdrop(
+       browser_view, widget->GetRootView(),
+       bubble_ptr->GetAnchorRect().CenterPoint());

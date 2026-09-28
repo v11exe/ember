@@ -4,7 +4,7 @@ const assert = require('node:assert/strict')
 const {
   CONVERSION_DEFAULTS, sanitiseConversions, parseNumber, formatNumber,
   detectValue, convert, describeSelection,
-} = require('../src/shared/conversions')
+} = require('../chromium/resources/conversions')
 
 // ECB-shaped table, the same shape the rate cache hands over.
 const RATES = {

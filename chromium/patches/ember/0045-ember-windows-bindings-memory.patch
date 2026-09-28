@@ -1,0 +1,19 @@
+diff --git a/third_party/blink/renderer/bindings/scripts/generate_bindings.py b/third_party/blink/renderer/bindings/scripts/generate_bindings.py
+index 8844300..8a8b634 100644
+--- a/third_party/blink/renderer/bindings/scripts/generate_bindings.py
++++ b/third_party/blink/renderer/bindings/scripts/generate_bindings.py
+@@ -119,7 +119,13 @@ def main():
+         enable_style_format=options.format_generated_files,
+         enable_code_generation_tracing=options.enable_code_generation_tracing)
+ 
+-    task_queue = bind_gen.TaskQueue(single_process=options.single_process)
++    # The Windows build machines used by Ember can expose many logical CPUs
++    # while having limited memory. Each bindings worker loads the complete
++    # Web IDL database, so spawning one worker per CPU exhausts RAM during the
++    # full Chromium build. Keep the reliable sequential path on Windows; the
++    # generated output is unchanged.
++    task_queue = bind_gen.TaskQueue(
++        single_process=options.single_process or os.name == 'nt')
+ 
+     for task in options.tasks:
+         dispatch_table[task](task_queue)

@@ -1,0 +1,1824 @@
+diff --git a/chrome/browser/chrome_browser_interface_binders_webui_parts_desktop.cc b/chrome/browser/chrome_browser_interface_binders_webui_parts_desktop.cc
+index fd993b6..b1d2415 100644
+--- a/chrome/browser/chrome_browser_interface_binders_webui_parts_desktop.cc
++++ b/chrome/browser/chrome_browser_interface_binders_webui_parts_desktop.cc
+@@ -658,6 +655,7 @@ void PopulateChromeWebUIFrameInterfaceBrokersTrustedPartsDesktop(
+ 
+   registry.ForWebUI<NewTabPageThirdPartyUI>()
+       .Add<most_visited::mojom::MostVisitedPageHandlerFactory>()
++      .Add<searchbox::mojom::PageHandlerFactory>()
+       .Add<new_tab_page_third_party::mojom::PageHandlerFactory>();
+ 
+   if (base::FeatureList::IsEnabled(
+diff --git a/chrome/browser/file_select_helper.cc b/chrome/browser/file_select_helper.cc
+index 50aa1c5..aa40560 100644
+--- a/chrome/browser/file_select_helper.cc
++++ b/chrome/browser/file_select_helper.cc
+@@ -28,9 +28,11 @@
+ #include "chrome/browser/profiles/profile_manager.h"
+ #include "chrome/browser/ui/dialogs/browser_dialogs.h"
+ #include "chrome/browser/ui/select_file_policy/chrome_select_file_policy.h"
++#include "chrome/common/pref_names.h"
+ #include "chrome/grit/generated_resources.h"
+ #include "components/enterprise/buildflags/buildflags.h"
+ #include "components/enterprise/common/proto/connectors.pb.h"
++#include "components/prefs/pref_service.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "content/public/browser/browser_task_traits.h"
+ #include "content/public/browser/browser_thread.h"
+@@ -83,11 +86,44 @@ bool IsValidProfile(Profile* profile) {
+     return false;
+   }
+   // No profile manager in unit tests.
+-  if (!g_browser_process->profile_manager())
++  if (!g_browser_process->profile_manager()) {
+     return true;
++  }
+   return g_browser_process->profile_manager()->IsValidProfile(profile);
+ }
+ 
++void RememberEmberUploads(Profile* profile,
++                          const std::vector<ui::SelectedFileInfo>& files,
++                          const base::FilePath& temporary_file) {
++  if (!IsValidProfile(profile) || profile->IsOffTheRecord() || files.empty()) {
++    return;
++  }
++  PrefService* prefs = profile->GetPrefs();
++  if (!prefs->FindPreference(prefs::kEmberRecentUploads)) {
++    return;
++  }
++  base::ListValue recent;
++  for (const auto& file : files) {
++    if (file.file_path == temporary_file || !base::PathExists(file.file_path) ||
++        base::DirectoryExists(file.file_path)) {
++      continue;
++    }
++    const std::string path = file.file_path.AsUTF8Unsafe();
++    if (!path.empty() && !recent.contains(path)) {
++      recent.Append(path);
++    }
++  }
++  for (const auto& entry : prefs->GetList(prefs::kEmberRecentUploads)) {
++    if (!entry.is_string() || recent.size() >= 20) {
++      continue;
++    }
++    if (!recent.contains(entry.GetString())) {
++      recent.Append(entry.GetString());
++    }
++  }
++  prefs->SetList(prefs::kEmberRecentUploads, std::move(recent));
++}
++
+ #if BUILDFLAG(IS_ANDROID)
+ std::u16string GetDisplayName(const base::FilePath& content_uri) {
+   std::u16string display_name;
+@@ -121,16 +157,24 @@ FileSelectHelper::FileSelectHelper(Profile* profile)
+ FileSelectHelper::~FileSelectHelper() {
+   // There may be pending file dialogs, we need to tell them that we've gone
+   // away so they don't try and call back to us.
+-  if (select_file_dialog_)
++  if (select_file_dialog_) {
+     select_file_dialog_->ListenerDestroyed();
++  }
+ }
+ 
+ void FileSelectHelper::FileSelected(const ui::SelectedFileInfo& file,
+                                     int /* index */) {
++  if (dialog_mode_ == FileChooserParams::Mode::kOpen ||
++      dialog_mode_ == FileChooserParams::Mode::kOpenMultiple) {
++    RememberEmberUploads(
++        profile_, {file},
++        temporary_files_.empty() ? base::FilePath() : temporary_files_.front());
++  }
+   if (IsValidProfile(profile_)) {
+     base::FilePath path = file.file_path;
+-    if (dialog_mode_ != FileChooserParams::Mode::kUploadFolder)
++    if (dialog_mode_ != FileChooserParams::Mode::kUploadFolder) {
+       path = path.DirName();
++    }
+     profile_->set_last_selected_directory(path);
+   }
+ 
+@@ -160,10 +204,17 @@ void FileSelectHelper::FileSelected(const ui::SelectedFileInfo& file,
+ 
+ void FileSelectHelper::MultiFilesSelected(
+     const std::vector<ui::SelectedFileInfo>& files) {
++  if (dialog_mode_ == FileChooserParams::Mode::kOpen ||
++      dialog_mode_ == FileChooserParams::Mode::kOpenMultiple) {
++    RememberEmberUploads(
++        profile_, files,
++        temporary_files_.empty() ? base::FilePath() : temporary_files_.front());
++  }
+   if (!files.empty() && IsValidProfile(profile_)) {
+     base::FilePath path = files[0].file_path;
+-    if (dialog_mode_ != FileChooserParams::Mode::kUploadFolder)
++    if (dialog_mode_ != FileChooserParams::Mode::kUploadFolder) {
+       path = path.DirName();
++    }
+     profile_->set_last_selected_directory(path);
+   }
+ #if BUILDFLAG(IS_MAC)
+@@ -589,6 +650,55 @@ void FileSelectHelper::RunFileChooser(
+                                      params.Clone());
+ }
+ 
++// static
++void FileSelectHelper::SelectEmberFiles(
++    content::RenderFrameHost* render_frame_host,
++    scoped_refptr<content::FileSelectListener> listener,
++    const FileChooserParams& params,
++    const std::vector<base::FilePath>& paths,
++    const base::FilePath& temporary_file) {
++  if (!render_frame_host || paths.empty() ||
++      (params.mode != FileChooserParams::Mode::kOpen &&
++       params.mode != FileChooserParams::Mode::kOpenMultiple)) {
++    listener->FileSelectionCanceled();
++    return;
++  }
++  std::vector<ui::SelectedFileInfo> selected;
++  for (const base::FilePath& path : paths) {
++    if (!base::PathExists(path) || base::DirectoryExists(path)) {
++      continue;
++    }
++    selected.emplace_back(path);
++    if (params.mode == FileChooserParams::Mode::kOpen) {
++      break;
++    }
++  }
++  if (selected.empty()) {
++    listener->FileSelectionCanceled();
++    return;
++  }
++  Profile* profile = Profile::FromBrowserContext(
++      render_frame_host->GetProcess()->GetBrowserContext());
++  scoped_refptr<FileSelectHelper> helper(new FileSelectHelper(profile));
++  helper->render_frame_host_ = render_frame_host;
++  helper->web_contents_ = WebContents::FromRenderFrameHost(render_frame_host);
++  helper->listener_ = std::move(listener);
++  helper->dialog_mode_ = params.mode;
++  helper->dialog_type_ = params.mode == FileChooserParams::Mode::kOpenMultiple
++                             ? ui::SelectFileDialog::SELECT_OPEN_MULTI_FILE
++                             : ui::SelectFileDialog::SELECT_OPEN_FILE;
++  helper->InitLifecycleObserver(helper->web_contents_);
++  helper->self_ptr_ = helper.get();
++  if (!temporary_file.empty()) {
++    helper->temporary_files_.push_back(temporary_file);
++  }
++  if (selected.size() == 1) {
++    helper->FileSelected(selected.front(), 0);
++  } else {
++    helper->MultiFilesSelected(selected);
++  }
++}
++
+ // static
+ void FileSelectHelper::EnumerateDirectory(
+     content::WebContents* tab,
+diff --git a/chrome/browser/file_select_helper.h b/chrome/browser/file_select_helper.h
+index 16e77ae..e11e69d 100644
+--- a/chrome/browser/file_select_helper.h
++++ b/chrome/browser/file_select_helper.h
+@@ -71,6 +71,15 @@ class FileSelectHelper : public base::RefCountedThreadSafe<
+       scoped_refptr<content::FileSelectListener> listener,
+       const blink::mojom::FileChooserParams& params);
+ 
++  // A file explicitly picked from Ember's convenience popup enters the same
++  // conversion, content-analysis and renderer grant path as the native dialog.
++  static void SelectEmberFiles(
++      content::RenderFrameHost* render_frame_host,
++      scoped_refptr<content::FileSelectListener> listener,
++      const blink::mojom::FileChooserParams& params,
++      const std::vector<base::FilePath>& paths,
++      const base::FilePath& temporary_file = base::FilePath());
++
+   // Enumerates all the files in directory.
+   static void EnumerateDirectory(
+       content::WebContents* tab,
+diff --git a/chrome/browser/ui/browser.cc b/chrome/browser/ui/browser.cc
+index 2ad0644..18ec7b7 100644
+--- a/chrome/browser/ui/browser.cc
++++ b/chrome/browser/ui/browser.cc
+@@ -2077,6 +2084,13 @@ void Browser::RunFileChooser(
+     content::RenderFrameHost* render_frame_host,
+     scoped_refptr<content::FileSelectListener> listener,
+     const blink::mojom::FileChooserParams& params) {
++  if (is_type_normal() && window_ && render_frame_host &&
++      (params.mode == blink::mojom::FileChooserParams::Mode::kOpen ||
++       params.mode == blink::mojom::FileChooserParams::Mode::kOpenMultiple)) {
++    GetBrowserView().ShowEmberUploadPopup(render_frame_host,
++                                          std::move(listener), params);
++    return;
++  }
+   FileSelectHelper::RunFileChooser(render_frame_host, std::move(listener),
+                                    params);
+ }
+diff --git a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+index 2e2dc68..0553815 100644
+--- a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
++++ b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+@@ -57,11 +57,10 @@ namespace {
+ constexpr int kVerticalTabsGrabHandleSize = 40;
+ 
+ // Ember keeps its persistent shell outside Chromium's real browser contents.
+-constexpr int kEmberSidebarWidth = 168;
+ constexpr int kEmberPageInset = 8;
+ constexpr float kEmberPageCornerRadius = 12.0f;
+ constexpr int kEmberTopChromeHeight = 32;
+-constexpr int kEmberTopChromeTabStripLeading = 102;
++constexpr int kEmberTopChromeTabStripLeading = 134;
+ constexpr int kEmberTopChromeTrailingActions = 70;
+ 
+ // Maximum portion of the window a "size-restricted" contents-height side panel
+@@ -667,7 +666,8 @@ gfx::Size BrowserViewTabbedLayoutImpl::GetMinimumSize(
+                             side_panel_size.width() + main_area_size.width(),
+                             kMainBrowserContentsMinimumWidth});
+   if (views().ember_sidebar) {
+-    min_width += kEmberSidebarWidth + (2 * kEmberPageInset);
++    min_width += views().ember_sidebar->GetPreferredSize().width() +
++                 (2 * kEmberPageInset);
+   }
+ 
+   // Maybe adjust for additional padding when the side panel is visible.
+@@ -696,21 +696,25 @@ BrowserViewTabbedLayoutImpl::CalculateProposedLayout(
+   }
+ 
+   BrowserLayoutParams params = layout_data_->revised_params;
+-  const bool ember_sidebar_visible =
++  const bool ember_shell_visible =
+       views().ember_sidebar && !is_fullscreen(layout_data_->window_state);
++  const int ember_sidebar_width =
++      ember_shell_visible ? views().ember_sidebar->GetPreferredSize().width()
++                          : 0;
++  const bool ember_sidebar_visible = ember_sidebar_width > kEmberPageInset;
+   if (views().ember_sidebar) {
+-    const gfx::Rect sidebar_bounds = ember_sidebar_visible
+-                                         ? gfx::Rect(
+-                                               browser_params.visual_client_area.x(),
+-                                               browser_params.visual_client_area.y(),
+-                                               kEmberSidebarWidth,
+-                                               browser_params.visual_client_area.height())
+-                                         : gfx::Rect();
++    const gfx::Rect sidebar_bounds =
++        ember_sidebar_visible
++            ? gfx::Rect(browser_params.visual_client_area.x(),
++                        browser_params.visual_client_area.y(),
++                        ember_sidebar_width,
++                        browser_params.visual_client_area.height())
++            : gfx::Rect();
+     layout.AddChild(views().ember_sidebar, sidebar_bounds,
+                     ember_sidebar_visible);
+   }
+-  if (ember_sidebar_visible) {
+-    params.InsetHorizontal(kEmberSidebarWidth, /*leading=*/true);
++  if (ember_shell_visible) {
++    params.InsetHorizontal(ember_sidebar_width, /*leading=*/true);
+   }
+   bool needs_exclusion = true;
+   const bool adjust_for_cracking = AvoidCrackingForFractionalDisplay();
+@@ -724,18 +728,18 @@ BrowserViewTabbedLayoutImpl::CalculateProposedLayout(
+       const int leading_margin = GetHorizontalTabStripLeadingMargin(params);
+       tabstrip_bounds = GetBoundsWithExclusion(
+           params, views().horizontal_tab_strip_region_view, leading_margin);
+-      if (ember_sidebar_visible) {
+-        tabstrip_bounds.Inset(gfx::Insets::TLBR(
+-            0, kEmberTopChromeTabStripLeading, 0,
+-            kEmberTopChromeTrailingActions));
++      if (ember_shell_visible) {
++        tabstrip_bounds.Inset(
++            gfx::Insets::TLBR(0, kEmberTopChromeTabStripLeading, 0,
++                              kEmberTopChromeTrailingActions));
+         tabstrip_bounds.set_height(kEmberTopChromeHeight);
+       }
+       params.SetTop(
+-          ember_sidebar_visible
++          ember_shell_visible
+               ? tabstrip_bounds.y()
+               : tabstrip_bounds.bottom() -
+                     GetLayoutConstant(LayoutConstant::kTabstripToolbarOverlap));
+-      needs_exclusion = ember_sidebar_visible;
++      needs_exclusion = ember_shell_visible;
+     }
+     layout.AddChild(views().horizontal_tab_strip_region_view, tabstrip_bounds,
+                     layout_data_->tab_strip_type == TabStripType::kHorizontal);
+@@ -1090,7 +1094,7 @@ BrowserViewTabbedLayoutImpl::CalculateProposedLayout(
+   // the required top padding.
+   const auto& separator_info = layout_data_->separator_info;
+   views().multi_contents_view->SetShouldShowTopSeparator(
+-      separator_info.multi_contents_separator && !ember_sidebar_visible);
++      separator_info.multi_contents_separator && !ember_shell_visible);
+ 
+   // Updating the top, left and right insets for contents container view when
+   // in split view. This is dependent on a number of other browser states.
+@@ -1122,7 +1126,7 @@ BrowserViewTabbedLayoutImpl::CalculateProposedLayout(
+   views().multi_contents_view->SetIsAnimatingContent(
+       side_panel_is_animating || vertical_tab_strip_animation.current_motion);
+ 
+-  if (ember_sidebar_visible) {
++  if (ember_shell_visible) {
+     const gfx::Insets content_insets =
+         gfx::Insets::TLBR(0, 0, kEmberPageInset, kEmberPageInset);
+     params.Inset(content_insets);
+@@ -1200,7 +1204,7 @@ BrowserViewTabbedLayoutImpl::CalculateProposedLayout(
+ 
+   if (features::IsGlassFrameEnabled() || views().ember_sidebar) {
+     gfx::RoundedCornersF content_corners;
+-    if (ember_sidebar_visible) {
++    if (ember_shell_visible) {
+       content_corners = gfx::RoundedCornersF(kEmberPageCornerRadius);
+     } else if (layout_data_->tab_strip_type == TabStripType::kVertical &&
+                !is_fullscreen(layout_data_->window_state)) {
+diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.cc b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+index 3f6481a..f5843b1 100644
+--- a/chrome/browser/ui/views/toolbar/toolbar_view.cc
++++ b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+@@ -22,6 +22,7 @@
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/trace_event/trace_event.h"
+ #include "build/build_config.h"
++#include "cc/paint/paint_flags.h"
+ #include "chrome/app/chrome_command_ids.h"
+ #include "chrome/browser/actor/ui/actor_ui_metrics.h"
+ #include "chrome/browser/actor/ui/task_list_bubble/actor_task_list_bubble_controller.h"
+@@ -144,6 +145,7 @@
+ #include "ui/compositor/layer.h"
+ #include "ui/gfx/canvas.h"
+ #include "ui/gfx/geometry/insets.h"
++#include "ui/gfx/geometry/point_f.h"
+ #include "ui/gfx/image/canvas_image_source.h"
+ #include "ui/gfx/paint_vector_icon.h"
+ #include "ui/gfx/scoped_canvas.h"
+@@ -178,6 +180,40 @@ DEFINE_UI_CLASS_PROPERTY_KEY(bool, kActionItemUnderlineIndicatorKey, false)
+ 
+ namespace {
+ 
++class EmberSidebarToggle final : public views::LabelButton {
++ public:
++  explicit EmberSidebarToggle(BrowserView* browser_view)
++      : views::LabelButton(base::BindRepeating(
++            [](BrowserView* view, const ui::Event&) {
++              view->ToggleEmberSidebar();
++            },
++            base::Unretained(browser_view))) {
++    SetPreferredSize(gfx::Size(30, 30));
++    SetAccessibleName(u"Toggle sidebar");
++    SetTooltipText(u"Toggle sidebar");
++    SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
++  }
++
++  void OnPaintBackground(gfx::Canvas* canvas) override {
++    views::LabelButton::OnPaintBackground(canvas);
++    const bool hovered =
++        GetState() == STATE_HOVERED || GetState() == STATE_PRESSED;
++    if (hovered) {
++      cc::PaintFlags tile;
++      tile.setAntiAlias(true);
++      tile.setColor(SkColorSetARGB(0x13, 0xFF, 0xFF, 0xFF));
++      canvas->DrawRoundRect(gfx::RectF(1, 1, 28, 28), 6, tile);
++    }
++    cc::PaintFlags stroke;
++    stroke.setAntiAlias(true);
++    stroke.setStyle(cc::PaintFlags::kStroke_Style);
++    stroke.setStrokeWidth(1.35f);
++    stroke.setColor(SkColorSetARGB(hovered ? 0xFF : 0xD1, 0xFF, 0xFF, 0xFF));
++    canvas->DrawRoundRect(gfx::RectF(7.5f, 7.5f, 15, 15), 2, stroke);
++    canvas->DrawLine(gfx::PointF(12.5f, 8), gfx::PointF(12.5f, 22), stroke);
++  }
++};
++
+ // Gets the display mode for a given browser.
+ ToolbarView::DisplayMode GetDisplayMode(Browser* browser) {
+   // Checked in this order because even tabbed PWAs use the CUSTOM_TAB
+@@ -411,6 +447,11 @@ void ToolbarView::Init() {
+ #endif
+ 
+   // Always add children in order from left to right, for accessibility.
++  if (display_mode_ == DisplayMode::kNormal && browser_->is_type_normal()) {
++    std::unique_ptr<views::View> sidebar_toggle =
++        std::make_unique<EmberSidebarToggle>(browser_view_);
++    AddChildView(std::move(sidebar_toggle));
++  }
+   if (!features::IsWebUIBackForwardButtonEnabled()) {
+     back_ = AddChildView(std::make_unique<BackForwardButton>(
+         BackForwardButton::Direction::kBack,
+diff --git a/chrome/browser/ui/webui/new_tab_page_third_party/BUILD.gn b/chrome/browser/ui/webui/new_tab_page_third_party/BUILD.gn
+index 3c7ab3c..a1905a6 100644
+--- a/chrome/browser/ui/webui/new_tab_page_third_party/BUILD.gn
++++ b/chrome/browser/ui/webui/new_tab_page_third_party/BUILD.gn
+@@ -55,10 +55,12 @@ if (!is_android) {
+       "//chrome/browser/ui/webui:theme_source",
+       "//chrome/browser/ui/webui/cr_components/most_visited",
+       "//chrome/browser/ui/webui/ntp:ntp_resource_cache",
++      "//chrome/browser/ui/webui/searchbox",
+       "//chrome/browser/ui/webui/page_not_available_for_guest",
+       "//chrome/browser/ui/webui/util",
+       "//chrome/common",
+       "//components/favicon_base",
++      "//components/omnibox/browser:mojo_bindings",
+       "//components/prefs",
+       "//components/search",
+       "//content/public/browser",
+diff --git a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.h b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.h
+index 4312e60..9467326 100644
+--- a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.h
++++ b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.h
+@@ -11,6 +11,7 @@
+ #include "base/time/time.h"
+ #include "chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party.mojom.h"
+ #include "chrome/common/webui_url_constants.h"
++#include "components/omnibox/browser/searchbox.mojom.h"
+ #include "content/public/browser/web_contents_observer.h"
+ #include "content/public/browser/webui_config.h"
+ #include "content/public/common/url_constants.h"
+@@ -29,6 +30,7 @@ class GURL;
+ class MostVisitedHandler;
+ class NewTabPageThirdPartyHandler;
+ class Profile;
++class RealboxHandler;
+ class NewTabPageThirdPartyUI;
+ 
+ class NewTabPageThirdPartyUIConfig
+@@ -48,7 +50,8 @@ class NewTabPageThirdPartyUIConfig
+ class NewTabPageThirdPartyUI
+     : public ui::MojoWebUIController,
+       public new_tab_page_third_party::mojom::PageHandlerFactory,
+-      public most_visited::mojom::MostVisitedPageHandlerFactory {
++      public most_visited::mojom::MostVisitedPageHandlerFactory,
++      public searchbox::mojom::PageHandlerFactory {
+  public:
+   explicit NewTabPageThirdPartyUI(content::WebUI* web_ui);
+ 
+@@ -72,6 +75,9 @@ class NewTabPageThirdPartyUI
+       mojo::PendingReceiver<most_visited::mojom::MostVisitedPageHandlerFactory>
+           pending_receiver);
+ 
++  void BindInterface(mojo::PendingReceiver<searchbox::mojom::PageHandlerFactory>
++                         pending_receiver);
++
+  private:
+   // new_tab_page::mojom::PageHandlerFactory:
+   void CreatePageHandler(
+@@ -85,12 +91,21 @@ class NewTabPageThirdPartyUI
+       mojo::PendingReceiver<most_visited::mojom::MostVisitedPageHandler>
+           pending_page_handler) override;
+ 
++  // searchbox::mojom::PageHandlerFactory:
++  void CreatePageHandler(
++      mojo::PendingRemote<searchbox::mojom::Page> pending_page,
++      mojo::PendingReceiver<searchbox::mojom::PageHandler> pending_page_handler)
++      override;
++
+   std::unique_ptr<NewTabPageThirdPartyHandler> page_handler_;
+   mojo::Receiver<new_tab_page_third_party::mojom::PageHandlerFactory>
+       page_factory_receiver_;
+   std::unique_ptr<MostVisitedHandler> most_visited_page_handler_;
+   mojo::Receiver<most_visited::mojom::MostVisitedPageHandlerFactory>
+       most_visited_page_factory_receiver_;
++  std::unique_ptr<RealboxHandler> realbox_handler_;
++  mojo::Receiver<searchbox::mojom::PageHandlerFactory>
++      searchbox_page_factory_receiver_;
+   raw_ptr<Profile> profile_;
+   raw_ptr<content::WebContents> web_contents_;
+   // Time the NTP started loading. Used for logging the WebUI NTP's load
+diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
+index 8ea5b43..3c2a55f 100644
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -1729,6 +1729,8 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
+   registry->RegisterBooleanPref(prefs::kCtrlTabMru, false);
+   registry->RegisterIntegerPref(prefs::kEmberFavoritesColumns, 2);
+   registry->RegisterIntegerPref(prefs::kEmberFavoritesRows, 2);
++  registry->RegisterBooleanPref(prefs::kEmberSidebarOpen, true);
++  registry->RegisterListPref(prefs::kEmberRecentUploads);
+   cross_device::RegisterProfilePrefs(registry);
+   enterprise::RegisterIdentifiersProfilePrefs(registry);
+   enterprise_connectors::RegisterProfilePrefs(registry);
+diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
+index 245ae2c..0002470 100644
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -3972,6 +3972,8 @@ static_library("ui") {
+       "views/ember/ember_glass_transition.h",
+       "views/ember/ember_glass_view.cc",
+       "views/ember/ember_glass_view.h",
++      "views/ember/ember_upload_popup.cc",
++      "views/ember/ember_upload_popup.h",
+       "views/frame/browser_root_view.cc",
+       "views/frame/browser_view.cc",
+       "views/frame/browser_view.h",
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+index 59f2d31..04f2f03 100644
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -7,6 +7,7 @@
+ #include <stdint.h>
+ 
+ #include <algorithm>
++#include <cmath>
+ #include <memory>
+ #include <optional>
+ #include <set>
+@@ -147,6 +148,7 @@
+ #include "chrome/browser/ui/views/color_provider_browser_helper.h"
+ #include "chrome/browser/ui/views/download/download_in_progress_dialog_view.h"
+ #include "chrome/browser/ui/views/ember/ember_glass_overlay_controller.h"
++#include "chrome/browser/ui/views/ember/ember_upload_popup.h"
+ #include "chrome/browser/ui/views/exclusive_access_bubble_views.h"
+ #include "chrome/browser/ui/views/exclusive_access_bubble_views_context.h"
+ #include "chrome/browser/ui/views/extensions/extension_keybinding_registry_views.h"
+@@ -1588,9 +1590,15 @@ BrowserView::BrowserView(Browser* browser)
+       BrowserViewLayoutViews::kMainBackgroundRegionElementId);
+ 
+   if (browser_->is_type_normal()) {
++    ember_sidebar_open_ =
++        GetProfile()->GetPrefs()->GetBoolean(prefs::kEmberSidebarOpen);
++    ember_sidebar_width_ = ember_sidebar_open_ ? 168 : 8;
+     SetBackground(std::make_unique<ThemedBackground>(
+         this, ThemedBackground::kFrameTheme));
+     ember_sidebar_ = AddChildView(std::make_unique<views::View>());
++    ember_sidebar_->SetPreferredSize(gfx::Size(ember_sidebar_width_, 0));
++    ember_sidebar_->SetPaintToLayer();
++    ember_sidebar_->layer()->SetMasksToBounds(true);
+     ember_sidebar_->SetBackground(std::make_unique<ThemedBackground>(
+         this, ThemedBackground::kFrameTheme));
+     ember_sidebar_->SetProperty(views::kElementIdentifierKey,
+@@ -1830,6 +1838,12 @@ BrowserView::BrowserView(Browser* browser)
+       prefs::kEmberFavoritesRows,
+       base::BindRepeating(&BrowserView::ScheduleEmberFavoritesRefresh,
+                           base::Unretained(this)));
++  if (ember_sidebar_) {
++    registrar_.Add(
++        prefs::kEmberSidebarOpen,
++        base::BindRepeating(&BrowserView::OnEmberSidebarPreferenceChanged,
++                            base::Unretained(this)));
++  }
+   UpdateFullscreenAllowedFromPolicy(CanFullscreen());
+ 
+   WebUIContentsPreloadManager::GetInstance()->WarmupForBrowser(browser_.get());
+@@ -3765,7 +3779,8 @@ void BrowserView::OnWidgetWindowModalVisibilityChanged(views::Widget* widget,
+ #if !BUILDFLAG(IS_MAC)
+   // MacOS does not need views window scrim. We use sheets to show window modals
+   // (-[NSWindow beginSheet:]), which natively draw a scrim.
+-  window_scrim_view_->SetVisible(visible);
++  window_modal_scrim_visible_ = visible;
++  window_scrim_view_->SetVisible(visible || ember_upload_scrim_visible_);
+ #endif
+ }
+ 
+@@ -3796,6 +3811,88 @@ void BrowserView::DidFinishNavigation(
+   }
+ }
+ 
++void BrowserView::ToggleEmberSidebar() {
++  if (!ember_sidebar_) {
++    return;
++  }
++  PrefService* prefs = GetProfile()->GetPrefs();
++  prefs->SetBoolean(prefs::kEmberSidebarOpen,
++                    !prefs->GetBoolean(prefs::kEmberSidebarOpen));
++}
++
++void BrowserView::ShowEmberUploadPopup(
++    content::RenderFrameHost* render_frame_host,
++    scoped_refptr<content::FileSelectListener> listener,
++    const blink::mojom::FileChooserParams& params) {
++  if (ember_upload_request_) {
++    ember_upload_request_->Cancel();
++  }
++  ember_upload_request_ = std::make_unique<ember::EmberUploadRequest>(
++      this, render_frame_host, std::move(listener), params);
++  ember_upload_request_->Start();
++}
++
++void BrowserView::SetEmberUploadScrim(bool visible) {
++  ember_upload_scrim_visible_ = visible;
++  if (window_scrim_view_) {
++    window_scrim_view_->SetVisible(visible || window_modal_scrim_visible_);
++  }
++}
++
++void BrowserView::SetEmberSidebarWidth(int width) {
++  if (!ember_sidebar_ || ember_sidebar_width_ == width) {
++    return;
++  }
++  ember_sidebar_width_ = width;
++  ember_sidebar_->SetPreferredSize(gfx::Size(width, 0));
++  InvalidateLayout();
++  if (GetWidget()) {
++    GetWidget()->GetRootView()->DeprecatedLayoutImmediately();
++  }
++}
++
++void BrowserView::OnEmberSidebarPreferenceChanged() {
++  const bool open =
++      GetProfile()->GetPrefs()->GetBoolean(prefs::kEmberSidebarOpen);
++  if (open == ember_sidebar_open_) {
++    return;
++  }
++  ember_sidebar_open_ = open;
++  ember_sidebar_motion_from_ = ember_sidebar_width_;
++  ember_sidebar_motion_to_ = open ? 168 : 8;
++  ember_sidebar_motion_started_ = base::TimeTicks::Now();
++  ember_sidebar_motion_timer_.Stop();
++  if (gfx::Animation::PrefersReducedMotion() || !GetWidget()) {
++    SetEmberSidebarWidth(ember_sidebar_motion_to_);
++    return;
++  }
++  ember_sidebar_motion_timer_.Start(
++      FROM_HERE, base::Milliseconds(16),
++      base::BindRepeating(&BrowserView::OnEmberSidebarMotionTick,
++                          weak_ptr_factory_.GetWeakPtr()));
++  OnEmberSidebarMotionTick();
++}
++
++void BrowserView::OnEmberSidebarMotionTick() {
++  // The Favorite rail already uses a 180 ms FAST_OUT_SLOW_IN reflow. Advance
++  // shell and page bounds on that same clock so split panes and drop targets
++  // receive the geometry from Chromium's existing BrowserView layout.
++  const double elapsed =
++      (base::TimeTicks::Now() - ember_sidebar_motion_started_)
++          .InMillisecondsF();
++  const double progress = std::clamp(elapsed / 180.0, 0.0, 1.0);
++  const double eased =
++      gfx::Tween::CalculateValue(gfx::Tween::FAST_OUT_SLOW_IN, progress);
++  const int width = std::lround(
++      ember_sidebar_motion_from_ +
++      (ember_sidebar_motion_to_ - ember_sidebar_motion_from_) * eased);
++  SetEmberSidebarWidth(width);
++  if (progress >= 1.0) {
++    ember_sidebar_motion_timer_.Stop();
++    SetEmberSidebarWidth(ember_sidebar_motion_to_);
++  }
++}
++
+ void BrowserView::UpdateEmberSidebar() {
+   if (!ember_sidebar_address_ || !ember_sidebar_copy_link_) {
+     return;
+diff --git a/chrome/browser/ui/views/frame/browser_view.h b/chrome/browser/ui/views/frame/browser_view.h
+index 9884d28..d1b2013 100644
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -121,6 +121,7 @@ class NativeTheme;
+ 
+ namespace ember {
+ class EmberGlassOverlayController;
++class EmberUploadRequest;
+ }  // namespace ember
+ 
+ namespace version_info {
+@@ -176,6 +177,14 @@ class BrowserView : public BrowserWindow,
+   BrowserView& operator=(const BrowserView&) = delete;
+   ~BrowserView() override;
+ 
++  // Shared shell control; the toolbar button remains reachable while the
++  // sidebar content itself is fully collapsed.
++  void ToggleEmberSidebar();
++  void ShowEmberUploadPopup(content::RenderFrameHost* render_frame_host,
++                            scoped_refptr<content::FileSelectListener> listener,
++                            const blink::mojom::FileChooserParams& params);
++  void SetEmberUploadScrim(bool visible);
++
+   void set_browser_widget(std::unique_ptr<BrowserWidget> widget) {
+     browser_widget_ = std::move(widget);
+     paint_as_active_subscription_ =
+@@ -918,6 +927,9 @@ class BrowserView : public BrowserWindow,
+   void CutCopyPaste(int command_id);
+ 
+   void UpdateEmberSidebar();
++  void OnEmberSidebarPreferenceChanged();
++  void OnEmberSidebarMotionTick();
++  void SetEmberSidebarWidth(int width);
+ #if BUILDFLAG(IS_WIN)
+   void UpdateEmberNativeBackdrop(content::WebContents* contents);
+ #endif
+@@ -1205,6 +1217,12 @@ class BrowserView : public BrowserWindow,
+ 
+   // The persistent Ember shell rail shown by normal browser windows.
+   raw_ptr<views::View> ember_sidebar_ = nullptr;
++  bool ember_sidebar_open_ = true;
++  int ember_sidebar_width_ = 168;
++  int ember_sidebar_motion_from_ = 168;
++  int ember_sidebar_motion_to_ = 168;
++  base::TimeTicks ember_sidebar_motion_started_;
++  base::RepeatingTimer ember_sidebar_motion_timer_;
+   raw_ptr<views::View> ember_sidebar_address_row_ = nullptr;
+   raw_ptr<views::Textfield> ember_sidebar_address_ = nullptr;
+   raw_ptr<views::LabelButton> ember_sidebar_copy_link_ = nullptr;
+@@ -1335,6 +1353,9 @@ class BrowserView : public BrowserWindow,
+   // Handled by ContentsLayoutManager.
+   raw_ptr<views::View> contents_container_ = nullptr;
+   raw_ptr<ember::EmberGlassOverlayController> ember_glass_overlay_ = nullptr;
++  std::unique_ptr<ember::EmberUploadRequest> ember_upload_request_;
++  bool ember_upload_scrim_visible_ = false;
++  bool window_modal_scrim_visible_ = false;
+ #if BUILDFLAG(IS_WIN)
+   bool ember_native_backdrop_active_ = false;
+   bool ember_native_backdrop_initialized_ = false;
+diff --git a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
+index 3054ae3..6271ac2 100644
+--- a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
++++ b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
+@@ -31,6 +31,7 @@
+ #include "chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_handler.h"
+ #include "chrome/browser/ui/webui/ntp/ntp_resource_cache.h"
+ #include "chrome/browser/ui/webui/page_not_available_for_guest/page_not_available_for_guest_ui.h"
++#include "chrome/browser/ui/webui/searchbox/realbox_handler.h"
+ #include "chrome/browser/ui/webui/theme_source.h"
+ #include "chrome/browser/ui/webui/util/webui_util_desktop.h"
+ #include "chrome/common/pref_names.h"
+@@ -397,6 +398,7 @@ NewTabPageThirdPartyUI::NewTabPageThirdPartyUI(content::WebUI* web_ui)
+     : ui::MojoWebUIController(web_ui, /*enable_chrome_send=*/true),
+       page_factory_receiver_(this),
+       most_visited_page_factory_receiver_(this),
++      searchbox_page_factory_receiver_(this),
+       profile_(Profile::FromWebUI(web_ui)),
+       web_contents_(web_ui->GetWebContents()),
+       navigation_start_time_(base::Time::Now()) {
+@@ -442,6 +444,15 @@ void NewTabPageThirdPartyUI::BindInterface(
+   most_visited_page_factory_receiver_.Bind(std::move(pending_receiver));
+ }
+ 
++void NewTabPageThirdPartyUI::BindInterface(
++    mojo::PendingReceiver<searchbox::mojom::PageHandlerFactory>
++        pending_receiver) {
++  if (searchbox_page_factory_receiver_.is_bound()) {
++    searchbox_page_factory_receiver_.reset();
++  }
++  searchbox_page_factory_receiver_.Bind(std::move(pending_receiver));
++}
++
+ void NewTabPageThirdPartyUI::CreatePageHandler(
+     mojo::PendingRemote<new_tab_page_third_party::mojom::Page> pending_page,
+     mojo::PendingReceiver<new_tab_page_third_party::mojom::PageHandler>
+@@ -467,3 +478,11 @@ void NewTabPageThirdPartyUI::CreatePageHandler(
+       ntp_tiles::MostVisitedSites::EnableTileTypesOptions().with_top_sites(
+           true));
+ }
++
++void NewTabPageThirdPartyUI::CreatePageHandler(
++    mojo::PendingRemote<searchbox::mojom::Page> pending_page,
++    mojo::PendingReceiver<searchbox::mojom::PageHandler> pending_page_handler) {
++  realbox_handler_ = std::make_unique<RealboxHandler>(
++      std::move(pending_page_handler), std::move(pending_page), profile_,
++      web_contents_, GetSessionHandleCallback());
++}
+diff --git a/chrome/common/pref_names.h b/chrome/common/pref_names.h
+index 34d31d4..7e64139 100644
+--- a/chrome/common/pref_names.h
++++ b/chrome/common/pref_names.h
+@@ -34,6 +34,8 @@ namespace prefs {
+ // BookmarkModel folder is never truncated when presentation capacity shrinks.
+ inline constexpr char kEmberFavoritesColumns[] = "ember.favorites.columns";
+ inline constexpr char kEmberFavoritesRows[] = "ember.favorites.rows";
++inline constexpr char kEmberSidebarOpen[] = "ember.sidebar.open";
++inline constexpr char kEmberRecentUploads[] = "ember.upload.recent_files";
+ 
+ // *************** PROFILE PREFS ***************
+ // These are attached to the user profile
+diff --git a/chrome/browser/ui/views/ember/ember_upload_popup.h b/chrome/browser/ui/views/ember/ember_upload_popup.h
+new file mode 100644
+index 0000000000000..86ae34beb730b
+--- /dev/null
++++ b/chrome/browser/ui/views/ember/ember_upload_popup.h
+@@ -0,0 +1,94 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_UPLOAD_POPUP_H_
++#define CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_UPLOAD_POPUP_H_
++
++#include <cstdint>
++#include <vector>
++
++#include "base/callback_list.h"
++#include "base/files/file_path.h"
++#include "base/memory/raw_ptr.h"
++#include "base/memory/ref_counted.h"
++#include "base/memory/weak_ptr.h"
++#include "base/timer/timer.h"
++#include "base/values.h"
++#include "content/public/browser/web_contents_observer.h"
++#include "third_party/blink/public/mojom/choosers/file_chooser.mojom.h"
++#include "third_party/skia/include/core/SkBitmap.h"
++#include "ui/gfx/geometry/point.h"
++
++class BrowserView;
++
++namespace content {
++class FileSelectListener;
++class NavigationHandle;
++class RenderFrameHost;
++}  // namespace content
++
++namespace ui {
++struct FileInfo;
++}  // namespace ui
++
++namespace views {
++class Widget;
++}  // namespace views
++
++namespace ember {
++
++// Intermediate chooser UI. The original frame, listener and request semantics
++// are retained until a tile enters FileSelectHelper or Chromium's native
++// dialog.
++class EmberUploadRequest : public content::WebContentsObserver {
++ public:
++  EmberUploadRequest(BrowserView* browser_view,
++                     content::RenderFrameHost* render_frame_host,
++                     scoped_refptr<content::FileSelectListener> listener,
++                     const blink::mojom::FileChooserParams& params);
++  EmberUploadRequest(const EmberUploadRequest&) = delete;
++  EmberUploadRequest& operator=(const EmberUploadRequest&) = delete;
++  ~EmberUploadRequest() override;
++
++  void Start();
++  void Cancel();
++
++  // content::WebContentsObserver:
++  void RenderFrameDeleted(content::RenderFrameHost* frame) override;
++  void DidStartNavigation(content::NavigationHandle* navigation) override;
++  void WebContentsDestroyed() override;
++
++ private:
++  void OnClipboardFiles(std::vector<ui::FileInfo> files);
++  void OnClipboardPng(const std::vector<uint8_t>& png);
++  void OnClipboardThumbnail(SkBitmap thumbnail);
++  void OnAnchorMeasured(base::Value result);
++  void MaybeShow();
++  void Show();
++  void Select(std::vector<base::FilePath> paths, bool clipboard_image);
++  void ShowAllFiles();
++  void OnBubbleClosing();
++  bool IsRequestValid() const;
++
++  raw_ptr<BrowserView> browser_view_;
++  raw_ptr<content::RenderFrameHost> render_frame_host_;
++  scoped_refptr<content::FileSelectListener> listener_;
++  blink::mojom::FileChooserParamsPtr params_;
++  raw_ptr<views::Widget> bubble_ = nullptr;
++  std::vector<base::FilePath> clipboard_files_;
++  std::vector<uint8_t> clipboard_png_;
++  SkBitmap clipboard_thumbnail_;
++  gfx::Point anchor_in_screen_;
++  int anchor_top_in_screen_ = 0;
++  bool anchor_ready_ = false;
++  bool clipboard_ready_ = false;
++  base::OneShotTimer anchor_timeout_;
++  base::CallbackListSubscription tab_deactivated_subscription_;
++  bool finished_ = false;
++  base::WeakPtrFactory<EmberUploadRequest> weak_ptr_factory_{this};
++};
++
++}  // namespace ember
++
++#endif  // CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_UPLOAD_POPUP_H_
+diff --git a/chrome/browser/ui/views/ember/ember_upload_popup.cc b/chrome/browser/ui/views/ember/ember_upload_popup.cc
+new file mode 100644
+index 0000000000000..446885bb1d9fb
+--- /dev/null
++++ b/chrome/browser/ui/views/ember/ember_upload_popup.cc
+@@ -0,0 +1,893 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/views/ember/ember_upload_popup.h"
++
++#include <algorithm>
++#include <memory>
++#include <string>
++#include <utility>
++
++#include "base/files/file_util.h"
++#include "base/functional/bind.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/task/thread_pool.h"
++#include "cc/paint/paint_flags.h"
++#include "chrome/browser/file_select_helper.h"
++#include "chrome/browser/icon_loader.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/views/ember/ember_glass_view.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/browser/ui/views/frame/multi_contents_view.h"
++#include "chrome/common/chrome_isolated_world_ids.h"
++#include "chrome/common/pref_names.h"
++#include "components/download/public/common/download_item.h"
++#include "components/prefs/pref_service.h"
++#include "components/tabs/public/tab_interface.h"
++#include "content/public/browser/download_manager.h"
++#include "content/public/browser/file_select_listener.h"
++#include "content/public/browser/navigation_handle.h"
++#include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/render_widget_host_view.h"
++#include "content/public/browser/web_contents.h"
++#include "net/base/mime_util.h"
++#include "skia/ext/image_operations.h"
++#include "ui/base/clipboard/clipboard.h"
++#include "ui/base/clipboard/file_info.h"
++#include "ui/base/models/image_model.h"
++#include "ui/display/screen.h"
++#include "ui/gfx/animation/slide_animation.h"
++#include "ui/gfx/canvas.h"
++#include "ui/gfx/codec/png_codec.h"
++#include "ui/gfx/font_list.h"
++#include "ui/gfx/geometry/rect_f.h"
++#include "ui/gfx/image/image.h"
++#include "ui/views/border.h"
++#include "ui/views/bubble/bubble_dialog_delegate_view.h"
++#include "ui/views/controls/button/button.h"
++#include "ui/views/controls/button/label_button.h"
++#include "ui/views/controls/image_view.h"
++#include "ui/views/controls/label.h"
++#include "ui/views/controls/scroll_view.h"
++#include "ui/views/controls/scrollbar/overlay_scroll_bar.h"
++#include "ui/views/layout/box_layout.h"
++#include "ui/views/widget/widget.h"
++
++namespace ember {
++namespace {
++
++constexpr int kPopupWidth = 650;
++constexpr int kPopupMaxHeight = 565;
++constexpr int kTileWidth = 110;
++constexpr int kTileHeight = 126;
++constexpr int kTileGap = 11;
++
++SkBitmap DecodeClipboardThumbnail(std::vector<uint8_t> png) {
++  SkBitmap bitmap = gfx::PNGCodec::Decode(png);
++  if (bitmap.drawsNothing()) {
++    return {};
++  }
++  const int side = std::min(bitmap.width(), bitmap.height());
++  SkBitmap square;
++  if (!bitmap.extractSubset(
++          &square,
++          SkIRect::MakeXYWH((bitmap.width() - side) / 2,
++                            (bitmap.height() - side) / 2, side, side))) {
++    return {};
++  }
++  return skia::ImageOperations::Resize(
++      square, skia::ImageOperations::RESIZE_GOOD, 68, 68);
++}
++
++bool Accepts(const base::FilePath& path,
++             const std::vector<std::u16string>& accepted) {
++  if (accepted.empty()) {
++    return true;
++  }
++  const std::string extension =
++      base::ToLowerASCII(base::FilePath(path.Extension()).AsUTF8Unsafe());
++  std::string mime;
++  net::GetMimeTypeFromFile(path, &mime);
++  mime = base::ToLowerASCII(mime);
++  for (const std::u16string& item : accepted) {
++    const std::string type = base::ToLowerASCII(base::UTF16ToUTF8(item));
++    if (type == extension || type == mime || type == "*/*") {
++      return true;
++    }
++    if (base::EndsWith(type, "/*") &&
++        base::StartsWith(mime, type.substr(0, type.size() - 1))) {
++      return true;
++    }
++  }
++  return false;
++}
++
++class UploadTile final : public views::Button {
++ public:
++  UploadTile(const base::FilePath& path,
++             bool clipboard_image,
++             const SkBitmap& clipboard_thumbnail,
++             bool multiple,
++             PressedCallback callback)
++      : views::Button(std::move(callback)),
++        clipboard_image_(clipboard_image),
++        multiple_(multiple),
++        checkbox_animation_(this) {
++    SetPreferredSize(gfx::Size(kTileWidth, kTileHeight));
++    SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
++    checkbox_animation_.SetSlideDuration(base::Milliseconds(120));
++    SetLayoutManager(std::make_unique<views::BoxLayout>(
++                         views::BoxLayout::Orientation::kVertical,
++                         gfx::Insets::TLBR(12, 4, 6, 4), 10))
++        ->set_cross_axis_alignment(
++            views::BoxLayout::CrossAxisAlignment::kCenter);
++    icon_ = AddChildView(std::make_unique<views::ImageView>());
++    icon_->SetPreferredSize(gfx::Size(68, 68));
++    icon_->SetImageSize(gfx::Size(68, 68));
++    icon_->SetCanProcessEventsWithinSubtree(false);
++    if (clipboard_image && !clipboard_thumbnail.drawsNothing()) {
++      icon_->SetImage(ui::ImageModel::FromImageSkia(
++          gfx::ImageSkia::CreateFrom1xBitmap(clipboard_thumbnail)));
++      icon_loaded_ = true;
++    }
++    auto* name = AddChildView(std::make_unique<views::Label>(
++        path.empty() ? u"Clipboard image" : path.BaseName().AsUTF16Unsafe()));
++    name->SetPreferredSize(gfx::Size(104, 19));
++    name->SetFontList(gfx::FontList("Inter, 12px"));
++    name->SetElideBehavior(gfx::ELIDE_MIDDLE);
++    name->SetEnabledColor(SkColorSetARGB(0xC8, 0xFF, 0xFF, 0xFF));
++    name->SetCanProcessEventsWithinSubtree(false);
++    GetViewAccessibility().SetName(std::u16string(name->GetText()));
++    if (!path.empty()) {
++      IconLoader::LoadIcon(path, IconLoader::LARGE, 1.0f,
++                           base::BindOnce(&UploadTile::OnIconLoaded,
++                                          weak_ptr_factory_.GetWeakPtr()));
++    }
++  }
++
++  void SetSelected(bool selected) {
++    selected_ = selected;
++    SchedulePaint();
++  }
++
++  void StateChanged(ButtonState old_state) override {
++    views::Button::StateChanged(old_state);
++    if (!multiple_) {
++      return;
++    }
++    const bool hovered =
++        GetState() == STATE_HOVERED || GetState() == STATE_PRESSED;
++    if (gfx::Animation::PrefersReducedMotion()) {
++      checkbox_animation_.Reset(hovered ? 1 : 0);
++    } else if (hovered) {
++      checkbox_animation_.Show();
++    } else {
++      checkbox_animation_.Hide();
++    }
++    SchedulePaint();
++  }
++
++  void AnimationProgressed(const gfx::Animation* animation) override {
++    views::Button::AnimationProgressed(animation);
++    SchedulePaint();
++  }
++
++  void OnPaintBackground(gfx::Canvas* canvas) override {
++    const bool active =
++        selected_ || GetState() == STATE_HOVERED || GetState() == STATE_PRESSED;
++    cc::PaintFlags fill;
++    fill.setAntiAlias(true);
++    fill.setColor(SkColorSetARGB(active ? 0x30 : 0x11, 0xFF, 0xFF, 0xFF));
++    canvas->DrawRoundRect(gfx::RectF(GetLocalBounds()), 11, fill);
++    if (active) {
++      cc::PaintFlags rim;
++      rim.setAntiAlias(true);
++      rim.setStyle(cc::PaintFlags::kStroke_Style);
++      rim.setStrokeWidth(1);
++      rim.setColor(SkColorSetARGB(0x4E, 0xFF, 0xFF, 0xFF));
++      gfx::RectF border(GetLocalBounds());
++      border.Inset(0.5f);
++      canvas->DrawRoundRect(border, 10.5f, rim);
++    }
++    if (!icon_loaded_) {
++      cc::PaintFlags glyph;
++      glyph.setAntiAlias(true);
++      glyph.setStyle(cc::PaintFlags::kStroke_Style);
++      glyph.setStrokeWidth(2);
++      glyph.setColor(SkColorSetARGB(0xDE, 0xFF, 0xFF, 0xFF));
++      canvas->DrawRoundRect(gfx::RectF((width() - 45) / 2.0f, 18, 45, 48), 5,
++                            glyph);
++      canvas->DrawLine(gfx::PointF((width() - 31) / 2.0f, 54),
++                       gfx::PointF((width() + 1) / 2.0f, 37), glyph);
++      canvas->DrawLine(gfx::PointF((width() + 1) / 2.0f, 37),
++                       gfx::PointF((width() + 31) / 2.0f, 54), glyph);
++    }
++    if (multiple_) {
++      const float opacity =
++          selected_ ? 1.0f
++                    : static_cast<float>(checkbox_animation_.GetCurrentValue());
++      if (opacity > 0) {
++        cc::PaintFlags box;
++        box.setAntiAlias(true);
++        box.setColor(
++            SkColorSetARGB(static_cast<uint8_t>(opacity * 222), 255, 255, 255));
++        box.setStyle(cc::PaintFlags::kStroke_Style);
++        box.setStrokeWidth(1.5f);
++        canvas->DrawRoundRect(gfx::RectF(width() - 20, 8, 16, 16), 3, box);
++        if (selected_) {
++          cc::PaintFlags tick;
++          tick.setAntiAlias(true);
++          tick.setColor(SK_ColorWHITE);
++          tick.setStyle(cc::PaintFlags::kStroke_Style);
++          tick.setStrokeWidth(2);
++          canvas->DrawLine(gfx::PointF(width() - 17, 16),
++                           gfx::PointF(width() - 13, 20), tick);
++          canvas->DrawLine(gfx::PointF(width() - 13, 20),
++                           gfx::PointF(width() - 7, 12), tick);
++        }
++      }
++    }
++  }
++
++ private:
++  void OnIconLoaded(gfx::Image image, const IconLoader::IconGroup&) {
++    if (!image.IsEmpty()) {
++      icon_loaded_ = true;
++      icon_->SetImage(ui::ImageModel::FromImageSkia(image.AsImageSkia()));
++      SchedulePaint();
++    }
++  }
++
++  raw_ptr<views::ImageView> icon_ = nullptr;
++  bool clipboard_image_ = false;
++  bool multiple_ = false;
++  bool icon_loaded_ = false;
++  bool selected_ = false;
++  gfx::SlideAnimation checkbox_animation_;
++  base::WeakPtrFactory<UploadTile> weak_ptr_factory_{this};
++};
++
++class UploadActionButton final : public views::LabelButton {
++ public:
++  UploadActionButton(PressedCallback callback, const std::u16string& text)
++      : views::LabelButton(std::move(callback), text) {
++    SetPreferredSize(gfx::Size(text == u"×" ? 36 : 150, 36));
++    SetBorder(views::CreateEmptyBorder(gfx::Insets()));
++    SetHorizontalAlignment(gfx::ALIGN_CENTER);
++    SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
++    SetTextColor(STATE_NORMAL, SK_ColorWHITE);
++    SetTextColor(STATE_HOVERED, SK_ColorWHITE);
++    SetTextColor(STATE_PRESSED, SK_ColorWHITE);
++  }
++
++  void OnPaintBackground(gfx::Canvas* canvas) override {
++    const bool active =
++        GetState() == STATE_HOVERED || GetState() == STATE_PRESSED;
++    cc::PaintFlags fill;
++    fill.setAntiAlias(true);
++    fill.setColor(SkColorSetARGB(active ? 0x45 : 0x24, 0xFF, 0xFF, 0xFF));
++    canvas->DrawRoundRect(gfx::RectF(GetLocalBounds()), 8, fill);
++    cc::PaintFlags rim;
++    rim.setAntiAlias(true);
++    rim.setStyle(cc::PaintFlags::kStroke_Style);
++    rim.setStrokeWidth(1);
++    rim.setColor(SkColorSetARGB(active ? 0x62 : 0x38, 0xFF, 0xFF, 0xFF));
++    gfx::RectF border(GetLocalBounds());
++    border.Inset(0.5f);
++    canvas->DrawRoundRect(border, 7.5f, rim);
++  }
++};
++
++class UploadBubble final : public views::View {
++ public:
++  using SelectionCallback =
++      base::RepeatingCallback<void(std::vector<base::FilePath>, bool)>;
++
++  UploadBubble(bool multiple,
++               const std::u16string& origin,
++               const std::vector<base::FilePath>& clipboard_files,
++               bool clipboard_image,
++               const SkBitmap& clipboard_thumbnail,
++               const std::vector<base::FilePath>& recents,
++               const std::vector<base::FilePath>& downloads,
++               int width,
++               int height,
++               int columns,
++               SelectionCallback select,
++               base::RepeatingClosure show_all,
++               base::RepeatingClosure close)
++      : multiple_(multiple),
++        columns_(columns),
++        select_(std::move(select)),
++        show_all_(std::move(show_all)),
++        close_(std::move(close)) {
++    auto* layout = SetLayoutManager(std::make_unique<views::BoxLayout>(
++        views::BoxLayout::Orientation::kVertical,
++        gfx::Insets::TLBR(16, 18, 16, 18), 12));
++    SetPreferredSize(gfx::Size(width, height));
++
++    auto* header = AddChildView(std::make_unique<views::View>());
++    auto* header_layout =
++        header->SetLayoutManager(std::make_unique<views::BoxLayout>(
++            views::BoxLayout::Orientation::kHorizontal, gfx::Insets(), 9));
++    std::unique_ptr<views::LabelButton> show_all_button =
++        std::make_unique<UploadActionButton>(
++            base::BindRepeating(&UploadBubble::PrimaryAction,
++                                base::Unretained(this)),
++            u"Show all files");
++    primary_button_ = header->AddChildView(std::move(show_all_button));
++    primary_button_->GetViewAccessibility().SetName(
++        u"Show all files in native chooser");
++    auto* title = header->AddChildView(std::make_unique<views::Label>(
++        multiple ? u"Choose files" : u"Choose a file"));
++    title->SetFontList(gfx::FontList("Inter, Medium 14px"));
++    header_layout->SetFlexForView(title, 1);
++    std::unique_ptr<views::LabelButton> close_action =
++        std::make_unique<UploadActionButton>(
++            base::BindRepeating(&UploadBubble::Close, base::Unretained(this)),
++            u"×");
++    auto* close_button = header->AddChildView(std::move(close_action));
++    close_button->GetViewAccessibility().SetName(u"Cancel file selection");
++
++    if (!origin.empty()) {
++      auto* site = AddChildView(std::make_unique<views::Label>(origin));
++      site->SetEnabledColor(SkColorSetARGB(0xA0, 0xFF, 0xFF, 0xFF));
++      site->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++    }
++    auto* scroll = AddChildView(std::make_unique<views::ScrollView>());
++    scroll->SetBackgroundColor(SK_ColorTRANSPARENT);
++    scroll->SetDrawOverflowIndicator(false);
++    scroll->SetHorizontalScrollBarMode(
++        views::ScrollView::ScrollBarMode::kDisabled);
++    scroll->SetVerticalScrollBar(std::make_unique<views::OverlayScrollBar>(
++        views::ScrollBar::Orientation::kVertical));
++    scroll->ClipHeightTo(0, std::max(150, height - 120));
++    layout->SetFlexForView(scroll, 1);
++    auto body = std::make_unique<views::View>();
++    body->SetLayoutManager(std::make_unique<views::BoxLayout>(
++        views::BoxLayout::Orientation::kVertical, gfx::Insets(), 11));
++    body_ = scroll->SetContents(std::move(body));
++    const size_t clipboard_count =
++        clipboard_files.size() + static_cast<size_t>(clipboard_image);
++    AddSectionHeadings(clipboard_count, downloads.size(), recents.size());
++    std::vector<TileSpec> tiles;
++    for (const auto& path : clipboard_files) {
++      tiles.push_back({path, false});
++    }
++    if (clipboard_image) {
++      tiles.push_back({base::FilePath(), true});
++    }
++    for (const auto& path : downloads) {
++      tiles.push_back({path, false});
++    }
++    for (const auto& path : recents) {
++      tiles.push_back({path, false});
++    }
++    if (tiles.empty()) {
++      auto* empty = body_->AddChildView(
++          std::make_unique<views::Label>(u"No recent files match this upload"));
++      empty->SetEnabledColor(SkColorSetARGB(0xA0, 0xFF, 0xFF, 0xFF));
++    } else {
++      AddGrid(tiles, clipboard_thumbnail);
++    }
++  }
++
++ private:
++  struct TileSpec {
++    base::FilePath path;
++    bool clipboard_image;
++  };
++
++  void AddSectionHeadings(size_t clipboard_count,
++                          size_t download_count,
++                          size_t recent_count) {
++    if (!clipboard_count && !download_count && !recent_count) {
++      return;
++    }
++    auto* headings = body_->AddChildView(std::make_unique<views::View>());
++    headings->SetLayoutManager(std::make_unique<views::BoxLayout>(
++        views::BoxLayout::Orientation::kHorizontal, gfx::Insets(), kTileGap));
++    for (int column = 0; column < columns_; ++column) {
++      std::u16string text;
++      if (column == 0 && clipboard_count) {
++        text = u"CLIPBOARD";
++      } else if (static_cast<size_t>(column) == clipboard_count &&
++                 download_count) {
++        text = u"DOWNLOADED";
++      } else if (static_cast<size_t>(column) ==
++                     clipboard_count + download_count &&
++                 recent_count) {
++        text = u"RECENT UPLOADS";
++      }
++      auto* label =
++          headings->AddChildView(std::make_unique<views::Label>(text));
++      label->SetPreferredSize(gfx::Size(kTileWidth, 16));
++      label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++      label->SetEnabledColor(SkColorSetARGB(0xB0, 0xFF, 0xFF, 0xFF));
++      label->SetFontList(gfx::FontList("Inter, Medium 10px"));
++    }
++  }
++
++  void AddGrid(const std::vector<TileSpec>& tiles,
++               const SkBitmap& clipboard_thumbnail) {
++    views::View* row = nullptr;
++    for (size_t index = 0; index < tiles.size(); ++index) {
++      if (index % columns_ == 0) {
++        row = body_->AddChildView(std::make_unique<views::View>());
++        row->SetLayoutManager(std::make_unique<views::BoxLayout>(
++            views::BoxLayout::Orientation::kHorizontal, gfx::Insets(),
++            kTileGap));
++      }
++      AddTile(row, tiles[index], clipboard_thumbnail);
++    }
++  }
++
++  void AddTile(views::View* row,
++               const TileSpec& spec,
++               const SkBitmap& clipboard_thumbnail) {
++    auto tile = std::make_unique<UploadTile>(
++        spec.path, spec.clipboard_image, clipboard_thumbnail, multiple_,
++        base::BindRepeating(&UploadBubble::OnTile, base::Unretained(this),
++                            spec.path, spec.clipboard_image));
++    tile_views_.push_back({tile.get(), spec.path, spec.clipboard_image});
++    std::unique_ptr<views::View> tile_view = std::move(tile);
++    row->AddChildView(std::move(tile_view));
++  }
++
++  void OnTile(const base::FilePath& path,
++              bool clipboard_image,
++              const ui::Event& event) {
++    bool checkbox_click = false;
++    if (multiple_ && event.IsLocatedEvent()) {
++      const gfx::Point location = event.AsLocatedEvent()->location();
++      checkbox_click = location.x() >= kTileWidth - 30 && location.y() <= 34;
++    }
++    if (!multiple_ || (!selection_started_ && !checkbox_click)) {
++      select_.Run(path.empty() ? std::vector<base::FilePath>()
++                               : std::vector<base::FilePath>{path},
++                  clipboard_image);
++      return;
++    }
++    selection_started_ = true;
++    if (clipboard_image) {
++      selected_image_ = !selected_image_;
++    } else {
++      auto it = std::find(selected_paths_.begin(), selected_paths_.end(), path);
++      if (it == selected_paths_.end()) {
++        selected_paths_.push_back(path);
++      } else {
++        selected_paths_.erase(it);
++      }
++    }
++    for (const auto& tile : tile_views_) {
++      tile.view->SetSelected(
++          tile.clipboard_image
++              ? selected_image_
++              : std::find(selected_paths_.begin(), selected_paths_.end(),
++                          tile.path) != selected_paths_.end());
++    }
++    UpdatePrimaryButton();
++  }
++
++  void UpdatePrimaryButton() {
++    const size_t count =
++        selected_paths_.size() + static_cast<size_t>(selected_image_);
++    if (!count) {
++      primary_button_->SetText(u"Show all files");
++      primary_button_->GetViewAccessibility().SetName(
++          u"Show all files in native chooser");
++      return;
++    }
++    primary_button_->SetText(u"Upload " + base::NumberToString16(count) +
++                             (count == 1 ? u" item" : u" items"));
++    primary_button_->GetViewAccessibility().SetName(
++        std::u16string(primary_button_->GetText()));
++  }
++
++  void PrimaryAction(const ui::Event&) {
++    if (!selected_paths_.empty() || selected_image_) {
++      select_.Run(selected_paths_, selected_image_);
++    } else {
++      show_all_.Run();
++    }
++  }
++  void Close(const ui::Event&) { close_.Run(); }
++
++  struct TileRef {
++    raw_ptr<UploadTile> view;
++    base::FilePath path;
++    bool clipboard_image;
++  };
++  bool multiple_;
++  int columns_;
++  bool selection_started_ = false;
++  bool selected_image_ = false;
++  std::vector<base::FilePath> selected_paths_;
++  std::vector<TileRef> tile_views_;
++  raw_ptr<views::LabelButton> primary_button_ = nullptr;
++  raw_ptr<views::View> body_ = nullptr;
++  SelectionCallback select_;
++  base::RepeatingClosure show_all_;
++  base::RepeatingClosure close_;
++};
++
++}  // namespace
++
++EmberUploadRequest::EmberUploadRequest(
++    BrowserView* browser_view,
++    content::RenderFrameHost* render_frame_host,
++    scoped_refptr<content::FileSelectListener> listener,
++    const blink::mojom::FileChooserParams& params)
++    : content::WebContentsObserver(
++          content::WebContents::FromRenderFrameHost(render_frame_host)),
++      browser_view_(browser_view),
++      render_frame_host_(render_frame_host),
++      listener_(std::move(listener)),
++      params_(params.Clone()) {
++  if (tabs::TabInterface* tab =
++          tabs::TabInterface::MaybeGetFromContents(web_contents())) {
++    tab_deactivated_subscription_ =
++        tab->RegisterWillDeactivate(base::BindRepeating(
++            [](base::WeakPtr<EmberUploadRequest> request, tabs::TabInterface*) {
++              if (request) {
++                request->Cancel();
++              }
++            },
++            weak_ptr_factory_.GetWeakPtr()));
++  }
++}
++
++EmberUploadRequest::~EmberUploadRequest() {
++  Cancel();
++}
++
++bool EmberUploadRequest::IsRequestValid() const {
++  return !finished_ && render_frame_host_ && web_contents() &&
++         render_frame_host_->IsRenderFrameLive();
++}
++
++void EmberUploadRequest::Start() {
++  if (!IsRequestValid()) {
++    Cancel();
++    return;
++  }
++  anchor_in_screen_ = web_contents()->GetViewBounds().CenterPoint();
++  anchor_top_in_screen_ = anchor_in_screen_.y();
++  anchor_timeout_.Start(
++      FROM_HERE, base::Milliseconds(250),
++      base::BindOnce(&EmberUploadRequest::OnAnchorMeasured,
++                     weak_ptr_factory_.GetWeakPtr(), base::Value()));
++  render_frame_host_->ExecuteJavaScriptInIsolatedWorld(
++      uR"JS((() => {
++        let target = document.activeElement;
++        const input = target?.matches?.('input[type="file"]') ? target :
++            document.querySelector('input[type="file"]:focus') ||
++            document.querySelector('input[type="file"]');
++        if (!target || target === document.body ||
++            target === document.documentElement) {
++          target = input;
++        }
++        if (!target) return null;
++        let rect = target.getBoundingClientRect();
++        if ((!rect.width || !rect.height) && input) {
++          for (const label of input.labels || []) {
++            const labelRect = label.getBoundingClientRect();
++            if (labelRect.width && labelRect.height) {
++              rect = labelRect;
++              break;
++            }
++          }
++        }
++        if (!rect.width || !rect.height) return null;
++        return [rect.left + rect.width / 2, rect.bottom, rect.top];
++      })())JS",
++      base::BindOnce(&EmberUploadRequest::OnAnchorMeasured,
++                     weak_ptr_factory_.GetWeakPtr()),
++      ISOLATED_WORLD_ID_CHROME_INTERNAL);
++  ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();
++  if (!clipboard) {
++    clipboard_ready_ = true;
++    MaybeShow();
++    return;
++  }
++  clipboard->ReadFilenames(ui::ClipboardBuffer::kCopyPaste, std::nullopt,
++                           base::BindOnce(&EmberUploadRequest::OnClipboardFiles,
++                                          weak_ptr_factory_.GetWeakPtr()));
++}
++
++void EmberUploadRequest::OnClipboardFiles(std::vector<ui::FileInfo> files) {
++  if (!IsRequestValid()) {
++    Cancel();
++    return;
++  }
++  for (const auto& file : files) {
++    if (base::PathExists(file.path) && !base::DirectoryExists(file.path) &&
++        Accepts(file.path, params_->accept_types)) {
++      clipboard_files_.push_back(file.path);
++    }
++  }
++  ui::Clipboard::GetForCurrentThread()->ReadPng(
++      ui::ClipboardBuffer::kCopyPaste, std::nullopt,
++      base::BindOnce(&EmberUploadRequest::OnClipboardPng,
++                     weak_ptr_factory_.GetWeakPtr()));
++}
++
++void EmberUploadRequest::OnClipboardPng(const std::vector<uint8_t>& png) {
++  if (!IsRequestValid()) {
++    Cancel();
++    return;
++  }
++  if (png.size() <= 25 * 1024 * 1024 &&
++      Accepts(base::FilePath(FILE_PATH_LITERAL("Clipboard.png")),
++              params_->accept_types)) {
++    clipboard_png_ = png;
++    if (!png.empty()) {
++      base::ThreadPool::PostTaskAndReplyWithResult(
++          FROM_HERE, {base::TaskPriority::USER_VISIBLE},
++          base::BindOnce(&DecodeClipboardThumbnail, png),
++          base::BindOnce(&EmberUploadRequest::OnClipboardThumbnail,
++                         weak_ptr_factory_.GetWeakPtr()));
++      return;
++    }
++  }
++  clipboard_ready_ = true;
++  MaybeShow();
++}
++
++void EmberUploadRequest::OnClipboardThumbnail(SkBitmap thumbnail) {
++  if (!IsRequestValid()) {
++    Cancel();
++    return;
++  }
++  clipboard_thumbnail_ = std::move(thumbnail);
++  clipboard_ready_ = true;
++  MaybeShow();
++}
++
++void EmberUploadRequest::OnAnchorMeasured(base::Value result) {
++  if (anchor_ready_ || finished_) {
++    return;
++  }
++  anchor_timeout_.Stop();
++  const base::ListValue* coords = result.GetIfList();
++  if (coords && coords->size() == 3 && render_frame_host_ &&
++      render_frame_host_->GetView()) {
++    const auto number = [](const base::Value& value) -> std::optional<double> {
++      if (value.is_double()) {
++        return value.GetDouble();
++      }
++      if (value.is_int()) {
++        return value.GetInt();
++      }
++      return std::nullopt;
++    };
++    const auto x = number((*coords)[0]);
++    const auto bottom = number((*coords)[1]);
++    const auto top = number((*coords)[2]);
++    if (x && bottom && top) {
++      const gfx::Point origin =
++          render_frame_host_->GetView()->GetViewBounds().origin();
++      anchor_in_screen_ = gfx::Point(origin.x() + static_cast<int>(*x),
++                                     origin.y() + static_cast<int>(*bottom));
++      anchor_top_in_screen_ = origin.y() + static_cast<int>(*top);
++    }
++  }
++  anchor_ready_ = true;
++  MaybeShow();
++}
++
++void EmberUploadRequest::MaybeShow() {
++  if (anchor_ready_ && clipboard_ready_ && !bubble_ && !finished_) {
++    Show();
++  }
++}
++
++void EmberUploadRequest::Show() {
++  if (!IsRequestValid()) {
++    Cancel();
++    return;
++  }
++  std::vector<base::FilePath> recents;
++  std::vector<base::FilePath> downloads;
++  Profile* profile = browser_view_->GetProfile();
++  if (!profile->IsOffTheRecord()) {
++    const PrefService* prefs = profile->GetPrefs();
++    for (const auto& entry : prefs->GetList(prefs::kEmberRecentUploads)) {
++      if (!entry.is_string()) {
++        continue;
++      }
++      const base::FilePath path =
++          base::FilePath::FromUTF8Unsafe(entry.GetString());
++      if (base::PathExists(path) && !base::DirectoryExists(path) &&
++          Accepts(path, params_->accept_types)) {
++        recents.push_back(path);
++      }
++      if (recents.size() == 20) {
++        break;
++      }
++    }
++  }
++  if (content::DownloadManager* manager = profile->GetDownloadManager()) {
++    download::SimpleDownloadManager::DownloadVector items;
++    manager->GetAllDownloads(&items);
++    std::sort(items.begin(), items.end(), [](const auto& a, const auto& b) {
++      return a->GetEndTime() > b->GetEndTime();
++    });
++    for (const auto& item : items) {
++      if (item->GetState() != download::DownloadItem::COMPLETE ||
++          item->GetFileExternallyRemoved()) {
++        continue;
++      }
++      const base::FilePath& path = item->GetTargetFilePath();
++      if (!base::PathExists(path) || base::DirectoryExists(path) ||
++          !Accepts(path, params_->accept_types) ||
++          std::find(recents.begin(), recents.end(), path) != recents.end() ||
++          std::find(downloads.begin(), downloads.end(), path) !=
++              downloads.end()) {
++        continue;
++      }
++      downloads.push_back(path);
++      if (downloads.size() == 45) {
++        break;
++      }
++    }
++  }
++  gfx::Rect page_bounds = web_contents()->GetViewBounds();
++  if (page_bounds.IsEmpty()) {
++    page_bounds = browser_view_->multi_contents_view()->GetBoundsInScreen();
++  }
++  page_bounds.Inset(gfx::Insets(8));
++  const int width = std::min(kPopupWidth, page_bounds.width());
++  const int columns =
++      std::clamp((width - 36 + kTileGap) / (kTileWidth + kTileGap), 1, 5);
++  const size_t tile_count = clipboard_files_.size() +
++                            static_cast<size_t>(!clipboard_png_.empty()) +
++                            recents.size() + downloads.size();
++  const int visible_rows =
++      std::clamp(static_cast<int>((tile_count + columns - 1) / columns), 1, 3);
++  const int desired_height =
++      std::min(kPopupMaxHeight, 165 + visible_rows * kTileHeight +
++                                    (visible_rows - 1) * kTileGap);
++  const int height = std::min(desired_height, page_bounds.height());
++  int left = anchor_in_screen_.x() - 48;
++  if (left + width > page_bounds.right()) {
++    left = anchor_in_screen_.x() - width + 48;
++  }
++  left = std::clamp(left, page_bounds.x(), page_bounds.right() - width);
++  int top = anchor_in_screen_.y() + 12;
++  if (top + height > page_bounds.bottom()) {
++    top = anchor_top_in_screen_ - height - 12;
++  }
++  top = std::clamp(top, page_bounds.y(), page_bounds.bottom() - height);
++  const gfx::Rect popup_bounds(left, top, width, height);
++  const std::u16string origin =
++      base::UTF8ToUTF16(render_frame_host_->GetLastCommittedURL().host());
++  auto bubble = std::make_unique<UploadBubble>(
++      params_->mode == blink::mojom::FileChooserParams::Mode::kOpenMultiple,
++      origin, clipboard_files_, !clipboard_png_.empty(), clipboard_thumbnail_,
++      recents, downloads, width, height, columns,
++      base::BindRepeating(&EmberUploadRequest::Select,
++                          weak_ptr_factory_.GetWeakPtr()),
++      base::BindRepeating(&EmberUploadRequest::ShowAllFiles,
++                          weak_ptr_factory_.GetWeakPtr()),
++      base::BindRepeating(&EmberUploadRequest::Cancel,
++                          weak_ptr_factory_.GetWeakPtr()));
++  auto delegate = std::make_unique<views::BubbleDialogDelegate>(
++      views::BubbleAnchor(), views::BubbleBorder::NONE,
++      views::BubbleBorder::NO_SHADOW);
++  delegate->set_parent_window(browser_view_->GetWidget()->GetNativeView());
++  delegate->SetAnchorRect(gfx::Rect(anchor_in_screen_, gfx::Size(1, 1)));
++  delegate->set_margins(gfx::Insets());
++  delegate->SetButtons(static_cast<int>(ui::mojom::DialogButton::kNone));
++  delegate->set_close_on_deactivate(true);
++  delegate->RegisterWindowClosingCallback(base::BindOnce(
++      &EmberUploadRequest::OnBubbleClosing, weak_ptr_factory_.GetWeakPtr()));
++  ember::ConfigureEmberGlassBubble(bubble.get(), delegate.get());
++  views::View* surface = delegate->SetContentsView(std::move(bubble));
++  bubble_ = views::BubbleDialogDelegate::CreateBubbleDeprecated(
++      std::move(delegate),
++      views::Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET);
++  bubble_->Show();
++  bubble_->SetBounds(popup_bounds);
++  ember::CaptureEmberGlassBubbleBackdrop(browser_view_, surface,
++                                         anchor_in_screen_, web_contents());
++  browser_view_->SetEmberUploadScrim(true);
++}
++
++void EmberUploadRequest::Select(std::vector<base::FilePath> paths,
++                                bool clipboard_image) {
++  if (!IsRequestValid()) {
++    Cancel();
++    return;
++  }
++  base::FilePath temporary;
++  if (clipboard_image && !clipboard_png_.empty()) {
++    if (base::CreateTemporaryFile(&temporary)) {
++      const base::FilePath png_path =
++          temporary.RemoveExtension().AddExtension(FILE_PATH_LITERAL("png"));
++      if (base::Move(temporary, png_path) &&
++          base::WriteFile(png_path, base::span(clipboard_png_))) {
++        temporary = png_path;
++        paths.push_back(png_path);
++      } else {
++        base::DeleteFile(temporary);
++        temporary.clear();
++      }
++    }
++  }
++  if (paths.empty()) {
++    return;
++  }
++  auto listener = std::move(listener_);
++  finished_ = true;
++  browser_view_->SetEmberUploadScrim(false);
++  if (bubble_) {
++    bubble_->Close();
++    bubble_ = nullptr;
++  }
++  FileSelectHelper::SelectEmberFiles(render_frame_host_, std::move(listener),
++                                     *params_, paths, temporary);
++}
++
++void EmberUploadRequest::ShowAllFiles() {
++  if (!IsRequestValid()) {
++    Cancel();
++    return;
++  }
++  auto listener = std::move(listener_);
++  finished_ = true;
++  browser_view_->SetEmberUploadScrim(false);
++  if (bubble_) {
++    bubble_->Close();
++    bubble_ = nullptr;
++  }
++  FileSelectHelper::RunFileChooser(render_frame_host_, std::move(listener),
++                                   *params_);
++}
++
++void EmberUploadRequest::OnBubbleClosing() {
++  bubble_ = nullptr;
++  Cancel();
++}
++
++void EmberUploadRequest::Cancel() {
++  if (finished_) {
++    return;
++  }
++  finished_ = true;
++  anchor_timeout_.Stop();
++  browser_view_->SetEmberUploadScrim(false);
++  if (bubble_) {
++    bubble_->Close();
++    bubble_ = nullptr;
++  }
++  if (listener_) {
++    listener_->FileSelectionCanceled();
++    listener_.reset();
++  }
++}
++
++void EmberUploadRequest::RenderFrameDeleted(content::RenderFrameHost* frame) {
++  if (frame == render_frame_host_) {
++    render_frame_host_ = nullptr;
++    Cancel();
++  }
++}
++
++void EmberUploadRequest::DidStartNavigation(
++    content::NavigationHandle* navigation) {
++  if (navigation->GetRenderFrameHost() == render_frame_host_ &&
++      !navigation->IsSameDocument()) {
++    Cancel();
++  }
++}
++
++void EmberUploadRequest::WebContentsDestroyed() {
++  render_frame_host_ = nullptr;
++  Cancel();
++}
++
++}  // namespace ember
+diff --git a/chrome/browser/ui/views/ember/ember_glass_view.cc b/chrome/browser/ui/views/ember/ember_glass_view.cc
+index 2c8073f..a07fc44 100644
+--- a/chrome/browser/ui/views/ember/ember_glass_view.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_view.cc
+@@ -241,7 +241,8 @@ void ConfigureEmberGlassBubble(views::View* surface,
+ 
+ void CaptureEmberGlassBubbleBackdrop(BrowserView* browser_view,
+                                      views::View* surface,
+-                                     const gfx::Point& screen_origin) {
++                                     const gfx::Point& screen_origin,
++                                     content::WebContents* source_contents) {
+   if (!surface || surface->size().IsEmpty()) return;
+   auto transition_frame = std::make_shared<EmberGlassTransition::Frame>();
+   transition_frame->bounds = gfx::RectF(surface->GetLocalBounds());
+@@ -257,7 +258,9 @@ void CaptureEmberGlassBubbleBackdrop(BrowserView* browser_view,
+       surface->AddChildView(std::move(motion_view)));
+   motion->Start();
+   content::WebContents* web_contents =
+-      browser_view ? browser_view->GetActiveWebContents() : nullptr;
++      source_contents ? source_contents
++                      : browser_view ? browser_view->GetActiveWebContents()
++                                     : nullptr;
+   content::RenderFrameHost* frame =
+       web_contents ? web_contents->GetPrimaryMainFrame() : nullptr;
+   content::RenderWidgetHostView* renderer_view = frame ? frame->GetView() : nullptr;
+diff --git a/chrome/browser/ui/views/ember/ember_glass_view.h b/chrome/browser/ui/views/ember/ember_glass_view.h
+index f8db6c5..7ea16ac 100644
+--- a/chrome/browser/ui/views/ember/ember_glass_view.h
++++ b/chrome/browser/ui/views/ember/ember_glass_view.h
+@@ -12,6 +12,9 @@
+ #include "ui/views/view.h"
+ 
+ class BrowserView;
++namespace content {
++class WebContents;
++}
+ 
+ namespace views {
+ class BubbleDialogDelegate;
+@@ -28,7 +31,8 @@ void ConfigureEmberGlassBubble(views::View* surface,
+ // with the same cached/refraction material used by Ember's other overlays.
+ void CaptureEmberGlassBubbleBackdrop(BrowserView* browser_view,
+                                      views::View* surface,
+-                                     const gfx::Point& screen_origin);
++                                     const gfx::Point& screen_origin,
++                                     content::WebContents* source_contents = nullptr);
+ 
+ // Native Views surface for a cached EmberGlass panel. The panel pixels are
+ // stable while child labels/icons and lightweight interaction layers repaint.

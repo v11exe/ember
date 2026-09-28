@@ -1,50 +1,34 @@
 # Ember
 
-A lightweight, private, personalised browser focused on fast navigation, aggressive resource control and high-value browsing QOL features.
+Ember is a Windows browser built on native Chromium. It combines Chromium's profiles, renderer sandbox, tabs, navigation, downloads and extensions with Ember's compact shell, Favorite sidebar, EmberGlass surfaces and browsing shortcuts.
 
-Detailed numbered specifications and compatibility notes live in [`ROADMAP.md`](ROADMAP.md).
+The native browser is maintained as a pinned Chromium patch stack plus a small resource overlay. Chromium source and build output stay outside this repository. The Electron implementation remains on `main` as a historical behavior oracle; `chromium-port` is the native project.
 
-## Completed
+## Current features
 
-- **1. Aggressive automatic tab hibernation** — inactive tabs can genuinely destroy their renderer and restore later with navigation state, scroll, zoom and cached thumbnails.
-- **2. Bangs / custom Quick Searches** — fast omnibox aliases such as `yt`, `gh`, `wiki` and `!alias`, with user-editable URL templates. The omnibox names the engine as you type, and `Tab` drops the keyword so you are just typing a query.
-- **3. Smart selection conversions** — selecting currencies, measurements, temperatures or times opens a compact conversion popup using user preferences.
-- **4. Internet Archive fallback** — unreachable pages and dead HTTP responses can be opened through a user-triggered Wayback action without automatic redirects.
-- **5. Arc-style Ctrl+Tab visual switcher** — MRU tab switching with thumbnails, reverse cycling, cancel/commit behavior and sleeping-tab support.
-- **7. Instant / Favorite sidebar buttons** — a collapsible, configurable 1×1–4×7 shortcut grid with animated insert/reorder/replace drops, fixed-size favicons and persistent ordering; matching tabs are reused or woken instead of duplicated.
-- **8. Arc-style Copy Link button** — a compact address-field action copies the active page URL in one click and confirms it with unobtrusive sidebar feedback.
-- **Recent-file + clipboard upload picker** — file inputs can surface recent files and a clipboard image before falling back to the native picker.
-- **Bookmark import + nested folder navigation** — Chromium/Netscape bookmark HTML can be imported and browsed through a compact nested bookmark bar.
+- Compact horizontal tabs, native window controls, collapsible sidebar, Favorite sites and address field.
+- Tab sleep/wake, recent uploads, New Tab search, Quick Searches, Copy Link, Ctrl+Tab switcher, and native split-tab drag targets.
+- EmberGlass menus, dialogs and overlays with the official Ember branding.
+- Optional Unsplash photo backgrounds for New Tab. Turn them on in Settings → Appearance, enter your own Unsplash Access Key and choose All photos or a specific Unsplash topic. No Secret Key is needed. Photos stay centered and crop to cover the page as its size changes; the search bar blurs the photo behind it.
+- Selection conversions for currency, temperature, distance, weight, volume and time. Currency rates are fetched only for a recognized foreign-currency selection.
 
-## Upcoming
+The selection popup, sidebar Extensions placement, New Tab photo option and corrected shell controls have passed focused source checks. A newly linked full browser still needs the runtime checks in [CHROMIUM_PORT_STATUS.md](CHROMIUM_PORT_STATUS.md).
 
-- **6. Arc-style Link Peek**
-- **9. Arc-style Split View**
-- **10. Follower Tabs**
-- **11. In-window floating web tabs**
-- **12. Workspaces / Spaces**
-- **13. Profiles attached to Workspaces**
-- **14. Universal tab search from the sidebar**
-- **15. Named fully-offloaded Sessions**
-- **16. Automatic workspace routing / Air Traffic Control**
-- **17. Hibernation awareness across the entire tab system**
-- **18. Picture-in-Picture / persistent mini-player**
-- **19. Full media controls in the sidebar**
-- **20. Per-tab audio indicator and mute control**
-- **21. In-window Compact / Frameless Mode**
-- **22. Edge-hover UI reveal**
-- **23. Adaptive browser chrome**
-- **24. Parent/child tab relationships**
-- **25. Duplicate tab detection**
-- **26. Tab Traces / recency indicators**
-- **27. Hover tab thumbnails**
-- **28. Rename tabs**
-- **29. Protected / locked tabs**
-- **30. Back/Forward mouse gestures**
-- **31. Recent Files / Library sidebar panel**
-- **32. Per-site control panel**
-- **33. Built-in translation**
-- **34. Per-tab volume booster**
-- **35. Mirrored tab/state across Ember windows**
-- **36. Page-aware browser tinting**
-- **37. Freeze Page + Draw annotation mode**
+## Build on Windows
+
+Requirements: Windows x64, Visual Studio 2026 C++ tools, Windows SDK 10.0.26100, Python 3, Git, 7-Zip, at least 16 GiB RAM and sufficient free space on the work-root drive. The doctor reports exact missing requirements.
+The standalone doctor uses the 100 GiB fresh-acquisition floor; a verified
+`build --resume` checks the 60 GiB prepared-build floor.
+
+```powershell
+npm run chromium:doctor -- --work-root C:\src\ember-chromium
+npm run chromium:prepare -- --work-root C:\src\ember-chromium
+npm run chromium:build -- --work-root C:\src\ember-chromium --jobs 6 --resume
+npm run chromium:package -- --work-root C:\src\ember-chromium
+npm run chromium:run -- --work-root C:\src\ember-chromium
+npm test
+```
+
+`--resume` keeps the prepared Chromium checkout and incremental build products. Omit it only when preparing a new work root. The package command places the managed Ember installer and portable ZIP in the external work root. `npm run chromium:check-patches` validates patch hunk counts; `npm run chromium:verify-patches` checks the stack against a pristine pinned source checkout.
+
+See [chromium/README.md](chromium/README.md) for the patch/resource layout and [AGENTS.md](AGENTS.md) for development rules. [ROADMAP.md](ROADMAP.md) holds numbered feature specifications. Third-party material is credited in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

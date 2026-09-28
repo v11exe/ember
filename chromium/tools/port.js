@@ -620,8 +620,9 @@ function applyPatchSequenceInScratch(sourceRoot, patchPaths) {
   }
 }
 
-function verifyAppliedPatchSequenceInScratch(sourceRoot, patchPaths) {
+function verifyAppliedPatchSequenceInScratch(sourceRoot, patchPaths, overlayPaths = []) {
   const touchedPaths = touchedPathsFromPatches(patchPaths);
+  const excludes = overlayPaths.map((relativePath) => `--exclude=${relativePath}`);
   const scratchPrefix = path.join(os.tmpdir(), 'ember-chromium-applied-patches-');
   const scratchRoot = fs.mkdtempSync(scratchPrefix);
   try {
@@ -632,10 +633,10 @@ function verifyAppliedPatchSequenceInScratch(sourceRoot, patchPaths) {
       if (fs.existsSync(source)) fs.copyFileSync(source, destination);
     }
     for (const patchPath of [...patchPaths].reverse()) {
-      runCaptured('git', ['apply', '--reverse', '--check', '--no-index', patchPath], {
+      runCaptured('git', ['apply', '--reverse', '--check', '--no-index', ...excludes, patchPath], {
         cwd: scratchRoot,
       });
-      runCaptured('git', ['apply', '--reverse', '--no-index', patchPath], { cwd: scratchRoot });
+      runCaptured('git', ['apply', '--reverse', '--no-index', ...excludes, patchPath], { cwd: scratchRoot });
     }
     return touchedPaths;
   } finally {
@@ -1033,16 +1034,20 @@ function verifySourceHead(paths, baseline = readBaseline()) {
 
 function verifyPreparedBuildState(paths, baseline = readBaseline()) {
   verifySourceHead(paths, baseline);
-  const patchPaths = parseSeriesEntries()
-    .map((entry) => path.join(PATCHES_ROOT, ...entry.split('/')));
-  const touchedPaths = verifyAppliedPatchSequenceInScratch(paths.sourceRoot, patchPaths);
-  console.log(
-    `Verified the applied Ember patch postimages in an isolated ${touchedPaths.length}-file scratch tree.`,
-  );
   const manifest = readResourceManifest(
     path.join(paths.configurationResourceRoot, 'manifest.json'),
   );
   const resources = verifyResourceOverlay(manifest, paths.sourceRoot);
+  const patchPaths = parseSeriesEntries()
+    .map((entry) => path.join(PATCHES_ROOT, ...entry.split('/')));
+  // Resources copied after patching can supersede a patch's postimage.
+  // Verify those exact bytes separately and reverse the native patch stack
+  // without trying to undo superseded resource hunks.
+  const touchedPaths = verifyAppliedPatchSequenceInScratch(
+    paths.sourceRoot, patchPaths, resources);
+  console.log(
+    `Verified the applied Ember patch postimages in an isolated ${touchedPaths.length}-file scratch tree.`,
+  );
   console.log(`Verified ${resources.length} applied Ember resource destinations.`);
 }
 

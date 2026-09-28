@@ -1,0 +1,101 @@
+diff --git a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
+--- a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
++++ b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
+@@ -9,6 +9,7 @@
+ #include <optional>
+ #include <utility>
+ 
++#include "base/base64.h"
+ #include "base/functional/bind.h"
+ #include "base/json/json_reader.h"
+ #include "base/location.h"
+@@ -100,6 +101,7 @@
+ 
+ namespace {
+ constexpr int kMaxUnsplashResponseBytes = 256 * 1024;
++constexpr int kMaxUnsplashImageBytes = 8 * 1024 * 1024;
+ constexpr net::NetworkTrafficAnnotationTag kUnsplashTrafficAnnotation =
+     net::DefineNetworkTrafficAnnotation("ember_unsplash_new_tab", R"(
+       semantics {
+@@ -107,6 +109,20 @@
+         description: "Gets one landscape photo for an Unsplash New Tab background."
+         trigger: "The user opens a New Tab with Unsplash backgrounds enabled."
+         data: "The user's Unsplash application Access Key; no browsing URL or page text."
++        destination: WEBSITE
++      }
++      policy {
++        cookies_allowed: NO
++        setting: "The user can disable Unsplash backgrounds in Appearance settings."
++        policy_exception_justification: "No enterprise policy controls this optional request."
++      })");
++constexpr net::NetworkTrafficAnnotationTag kUnsplashImageTrafficAnnotation =
++    net::DefineNetworkTrafficAnnotation("ember_unsplash_new_tab_image", R"(
++      semantics {
++        sender: "Ember New Tab"
++        description: "Downloads the selected Unsplash background image."
++        trigger: "An enabled New Tab receives an Unsplash photo URL."
++        data: "No user data or Access Key."
+         destination: WEBSITE
+       }
+       policy {
+@@ -276,6 +292,7 @@
+     unsplash_loader_.reset();
+     base::DictValue result;
+     result.Set("status", network_ok ? status : 0);
++    std::optional<GURL> image_request_url;
+     if (network_ok && status == 200 && body) {
+       std::optional<base::Value> parsed = base::JSONReader::Read(*body, 0);
+       const base::DictValue* photo = parsed && parsed->is_dict()
+@@ -294,13 +311,50 @@
+             image_url.host() == "images.unsplash.com" &&
+             profile_url.SchemeIs("https") &&
+             profile_url.host() == "unsplash.com") {
+-          result.Set("imageUrl", image_url.spec());
++          image_request_url = image_url;
+           result.Set("profileUrl", profile_url.spec());
+           result.Set("photographer", *photographer);
+         }
+       }
+     }
+-    if (IsJavascriptAllowed()) {
++    if (image_request_url) {
++      auto request = std::make_unique<network::ResourceRequest>();
++      request->url = *image_request_url;
++      request->method = "GET";
++      request->credentials_mode = network::mojom::CredentialsMode::kOmit;
++      unsplash_loader_ = network::SimpleURLLoader::Create(
++          std::move(request), kUnsplashImageTrafficAnnotation);
++      unsplash_loader_->SetTimeoutDuration(base::Seconds(15));
++      unsplash_loader_->DownloadToString(
++          profile_->GetDefaultStoragePartition()
++              ->GetURLLoaderFactoryForBrowserProcess().get(),
++          base::BindOnce(&EmberNewTabNavigationHandler::OnUnsplashImageFetched,
++                         weak_ptr_factory_.GetWeakPtr(), std::move(result)),
++          kMaxUnsplashImageBytes);
++      return;
++    }
++    ResolveUnsplashRequest(std::move(result));
++  }
++
++  void OnUnsplashImageFetched(base::DictValue result,
++                              std::optional<std::string> body) {
++    if (!unsplash_loader_ || !unsplash_callback_id_) return;
++    std::string mime_type;
++    if (unsplash_loader_->ResponseInfo()) {
++      mime_type = unsplash_loader_->ResponseInfo()->mime_type;
++    }
++    if (unsplash_loader_->NetError() == net::OK && body && !body->empty() &&
++        (mime_type == "image/jpeg" || mime_type == "image/png" ||
++         mime_type == "image/webp" || mime_type == "image/avif")) {
++      result.Set("imageDataUrl", "data:" + mime_type + ";base64," +
++                                     base::Base64Encode(*body));
++    }
++    unsplash_loader_.reset();
++    ResolveUnsplashRequest(std::move(result));
++  }
++
++  void ResolveUnsplashRequest(base::DictValue result) {
++    if (unsplash_callback_id_ && IsJavascriptAllowed()) {
+       ResolveJavascriptCallback(*unsplash_callback_id_,
+                                 base::Value(std::move(result)));
+     }

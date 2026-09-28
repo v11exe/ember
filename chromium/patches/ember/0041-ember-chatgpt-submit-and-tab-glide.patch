@@ -1,0 +1,335 @@
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+index 5dbdd79..d5c5cc8 100644
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -24,6 +24,7 @@
+ #include "base/functional/bind.h"
+ #include "base/functional/callback_helpers.h"
+ #include "base/i18n/rtl.h"
++#include "base/json/json_writer.h"
+ #include "base/location.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/raw_ref.h"
+@@ -254,6 +255,7 @@
+ #include "chrome/browser/user_education/user_education_service.h"
+ #include "chrome/browser/user_education/user_education_service_factory.h"
+ #include "chrome/common/channel_info.h"
++#include "chrome/common/chrome_isolated_world_ids.h"
+ #include "chrome/common/chrome_switches.h"
+ #include "chrome/common/pref_names.h"
+ #include "chrome/common/url_constants.h"
+@@ -326,6 +328,7 @@
+ #include "content/public/common/url_constants.h"
+ #include "extensions/common/command.h"
+ #include "media/capture/capture_switches.h"
++#include "net/base/url_util.h"
+ #include "third_party/blink/public/common/features.h"
+ #include "third_party/blink/public/common/permissions/permission_utils.h"
+ #include "third_party/skia/include/core/SkPath.h"
+@@ -2925,6 +2928,8 @@ void BrowserView::OnActiveTabChanged(content::WebContents* old_contents,
+   }
+ 
+   WebContentsObserver::Observe(new_contents);
++  // A pending ChatGPT send belongs to the tab in which its Bang was entered.
++  ember_chatgpt_bang_prompt_.clear();
+   UpdateEmberSidebar();
+ 
+   // If |contents_container_| already has the correct WebContents, we can save
+@@ -3915,6 +3920,12 @@ void BrowserView::DidFinishNavigation(
+     return;
+   }
+ 
++  if (!ember_chatgpt_bang_prompt_.empty() &&
++      (!navigation_handle->GetURL().SchemeIs("https") ||
++       navigation_handle->GetURL().host() != "chatgpt.com")) {
++    ember_chatgpt_bang_prompt_.clear();
++  }
++
+   UpdateEmberSidebar();
+ 
+ #if BUILDFLAG(IS_WIN)
+@@ -3931,6 +3942,102 @@ void BrowserView::DidFinishNavigation(
+   }
+ }
+ 
++void BrowserView::DocumentOnLoadCompletedInPrimaryMainFrame() {
++  if (!ember_chatgpt_bang_prompt_.empty()) {
++    // ChatGPT may rewrite ?q= into a second document. Allow that navigation
++    // to settle before installing the one-shot composer check.
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
++        FROM_HERE,
++        base::BindOnce(&BrowserView::MaybeInjectEmberChatGPTBang,
++                       weak_ptr_factory_.GetWeakPtr()),
++        base::Milliseconds(450));
++  }
++}
++
++void BrowserView::ArmEmberChatGPTBang(const GURL& target) {
++  ember_chatgpt_bang_prompt_.clear();
++  std::string prompt;
++  if (!target.SchemeIs("https") || target.host() != "chatgpt.com" ||
++      target.path() != "/" ||
++      !net::GetValueForKeyInQuery(target, "q", &prompt) || prompt.empty() ||
++      prompt.size() > 8192) {
++    return;
++  }
++  ember_chatgpt_bang_prompt_ = std::move(prompt);
++  ember_chatgpt_bang_started_ = base::TimeTicks::Now();
++}
++
++void BrowserView::MaybeInjectEmberChatGPTBang() {
++  if (ember_chatgpt_bang_prompt_.empty()) {
++    return;
++  }
++  if (base::TimeTicks::Now() - ember_chatgpt_bang_started_ >
++      base::Seconds(15)) {
++    ember_chatgpt_bang_prompt_.clear();
++    return;
++  }
++  content::WebContents* contents = GetActiveWebContents();
++  if (!contents || !contents->GetLastCommittedURL().SchemeIs("https") ||
++      contents->GetLastCommittedURL().host() != "chatgpt.com") {
++    return;
++  }
++  const std::optional<std::string> prompt_json =
++      base::WriteJson(base::Value(ember_chatgpt_bang_prompt_));
++  if (!prompt_json) {
++    ember_chatgpt_bang_prompt_.clear();
++    return;
++  }
++  const std::string script = "(() => { const expected = " + *prompt_json + R"JS(;
++    if (location.hostname !== 'chatgpt.com' ||
++        window.__emberChatGPTBangPrompt === expected) return;
++    window.__emberChatGPTBangPrompt = expected;
++    const visible = element => !!element && !!element.getClientRects().length;
++    const textOf = element =>
++        (element?.value ?? element?.innerText ?? element?.textContent ?? '').trim();
++    let matchedSince = 0;
++    const timer = setInterval(() => {
++      if (location.hostname !== 'chatgpt.com') {
++        clearInterval(timer);
++        return;
++      }
++      if ([...document.querySelectorAll('[data-message-author-role="user"]')]
++              .some(message => textOf(message) === expected)) {
++        clearInterval(timer);
++        return;
++      }
++      const composers = [...document.querySelectorAll(
++          '#prompt-textarea, [data-testid="prompt-textarea"], ' +
++          '[contenteditable="true"][role="textbox"], textarea')]
++          .filter(visible);
++      const composer = composers.find(element => textOf(element) === expected);
++      if (!composer) {
++        if (composers.some(element => textOf(element))) clearInterval(timer);
++        return;
++      }
++      const form = composer.closest('form');
++      const selector = 'button[data-testid="send-button"], ' +
++          'button[aria-label="Send prompt"], ' +
++          'button[aria-label="Send message"], button[type="submit"]';
++      const send = [...(form ?? document).querySelectorAll(selector)]
++          .filter(visible)
++          .find(button => !button.disabled &&
++              button.getAttribute('aria-disabled') !== 'true' &&
++              (button.matches('[data-testid="send-button"], ' +
++                  '[aria-label="Send prompt"], [aria-label="Send message"]') ||
++               (form && button.type === 'submit')));
++      if (!send) return;
++      if (!matchedSince) matchedSince = Date.now();
++      if (Date.now() - matchedSince < 300) return;
++      clearInterval(timer);
++      send.click();
++    }, 150);
++    setTimeout(() => clearInterval(timer), 15000);
++  })();)JS";
++  contents->GetPrimaryMainFrame()->ExecuteJavaScriptInIsolatedWorld(
++      base::UTF8ToUTF16(script), base::BindOnce([](base::Value) {}),
++      ISOLATED_WORLD_ID_CHROME_INTERNAL);
++}
++
+ void BrowserView::ToggleEmberSidebar() {
+   if (!ember_sidebar_) {
+     return;
+@@ -4067,6 +4174,7 @@ void BrowserView::SubmitEmberSidebarAddress(std::u16string text) {
+     const GURL bang = ember::ResolveBangInput(
+         TemplateURLServiceFactory::GetForProfile(browser()->profile()), text);
+     if (bang.is_valid()) {
++      ArmEmberChatGPTBang(bang);
+       NavigateParams params(browser(), bang, ui::PAGE_TRANSITION_GENERATED);
+       params.disposition = WindowOpenDisposition::CURRENT_TAB;
+       Navigate(&params);
+@@ -4086,6 +4194,7 @@ void BrowserView::SubmitEmberSidebarAddress(std::u16string text) {
+   if (const GURL bang = ember::ResolveBangInput(
+           TemplateURLServiceFactory::GetForProfile(browser()->profile()), text);
+       bang.is_valid()) {
++    ArmEmberChatGPTBang(bang);
+     NavigateParams params(browser(), bang, ui::PAGE_TRANSITION_GENERATED);
+     params.disposition = WindowOpenDisposition::CURRENT_TAB;
+     Navigate(&params);
+diff --git a/chrome/browser/ui/views/frame/browser_view.h b/chrome/browser/ui/views/frame/browser_view.h
+index d1b2013..23b0b09 100644
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -206,6 +206,9 @@ class BrowserView : public BrowserWindow,
+   static BrowserView* GetBrowserViewForBrowser(
+       const BrowserWindowInterface* browser);
+ 
++  // Arms a one-shot submit only for a ChatGPT Quick Search in this tab.
++  void ArmEmberChatGPTBang(const GURL& target);
++
+   // After calling RevealTopContainerIfNeeded(), there is normally a delay
+   // before the tabstrip is hidden. Tests can use this function to disable that
+   // delay (and hide immediately).
+@@ -752,6 +755,7 @@ class BrowserView : public BrowserWindow,
+   void TitleWasSet(content::NavigationEntry* entry) override;
+   void DidFinishNavigation(
+       content::NavigationHandle* navigation_handle) override;
++  void DocumentOnLoadCompletedInPrimaryMainFrame() override;
+ 
+   // views::ClientView:
+   views::CloseRequestResult OnWindowCloseRequested() override;
+@@ -936,6 +940,7 @@ class BrowserView : public BrowserWindow,
+   void OnEmberSidebarAddressFocused();
+   void OnEmberSidebarAddressBlurred();
+   void SubmitEmberSidebarAddress(std::u16string text);
++  void MaybeInjectEmberChatGPTBang();
+   void CancelEmberSidebarAddressEdit();
+   void CopyEmberSidebarLink();
+   void ShowEmberSidebarCopyToast();
+@@ -1227,6 +1232,8 @@ class BrowserView : public BrowserWindow,
+   raw_ptr<views::Textfield> ember_sidebar_address_ = nullptr;
+   raw_ptr<views::LabelButton> ember_sidebar_copy_link_ = nullptr;
+   bool ember_sidebar_editing_ = false;
++  std::string ember_chatgpt_bang_prompt_;
++  base::TimeTicks ember_chatgpt_bang_started_;
+   std::unique_ptr<views::Widget> ember_sidebar_copy_toast_;
+   raw_ptr<views::View> ember_sidebar_favorites_ = nullptr;
+   raw_ptr<bookmarks::BookmarkModel> ember_bookmark_model_ = nullptr;
+diff --git a/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc b/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
+index 12ad844..2d0a458 100644
+--- a/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
++++ b/chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.cc
+@@ -9,6 +9,8 @@
+ #include "base/functional/bind.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/task/single_thread_task_runner.h"
++#include "base/time/time.h"
++#include "base/timer/timer.h"
+ #include "build/build_config.h"
+ #include "build/buildflag.h"
+ #include "chrome/browser/glic/public/features.h"
+@@ -60,6 +62,7 @@
+ #include "ui/compositor/layer.h"
+ #include "ui/compositor/layer_type.h"
+ #include "ui/events/event.h"
++#include "ui/gfx/animation/animation.h"
+ #include "ui/gfx/geometry/insets.h"
+ #include "ui/gfx/geometry/point.h"
+ #include "ui/views/accessible_pane_view.h"
+@@ -121,12 +124,69 @@ class TabStripScrollContainer : public views::ScrollView {
+       return false;
+     }
+     const int step = std::clamp(std::abs(delta), 80, 360);
+-    const int next = std::clamp(
+-        static_cast<int>(CurrentOffset().x()) + (delta > 0 ? -step : step), 0,
+-        maximum);
+-    ScrollToOffset(gfx::PointF(next, 0));
++    if (!gfx::Animation::ShouldRenderRichAnimation()) {
++      timer_.Stop();
++      target_ = std::clamp(
++          static_cast<double>(CurrentOffset().x()) +
++              (delta > 0 ? -step : step),
++          0.0, static_cast<double>(maximum));
++      ScrollToOffset(gfx::PointF(target_, 0));
++      return true;
++    }
++    if (!timer_.IsRunning()) {
++      target_ = CurrentOffset().x();
++    }
++    target_ = std::clamp(target_ + (delta > 0 ? -step : step), 0.0,
++                         static_cast<double>(maximum));
++    if (!timer_.IsRunning()) {
++      last_tick_ = base::TimeTicks::Now();
++      timer_.Start(FROM_HERE, base::Milliseconds(16), this,
++                   &TabStripScrollContainer::Animate);
++    }
+     return true;
+   }
++
++  void Layout(PassKey) override {
++    LayoutSuperclass<views::ScrollView>(this);
++    const int maximum = MaximumOffset();
++    target_ = std::clamp(target_, 0.0, static_cast<double>(maximum));
++    if (CurrentOffset().x() > maximum) {
++      ScrollToOffset(gfx::PointF(maximum, 0));
++    }
++  }
++
++  void ScrollRectToVisible(const gfx::Rect& rect) override {
++    views::ScrollView::ScrollRectToVisible(rect);
++    target_ = CurrentOffset().x();
++    timer_.Stop();
++  }
++
++ private:
++  int MaximumOffset() const {
++    return contents() ? std::max(0, contents()->width() - GetVisibleRect().width())
++                      : 0;
++  }
++
++  void Animate() {
++    const base::TimeTicks now = base::TimeTicks::Now();
++    const double elapsed =
++        std::clamp((now - last_tick_).InMillisecondsF(), 0.0, 64.0);
++    last_tick_ = now;
++    const double current = CurrentOffset().x();
++    const double fraction = 1.0 - std::pow(0.76, elapsed / 16.667);
++    const double next = std::clamp(current + (target_ - current) * fraction,
++                                   0.0, static_cast<double>(MaximumOffset()));
++    if (std::abs(target_ - next) < 0.5) {
++      ScrollToOffset(gfx::PointF(target_, 0));
++      timer_.Stop();
++      return;
++    }
++    ScrollToOffset(gfx::PointF(next, 0));
++  }
++
++  base::RepeatingTimer timer_;
++  base::TimeTicks last_tick_;
++  double target_ = 0;
+ };
+ 
+ BEGIN_METADATA(TabStripScrollContainer)
+diff --git a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
+index e7863c7..c17b79e 100644
+--- a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
++++ b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
+@@ -28,6 +28,7 @@
+ #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+ #include "chrome/browser/ui/color/chrome_color_id.h"
+ #include "chrome/browser/ui/ember_favorites.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/frame/ember_url_presentation.h"
+ #include "chrome/browser/ui/webui/cr_components/most_visited/most_visited_handler.h"
+ #include "chrome/browser/ui/webui/favicon_source.h"
+@@ -226,6 +227,9 @@ class EmberNewTabNavigationHandler
+         service,
+         bang->keyword() + u" " + base::UTF8ToUTF16(args[1].GetString()));
+     if (target.is_valid() && target.SchemeIsHTTPOrHTTPS()) {
++      if (BrowserView* view = BrowserView::GetBrowserViewForBrowser(browser)) {
++        view->ArmEmberChatGPTBang(target);
++      }
+       browser->OpenGURL(target, WindowOpenDisposition::CURRENT_TAB);
+     }
+   }
+@@ -258,6 +262,9 @@ class EmberNewTabNavigationHandler
+             TemplateURLServiceFactory::GetForProfile(profile_),
+             base::UTF8ToUTF16(*text));
+         bang.is_valid()) {
++      if (BrowserView* view = BrowserView::GetBrowserViewForBrowser(browser)) {
++        view->ArmEmberChatGPTBang(bang);
++      }
+       browser->OpenGURL(bang, WindowOpenDisposition::CURRENT_TAB);
+       return;
+     }

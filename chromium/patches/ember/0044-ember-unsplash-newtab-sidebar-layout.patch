@@ -1,0 +1,490 @@
+diff --git a/chrome/browser/extensions/api/settings_private/prefs_util.cc b/chrome/browser/extensions/api/settings_private/prefs_util.cc
+index 1b8cce3..56a9071 100644
+--- a/chrome/browser/extensions/api/settings_private/prefs_util.cc
++++ b/chrome/browser/extensions/api/settings_private/prefs_util.cc
+@@ -271,6 +271,10 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
+       settings_api::PrefType::kNumber;
+   (*s_allowlist)[::prefs::kEmberFavoritesRows] =
+       settings_api::PrefType::kNumber;
++  (*s_allowlist)[::prefs::kEmberUnsplashEnabled] =
++      settings_api::PrefType::kBoolean;
++  (*s_allowlist)[::prefs::kEmberUnsplashAccessKey] =
++      settings_api::PrefType::kString;
+   (*s_allowlist)[::prefs::kEmberConversionsEnabled] =
+       settings_api::PrefType::kBoolean;
+   (*s_allowlist)[::prefs::kEmberConversionsCurrency] =
+diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
+index 19c6039..d2fea6d 100644
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -1730,6 +1730,8 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
+   registry->RegisterIntegerPref(prefs::kEmberFavoritesColumns, 2);
+   registry->RegisterIntegerPref(prefs::kEmberFavoritesRows, 2);
+   registry->RegisterBooleanPref(prefs::kEmberSidebarOpen, true);
++  registry->RegisterBooleanPref(prefs::kEmberUnsplashEnabled, false);
++  registry->RegisterStringPref(prefs::kEmberUnsplashAccessKey, "");
+   registry->RegisterListPref(prefs::kEmberRecentUploads);
+   registry->RegisterBooleanPref(prefs::kEmberConversionsEnabled, true);
+   registry->RegisterStringPref(prefs::kEmberConversionsCurrency, "GBP");
+diff --git a/chrome/browser/resources/settings/appearance_page/appearance_page.html b/chrome/browser/resources/settings/appearance_page/appearance_page.html
+index 5613a5f..121d790 100644
+--- a/chrome/browser/resources/settings/appearance_page/appearance_page.html
++++ b/chrome/browser/resources/settings/appearance_page/appearance_page.html
+@@ -44,6 +44,15 @@
+         background: transparent;
+         color: var(--cr-primary-text-color);
+       }
++      #emberUnsplashAccessKey {
++        width: 220px;
++        min-width: 0;
++        padding: 8px;
++        border: 1px solid var(--cr-separator-color);
++        border-radius: 8px;
++        background: transparent;
++        color: var(--cr-primary-text-color);
++      }
+       .ember-favorite-title { flex: 1; }
+       .ember-favorite-url { flex: 2; }
+       .ember-favorite-error { color: var(--cr-error-text-color); padding: 8px 20px; }
+@@ -251,6 +260,28 @@
+           </div>
+         </template>
+ 
++        <div class="cr-row hr">
++          <div class="flex cr-padded-text" aria-hidden="true">
++            Unsplash New Tab background
++            <div class="secondary">Show a centered photo instead of Windows translucent glass</div>
++          </div>
++          <settings-toggle-button pref="{{prefs.ember.new_tab.unsplash.enabled}}"
++              label="Unsplash New Tab background">
++          </settings-toggle-button>
++        </div>
++        <template is="dom-if" if="[[prefs.ember.new_tab.unsplash.enabled.value]]">
++          <div class="cr-row">
++            <div class="flex cr-padded-text">
++              Unsplash Access Key
++              <div class="secondary">Create an app at unsplash.com/developers and paste its Access Key. A Secret Key is not needed.</div>
++            </div>
++            <input id="emberUnsplashAccessKey" type="password"
++                aria-label="Unsplash Access Key" autocomplete="off"
++                value="[[prefs.ember.new_tab.unsplash.access_key.value]]"
++                on-change="onEmberUnsplashAccessKeyChanged_">
++          </div>
++        </template>
++
+         <div class="cr-row hr">
+           <div class="flex cr-padded-text" aria-hidden="true">
+             Selection conversions
+diff --git a/chrome/browser/resources/settings/appearance_page/appearance_page.ts b/chrome/browser/resources/settings/appearance_page/appearance_page.ts
+index ce81035..510737c 100644
+--- a/chrome/browser/resources/settings/appearance_page/appearance_page.ts
++++ b/chrome/browser/resources/settings/appearance_page/appearance_page.ts
+@@ -486,6 +486,11 @@ export class SettingsAppearancePageElement extends
+     }
+   }
+ 
++  private onEmberUnsplashAccessKeyChanged_(event: Event) {
++    const key = (event.currentTarget as HTMLInputElement).value.trim();
++    this.setPrefValue('ember.new_tab.unsplash.access_key', key);
++  }
++
+   private onEmberFavoriteEdited_(event: Event) {
+     const row = (event.currentTarget as HTMLElement)
+                     .closest<HTMLElement>('.ember-favorite-row')!;
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+index d2308d0..653f204 100644
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -479,7 +479,7 @@ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(BrowserView,
+ 
+ namespace {
+ 
+-constexpr int kEmberSidebarTopInset = 34;
++constexpr int kEmberSidebarTopInset = 0;
+ constexpr int kEmberSidebarHorizontalInset = 9;
+ constexpr int kEmberSidebarBottomInset = 8;
+ constexpr int kEmberSidebarRowSpacing = 10;
+@@ -503,6 +503,62 @@ constexpr int kEmberSidebarCopyToastHeight = 30;
+ constexpr base::TimeDelta kEmberSidebarTransitionDuration =
+     base::Milliseconds(130);
+ 
++class EmberSidebarHeaderBrand final : public views::LabelButton {
++ public:
++  explicit EmberSidebarHeaderBrand(Browser* browser)
++      : views::LabelButton(base::BindRepeating(
++            [](Browser* browser, const ui::Event&) {
++              chrome::ExecuteCommand(browser, IDC_NEW_TAB);
++            }, base::Unretained(browser))) {
++    SetPreferredSize(gfx::Size(64, 24));
++    SetAccessibleName(u"Ember — new tab");
++    SetTooltipText(u"New tab");
++  }
++  void OnPaintBackground(gfx::Canvas* canvas) override {
++    views::LabelButton::OnPaintBackground(canvas);
++    if (GetState() == STATE_HOVERED || GetState() == STATE_PRESSED) {
++      cc::PaintFlags tile;
++      tile.setColor(SkColorSetARGB(0x13, 0xFF, 0xFF, 0xFF));
++      canvas->DrawRoundRect(gfx::RectF(0, 0, 64, 24), 6, tile);
++    }
++    const gfx::ImageSkia& mark = *ui::ResourceBundle::GetSharedInstance()
++                                      .GetImageSkiaNamed(IDR_EMBER_CHROME_MARK);
++    canvas->DrawImageInt(mark, 0, 0, mark.width(), mark.height(),
++                         4, 5, 56, 14, true);
++  }
++};
++
++class EmberSidebarHeaderToggle final : public views::LabelButton {
++ public:
++  explicit EmberSidebarHeaderToggle(BrowserView* view)
++      : views::LabelButton(base::BindRepeating(
++            [](BrowserView* view, const ui::Event&) {
++              view->ToggleEmberSidebar();
++            }, base::Unretained(view))) {
++    SetPreferredSize(gfx::Size(24, 24));
++    SetAccessibleName(u"Collapse sidebar");
++    SetTooltipText(u"Collapse sidebar");
++  }
++  void OnPaintBackground(gfx::Canvas* canvas) override {
++    views::LabelButton::OnPaintBackground(canvas);
++    const bool hovered = GetState() == STATE_HOVERED ||
++                         GetState() == STATE_PRESSED;
++    if (hovered) {
++      cc::PaintFlags tile;
++      tile.setColor(SkColorSetARGB(0x13, 0xFF, 0xFF, 0xFF));
++      canvas->DrawRoundRect(gfx::RectF(0, 0, 24, 24), 6, tile);
++    }
++    cc::PaintFlags stroke;
++    stroke.setAntiAlias(true);
++    stroke.setStyle(cc::PaintFlags::kStroke_Style);
++    stroke.setStrokeWidth(1.35f);
++    stroke.setColor(SkColorSetARGB(hovered ? 0xFF : 0xD1,
++                                   0xFF, 0xFF, 0xFF));
++    canvas->DrawRoundRect(gfx::RectF(4.5f, 4.5f, 15, 15), 2, stroke);
++    canvas->DrawLine(gfx::PointF(9.5f, 5), gfx::PointF(9.5f, 19), stroke);
++  }
++};
++
+ void MoveCursorToStart(views::Textfield* textfield) {
+   // SetText preserves a Textfield's prior caret and horizontal scroll. Compact
+   // URL presentation must begin at the host every time it returns to idle.
+@@ -1721,6 +1777,22 @@ BrowserView::BrowserView(Browser* browser)
+                           kEmberSidebarBottomInset,
+                           kEmberSidebarHorizontalInset),
+         kEmberSidebarRowSpacing));
++    ember_sidebar_header_ = ember_sidebar_->AddChildView(
++        std::make_unique<views::View>());
++    ember_sidebar_header_->SetPreferredSize(gfx::Size(0, 24));
++    auto* header_layout = ember_sidebar_header_->SetLayoutManager(
++        std::make_unique<views::BoxLayout>(
++            views::BoxLayout::Orientation::kHorizontal));
++    std::unique_ptr<views::LabelButton> header_brand =
++        std::make_unique<EmberSidebarHeaderBrand>(browser_.get());
++    ember_sidebar_header_->AddChildView(std::move(header_brand));
++    auto* header_spacer = ember_sidebar_header_->AddChildView(
++        std::make_unique<views::View>());
++    header_layout->SetFlexForView(header_spacer, 1);
++    std::unique_ptr<views::LabelButton> header_toggle =
++        std::make_unique<EmberSidebarHeaderToggle>(this);
++    ember_sidebar_header_->AddChildView(std::move(header_toggle));
++    ember_sidebar_header_->SetVisible(ember_sidebar_open_);
+     std::unique_ptr<views::View> address_row =
+         std::make_unique<EmberSidebarAddressRow>();
+     ember_sidebar_address_row_ = address_row.get();
+@@ -1981,6 +2053,12 @@ BrowserView::BrowserView(Browser* browser)
+         base::BindRepeating(&BrowserView::OnEmberSidebarPreferenceChanged,
+                             base::Unretained(this)));
+   }
++#if BUILDFLAG(IS_WIN)
++  registrar_.Add(
++      prefs::kEmberUnsplashEnabled,
++      base::BindRepeating(&BrowserView::UpdateEmberNativeBackdrop,
++                          base::Unretained(this), nullptr));
++#endif
+   UpdateFullscreenAllowedFromPolicy(CanFullscreen());
+ 
+   WebUIContentsPreloadManager::GetInstance()->WarmupForBrowser(browser_.get());
+@@ -2069,6 +2147,7 @@ BrowserView::~BrowserView() {
+   ember_favorite_preview_title_.clear();
+   ember_favorite_preview_icon_ = gfx::ImageSkia();
+   ember_sidebar_ = nullptr;
++  ember_sidebar_header_ = nullptr;
+   ember_sidebar_footer_ = nullptr;
+   ember_sidebar_address_row_ = nullptr;
+   ember_sidebar_address_ = nullptr;
+@@ -4103,6 +4182,13 @@ void BrowserView::SetEmberSidebarWidth(int width) {
+   }
+   ember_sidebar_width_ = width;
+   ember_sidebar_->SetPreferredSize(gfx::Size(width, 0));
++  const bool show_sidebar_header = width >= 150;
++  if (ember_sidebar_header_) {
++    ember_sidebar_header_->SetVisible(show_sidebar_header);
++  }
++  if (toolbar_) {
++    toolbar_->SetEmberSidebarExpanded(show_sidebar_header);
++  }
+   if (ember_sidebar_footer_) {
+     ember_sidebar_footer_->SetVisible(width >= 48);
+   }
+@@ -6717,6 +6803,7 @@ void BrowserView::AddedToWidget() {
+ #endif
+ 
+   toolbar_->Init();
++  toolbar_->SetEmberSidebarExpanded(ember_sidebar_open_);
+   if (ember_sidebar_footer_) {
+     toolbar_->MoveExtensionsToSidebar(ember_sidebar_footer_);
+   }
+@@ -7822,7 +7909,8 @@ void BrowserView::UpdateEmberNativeBackdrop(WebContents* contents) {
+   const bool active =
+       url.SchemeIs(content::kChromeUIScheme) &&
+       (url.host() == chrome::kChromeUINewTabPageThirdPartyHost ||
+-       url.host() == chrome::kChromeUINewTabHost);
++       url.host() == chrome::kChromeUINewTabHost) &&
++      !GetProfile()->GetPrefs()->GetBoolean(prefs::kEmberUnsplashEnabled);
+   // ContentsWebView owns an opaque kColorWebContentsBackground layer behind
+   // the renderer. Clear it for Ember's transparent WebUI as well as the HWND;
+   // otherwise the native acrylic is covered by a flat #3c3c3c rectangle.
+diff --git a/chrome/browser/ui/views/frame/browser_view.h b/chrome/browser/ui/views/frame/browser_view.h
+index 332ff3c..90f9592 100644
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -1225,6 +1225,7 @@ class BrowserView : public BrowserWindow,
+ 
+   // The persistent Ember shell rail shown by normal browser windows.
+   raw_ptr<views::View> ember_sidebar_ = nullptr;
++  raw_ptr<views::View> ember_sidebar_header_ = nullptr;
+   raw_ptr<views::View> ember_sidebar_footer_ = nullptr;
+   bool ember_sidebar_open_ = true;
+   int ember_sidebar_width_ = 168;
+diff --git a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+index 0553815..390dc44 100644
+--- a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
++++ b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+@@ -60,7 +60,8 @@ constexpr int kVerticalTabsGrabHandleSize = 40;
+ constexpr int kEmberPageInset = 8;
+ constexpr float kEmberPageCornerRadius = 12.0f;
+ constexpr int kEmberTopChromeHeight = 32;
+-constexpr int kEmberTopChromeTabStripLeading = 134;
++constexpr int kEmberTopChromeTabStripLeadingExpanded = 116;
++constexpr int kEmberTopChromeTabStripLeadingCollapsed = 220;
+ constexpr int kEmberTopChromeTrailingActions = 70;
+ 
+ // Maximum portion of the window a "size-restricted" contents-height side panel
+@@ -729,9 +730,12 @@ BrowserViewTabbedLayoutImpl::CalculateProposedLayout(
+       tabstrip_bounds = GetBoundsWithExclusion(
+           params, views().horizontal_tab_strip_region_view, leading_margin);
+       if (ember_shell_visible) {
+-        tabstrip_bounds.Inset(
+-            gfx::Insets::TLBR(0, kEmberTopChromeTabStripLeading, 0,
+-                              kEmberTopChromeTrailingActions));
++        const int tabstrip_leading =
++            ember_sidebar_width >= 150
++                ? kEmberTopChromeTabStripLeadingExpanded
++                : kEmberTopChromeTabStripLeadingCollapsed;
++        tabstrip_bounds.Inset(gfx::Insets::TLBR(
++            0, tabstrip_leading, 0, kEmberTopChromeTrailingActions));
+         tabstrip_bounds.set_height(kEmberTopChromeHeight);
+       }
+       params.SetTop(
+diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.cc b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+index 27e7976..dbed265 100644
+--- a/chrome/browser/ui/views/toolbar/toolbar_view.cc
++++ b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+@@ -244,6 +244,18 @@ class EmberSidebarToggle final : public views::LabelButton {
+   }
+ };
+ 
++class EmberBackForwardButton final : public BackForwardButton {
++ public:
++  using BackForwardButton::BackForwardButton;
++  float GetCornerRadiusFor(ToolbarButton::Edge) const override { return 6; }
++};
++
++class EmberReloadButton final : public ReloadButton {
++ public:
++  using ReloadButton::ReloadButton;
++  float GetCornerRadiusFor(ToolbarButton::Edge) const override { return 6; }
++};
++
+ // Gets the display mode for a given browser.
+ ToolbarView::DisplayMode GetDisplayMode(Browser* browser) {
+   // Checked in this order because even tabbed PWAs use the CUSTOM_TAB
+@@ -480,18 +492,20 @@ void ToolbarView::Init() {
+   if (display_mode_ == DisplayMode::kNormal && browser_->is_type_normal()) {
+     std::unique_ptr<views::View> corner_brand =
+         std::make_unique<EmberCornerBrand>(browser_);
+-    AddChildView(std::move(corner_brand));
++    ember_corner_brand_ = AddChildView(std::move(corner_brand));
+     std::unique_ptr<views::View> sidebar_toggle =
+         std::make_unique<EmberSidebarToggle>(browser_view_);
+-    AddChildView(std::move(sidebar_toggle));
++    ember_sidebar_toggle_ = AddChildView(std::move(sidebar_toggle));
+   }
+   if (!features::IsWebUIBackForwardButtonEnabled()) {
+-    back_ = AddChildView(std::make_unique<BackForwardButton>(
++    std::unique_ptr<BackForwardButton> back = std::make_unique<EmberBackForwardButton>(
+         BackForwardButton::Direction::kBack,
+-        base::BindRepeating(callback, browser_, IDC_BACK), browser_));
+-    forward_ = AddChildView(std::make_unique<BackForwardButton>(
++        base::BindRepeating(callback, browser_, IDC_BACK), browser_);
++    back_ = AddChildView(std::move(back));
++    std::unique_ptr<BackForwardButton> forward = std::make_unique<EmberBackForwardButton>(
+         BackForwardButton::Direction::kForward,
+-        base::BindRepeating(callback, browser_, IDC_FORWARD), browser_));
++        base::BindRepeating(callback, browser_, IDC_FORWARD), browser_);
++    forward_ = AddChildView(std::move(forward));
+   }
+ 
+   if (base::FeatureList::IsEnabled(
+@@ -510,9 +524,10 @@ void ToolbarView::Init() {
+   if (!features::IsWebUIReloadButtonEnabled() ||
+       base::FeatureList::IsEnabled(
+           features::kWebUIToolbarProcessOverheadExperiment)) {
+-    reload_ = AddChildView(std::make_unique<ReloadButton>(
++    std::unique_ptr<ReloadButton> reload = std::make_unique<EmberReloadButton>(
+         browser_->profile(), browser_->command_controller(),
+-        InitialWebUIWindowMetricsManager::From(browser_)));
++        InitialWebUIWindowMetricsManager::From(browser_));
++    reload_ = AddChildView(std::move(reload));
+   }
+ 
+   if (!features::IsWebUIHomeButtonEnabled()) {
+@@ -1781,6 +1796,12 @@ ExtensionsToolbarDesktop* ToolbarView::GetExtensionsToolbarDesktop() {
+   return extensions_container_;
+ }
+ 
++void ToolbarView::SetEmberSidebarExpanded(bool expanded) {
++  if (ember_corner_brand_) ember_corner_brand_->SetVisible(!expanded);
++  if (ember_sidebar_toggle_) ember_sidebar_toggle_->SetVisible(!expanded);
++  InvalidateLayout();
++}
++
+ void ToolbarView::MoveExtensionsToSidebar(views::View* sidebar_footer) {
+   if (!extensions_container_ || !sidebar_footer ||
+       extensions_container_->parent() != this) {
+diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.h b/chrome/browser/ui/views/toolbar/toolbar_view.h
+index 10373ec..88e58a7 100644
+--- a/chrome/browser/ui/views/toolbar/toolbar_view.h
++++ b/chrome/browser/ui/views/toolbar/toolbar_view.h
+@@ -173,6 +173,7 @@ class ToolbarView : public views::AccessiblePaneView,
+   // Keep the existing extensions container and its coordinator while placing
+   // its controls in Ember's sidebar footer.
+   void MoveExtensionsToSidebar(views::View* sidebar_footer);
++  void SetEmberSidebarExpanded(bool expanded);
+   ToolbarButton* forward_button() const { return forward_; }
+   ExtensionsToolbarButton* GetExtensionsButton() const;
+   ReloadButton* reload_button() const { return reload_; }
+@@ -368,6 +369,8 @@ class ToolbarView : public views::AccessiblePaneView,
+   // |location_bar_| is guaranteed to exist. These pointers are owned by the
+   // view hierarchy.
+   raw_ptr<ToolbarButton> back_ = nullptr;
++  raw_ptr<views::View> ember_corner_brand_ = nullptr;
++  raw_ptr<views::View> ember_sidebar_toggle_ = nullptr;
+   raw_ptr<ToolbarButton> forward_ = nullptr;
+   raw_ptr<ReloadButton> reload_ = nullptr;
+   raw_ptr<WebUIToolbarWebView> toolbar_webview_ = nullptr;
+diff --git a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
+index c17b79e..5a075a1 100644
+--- a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
++++ b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
+@@ -61,6 +61,7 @@
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/browser/web_ui_data_source.h"
+ #include "content/public/browser/web_ui_message_handler.h"
++#include "services/network/public/mojom/content_security_policy.mojom.h"
+ #include "ui/base/accelerators/accelerator.h"
+ #include "ui/base/l10n/l10n_util.h"
+ #include "ui/color/color_provider.h"
+@@ -108,6 +109,14 @@ class EmberNewTabNavigationHandler
+         prefs::kEmberFavoritesRows,
+         base::BindRepeating(&EmberNewTabNavigationHandler::NotifyChanged,
+                             base::Unretained(this)));
++    pref_change_registrar_.Add(
++        prefs::kEmberUnsplashEnabled,
++        base::BindRepeating(&EmberNewTabNavigationHandler::NotifyUnsplashChanged,
++                            base::Unretained(this)));
++    pref_change_registrar_.Add(
++        prefs::kEmberUnsplashAccessKey,
++        base::BindRepeating(&EmberNewTabNavigationHandler::NotifyUnsplashChanged,
++                            base::Unretained(this)));
+   }
+   ~EmberNewTabNavigationHandler() override = default;
+ 
+@@ -128,6 +137,10 @@ class EmberNewTabNavigationHandler
+         "emberFavoritesGet",
+         base::BindRepeating(&EmberNewTabNavigationHandler::GetFavorites,
+                             base::Unretained(this)));
++    web_ui()->RegisterMessageCallback(
++        "emberUnsplashConfig",
++        base::BindRepeating(&EmberNewTabNavigationHandler::GetUnsplashConfig,
++                            base::Unretained(this)));
+     web_ui()->RegisterMessageCallback(
+         "emberFavoriteOpen",
+         base::BindRepeating(&EmberNewTabNavigationHandler::OpenFavorite,
+@@ -170,6 +183,29 @@ class EmberNewTabNavigationHandler
+   }
+ 
+  private:
++  void GetUnsplashConfig(const base::ListValue& args) {
++    if (args.empty()) return;
++    AllowJavascript();
++    base::DictValue config;
++    config.Set("enabled", profile_->GetPrefs()->GetBoolean(
++                              prefs::kEmberUnsplashEnabled));
++    config.Set("accessKey", profile_->GetPrefs()->GetString(
++                                prefs::kEmberUnsplashAccessKey));
++    ResolveJavascriptCallback(args[0], base::Value(std::move(config)));
++  }
++
++  void NotifyUnsplashChanged() {
++    const bool enabled = profile_->GetPrefs()->GetBoolean(
++        prefs::kEmberUnsplashEnabled);
++    if (web_ui() && web_ui()->GetWebContents()) {
++      web_ui()->GetWebContents()->SetPageBaseBackgroundColor(
++          enabled ? SkColorSetRGB(0x20, 0x25, 0x2C) : SK_ColorTRANSPARENT);
++    }
++    if (IsJavascriptAllowed()) {
++      FireWebUIListener("ember-unsplash-changed");
++    }
++  }
++
+   const TemplateURL* FindBang(std::string alias) {
+     const bool explicit_bang = !alias.empty() && alias.front() == '!';
+     if (explicit_bang) {
+@@ -396,6 +432,12 @@ void CreateAndAddNewTabPageThirdPartyUiHtmlSource(Profile* profile,
+                                                   WebContents* web_contents) {
+   content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
+       profile, chrome::kChromeUINewTabPageThirdPartyHost);
++  source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::ConnectSrc,
++      "connect-src 'self' https://api.unsplash.com;");
++  source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::ImgSrc,
++      "img-src 'self' data: chrome: https:;");
+   ui::Accelerator undo_accelerator(ui::VKEY_Z, ui::EF_PLATFORM_ACCELERATOR);
+   source->AddString("undoDescription", l10n_util::GetStringFUTF16(
+                                            IDS_UNDO_DESCRIPTION,
+@@ -499,7 +541,10 @@ NewTabPageThirdPartyUI::NewTabPageThirdPartyUI(content::WebUI* web_ui)
+       navigation_start_time_(base::Time::Now()) {
+   web_ui->AddMessageHandler(
+       std::make_unique<EmberNewTabNavigationHandler>(profile_));
+-  web_contents_->SetPageBaseBackgroundColor(SK_ColorTRANSPARENT);
++  web_contents_->SetPageBaseBackgroundColor(
++      profile_->GetPrefs()->GetBoolean(prefs::kEmberUnsplashEnabled)
++          ? SkColorSetRGB(0x20, 0x25, 0x2C)
++          : SK_ColorTRANSPARENT);
+   CreateAndAddNewTabPageThirdPartyUiHtmlSource(profile_, web_contents_);
+   content::URLDataSource::Add(
+       profile_, std::make_unique<FaviconSource>(
+diff --git a/chrome/common/pref_names.h b/chrome/common/pref_names.h
+index 8585c02..78a445b 100644
+--- a/chrome/common/pref_names.h
++++ b/chrome/common/pref_names.h
+@@ -35,6 +35,8 @@ namespace prefs {
+ inline constexpr char kEmberFavoritesColumns[] = "ember.favorites.columns";
+ inline constexpr char kEmberFavoritesRows[] = "ember.favorites.rows";
+ inline constexpr char kEmberSidebarOpen[] = "ember.sidebar.open";
++inline constexpr char kEmberUnsplashEnabled[] = "ember.new_tab.unsplash.enabled";
++inline constexpr char kEmberUnsplashAccessKey[] = "ember.new_tab.unsplash.access_key";
+ inline constexpr char kEmberRecentUploads[] = "ember.upload.recent_files";
+ inline constexpr char kEmberConversionsEnabled[] = "ember.conversions.enabled";
+ inline constexpr char kEmberConversionsCurrency[] = "ember.conversions.currency";
