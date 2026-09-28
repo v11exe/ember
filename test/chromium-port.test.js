@@ -94,6 +94,7 @@ test('the Ember patch series is ordered, local, and complete', () => {
     'ember/0049-ember-unsplash-browser-fetch.patch',
     'ember/0050-ember-unsplash-browser-image.patch',
     'ember/0051-ember-unsplash-topics.patch',
+    'ember/0052-ember-new-tab-wordmark-toggle.patch',
   ]);
   for (const entry of entries) {
     assert.equal(fs.existsSync(path.join(port.PATCHES_ROOT, ...entry.split('/'))), true);

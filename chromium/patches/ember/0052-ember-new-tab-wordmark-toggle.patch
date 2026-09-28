@@ -1,0 +1,100 @@
+diff --git a/chrome/common/pref_names.h b/chrome/common/pref_names.h
+--- a/chrome/common/pref_names.h
++++ b/chrome/common/pref_names.h
+@@ -35,6 +35,7 @@
+ inline constexpr char kEmberFavoritesColumns[] = "ember.favorites.columns";
+ inline constexpr char kEmberFavoritesRows[] = "ember.favorites.rows";
+ inline constexpr char kEmberSidebarOpen[] = "ember.sidebar.open";
++inline constexpr char kEmberNewTabShowWordmark[] = "ember.new_tab.show_wordmark";
+ inline constexpr char kEmberUnsplashEnabled[] = "ember.new_tab.unsplash.enabled";
+ inline constexpr char kEmberUnsplashAccessKey[] = "ember.new_tab.unsplash.access_key";
+ inline constexpr char kEmberUnsplashTopic[] = "ember.new_tab.unsplash.topic";
+diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -1730,6 +1730,7 @@
+   registry->RegisterIntegerPref(prefs::kEmberFavoritesColumns, 2);
+   registry->RegisterIntegerPref(prefs::kEmberFavoritesRows, 2);
+   registry->RegisterBooleanPref(prefs::kEmberSidebarOpen, true);
++  registry->RegisterBooleanPref(prefs::kEmberNewTabShowWordmark, true);
+   registry->RegisterBooleanPref(prefs::kEmberUnsplashEnabled, false);
+   registry->RegisterStringPref(prefs::kEmberUnsplashAccessKey, "");
+   registry->RegisterStringPref(prefs::kEmberUnsplashTopic, "");
+diff --git a/chrome/browser/extensions/api/settings_private/prefs_util.cc b/chrome/browser/extensions/api/settings_private/prefs_util.cc
+--- a/chrome/browser/extensions/api/settings_private/prefs_util.cc
++++ b/chrome/browser/extensions/api/settings_private/prefs_util.cc
+@@ -271,6 +271,8 @@
+       settings_api::PrefType::kNumber;
+   (*s_allowlist)[::prefs::kEmberFavoritesRows] =
+       settings_api::PrefType::kNumber;
++  (*s_allowlist)[::prefs::kEmberNewTabShowWordmark] =
++      settings_api::PrefType::kBoolean;
+   (*s_allowlist)[::prefs::kEmberUnsplashEnabled] =
+       settings_api::PrefType::kBoolean;
+   (*s_allowlist)[::prefs::kEmberUnsplashAccessKey] =
+diff --git a/chrome/browser/resources/settings/appearance_page/appearance_page.html b/chrome/browser/resources/settings/appearance_page/appearance_page.html
+--- a/chrome/browser/resources/settings/appearance_page/appearance_page.html
++++ b/chrome/browser/resources/settings/appearance_page/appearance_page.html
+@@ -262,6 +262,16 @@
+ 
+         <div class="cr-row hr">
+           <div class="flex cr-padded-text" aria-hidden="true">
++            Show Ember name on New Tab
++            <div class="secondary">Show the wordmark below the logo</div>
++          </div>
++          <settings-toggle-button pref="{{prefs.ember.new_tab.show_wordmark}}"
++              label="Show Ember name on New Tab">
++          </settings-toggle-button>
++        </div>
++
++        <div class="cr-row hr">
++          <div class="flex cr-padded-text" aria-hidden="true">
+             Unsplash New Tab background
+             <div class="secondary">Show a centered photo instead of Windows translucent glass</div>
+           </div>
+diff --git a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
+--- a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
++++ b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
+@@ -152,6 +152,10 @@
+         base::BindRepeating(&EmberNewTabNavigationHandler::NotifyChanged,
+                             base::Unretained(this)));
+     pref_change_registrar_.Add(
++        prefs::kEmberNewTabShowWordmark,
++        base::BindRepeating(&EmberNewTabNavigationHandler::NotifyBrandChanged,
++                            base::Unretained(this)));
++    pref_change_registrar_.Add(
+         prefs::kEmberUnsplashEnabled,
+         base::BindRepeating(&EmberNewTabNavigationHandler::NotifyUnsplashChanged,
+                             base::Unretained(this)));
+@@ -182,6 +186,10 @@
+     web_ui()->RegisterMessageCallback(
+         "emberFavoritesGet",
+         base::BindRepeating(&EmberNewTabNavigationHandler::GetFavorites,
++                            base::Unretained(this)));
++    web_ui()->RegisterMessageCallback(
++        "emberBrandConfig",
++        base::BindRepeating(&EmberNewTabNavigationHandler::GetBrandConfig,
+                             base::Unretained(this)));
+     web_ui()->RegisterMessageCallback(
+         "emberUnsplashConfig",
+@@ -233,6 +241,20 @@
+   }
+ 
+  private:
++  void GetBrandConfig(const base::ListValue& args) {
++    if (args.empty()) return;
++    AllowJavascript();
++    ResolveJavascriptCallback(
++        args[0], base::Value(profile_->GetPrefs()->GetBoolean(
++                     prefs::kEmberNewTabShowWordmark)));
++  }
++
++  void NotifyBrandChanged() {
++    if (IsJavascriptAllowed()) {
++      FireWebUIListener("ember-brand-changed");
++    }
++  }
++
+   void GetUnsplashConfig(const base::ListValue& args) {
+     if (args.empty()) return;
+     AllowJavascript();

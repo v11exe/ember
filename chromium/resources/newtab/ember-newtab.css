@@ -94,6 +94,7 @@ body {
   line-height: .74;
   letter-spacing: .015em;
 }
+body.hide-ember-wordmark .ember-wordmark { display: none; }
 
 /* ---------- LiquidGlass search: the glass owns every optical layer ---------- */
 #native-liquid-glass { height: 58px; position: relative; }

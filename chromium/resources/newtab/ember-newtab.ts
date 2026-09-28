@@ -9,6 +9,13 @@ import {addWebUiListener, sendWithPromise} from 'chrome://resources/js/cr.js';
 // managed in chrome://settings and rendered in the browser's sidebar.
 window.EmberBrand.mountBrand(document.getElementById('ember-brand'));
 
+async function updateBrand() {
+  const showWordmark = await sendWithPromise('emberBrandConfig');
+  document.body.classList.toggle('hide-ember-wordmark', !showWordmark);
+}
+addWebUiListener('ember-brand-changed', updateBrand);
+void updateBrand();
+
 let unsplashRequest = 0;
 async function updateUnsplashBackground() {
   const request = ++unsplashRequest;
