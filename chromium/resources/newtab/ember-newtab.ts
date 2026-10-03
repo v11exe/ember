@@ -1,9 +1,36 @@
 /* eslint-disable no-restricted-properties */
-// @ts-nocheck — WebUI globals are supplied by Chromium's internal-page runtime.
+// @ts-nocheck â€” WebUI globals are supplied by Chromium's internal-page runtime.
 import {PageCallbackRouter, PageHandlerFactory, PageHandlerRemote} from 'chrome://resources/mojo/components/omnibox/browser/searchbox.mojom-webui.js';
 // Ember's browser-owned New Tab handler uses the same promise bridge as Favorites.
 // eslint-disable-next-line no-restricted-imports
 import {addWebUiListener, sendWithPromise} from 'chrome://resources/js/cr.js';
+
+// Presentation helpers unwrap Mojo values; navigation retains original matches.
+export function emberUrl(value) {
+  return typeof value === 'string' ? value : value?.url || '';
+}
+
+export function emberText(value) {
+  return typeof value === 'string' ? value :
+      (value?.data || []).map(unit => String.fromCharCode(unit)).join('');
+}
+
+export function emberSuggestionIcon(match) {
+  const supplied = emberUrl(match.iconUrl);
+  const destination = emberUrl(match.destinationUrl);
+  const fallback = match.iconPath || 'chrome://resources/images/icon_search.svg';
+  if (supplied) return {src: supplied, utility: false, fallback};
+  if (!match.isSearchType && /^https?:/i.test(destination)) {
+    return {src: 'chrome://favicon2/?size=16&pageUrl=' +
+        encodeURIComponent(destination), utility: false, fallback};
+  }
+  return {src: fallback, utility: true, fallback};
+}
+
+export function emberNextSuggestion(index, count, reverse = false) {
+  if (!count) return -1;
+  return ((index + (reverse ? -1 : 1)) % count + count) % count;
+}
 
 // Ember's New Tab remains a quiet logo and search surface. Favorites are
 // managed in chrome://settings and rendered in the browser's sidebar.
@@ -59,14 +86,14 @@ async function updateUnsplashBackground() {
     profile.searchParams.set('utm_source', 'ember');
     profile.searchParams.set('utm_medium', 'referral');
     credit.href = profile.href;
-    credit.textContent = `Photo: ${photo.photographer} · Unsplash`;
+    credit.textContent = `Photo: ${photo.photographer} Â· Unsplash`;
     credit.hidden = false;
   } catch {
     if (request !== unsplashRequest) return;
     credit.textContent = status === 401 || status === 403 ?
-        'Unsplash photo unavailable — check the Access Key' :
+        'Unsplash photo unavailable â€” check the Access Key' :
         status === 429 ? 'Unsplash hourly photo limit reached' :
-                         'Unsplash photo unavailable — try again later';
+                         'Unsplash photo unavailable â€” try again later';
     credit.removeAttribute('href');
     credit.hidden = false;
   }
@@ -137,6 +164,7 @@ function bindSearch() {
       icon.src = site ?
           `chrome://favicon2/?size=16&pageUrl=${encodeURIComponent(site)}` :
           'chrome://resources/images/icon_search.svg';
+      icon.classList.toggle('ember-utility-icon', !site);
       const divider = document.createElement('span');
       divider.className = 'liquid-glass-search-chip-divider';
       divider.setAttribute('aria-hidden', 'true');
@@ -172,9 +200,11 @@ function bindSearch() {
     panel.classList.remove('open');
     panel.style.height = '0px';
     setTimeout(() => {
-      if (panelVersion === version) panel.hidden = true;
+      if (panelVersion === version) {
+        panel.hidden = true;
+        panelRows.replaceChildren();
+      }
     }, 280);
-    panelRows.replaceChildren();
     ghost.replaceChildren();
     input.classList.remove('has-autofill');
     input.removeAttribute('aria-activedescendant');
@@ -227,7 +257,6 @@ function bindSearch() {
     for (const [i, row] of [...panelRows.children].entries()) {
       row.classList.toggle('selected', i === selected);
       row.setAttribute('aria-selected', String(i === selected));
-      row.querySelector('.ember-recommendation-enter').hidden = i !== selected;
     }
     input.setAttribute('aria-activedescendant', `ember-recommendation-${selected}`);
     paintCompletion();
@@ -252,36 +281,52 @@ function bindSearch() {
     panelRows.replaceChildren();
     for (const [i, entry] of results.entries()) {
       const {match} = entry;
-      const row = document.createElement('button');
-      row.type = 'button';
+      const row = document.createElement('div');
+      row.tabIndex = -1;
       row.id = `ember-recommendation-${i}`;
       row.className = 'ember-recommendation';
       row.setAttribute('role', 'option');
       const icon = document.createElement('img');
       icon.className = 'ember-recommendation-icon';
       icon.alt = '';
-      icon.src = match.iconUrl || match.iconPath ||
-          (match.isSearchType ? 'chrome://resources/images/icon_search.svg' :
-                                'chrome://favicon2/?size=16&pageUrl=' +
-                                encodeURIComponent(match.destinationUrl || ''));
-      icon.onerror = () => { icon.style.visibility = 'hidden'; };
+      const resolvedIcon = emberSuggestionIcon(match);
+      icon.src = resolvedIcon.src;
+      icon.classList.toggle('ember-utility-icon', resolvedIcon.utility);
+      icon.onerror = () => {
+        icon.onerror = null;
+        icon.src = resolvedIcon.fallback;
+        icon.classList.add('ember-utility-icon');
+      };
       const text = document.createElement('span');
       text.className = 'ember-recommendation-text';
       const title = document.createElement('span');
       title.className = 'ember-recommendation-title';
-      title.textContent = match.contents || match.fillIntoEdit;
+      title.textContent = !match.isSearchType && match.description ?
+          match.description : match.contents || match.fillIntoEdit;
       text.append(title);
-      if (!match.isSearchType && match.description) {
+      if (match.isSearchType || match.description) {
         const description = document.createElement('span');
         description.className = 'ember-recommendation-description';
-        description.textContent = match.description;
+        description.textContent = match.isSearchType ?
+            (match.type?.startsWith('search-history') ? 'Recent search' : 'Google Search') :
+            match.contents || emberUrl(match.destinationUrl);
         text.append(description);
       }
-      const enter = document.createElement('span');
-      enter.className = 'ember-recommendation-enter';
-      enter.setAttribute('aria-hidden', 'true');
-      enter.textContent = '↵';
-      row.append(icon, text, enter);
+      row.append(icon, text);
+      if (match.supportsDeletion) {
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'ember-recommendation-remove';
+        remove.tabIndex = -1;
+        remove.textContent = '×';
+        remove.setAttribute('aria-label', 'Remove suggestion');
+        remove.title = 'Remove suggestion (Shift+Delete)';
+        remove.addEventListener('click', (event) => {
+          event.stopPropagation();
+          handler.deleteAutocompleteMatch(entry.line, match.destinationUrl);
+        });
+        row.append(remove);
+      }
       row.addEventListener('pointerenter', () => select(i));
       row.addEventListener('pointerdown', (event) => event.preventDefault());
       row.addEventListener('click', (event) => { select(i); accept(event); });
@@ -295,14 +340,18 @@ function bindSearch() {
       // Establish the closed geometry before the first height/opacity change.
       panel.getBoundingClientRect();
     }
-    panel.style.height = `${10 + results.length * 37}px`;
+    panel.style.height = `${10 + results.length * 44}px`;
     panel.classList.add('open');
     select(0);
   }
 
   callbacks.autocompleteResultChanged.addListener((result) => {
     if (paused || result.queryId !== activeQuery || !input.value) return;
-    results = result.matches.map((match, line) => ({match, line}))
+    results = result.matches.map((match, line) => ({line, match: {...match,
+      contents: emberText(match.contents), description: emberText(match.description),
+      fillIntoEdit: emberText(match.fillIntoEdit),
+      inlineAutocompletion: emberText(match.inlineAutocompletion),
+    }}))
         .filter(entry => !entry.match.isHidden).slice(0, 5);
     selected = 0;
     paintResults();
@@ -376,9 +425,13 @@ function bindSearch() {
       });
       return;
     }
-    if (event.key === 'Tab' && results.length && !paused) {
+    if (event.key === 'Delete' && event.shiftKey && results.length && !paused) {
       event.preventDefault();
-      select(selected + 1);
+      const {match, line} = results[selected];
+      if (match.supportsDeletion) handler.deleteAutocompleteMatch(line, match.destinationUrl);
+    } else if (event.key === 'Tab' && results.length && !paused) {
+      event.preventDefault();
+      select(emberNextSuggestion(selected, results.length, event.shiftKey));
     } else if (event.key === 'Enter' && results.length && !paused) {
       event.preventDefault();
       accept(event);

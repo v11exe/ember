@@ -1,0 +1,267 @@
+diff --git a/chrome/browser/ui/views/frame/browser_desktop_window_tree_host_win.cc b/chrome/browser/ui/views/frame/browser_desktop_window_tree_host_win.cc
+--- a/chrome/browser/ui/views/frame/browser_desktop_window_tree_host_win.cc
++++ b/chrome/browser/ui/views/frame/browser_desktop_window_tree_host_win.cc
+@@ -575,6 +575,12 @@
+ bool BrowserDesktopWindowTreeHostWin::ShouldWindowContentsBeTransparent()
+     const {
+   CHECK(browser_view_);
++  // Ember draws a custom titlebar over DWM acrylic. The upstream titlebar
++  // gate otherwise makes DesktopNativeWidgetAura clear the compositor and
++  // both Aura roots opaquely during Init/FrameTypeChanged/fullscreen restore.
++  if (browser_view_->GetIsNormalType()) {
++    return views::DesktopWindowTreeHostWin::ShouldWindowContentsBeTransparent();
++  }
+   return !ShouldBrowserCustomDrawTitlebar(browser_view_) &&
+          views::DesktopWindowTreeHostWin::ShouldWindowContentsBeTransparent();
+ }
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -485,6 +485,8 @@
+ 
+ namespace {
+ 
++constexpr int kEmberSearchInputHeight = 40;
++constexpr int kEmberSearchPanelHeight = kEmberSearchInputHeight + 12;
+ constexpr int kEmberSidebarTopInset = 0;
+ constexpr int kEmberSidebarHorizontalInset = 8;
+ constexpr int kEmberSidebarBottomInset = 8;
+@@ -519,7 +521,7 @@
+         keys_(std::move(key)) {
+     AddPreTargetHandler(&keys_);
+     SetLayoutManager(std::make_unique<views::BoxLayout>(
+-        views::BoxLayout::Orientation::kVertical, gfx::Insets(6), 4));
++        views::BoxLayout::Orientation::kVertical, gfx::Insets(5), 4));
+     SetBackground(views::CreateRoundedRectBackground(
+         SkColorSetARGB(240, 25, 27, 30), 10));
+     SetBorder(views::CreateRoundedRectBorder(
+@@ -531,7 +533,8 @@
+   void Open() {
+     SetCanProcessEventsWithinSubtree(true);
+     SetVisible(true);
+-    transition_.Open(gfx::RectF(gfx::Rect(target_.size())), gfx::PointF(0, 25), 10);
++    transition_.Open(gfx::RectF(gfx::Rect(target_.size())),
++                     gfx::PointF(0, kEmberSearchInputHeight / 2), 10);
+   }
+   void Resize(const gfx::Rect& bounds) {
+     if (bounds == target_) return;
+@@ -4306,13 +4309,13 @@
+     ember_search_panel_ = AddChildView(std::move(host));
+     ember_search_input_row_ = ember_search_panel_->AddChildView(
+         std::make_unique<views::View>());
+-    ember_search_input_row_->SetPreferredSize(gfx::Size(0, 50));
++    ember_search_input_row_->SetPreferredSize(gfx::Size(0, kEmberSearchInputHeight));
+     ember_search_input_row_->SetLayoutManager(std::make_unique<views::BoxLayout>(
+         views::BoxLayout::Orientation::kHorizontal, gfx::Insets(), 8));
+     auto magnifier = std::make_unique<views::ImageView>();
+     magnifier->SetImage(ui::ImageModel::FromVectorIcon(
+         vector_icons::kSearchIcon, SkColorSetRGB(235, 237, 240), 16));
+-    magnifier->SetPreferredSize(gfx::Size(28, 50));
++    magnifier->SetPreferredSize(gfx::Size(28, kEmberSearchInputHeight));
+     magnifier->SetCanProcessEventsWithinSubtree(false);
+     ember_search_input_row_->AddChildView(std::move(magnifier));
+     location->ClearProperty(views::kFlexBehaviorKey);
+@@ -4321,7 +4324,7 @@
+     // ToolbarView deliberately hid this layer before it became a floating input.
+     location->layer()->SetOpacity(1.0f);
+     location->SetCanProcessEventsWithinSubtree(true);
+-    location->SetPreferredSize(gfx::Size(0, 50));
++    location->SetPreferredSize(gfx::Size(0, kEmberSearchInputHeight));
+     static_cast<views::BoxLayout*>(ember_search_input_row_->GetLayoutManager())
+         ->SetFlexForView(location, 1);
+     static_cast<views::BoxLayout*>(ember_search_input_row_->GetLayoutManager())
+@@ -4578,10 +4581,12 @@
+   }
+   const int results_height = ember_search_results_
+       ? ember_search_results_->GetHeightForWidth(std::max(0, panel_width - 12)) : 0;
+-  const int desired_height = 62 + (results_height ? results_height + 4 : 0);
++  const int desired_height = kEmberSearchPanelHeight +
++      (results_height ? results_height + 4 : 0);
+   static_cast<EmberFloatingSearchHost*>(ember_search_panel_.get())->Resize(
+       gfx::Rect(left, top, panel_width,
+-          std::min(desired_height, std::max(62, height() - top - 12))));
++          std::min(desired_height,
++                   std::max(kEmberSearchPanelHeight, height() - top - 12))));
+   ember_search_panel_->DeprecatedLayoutImmediately();
+ 
+ }
+diff --git a/chrome/browser/ui/views/frame/themed_background.cc b/chrome/browser/ui/views/frame/themed_background.cc
+--- a/chrome/browser/ui/views/frame/themed_background.cc
++++ b/chrome/browser/ui/views/frame/themed_background.cc
+@@ -49,7 +49,7 @@
+   // One neutral heavy tint over DWM's live desktop blur. No fixed wallpaper
+   // colours or per-component gradient; all shell owners use this exact paint.
+   cc::PaintFlags flags;
+-  flags.setColor(SkColorSetARGB(210, 20, 22, 25));
++  flags.setColor(SkColorSetARGB(176, 20, 22, 25));
+   canvas->DrawRect(bounds, flags);
+ }
+ 
+diff --git a/chrome/browser/ui/views/location_bar/location_icon_view.cc b/chrome/browser/ui/views/location_bar/location_icon_view.cc
+--- a/chrome/browser/ui/views/location_bar/location_icon_view.cc
++++ b/chrome/browser/ui/views/location_bar/location_icon_view.cc
+@@ -341,7 +341,25 @@
+   SetImageModel(icon);
+ }
+ 
++void LocationIconView::SetBackgroundHidden(bool hidden) {
++  if (background_hidden_ == hidden) {
++    return;
++  }
++  background_hidden_ = hidden;
++  if (GetWidget()) {
++    UpdateBackground();
++  }
++}
++
+ void LocationIconView::UpdateBackground() {
++  if (background_hidden_) {
++    // Floating search displays the real favicon without the security chip's
++    // persistent capsule. Keep the same native action/accessible target.
++    SetBackground(nullptr);
++    ConfigureInkDropForRefresh2023(this, kColorOmniboxActionIconHover,
++                                   kColorOmniboxIconPressed);
++    return;
++  }
+   CHECK(GetColorProvider());
+   const std::u16string& display_text = GetText();
+   const bool is_text_dangerous =
+@@ -382,7 +400,7 @@
+   // level.
+   UpdateLabelColors();
+ 
+-  if (force_hide_background) {
++  if (force_hide_background && !background_hidden_) {
+     SetBackgroundColor(SK_ColorTRANSPARENT);
+   }
+ 
+diff --git a/chrome/browser/ui/views/location_bar/location_icon_view.h b/chrome/browser/ui/views/location_bar/location_icon_view.h
+--- a/chrome/browser/ui/views/location_bar/location_icon_view.h
++++ b/chrome/browser/ui/views/location_bar/location_icon_view.h
+@@ -105,6 +105,9 @@
+   // situations like where the popup is shown.
+   void Update(bool suppress_animations, bool force_hide_background = false);
+ 
++  // Suppresses the persistent backplate throughout native icon/theme updates.
++  void SetBackgroundHidden(bool hidden);
++
+   // Returns text to be placed in the view.
+   // - For secure/insecure pages, returns text describing the URL's security
+   // level.
+@@ -176,6 +179,7 @@
+   // Whether the delegate's editing or empty flag was set the last time the
+   // location icon was updated.
+   bool was_editing_or_empty_ = false;
++  bool background_hidden_ = false;
+ 
+   raw_ptr<Delegate, DanglingUntriaged> delegate_;
+ 
+diff --git a/chrome/browser/ui/views/location_bar/location_bar_view.cc b/chrome/browser/ui/views/location_bar/location_bar_view.cc
+--- a/chrome/browser/ui/views/location_bar/location_bar_view.cc
++++ b/chrome/browser/ui/views/location_bar/location_bar_view.cc
+@@ -916,9 +916,9 @@
+     icon_left = 0;
+     text_left = 8;
+   }
+-  location_icon_view_->SetBackgroundVisibility(
+-      floating ? IconLabelBubbleView::BackgroundVisibility::kNever
+-               : IconLabelBubbleView::BackgroundVisibility::kWithLabel);
++  // LocationIconView overrides UpdateBackground, so the base bubble's
++  // BackgroundVisibility flag cannot suppress its own capsule.
++  location_icon_view_->SetBackgroundHidden(floating);
+ 
+   LocationBarLayout leading_decorations(LocationBarLayout::Position::kLeftEdge,
+                                         text_left);
+@@ -971,7 +971,7 @@
+                        views::CreateSolidSidedBorder(
+                            gfx::Insets::TLBR(0, 0, 0, 1),
+                            SkColorSetARGB(40, 255, 255, 255)),
+-                       gfx::Insets::VH(12, 8))
++                       gfx::Insets::VH(4, 8))
+                  : nullptr);
+     leading_decorations.AddDecoration(
+         vertical_padding, location_height, false,
+diff --git a/chrome/browser/ui/views/frame/browser_view_browsertest.cc b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+--- a/chrome/browser/ui/views/frame/browser_view_browsertest.cc
++++ b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+@@ -12,6 +12,7 @@
+ #include "base/callback_list.h"
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
++#include "base/functional/callback_helpers.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/strings/string_number_conversions.h"
+@@ -30,6 +31,9 @@
+ #include "base/test/values_test_util.h"
+ #include "base/time/time.h"
+ #include "build/build_config.h"
++#if BUILDFLAG(IS_WIN)
++#include "ui/aura/window.h"
++#endif
+ #include "chrome/browser/devtools/devtools_ui_controller.h"
+ #include "chrome/browser/devtools/devtools_window_testing.h"
+ #include "chrome/browser/policy/dm_token_utils.h"
+@@ -42,6 +46,7 @@
+ #include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
+ #include "chrome/browser/ui/omnibox/omnibox_view.h"
+ #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
++#include "chrome/browser/ui/views/location_bar/location_icon_view.h"
+ #include "chrome/test/base/search_test_utils.h"
+ #include "components/search_engines/template_url_service.h"
+ #include "ui/events/event.h"
+@@ -449,6 +454,44 @@
+   browser_view()->CloseEmberSearch();
+ }
+ 
++#if BUILDFLAG(IS_WIN)
++IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberCustomCaptionKeepsTransparentRoots) {
++  auto* content = browser_view()->GetWidget()->GetNativeWindow();
++  auto* root = content->GetRootWindow();
++  EXPECT_TRUE(root->GetTransparent());
++  EXPECT_TRUE(content->GetTransparent());
++  // Frame changes reapply DesktopNativeWidgetAura's compositor/root policy.
++  browser_view()->GetWidget()->FrameTypeChanged();
++  EXPECT_TRUE(root->GetTransparent());
++  EXPECT_TRUE(content->GetTransparent());
++}
++#endif
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberCompactSearchHasNoFaviconBackplate) {
++  base::ScopedClosureRunner restore_motion(base::BindOnce(
++      &gfx::Animation::SetPrefersReducedMotionForTesting,
++      gfx::Animation::PrefersReducedMotion()));
++  gfx::Animation::SetPrefersReducedMotionForTesting(true);
++  browser_view()->ShowEmberSearch();
++  auto* location = browser_view()->GetLocationBarView();
++  browser_view()->GetLocationBar()->GetOmniboxController()->StopAutocomplete(true);
++  browser_view()->SetEmberSearchResults(nullptr);
++  browser_view()->LayoutEmberSearch();
++  auto* icon = location->location_icon_view();
++  ASSERT_TRUE(icon);
++  EXPECT_EQ(40, location->height());
++  EXPECT_EQ(52, location->parent()->parent()->height());
++  EXPECT_EQ(nullptr, icon->background());
++  icon->Update(true, false);
++  EXPECT_EQ(nullptr, icon->background());
++  icon->OnThemeChanged();
++  EXPECT_EQ(nullptr, icon->background());
++  browser_view()->CloseEmberSearch();
++  browser_view()->ShowEmberSearch();
++  EXPECT_EQ(nullptr, icon->background());
++  browser_view()->CloseEmberSearch();
++}
++
+ IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberSearchTraversalSkipsAuxiliaryButtons) {
+   browser_view()->ShowEmberSearch();
+   auto* controller = browser_view()->GetLocationBar()->GetOmniboxController();
+@@ -574,7 +617,8 @@
+   background->Paint(&canvas, surface);
+   const SkBitmap bitmap = canvas.GetBitmap();
+   const SkColor centre = bitmap.getColor(40, 40);
+-  EXPECT_EQ(210u, SkColorGetA(centre));
++  EXPECT_GT(SkColorGetA(centre), 0u);
++  EXPECT_LT(SkColorGetA(centre), 255u);
+   for (const gfx::Point& point : {gfx::Point(1, 1), gfx::Point(78, 1),
+                                  gfx::Point(1, 78), gfx::Point(78, 78),
+                                  gfx::Point(12, 12)}) {

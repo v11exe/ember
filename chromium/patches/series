@@ -50,3 +50,11 @@ ember/0049-ember-unsplash-browser-fetch.patch
 ember/0050-ember-unsplash-browser-image.patch
 ember/0051-ember-unsplash-topics.patch
 ember/0052-ember-new-tab-wordmark-toggle.patch
+ember/0053-ember-approved-visual-revamp.patch
+ember/0054-ember-run-two-corrections.patch
+ember/0055-ember-search-component-reform.patch
+ember/0056-ember-location-bar-startup-guard.patch
+ember/0057-ember-run-four-glass-and-search.patch
+ember/0058-ember-search-construction-and-smoked-shell.patch
+ember/0059-ember-transparent-host-and-compact-search.patch
+ember/0060-ember-shell-and-search-polish.patch

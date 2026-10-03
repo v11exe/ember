@@ -1,0 +1,988 @@
+--- a/chrome/browser/ui/views/ember/ember_glass_material.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_material.cc
+@@ -424,15 +424,17 @@
+   }
+   // One neutral smoked surface for browser-owned menus, cards and prompts.
+   // Tint only the cached blurred capture; never filter live page frames.
+-  const float capture_weight = preset == EmberGlassPreset::kMenu ? 0.12f : 0.16f;
++  const float capture_weight = preset == EmberGlassPreset::kMenu ? 0.48f : 0.58f;
+   for (int y = 0; y < result.height(); ++y) {
+     for (int x = 0; x < result.width(); ++x) {
+       const Rgba8 pixel = Unpack(result.getColor(x, y));
+       const float gray = pixel.r * .2126f + pixel.g * .7152f + pixel.b * .0722f;
++      // Bound smoke luminance for readable primary text over white pages.
++      const float weight = std::min(capture_weight, 72.f / std::max(1.f, gray - 27.f));
+       *result.getAddr32(x, y) = Pack({
+-          static_cast<uint8_t>(25 + (gray * .8f + pixel.r * .2f - 25) * capture_weight),
+-          static_cast<uint8_t>(27 + (gray * .8f + pixel.g * .2f - 27) * capture_weight),
+-          static_cast<uint8_t>(30 + (gray * .8f + pixel.b * .2f - 30) * capture_weight), 255});
++          static_cast<uint8_t>(25 + (gray * .55f + pixel.r * .45f - 25) * weight),
++          static_cast<uint8_t>(27 + (gray * .55f + pixel.g * .45f - 27) * weight),
++          static_cast<uint8_t>(30 + (gray * .55f + pixel.b * .45f - 30) * weight), 255});
+     }
+   }
+   result.setImmutable();
+--- a/chrome/browser/ui/views/ember/ember_glass_transition.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_transition.cc
+@@ -28,6 +28,18 @@
+     Sample(clock_.GetCurrentValue() * (closing_ ? .190 : .340));
+   clock_.Stop();
+   finished_.Reset();
++  if (initialized_ && bounds_ != bounds) {
++    const float old_w = std::min(28.f, bounds_.width());
++    const float old_h = std::min(20.f, bounds_.height());
++    const float new_w = std::min(28.f, bounds.width());
++    const float new_h = std::min(20.f, bounds.height());
++    const float span_w = std::max(1.f, bounds.width() - new_w);
++    const float span_h = std::max(1.f, bounds.height() - new_h);
++    axes_[0].position = (frame_.bounds.width() - new_w) / span_w;
++    axes_[1].position = (frame_.bounds.height() - new_h) / span_h;
++    axes_[0].velocity *= (bounds_.width() - old_w) / span_w;
++    axes_[1].velocity *= (bounds_.height() - old_h) / span_h;
++  }
+   bounds_ = bounds;
+   anchor_ = gfx::PointF(std::clamp((origin.x() - bounds.x()) / bounds.width(), 0.f, 1.f),
+                         std::clamp((origin.y() - bounds.y()) / bounds.height(), 0.f, 1.f));
+--- a/chrome/browser/ui/views/ember/ember_glass_view.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_view.cc
+@@ -135,13 +135,14 @@
+     if (!bitmap_.empty()) {
+       paint_canvas->drawImageRect(
+           cc::PaintImage::CreateFromBitmap(bitmap_),
+-          SkRect::MakeWH(bitmap_.width(), bitmap_.height()), bounds,
++          follow_view_ ? SkRect::MakeWH(view->width(), view->height())
++                       : SkRect::MakeWH(bitmap_.width(), bitmap_.height()), bounds,
+           SkSamplingOptions(SkFilterMode::kLinear), nullptr,
+           SkCanvas::kStrict_SrcRectConstraint);
+     }
+     if (bitmap_.empty()) {
+       cc::PaintFlags fill;
+-      fill.setColor(SkColorSetARGB(224, 25, 27, 30));
++      fill.setColor(SkColorSetARGB(128, 25, 27, 30));
+       paint_canvas->drawRect(bounds, fill);
+     }
+     paint_canvas->restore();
+@@ -149,7 +150,7 @@
+     rim.setAntiAlias(true);
+     rim.setStyle(cc::PaintFlags::kStroke_Style);
+     rim.setStrokeWidth(1.f);
+-    rim.setColor(SkColorSetARGB(62, 255, 255, 255));
++    rim.setColor(SkColorSetARGB(38, 255, 255, 255));
+     paint_canvas->drawRoundRect(bounds.makeInset(.5f, .5f),
+                                 std::max(0.f, frame_->radius - .5f),
+                                 std::max(0.f, frame_->radius - .5f), rim);
+@@ -242,6 +243,22 @@
+       source_rect.y(), 0, std::max(0, bitmap.height() - source_rect.height())));
+   source_rect.set_width(std::min(source_rect.width(), bitmap.width()));
+   source_rect.set_height(std::min(source_rect.height(), bitmap.height()));
++  if (follow_view) {
++    source_rect.set_height(std::min(540, bitmap.height() - source_rect.y()));
++  }
++  // Transparent renderer pixels cannot contain the Windows backdrop. Keep
++  // the real translucent DWM-backed fallback instead of normalizing those
++  // missing pixels into an opaque gray bitmap. Ordinary pages/photo NTPs
++  // remain on the existing one-shot cached blur path.
++  int samples = 0;
++  int opaque_samples = 0;
++  for (int y = source_rect.y(); y < source_rect.bottom(); y += 8) {
++    for (int x = source_rect.x(); x < source_rect.right(); x += 8) {
++      ++samples;
++      opaque_samples += SkColorGetA(bitmap.getColor(x, y)) >= 240;
++    }
++  }
++  if (samples && opaque_samples * 5 < samples * 4) return;
+   EmberGlassMaterial material;
+   const EmberGlassPanel* panel =
+       material.RenderPanel(bitmap, source_rect, 1, EmberGlassPreset::kPopover);
+@@ -253,6 +270,7 @@
+   }
+   surface->SetBackground(std::make_unique<EmberGlassBitmapBackground>(
+       panel->bitmap, std::move(frame), follow_view));
++  surface->SetBorder(views::CreateEmptyBorder(gfx::Insets(1)));
+   surface->SchedulePaint();
+ }
+ 
+@@ -275,7 +293,7 @@
+       gfx::RoundedCornersF(kBubbleCornerRadius));
+   surface->layer()->SetIsFastRoundedCorner(true);
+   surface->SetBackground(views::CreateRoundedRectBackground(
+-      SkColorSetARGB(224, 25, 27, 30), kBubbleCornerRadius, 1));
++      SkColorSetARGB(128, 25, 27, 30), kBubbleCornerRadius, 1));
+   surface->SetBorder(views::CreateRoundedRectBorder(
+       1, kBubbleCornerRadius, SkColorSetARGB(62, 255, 255, 255)));
+ }
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -377,6 +377,9 @@
+ #include "ui/gfx/geometry/rect.h"
+ #include "ui/gfx/geometry/rect_conversions.h"
+ #include "ui/gfx/geometry/rect_f.h"
++#include "ui/gfx/geometry/skia_conversions.h"
++#include "third_party/skia/include/core/SkRRect.h"
++#include "components/omnibox/browser/autocomplete_controller.h"
+ #include "ui/gfx/geometry/size.h"
+ #include "ui/gfx/image/image.h"
+ #include "ui/gfx/image/image_skia_operations.h"
+@@ -482,7 +485,7 @@
+ 
+ namespace {
+ 
+-constexpr int kEmberSidebarTopInset = 32;
++constexpr int kEmberSidebarTopInset = 0;
+ constexpr int kEmberSidebarHorizontalInset = 8;
+ constexpr int kEmberSidebarBottomInset = 8;
+ constexpr int kEmberSidebarRowSpacing = 6;
+@@ -511,7 +514,9 @@
+ class EmberFloatingSearchHost final : public views::View {
+  public:
+   explicit EmberFloatingSearchHost(base::RepeatingCallback<void(ui::KeyEvent*)> key)
+-      : keys_(std::move(key)) {
++      : transition_(base::BindRepeating(&EmberFloatingSearchHost::Apply,
++                                        base::Unretained(this))),
++        keys_(std::move(key)) {
+     AddPreTargetHandler(&keys_);
+     SetLayoutManager(std::make_unique<views::BoxLayout>(
+         views::BoxLayout::Orientation::kVertical, gfx::Insets(6), 4));
+@@ -523,7 +528,44 @@
+     layer()->SetFillsBoundsOpaquely(false);
+   }
+   ~EmberFloatingSearchHost() override { RemovePreTargetHandler(&keys_); }
++  void Open() {
++    SetCanProcessEventsWithinSubtree(true);
++    SetVisible(true);
++    transition_.Open(gfx::RectF(gfx::Rect(target_.size())), gfx::PointF(0, 25), 10);
++  }
++  void Resize(const gfx::Rect& bounds) {
++    if (bounds == target_) return;
++    target_ = bounds;
++    gfx::Rect envelope = bounds;
++    if (GetVisible()) envelope.set_height(std::max(height(), bounds.height()));
++    SetBoundsRect(envelope);
++    DeprecatedLayoutImmediately();
++    // Reuse the existing analytic motion, sampling before retargeting. The
++    // content layout is final immediately; only its reveal changes.
++    if (GetVisible() && !transition_.closing()) Open();
++  }
++  void Close(base::OnceClosure finished) {
++    SetCanProcessEventsWithinSubtree(false);
++    transition_.Close(base::BindOnce([](EmberFloatingSearchHost* host,
++                                      base::OnceClosure finished) {
++      host->SetVisible(false);
++      std::move(finished).Run();
++    }, base::Unretained(this), std::move(finished)));
++  }
+  private:
++  void Apply(const ember::EmberGlassTransition::Frame& frame) {
++    layer()->SetOpacity(frame.opacity);
++    if (!transition_.closing() && frame.opacity == 1.f &&
++        frame.bounds == gfx::RectF(gfx::Rect(target_.size())) && bounds() != target_) {
++      SetBoundsRect(target_);
++      DeprecatedLayoutImmediately();
++    }
++    SetClipPath(SkPath::RRect(SkRRect::MakeRectXY(
++        gfx::RectFToSkRect(frame.bounds), frame.radius, frame.radius)));
++    SchedulePaint();
++  }
++  ember::EmberGlassTransition transition_;
++  gfx::Rect target_;
+   class Keys final : public ui::EventHandler {
+    public:
+     explicit Keys(base::RepeatingCallback<void(ui::KeyEvent*)> key)
+@@ -2171,6 +2213,7 @@
+   // the ToolbarView. Its controller and popup hold delegate pointers.
+   if (ember_search_panel_ && GetLocationBarView()) {
+     CloseEmberSearch(false);
++    SetEmberSearchResults(nullptr);
+     auto* location = GetLocationBarView();
+     toolbar_->AddChildView(location->parent()->RemoveChildViewT(location));
+   }
+@@ -4244,7 +4287,8 @@
+   if (!location || !GetWidget()) {
+     return;
+   }
+-  const bool already_open = ember_search_panel_ && ember_search_panel_->GetVisible();
++  const bool already_open = IsEmberSearchOpen();
++  if (IsEmberSearchClosing()) SetEmberSearchResults(nullptr);
+   if (!ember_search_panel_) {
+     std::unique_ptr<views::View> host = std::make_unique<EmberFloatingSearchHost>(
+         base::BindRepeating(&BrowserView::HandleEmberSearchKey,
+@@ -4252,18 +4296,27 @@
+     ember_search_panel_ = AddChildView(std::move(host));
+     ember_search_input_row_ = ember_search_panel_->AddChildView(
+         std::make_unique<views::View>());
+-    ember_search_input_row_->SetPreferredSize(gfx::Size(0, 36));
++    ember_search_input_row_->SetPreferredSize(gfx::Size(0, 50));
+     ember_search_input_row_->SetLayoutManager(std::make_unique<views::BoxLayout>(
+         views::BoxLayout::Orientation::kHorizontal, gfx::Insets(), 4));
++    auto magnifier = std::make_unique<views::ImageView>();
++    magnifier->SetImage(ui::ImageModel::FromVectorIcon(
++        vector_icons::kSearchIcon, SkColorSetRGB(235, 237, 240), 16));
++    magnifier->SetPreferredSize(gfx::Size(28, 50));
++    magnifier->SetCanProcessEventsWithinSubtree(false);
++    ember_search_input_row_->AddChildView(std::move(magnifier));
+     location->ClearProperty(views::kFlexBehaviorKey);
+     location->ClearProperty(views::kMarginsKey);
+     ember_search_input_row_->AddChildView(location->parent()->RemoveChildViewT(location));
+     // ToolbarView deliberately hid this layer before it became a floating input.
+     location->layer()->SetOpacity(1.0f);
+     location->SetCanProcessEventsWithinSubtree(true);
+-    location->SetPreferredSize(gfx::Size(0, 36));
++    location->SetPreferredSize(gfx::Size(0, 50));
+     static_cast<views::BoxLayout*>(ember_search_input_row_->GetLayoutManager())
+         ->SetFlexForView(location, 1);
++    ember_sidebar_copy_link_->SetPreferredSize(gfx::Size(36, 36));
++    ember_sidebar_copy_link_->SetBackground(nullptr);
++    ember_sidebar_copy_link_->SetBorder(nullptr);
+     // Retain the existing Copy Link action in the floating address surface.
+     ember_search_input_row_->AddChildView(ember_sidebar_address_row_->RemoveChildViewT(
+         ember_sidebar_copy_link_.get()));
+@@ -4272,7 +4325,7 @@
+                             weak_ptr_factory_.GetWeakPtr(), true));
+     close->SetImageModel(views::Button::STATE_NORMAL,
+         ui::ImageModel::FromVectorIcon(vector_icons::kCloseIcon,
+-                                      SkColorSetRGB(235, 237, 240), 18));
++                                      SkColorSetRGB(235, 237, 240), 16));
+     close->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+     close->SetPreferredSize(gfx::Size(36, 36));
+     close->SetTooltipText(u"Close search (Escape)");
+@@ -4280,6 +4333,7 @@
+     ember_search_input_row_->AddChildView(std::move(close));
+   }
+   ReorderChildView(ember_search_panel_, children().size() - 1);
++  ember_search_open_ = true;
+   ember_search_panel_->SetVisible(true);
+   location->SetVisible(true);
+   LayoutEmberSearch();
+@@ -4291,12 +4345,13 @@
+     ember::CaptureEmberGlassBubbleBackdrop(this, ember_search_panel_,
+         ember_search_panel_->GetBoundsInScreen().origin(), nullptr, false, false);
+   }
++  if (!already_open) static_cast<EmberFloatingSearchHost*>(ember_search_panel_.get())->Open();
+   location->FocusLocation(true, false);
+   GetLocationBar()->GetOmniboxView()->SelectAll(false);
+ }
+ 
+ void BrowserView::ScheduleEmberSearchBang() {
+-  if (ember_search_panel_ && ember_search_panel_->GetVisible()) {
++  if (IsEmberSearchOpen()) {
+     // Complete the current native autocomplete notification before changing
+     // its edit model; weak ownership also covers browser/panel destruction.
+     base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+@@ -4306,7 +4361,7 @@
+ }
+ 
+ void BrowserView::SyncEmberSearchBang() {
+-  if (!ember_search_panel_ || !ember_search_panel_->GetVisible()) {
++  if (!IsEmberSearchOpen()) {
+     return;
+   }
+   auto* model = GetLocationBar()->GetOmniboxController()->edit_model();
+@@ -4331,7 +4386,7 @@
+     ember_search_bang_alias_ = alias;
+     GetLocationBar()->GetOmniboxView()->SetUserText(query, false);
+     model->EnterKeywordMode(metrics::OmniboxEventProto::SPACE_AT_END,
+-                            engine, u"Search " + engine->short_name());
++                            engine, keyword == u"gpt" ? u"Ask ChatGPT" : u"Search " + engine->short_name());
+   }
+ }
+ 
+@@ -4348,6 +4403,25 @@
+   };
+   if (event->key_code() == ui::VKEY_ESCAPE) {
+     CloseEmberSearch();
++    handled();
++    return;
++  }
++  auto* autocomplete = GetLocationBar()->GetOmniboxController()->autocomplete_controller();
++  const size_t count = autocomplete->result().size();
++  if (event->key_code() == ui::VKEY_TAB && !event->IsControlDown() &&
++      !event->IsAltDown() && GetLocationBar()->GetOmniboxController()->IsPopupOpen() && count) {
++    const size_t line = model->GetPopupSelection().line;
++    const size_t next = line >= count ? (event->IsShiftDown() ? count - 1 : 0)
++        : (line + count + (event->IsShiftDown() ? -1 : 1)) % count;
++    model->SetPopupSelection(OmniboxPopupSelection(next, OmniboxPopupSelection::NORMAL));
++    handled();
++    return;
++  }
++  // Removal stays available by mouse, accessibility actions, and Shift+Delete.
++  if (event->key_code() == ui::VKEY_DELETE && event->IsShiftDown() &&
++      !event->IsControlDown() && !event->IsAltDown() && count) {
++    const size_t line = model->GetPopupSelection().line;
++    if (line < count) model->TryDeletingPopupLine(line);
+     handled();
+     return;
+   }
+@@ -4378,7 +4452,7 @@
+         ember_search_bang_alias_ = raw;
+         omnibox->SetUserText(u"", false);
+         model->EnterKeywordMode(metrics::OmniboxEventProto::SPACE_AT_END,
+-                                engine, u"Search " + engine->short_name());
++                                engine, alias == u"gpt" ? u"Ask ChatGPT" : u"Search " + engine->short_name());
+         handled();
+         return;
+       }
+@@ -4407,12 +4481,17 @@
+ }
+ 
+ void BrowserView::CloseEmberSearch(bool restore_focus) {
+-  if (!ember_search_panel_ || !ember_search_panel_->GetVisible()) {
+-    return;
+-  }
++  if (!IsEmberSearchOpen()) {
++    return;
++  }
++  ember_search_open_ = false;
+   ++ember_search_generation_;
+   // Hide before reverting: late autocomplete updates cannot reopen a popup.
+-  ember_search_panel_->SetVisible(false);
++  static_cast<EmberFloatingSearchHost*>(ember_search_panel_.get())->Close(
++      base::BindOnce([](base::WeakPtr<BrowserView> view) {
++        if (view && !view->IsEmberSearchOpen()) view->SetEmberSearchResults(nullptr);
++      }, weak_ptr_factory_.GetWeakPtr()));
++  ResetEmberSidebarCopyFeedback();
+   ember_search_bang_alias_.clear();
+   GetLocationBar()->GetOmniboxController()->StopAutocomplete(true);
+   GetLocationBar()->GetOmniboxView()->RevertAll();
+@@ -4442,7 +4521,11 @@
+ }
+ 
+ bool BrowserView::IsEmberSearchOpen() const {
+-  return ember_search_panel_ && ember_search_panel_->GetVisible();
++  return ember_search_open_;
++}
++
++bool BrowserView::IsEmberSearchClosing() const {
++  return ember_search_panel_ && ember_search_panel_->GetVisible() && !IsEmberSearchOpen();
+ }
+ 
+ bool BrowserView::IsInEmberSearch(const views::View* view) const {
+@@ -4463,7 +4546,7 @@
+ }
+ 
+ void BrowserView::LayoutEmberSearch() {
+-  if (!ember_search_panel_ || !ember_search_panel_->GetVisible()) {
++  if (!IsEmberSearchOpen()) {
+     return;
+   }
+   // Chrome owns this surface, spanning the whole workspace rather than a pane.
+@@ -4477,9 +4560,10 @@
+   }
+   const int results_height = ember_search_results_
+       ? ember_search_results_->GetHeightForWidth(std::max(0, panel_width - 12)) : 0;
+-  const int desired_height = 48 + (results_height ? results_height + 4 : 0);
+-  ember_search_panel_->SetBounds(left, top, panel_width,
+-      std::min(desired_height, std::max(48, height() - top - 12)));
++  const int desired_height = 62 + (results_height ? results_height + 4 : 0);
++  static_cast<EmberFloatingSearchHost*>(ember_search_panel_.get())->Resize(
++      gfx::Rect(left, top, panel_width,
++          std::min(desired_height, std::max(62, height() - top - 12))));
+   ember_search_panel_->DeprecatedLayoutImmediately();
+ 
+ }
+@@ -4714,8 +4798,8 @@
+   }
+ 
+   ember_sidebar_copy_toast_.reset();
+-  gfx::Rect address_bounds = ember_sidebar_address_row_->GetBoundsInScreen();
+-  const gfx::Rect sidebar_bounds = ember_sidebar_->GetBoundsInScreen();
++  const gfx::Rect control = ember_sidebar_copy_link_->GetBoundsInScreen();
++  const gfx::Rect browser_bounds = GetBoundsInScreen();
+   views::Widget::InitParams params(
+       views::Widget::InitParams::CLIENT_OWNS_WIDGET,
+       views::Widget::InitParams::TYPE_POPUP);
+@@ -4725,7 +4809,10 @@
+   params.shadow_type = views::Widget::InitParams::ShadowType::kNone;
+   params.activatable = views::Widget::InitParams::Activatable::kNo;
+   params.bounds =
+-      gfx::Rect(sidebar_bounds.right() + 8, address_bounds.y() + 1,
++      gfx::Rect(std::clamp(control.right() - kEmberSidebarCopyToastWidth,
++                          browser_bounds.x() + 4,
++                          std::max(browser_bounds.x() + 4, browser_bounds.right() - kEmberSidebarCopyToastWidth - 4)),
++                control.bottom() + 6,
+                 kEmberSidebarCopyToastWidth, kEmberSidebarCopyToastHeight);
+ 
+   auto toast = std::make_unique<views::Widget>();
+@@ -4734,9 +4821,9 @@
+   toast_contents->SetPreferredSize(
+       gfx::Size(kEmberSidebarCopyToastWidth, kEmberSidebarCopyToastHeight));
+   toast_contents->SetBackground(views::CreateRoundedRectBackground(
+-      SkColorSetARGB(0xFA, 0x0A, 0x2B, 0x1F), 15));
++      SkColorSetARGB(225, 25, 27, 30), 15));
+   toast_contents->SetBorder(views::CreateRoundedRectBorder(
+-      1, 15, SkColorSetARGB(0x7A, 0x5C, 0xF2, 0xA1)));
++      1, 15, SkColorSetARGB(42, 255, 255, 255)));
+   auto* toast_layout =
+       toast_contents->SetLayoutManager(std::make_unique<views::BoxLayout>(
+           views::BoxLayout::Orientation::kHorizontal, gfx::Insets::VH(0, 10),
+@@ -4748,15 +4835,15 @@
+       toast_contents->AddChildView(std::make_unique<views::Label>(u"\u2713"));
+   mark->SetPreferredSize(gfx::Size(14, 14));
+   mark->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+-  mark->SetEnabledColor(SkColorSetRGB(0x9D, 0xFF, 0xC5));
++  mark->SetEnabledColor(SkColorSetRGB(235, 237, 240));
+   mark->SetFontList(gfx::FontList("Inter, Medium 10px"));
+   mark->SetBorder(views::CreateRoundedRectBorder(
+-      1, 7, SkColorSetARGB(0x94, 0x83, 0xFF, 0xBE)));
++      1, 7, SkColorSetARGB(42, 255, 255, 255)));
+ 
+   auto* label = toast_contents->AddChildView(
+       std::make_unique<views::Label>(u"Link copied"));
+   label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+-  label->SetEnabledColor(SkColorSetRGB(0xEC, 0xFF, 0xF4));
++  label->SetEnabledColor(SkColorSetRGB(235, 237, 240));
+   label->SetFontList(gfx::FontList("Inter, Medium 11px"));
+ 
+   toast->SetContentsView(std::move(toast_contents));
+@@ -8253,7 +8340,6 @@
+   if (contents != GetActiveWebContents()) {
+     contents = GetActiveWebContents();
+   }
+-  bool active = false;
+   // A split can expose an NTP in either pane, irrespective of keyboard focus.
+   // Each website keeps its own opaque backing; only Ember NTPs reveal DWM.
+   for (auto* container : GetContentsContainerViews()) {
+@@ -8262,45 +8348,24 @@
+     auto* page = view->web_contents();
+     const bool translucent = IsEmberTranslucentNewTab(page);
+     view->SetBackgroundVisible(!translucent);
+-    active |= container->GetVisible() && page && translucent;
+   }
+   multi_contents_view_->UpdateEmberBackdrop();
+ 
+-  // BrowserView normally paints an opaque frame-theme background beneath the
+-  // WebContents. Remove that backing only for the NTP so its transparent
+-  // renderer can reveal DWM's material. Recreate it before attaching an
+-  // ordinary page; otherwise transparent areas in a website expose the HWND.
+-  SetBackground(active ? nullptr
+-                       : std::make_unique<ThemedBackground>(
+-                             this, ThemedBackground::kFrameTheme));
+-
+-  // Use the supported Windows 11 backdrop API. The legacy AccentPolicy
+-  // acrylic filters the already-composited HWND and feeds Ember's transparent
+-  // renderer back into subsequent frames, producing the recursive logo/search
+-  // trails. DWMSBT_TRANSIENTWINDOW paints acrylic behind the client surface.
++  // DWM owns the real blurred backdrop beneath chrome in every normal window.
++  // Each website/opaque NTP retains its existing viewport backing above it.
++  // Keep one shared shell paint, clipped away from all content panes.
++  const bool active = true;
++  SetBackground(std::make_unique<ThemedBackground>(
++      this, ThemedBackground::kFrameTheme));
+   constexpr int kDwmwaSystemBackdropType = 38;
+-  constexpr int kDwmSystemBackdropAuto = 0;
+   constexpr int kDwmSystemBackdropTransientWindow = 3;
+-  const int backdrop_type =
+-      active ? kDwmSystemBackdropTransientWindow : kDwmSystemBackdropAuto;
+-  // Chromium owns this ordinary HWND. Clear only its compositor background
+-  // while Ember's own transparent New Tab WebUI is visible; websites retain
+-  // the normal opaque browser background and their own page paints.
+-  // Widget::SetBackgroundColor() accepts a ColorId, not an SkColor. Passing
+-  // SK_ColorTRANSPARENT there resolves palette entry zero and leaves an opaque
+-  // compositor clear behind the page. Set the native widget's real SkColor so
+-  // the renderer's transparent pixels reach DWM.
+-  widget->native_widget_private()->SetBackgroundColor(
+-      active ? SK_ColorTRANSPARENT
+-             : widget->GetColorProvider()->GetColor(kColorToolbar));
+-  const SkColor compositor_color =
+-      active ? SK_ColorTRANSPARENT
+-             : widget->GetColorProvider()->GetColor(kColorToolbar);
+-  widget->GetCompositor()->SetBackgroundColor(compositor_color);
++  const int backdrop_type = kDwmSystemBackdropTransientWindow;
++  widget->native_widget_private()->SetBackgroundColor(SK_ColorTRANSPARENT);
++  widget->GetCompositor()->SetBackgroundColor(SK_ColorTRANSPARENT);
+   if (aura::Window* native_window = widget->GetNativeWindow()) {
+-    native_window->SetTransparent(active);
++    native_window->SetTransparent(true);
+     if (aura::Window* root_window = native_window->GetRootWindow()) {
+-      root_window->SetTransparent(active);
++      root_window->SetTransparent(true);
+     }
+   }
+   ember_native_backdrop_active_ = active;
+@@ -8314,9 +8379,15 @@
+                    SWP_FRAMECHANGED);
+   // A frame-mode change can reset the system backdrop. Apply the requested
+   // type last so normal, maximized and restored NTPs converge on one state.
+-  DwmSetWindowAttribute(
++  const HRESULT backdrop_result = DwmSetWindowAttribute(
+       hwnd, static_cast<DWMWINDOWATTRIBUTE>(kDwmwaSystemBackdropType),
+       &backdrop_type, sizeof(backdrop_type));
++  // Windows versions without this API retain a readable opaque shell fallback.
++  if (FAILED(backdrop_result)) {
++    const SkColor fallback = SkColorSetRGB(25, 27, 30);
++    widget->native_widget_private()->SetBackgroundColor(fallback);
++    widget->GetCompositor()->SetBackgroundColor(fallback);
++  }
+ }
+ #endif
+ 
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -181,6 +181,7 @@
+   // Shared shell control; the toolbar button remains reachable while the
+   // sidebar content itself is fully collapsed.
+   void ToggleEmberSidebar();
++  views::View* ember_sidebar() const { return ember_sidebar_; }
+   void ShowEmberSearch();
+   void ScheduleEmberSearchBang();
+   void SyncEmberSearchBang();
+@@ -189,6 +190,7 @@
+   void CloseEmberSearch(bool restore_focus = true);
+   void ScheduleEmberSearchClose();
+   bool IsEmberSearchOpen() const;
++  bool IsEmberSearchClosing() const;
+   bool IsInEmberSearch(const views::View* view) const;
+   void SetEmberSearchResults(views::View* results);
+   void LayoutEmberSearch();
+@@ -1239,6 +1241,7 @@
+   raw_ptr<views::View> ember_sidebar_header_ = nullptr;
+   raw_ptr<views::View> ember_sidebar_footer_ = nullptr;
+   bool ember_sidebar_open_ = true;
++  bool ember_search_open_ = false;
+   unsigned int ember_search_generation_ = 0;
+   std::u16string ember_search_bang_alias_;
+   raw_ptr<views::View> ember_search_panel_ = nullptr;
+--- a/chrome/browser/ui/views/frame/browser_view_browsertest.cc
++++ b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+@@ -14,6 +14,9 @@
+ #include "base/functional/bind.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/strings/utf_string_conversions.h"
++#include "base/strings/string_number_conversions.h"
++#include "ui/gfx/animation/animation.h"
++#include "chrome/browser/ui/views/ember/ember_glass_transition.h"
+ #include "base/test/values_test_util.h"
+ #include "base/time/time.h"
+ #include "build/build_config.h"
+@@ -425,13 +428,68 @@
+   ui::KeyEvent escape(ui::EventType::kKeyPressed, ui::VKEY_ESCAPE, ui::EF_NONE);
+   browser_view()->GetWidget()->OnKeyEvent(&escape);
+   EXPECT_TRUE(escape.handled());
+-  EXPECT_FALSE(host->GetVisible());
++  EXPECT_FALSE(browser_view()->IsEmberSearchOpen());
+   browser_view()->SetFocusToLocationBar(true);
+   EXPECT_EQ(host, location->parent()->parent());
+   EXPECT_TRUE(host->GetVisible());
+   EXPECT_TRUE(omnibox->IsSelectAll());
+   EXPECT_NE(u"discard this draft", omnibox->GetText());
+   browser_view()->CloseEmberSearch();
++}
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberSearchTraversalSkipsAuxiliaryButtons) {
++  browser_view()->ShowEmberSearch();
++  auto* controller = browser_view()->GetLocationBar()->GetOmniboxController();
++  controller->StopAutocomplete(true);
++  auto& result = const_cast<AutocompleteResult&>(controller->autocomplete_controller()->result());
++  ACMatches matches;
++  for (int i = 0; i < 3; ++i) {
++    AutocompleteMatch match(nullptr, 1000 - i, false, AutocompleteMatchType::HISTORY_URL);
++    match.destination_url = GURL("https://example.test/" + base::NumberToString(i));
++    match.contents = u"Example";
++    match.description = u"example.test";
++    matches.push_back(match);
++  }
++  result.AppendMatches(matches);
++  browser_view()->GetLocationBarView()->GetOmniboxPopupView()->UpdatePopupAppearance();
++  auto* model = controller->edit_model();
++  model->SetPopupSelection(OmniboxPopupSelection(0));
++  for (size_t expected : {1u, 2u, 0u}) {
++    ui::KeyEvent tab(ui::EventType::kKeyPressed, ui::VKEY_TAB, ui::EF_NONE);
++    browser_view()->HandleEmberSearchKey(&tab);
++    EXPECT_TRUE(tab.handled());
++    EXPECT_EQ(expected, model->GetPopupSelection().line);
++    EXPECT_EQ(OmniboxPopupSelection::NORMAL, model->GetPopupSelection().state);
++  }
++  ui::KeyEvent reverse(ui::EventType::kKeyPressed, ui::VKEY_TAB, ui::EF_SHIFT_DOWN);
++  browser_view()->HandleEmberSearchKey(&reverse);
++  EXPECT_EQ(2u, model->GetPopupSelection().line);
++  browser_view()->CloseEmberSearch();
++}
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberSearchMotionRetargetAndReduce) {
++  gfx::Animation::SetPrefersReducedMotionForTesting(true);
++  ember::EmberGlassTransition::Frame last;
++  ember::EmberGlassTransition motion(base::BindRepeating(
++      [](ember::EmberGlassTransition::Frame* last,
++         const ember::EmberGlassTransition::Frame& frame) { *last = frame; }, &last));
++  motion.Open(gfx::RectF(0, 0, 680, 62), gfx::PointF(0, 25), 10);
++  EXPECT_EQ(gfx::RectF(0, 0, 680, 62), last.bounds);
++  motion.Open(gfx::RectF(0, 0, 680, 222), gfx::PointF(0, 25), 10);
++  EXPECT_EQ(222.f, last.bounds.height());
++  bool closed = false;
++  motion.Close(base::BindOnce([](bool* value) { *value = true; }, &closed));
++  EXPECT_TRUE(closed);
++  motion.Open(gfx::RectF(0, 0, 680, 62), gfx::PointF(0, 25), 10);
++  EXPECT_EQ(1.f, last.opacity);
++  gfx::Animation::SetPrefersReducedMotionForTesting(false);
++  motion.Open(gfx::RectF(0, 0, 680, 262), gfx::PointF(0, 25), 10);
++  EXPECT_EQ(62.f, last.bounds.height());
++  motion.Close(base::DoNothing());
++  const auto interrupted_height = last.bounds.height();
++  motion.Open(gfx::RectF(0, 0, 680, 162), gfx::PointF(0, 25), 10);
++  EXPECT_NEAR(interrupted_height, last.bounds.height(), 1.f);
++  motion.Reset();
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberFloatingSearchCloseAndTabLifecycle) {
+@@ -472,6 +530,7 @@
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberFloatingSearchOwnsNativeResults) {
++  gfx::Animation::SetPrefersReducedMotionForTesting(true);
+   browser_view()->ShowEmberSearch();
+   auto* omnibox = browser_view()->GetLocationBar()->GetOmniboxView();
+   omnibox->SetUserText(u"https://example.test/", true);
+@@ -500,6 +559,7 @@
+   EXPECT_EQ(nullptr, popup->parent());
+   browser_view()->ShowEmberSearch();
+   EXPECT_TRUE(omnibox->IsSelectAll());
++  gfx::Animation::SetPrefersReducedMotionForTesting(false);
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberFloatingSearchBangBackspaceAndEscape) {
+@@ -517,6 +577,11 @@
+     EXPECT_TRUE(model->is_keyword_selected());
+     EXPECT_EQ(u"gpt", model->keyword());
+     EXPECT_TRUE(omnibox->GetText().empty());
++    auto* native_field = static_cast<OmniboxViewViews*>(omnibox);
++    EXPECT_EQ(u"Ask ChatGPT", native_field->GetPlaceholderText());
++    omnibox->SetUserText(u"snow & ice", false);
++    EXPECT_EQ(u"snow & ice", native_field->GetText());
++    omnibox->SetUserText(u"", false);
+     // Arrow navigation remains native, rather than a duplicate popup model.
+     ui::KeyEvent down(ui::EventType::kKeyPressed, ui::VKEY_DOWN, ui::EF_NONE);
+     browser_view()->HandleEmberSearchKey(&down);
+--- a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
++++ b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+@@ -721,9 +721,9 @@
+     const gfx::Rect sidebar_bounds =
+         ember_sidebar_visible
+             ? gfx::Rect(browser_params.visual_client_area.x(),
+-                        browser_params.visual_client_area.y(),
++                        browser_params.visual_client_area.y() + 32,
+                         ember_sidebar_width,
+-                        browser_params.visual_client_area.height())
++                        std::max(0, browser_params.visual_client_area.height() - 32))
+             : gfx::Rect();
+     layout.AddChild(views().ember_sidebar, sidebar_bounds,
+                     ember_sidebar_visible);
+--- a/chrome/browser/ui/views/frame/themed_background.cc
++++ b/chrome/browser/ui/views/frame/themed_background.cc
+@@ -54,10 +54,10 @@
+       {width * 0.5f - dx * half_length, height * 0.5f - dy * half_length},
+       {width * 0.5f + dx * half_length, height * 0.5f + dy * half_length}};
+   const SkColor4f base_colors[] = {
+-      SkColor4f::FromColor(SkColorSetARGB(238, 28, 30, 33)),
+-      SkColor4f::FromColor(SkColorSetARGB(240, 25, 27, 30)),
+-      SkColor4f::FromColor(SkColorSetARGB(242, 23, 25, 28)),
+-      SkColor4f::FromColor(SkColorSetARGB(244, 21, 23, 26))};
++      SkColor4f::FromColor(SkColorSetARGB(112, 25, 27, 30)),
++      SkColor4f::FromColor(SkColorSetARGB(114, 25, 27, 30)),
++      SkColor4f::FromColor(SkColorSetARGB(116, 25, 27, 30)),
++      SkColor4f::FromColor(SkColorSetARGB(118, 25, 27, 30))};
+   const SkScalar base_stops[] = {0.0f, 0.29f, 0.60f, 1.0f};
+   const SkGradient::Interpolation interpolation = {
+       .fInPremul = SkGradient::Interpolation::InPremul::kYes,
+@@ -122,6 +122,16 @@
+         SkPath::RRect(SkRRect::MakeRectRadii(gfx::RectToSkRect(bounds), radii)),
+         true, SkClipOp::kDifference);
+   }
++  if (view == browser_view_) {
++    const views::View* shell_views[] = {browser_view_->top_container(), browser_view_->ember_sidebar()};
++    for (const views::View* child : shell_views) {
++      if (child && child->IsDrawn()) {
++        canvas->sk_canvas()->clipRect(gfx::RectToSkRect(
++            views::View::ConvertRectToTarget(child, view, child->GetLocalBounds())),
++            SkClipOp::kDifference, false);
++      }
++    }
++  }
+   PaintBackground(canvas, view, browser_view_, theme_choice_);
+ }
+ 
+--- a/chrome/browser/ui/views/location_bar/location_bar_view.cc
++++ b/chrome/browser/ui/views/location_bar/location_bar_view.cc
+@@ -259,6 +259,12 @@
+             return false;
+           }
+ 
++          // Floating search has one outer chrome edge and a visible caret;
++          // retain native rings for controls, tabs and high-contrast mode.
++          if (v->browser_ && BrowserView::GetBrowserViewForBrowser(v->browser_)->IsEmberSearchOpen() &&
++              v->GetNativeTheme()->preferred_contrast() != ui::NativeTheme::PreferredContrast::kMore) {
++            return false;
++          }
+           // Show focus ring when the Omnibox is visibly focused and the popup
+           // is closed.
+           return v->GetOmniboxController()->edit_model()->is_caret_visible() &&
+@@ -375,7 +381,10 @@
+         omnibox::IsWebUIOmniboxPopupEnabled() &&
+         !omnibox::IsWebUIOmniboxFullPopupEnabled();
+ 
+-    if (web_ui_popup_dropdown_only &&
++    if (browser_ && browser_->is_type_normal()) {
++      omnibox_popup_view_ = std::make_unique<OmniboxPopupViewViews>(
++          omnibox_view_, omnibox_controller_.get(), this);
++    } else if (web_ui_popup_dropdown_only &&
+         !base::FeatureList::IsEnabled(omnibox::kWebUIOmniboxPopupDebug)) {
+       omnibox_popup_view_ = std::make_unique<OmniboxPopupViewWebUI>(
+           /*omnibox_view=*/omnibox_view_,
+@@ -937,8 +946,13 @@
+     }
+   }
+ 
++  const bool floating = browser_ &&
++      BrowserView::GetBrowserViewForBrowser(browser_)->IsEmberSearchOpen();
++  selected_keyword_view_->SetIconOnly(floating);
+   if (ShouldShowKeywordBubble()) {
+     location_icon_view_->SetVisible(false);
++    selected_keyword_view_->SetBorder(floating ? views::CreateSolidSidedBorder(
++        gfx::Insets::TLBR(0, 0, 0, 1), SkColorSetARGB(40, 255, 255, 255)) : nullptr);
+     leading_decorations.AddDecoration(
+         vertical_padding, location_height, false, kLeadingDecorationMaxFraction,
+         /*intra_item_padding=*/0, icon_left, selected_keyword_view_);
+@@ -1599,7 +1613,8 @@
+   // correctly enable subpixel AA.
+   const auto* ember_browser_view = browser_
+       ? BrowserView::GetBrowserViewForBrowser(browser_) : nullptr;
+-  const bool ember_floating = ember_browser_view && ember_browser_view->IsEmberSearchOpen();
++  const bool ember_floating = ember_browser_view &&
++      (ember_browser_view->IsEmberSearchOpen() || ember_browser_view->IsEmberSearchClosing());
+   if (ember_floating) {
+     // Input and native result rows share the browser-level glass backing.
+     SetBackground(nullptr);
+--- a/chrome/browser/ui/views/location_bar/selected_keyword_view.cc
++++ b/chrome/browser/ui/views/location_bar/selected_keyword_view.cc
+@@ -187,7 +187,7 @@
+ gfx::Size SelectedKeywordView::CalculatePreferredSize(
+     const views::SizeBounds& available_size) const {
+   // Height will be ignored by the LocationBarView.
+-  return GetSizeForLabelWidth(full_label_.GetPreferredSize().width());
++  return GetSizeForLabelWidth(icon_only_ ? 0 : full_label_.GetPreferredSize().width());
+ }
+ 
+ gfx::Size SelectedKeywordView::GetMinimumSize() const {
+@@ -235,7 +235,18 @@
+   return 14;
+ }
+ 
++void SelectedKeywordView::SetIconOnly(bool icon_only) {
++  if (icon_only_ == icon_only) return;
++  icon_only_ = icon_only;
++  SetLabelForCurrentWidth();
++  PreferredSizeChanged();
++}
++
+ void SelectedKeywordView::SetLabelForCurrentWidth() {
++  if (icon_only_) {
++    SetLabel(u"");
++    return;
++  }
+   // Keep showing the full label as long as there's more than enough width for
+   // the partial label. Otherwise there will be empty space displayed next to
+   // the partial label.
+--- a/chrome/browser/ui/views/location_bar/selected_keyword_view.h
++++ b/chrome/browser/ui/views/location_bar/selected_keyword_view.h
+@@ -63,6 +63,7 @@
+ 
+   // The current keyword, or an empty string if no keyword is displayed.
+   void SetKeyword(const std::u16string& keyword);
++  void SetIconOnly(bool icon_only);
+   const std::u16string& GetKeyword() const;
+ 
+   using IconLabelBubbleView::label;
+@@ -72,6 +73,7 @@
+   void OnBoundsChanged(const gfx::Rect& previous_bounds) override;
+   int GetExtraInternalSpacing() const override;
+ 
++  bool icon_only_ = false;
+   void SetLabelForCurrentWidth();
+ 
+   void UpdateIcon();
+--- a/chrome/browser/ui/views/omnibox/omnibox_match_cell_view.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_match_cell_view.cc
+@@ -8,6 +8,7 @@
+ #include <optional>
+ 
+ #include "base/metrics/field_trial_params.h"
++#include "base/strings/utf_string_conversions.h"
+ #include "chrome/browser/ui/color/chrome_color_id.h"
+ #include "chrome/browser/ui/layout_constants.h"
+ #include "chrome/browser/ui/omnibox/omnibox_theme.h"
+@@ -235,6 +236,7 @@
+ 
+ void OmniboxMatchCellView::OnMatchUpdate(const OmniboxResultView* result_view,
+                                          const AutocompleteMatch& match) {
++  ember_search_ = result_view->IsEmberSearch();
+   if (ShouldDisplayImage(match)) {
+     // Enterprise search aggregator people suggestions may display an image.
+     layout_style_ = LayoutStyle::SEARCH_SUGGESTION_WITH_IMAGE;
+@@ -347,6 +349,12 @@
+     content_view_->SetTextWithStyling(match.contents, match.contents_class);
+     description_view_->SetTextWithStyling(match.description,
+                                           match.description_class);
++    if (ember_search_ && match.description.empty()) {
++      const std::u16string detail = match.destination_url.SchemeIsHTTPOrHTTPS() &&
++          !AutocompleteMatch::IsSearchType(match.type)
++          ? base::UTF8ToUTF16(match.destination_url.host()) : u"Search";
++      description_view_->SetTextWithStyling(detail, {});
++    }
+   }
+ }
+ 
+@@ -488,6 +496,16 @@
+   x += text_indent;
+   const int text_width = child_area.width() - text_indent;
+ 
++  if (ember_search_ && layout_style_ != LayoutStyle::HISTORY_EMBEDDING_ANSWER &&
++      layout_style_ != LayoutStyle::IPH_SUGGESTION && layout_style_ != LayoutStyle::TOOLBELT) {
++    separator_view_->SetSize(gfx::Size());
++    const int title_height = content_view_->GetLineHeight();
++    const int detail_height = description_view_->GetLineHeight();
++    const int top = y + std::max(0, (row_height - title_height - detail_height) / 2);
++    content_view_->SetBounds(x, top, std::max(0, text_width), title_height);
++    description_view_->SetBounds(x, top + title_height, std::max(0, text_width), detail_height);
++    return;
++  }
+   if (layout_style_ == LayoutStyle::HISTORY_EMBEDDING_ANSWER) {
+     if (description_view_->GetText().empty()) {
+       content_view_->SetBounds(x, y, text_width,
+@@ -608,6 +626,10 @@
+     height = kRowHeight;
+   }
+ 
++  if (ember_search_ && layout_style_ != LayoutStyle::IPH_SUGGESTION &&
++      layout_style_ != LayoutStyle::TOOLBELT && layout_style_ != LayoutStyle::HISTORY_EMBEDDING_ANSWER) {
++    height = std::max(height, content_view_->GetLineHeight() + description_view_->GetLineHeight() + 2);
++  }
+   return gfx::Size(width, height);
+ }
+ 
+--- a/chrome/browser/ui/views/omnibox/omnibox_match_cell_view.h
++++ b/chrome/browser/ui/views/omnibox/omnibox_match_cell_view.h
+@@ -128,6 +128,7 @@
+ 
+   void SetTailSuggestCommonPrefixWidth(const std::u16string& common_prefix);
+ 
++  bool ember_search_ = false;
+   LayoutStyle layout_style_ = LayoutStyle::DEFAULT_NON_SEARCH_SUGGESTION;
+ 
+   // Weak pointers for easy reference.
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_view_views.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_view_views.cc
+@@ -354,7 +354,9 @@
+       : nullptr;
+   const bool floating = browser_view && browser_view->GetIsNormalType();
+   const bool should_be_open =
+-      (!floating || browser_view->IsEmberSearchOpen()) &&
++      (!floating || (browser_view->IsEmberSearchOpen() &&
++          (!controller()->edit_model()->is_keyword_selected() ||
++           !omnibox_view_->GetText().empty()))) &&
+       controller()->popup_state_manager()->popup_state() !=
+           OmniboxPopupState::kAim &&
+       !autocomplete_controller->result().empty() &&
+@@ -372,8 +374,10 @@
+ 
+       if (ember_embedded_) {
+         ember_embedded_ = false;
+-        browser_view->SetEmberSearchResults(nullptr);
+-        SetVisible(false);
++        if (!browser_view->IsEmberSearchClosing()) {
++          browser_view->SetEmberSearchResults(nullptr);
++          SetVisible(false);
++        }
+       } else {
+         widget_->CloseAnimated();  // This will eventually delete the popup.
+         widget_->RemoveObserver(&widget_observer_helper_);
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_view_views.h
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_view_views.h
+@@ -43,6 +43,7 @@
+   METADATA_HEADER(OmniboxPopupViewViews, views::View)
+ 
+  public:
++  bool IsEmberEmbedded() const { return ember_embedded_; }
+   OmniboxPopupViewViews(OmniboxViewViews* omnibox_view,
+                         OmniboxController* controller,
+                         LocationBarView* location_bar_view);
+--- a/chrome/browser/ui/views/omnibox/omnibox_result_view.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_result_view.cc
+@@ -357,6 +357,10 @@
+       GetOmniboxBackgroundColorId(part_state), radii);
+ }
+ 
++bool OmniboxResultView::IsEmberSearch() const {
++  return popup_view_->IsEmberEmbedded();
++}
++
+ void OmniboxResultView::SetMatch(const AutocompleteMatch& match) {
+   match_ = match.GetMatchWithContentsAndDescriptionPossiblySwapped();
+ 
+@@ -396,6 +400,7 @@
+   }
+ 
+   button_row_->UpdateFromModel();
++  if (IsEmberSearch()) button_row_->SetVisible(false);
+ 
+   if (match_.type == AutocompleteMatchType::Type::HISTORY_EMBEDDINGS_ANSWER) {
+     if (!local_answer_header_) {
+@@ -468,6 +473,11 @@
+ 
+   const OmniboxPartState state = GetThemeState();
+   SetBackground(GetPopupCellBackground(this, state));
++  if (IsEmberSearch() && !PrefersHighContrast(this) &&
++      (state == OmniboxPartState::SELECTED || state == OmniboxPartState::HOVERED)) {
++    SetBackground(views::CreateRoundedRectBackground(
++        SkColorSetARGB(state == OmniboxPartState::SELECTED ? 24 : 16, 255, 255, 255), 6));
++  }
+ 
+   // Reapply the dim color to account for the highlight state.
+   const bool selected = (state == OmniboxPartState::SELECTED);
+@@ -524,6 +534,8 @@
+                                          OmniboxPopupSelection::NORMAL);
+   }
+ 
++  if (IsEmberSearch()) selection_indicator_->SetVisible(false);
++
+   if (suggestion_view_->iph_link_view()->GetVisible()) {
+     views::FocusRing::Get(suggestion_view_->iph_link_view())->Refresh();
+   }
+--- a/chrome/browser/ui/views/omnibox/omnibox_result_view.h
++++ b/chrome/browser/ui/views/omnibox/omnibox_result_view.h
+@@ -62,6 +62,7 @@
+   // the match so that we can continue to paint the last result even after the
+   // model has changed.
+   void SetMatch(const AutocompleteMatch& match);
++  bool IsEmberSearch() const;
+ 
+   // Applies the current theme to the current text and widget colors.
+   // Also refreshes the icons which may need to be re-colored as well.
+--- a/chrome/browser/ui/views/tabs/tab_strip.cc
++++ b/chrome/browser/ui/views/tabs/tab_strip.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "chrome/browser/ui/views/tabs/tab_strip.h"
+ #include "ui/gfx/canvas.h"
++#include "ui/compositor/paint_recorder.h"
+ 
+ #include <stddef.h>
+ 
+@@ -818,8 +819,7 @@
+     tab_strip_->tab_container_->CompleteAnimationAndLayout();
+   }
+ 
+-  void OnPaint(gfx::Canvas* canvas) override {
+-    views::View::OnPaint(canvas);
++  void PaintEmberSplitBoundary(gfx::Canvas* canvas) {
+     cc::PaintFlags rim;
+     rim.setAntiAlias(true);
+     rim.setStyle(cc::PaintFlags::kStroke_Style);
+@@ -859,6 +859,10 @@
+     for (const ZOrderableTabContainerElement& child : orderable_children) {
+       child.view()->Paint(paint_info);
+     }
++    // Paint membership after tab fills, in the same clipped/scrolled container.
++    ui::PaintRecorder recorder(paint_info.context(), paint_info.paint_recording_size(),
++        paint_info.paint_recording_scale_x(), paint_info.paint_recording_scale_y(), nullptr);
++    PaintEmberSplitBoundary(recorder.canvas());
+   }
+ 
+   void OnBoundsAnimatorProgressed(views::BoundsAnimator* animator) override {

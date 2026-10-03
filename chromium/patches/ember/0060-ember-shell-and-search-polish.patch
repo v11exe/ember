@@ -1,0 +1,436 @@
+diff --git a/chrome/browser/ui/views/frame/themed_background.cc b/chrome/browser/ui/views/frame/themed_background.cc
+--- a/chrome/browser/ui/views/frame/themed_background.cc
++++ b/chrome/browser/ui/views/frame/themed_background.cc
+@@ -49,7 +49,7 @@
+   // One neutral heavy tint over DWM's live desktop blur. No fixed wallpaper
+   // colours or per-component gradient; all shell owners use this exact paint.
+   cc::PaintFlags flags;
+-  flags.setColor(SkColorSetARGB(176, 20, 22, 25));
++  flags.setColor(SkColorSetARGB(168, 20, 22, 25));
+   canvas->DrawRect(bounds, flags);
+ }
+ 
+@@ -94,7 +94,17 @@
+     auto* contents = browser_view_->multi_contents_view();
+     const gfx::Rect bounds = views::View::ConvertRectToTarget(
+         contents, view, contents->GetLocalBounds());
+-    canvas->ClipRect(bounds, SkClipOp::kDifference);
++    // Keep the exterior of the rounded viewport in the shell paint. A
++    // rectangular cutout exposed untinted DWM at all four page corners.
++    const auto& radii = contents->GetBackgroundRadii();
++    const SkVector corners[] = {
++        {radii.upper_left(), radii.upper_left()},
++        {radii.upper_right(), radii.upper_right()},
++        {radii.lower_right(), radii.lower_right()},
++        {radii.lower_left(), radii.lower_left()}};
++    canvas->ClipPath(SkPath::RRect(
++        SkRRect::MakeRectRadii(gfx::RectToSkRect(bounds), corners)),
++        true, SkClipOp::kDifference);
+   }
+   if (view == browser_view_) {
+     const views::View* shell_views[] = {browser_view_->top_container(), browser_view_->ember_sidebar()};
+diff --git a/chrome/browser/ui/views/frame/custom_corners_background.cc b/chrome/browser/ui/views/frame/custom_corners_background.cc
+--- a/chrome/browser/ui/views/frame/custom_corners_background.cc
++++ b/chrome/browser/ui/views/frame/custom_corners_background.cc
+@@ -3,6 +3,9 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/views/frame/custom_corners_background.h"
++#include "chrome/browser/ui/views/toolbar/toolbar_view.h"
++#include "chrome/browser/ui/views/frame/top_container_view.h"
++#include "ui/views/view_utils.h"
+ 
+ #include <variant>
+ 
+@@ -237,12 +240,20 @@
+   if (!visible_) {
+     return;
+   }
+-
+   if (view->layer()) {
+     CHECK(!view->layer()->fills_bounds_opaquely());
+   }
+ 
+   gfx::ScopedCanvas scoped_canvas(canvas);
++  // ToolbarView already paints the shared material. The top container covers
++  // that same caption row; reserve its pixels so tint is applied only once.
++  if (browser_view().GetIsNormalType() &&
++      views::AsViewClass<TopContainerView>(view) &&
++      browser_view().toolbar()->IsDrawn()) {
++    auto* toolbar = browser_view().toolbar();
++    canvas->ClipRect(views::View::ConvertRectToTarget(
++        toolbar, view, toolbar->GetLocalBounds()), SkClipOp::kDifference);
++  }
+ 
+   for (auto& cutout_path : cutout_paths_) {
+     canvas->ClipPath(cutout_path, true, SkClipOp::kDifference);
+diff --git a/chrome/browser/ui/views/frame/windows_caption_button.cc b/chrome/browser/ui/views/frame/windows_caption_button.cc
+--- a/chrome/browser/ui/views/frame/windows_caption_button.cc
++++ b/chrome/browser/ui/views/frame/windows_caption_button.cc
+@@ -97,7 +97,7 @@
+   gfx::Rect bounds = GetContentsBounds();
+   bounds.Inset(gfx::Insets::TLBR(0, GetBetweenButtonSpacing(), 0, 0));
+ 
+-  if (theme_alpha > 0) {
++  if (theme_alpha > 0 && !frame_view_->GetBrowserView()->GetIsNormalType()) {
+     canvas->FillRect(
+         bounds,
+         SkColorSetA(
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -513,6 +513,40 @@
+ 
+ // The native omnibox is hosted above the page, in the browser's own Widget.
+ // Its controller, keyword state, ranked popup and navigation handlers survive.
++// Native actions retain their hit targets; their feedback is a centered square.
++class EmberSearchActionButton final : public views::LabelButton {
++  METADATA_HEADER(EmberSearchActionButton, views::LabelButton)
++ public:
++  explicit EmberSearchActionButton(PressedCallback callback)
++      : views::LabelButton(std::move(callback)) {
++    views::InkDrop::Get(this)->SetMode(views::InkDropHost::InkDropMode::OFF);
++  }
++  void SetSearchActive(bool active) {
++    active_ = active;
++    SchedulePaint();
++  }
++ protected:
++  void StateChanged(ButtonState old_state) override {
++    views::LabelButton::StateChanged(old_state);
++    SchedulePaint();
++  }
++  void PaintButtonContents(gfx::Canvas* canvas) override {
++    const int alpha = GetState() == STATE_PRESSED ? 44
++        : GetState() == STATE_HOVERED ? 30 : active_ ? 22 : 0;
++    const float side = std::min({28, width(), height()});
++    cc::PaintFlags flags;
++    flags.setAntiAlias(true);
++    flags.setColor(SkColorSetARGB(alpha, 255, 255, 255));
++    canvas->DrawRoundRect(gfx::RectF((width() - side) / 2,
++        (height() - side) / 2, side, side), 6, flags);
++    views::LabelButton::PaintButtonContents(canvas);
++  }
++ private:
++  bool active_ = false;
++};
++BEGIN_METADATA(EmberSearchActionButton)
++END_METADATA
++
+ class EmberFloatingSearchHost final : public views::View {
+  public:
+   explicit EmberFloatingSearchHost(base::RepeatingCallback<void(ui::KeyEvent*)> key)
+@@ -928,8 +962,12 @@
+   }
+ 
+   void PaintButtonContents(gfx::Canvas* canvas) override {
+-    const float button_width = width() * current_button_scale_;
+-    const float button_height = height() * current_button_scale_;
++    const bool compact = width() >= 36;
++    const int visible_side = std::min({28, width(), height()});
++    const float button_width =
++        (compact ? visible_side : width()) * current_button_scale_;
++    const float button_height =
++        (compact ? visible_side : height()) * current_button_scale_;
+     const gfx::RectF button_bounds((width() - button_width) / 2.0f,
+                                    (height() - button_height) / 2.0f,
+                                    button_width, button_height);
+@@ -1970,7 +2008,7 @@
+             base::BindRepeating(&BrowserView::AddDraggedTabToEmberFavorites,
+                                 weak_ptr_factory_.GetWeakPtr()));
+     ember_sidebar_address_row_->SetVisible(false);
+-    auto search = std::make_unique<views::LabelButton>(
++    auto search = std::make_unique<EmberSearchActionButton>(
+         base::BindRepeating(&BrowserView::ShowEmberSearch,
+                             weak_ptr_factory_.GetWeakPtr()));
+     search->SetImageModel(views::Button::STATE_NORMAL,
+@@ -4341,7 +4379,7 @@
+         SkColorSetARGB(40, 255, 255, 255)));
+     divider->SetCanProcessEventsWithinSubtree(false);
+     ember_search_input_row_->AddChildView(std::move(divider));
+-    auto close = std::make_unique<views::LabelButton>(
++    auto close = std::make_unique<EmberSearchActionButton>(
+         base::BindRepeating(&BrowserView::CloseEmberSearch,
+                             weak_ptr_factory_.GetWeakPtr(), true));
+     close->SetImageModel(views::Button::STATE_NORMAL,
+@@ -4355,6 +4393,9 @@
+   }
+   ReorderChildView(ember_search_panel_, children().size() - 1);
+   ember_search_open_ = true;
++  if (ember_search_button_)
++    static_cast<EmberSearchActionButton*>(ember_search_button_.get())
++        ->SetSearchActive(true);
+   ember_search_panel_->SetVisible(true);
+   location->SetVisible(true);
+   LayoutEmberSearch();
+@@ -4506,6 +4547,9 @@
+     return;
+   }
+   ember_search_open_ = false;
++  if (ember_search_button_)
++    static_cast<EmberSearchActionButton*>(ember_search_button_.get())
++        ->SetSearchActive(false);
+   ++ember_search_generation_;
+   // Hide before reverting: late autocomplete updates cannot reopen a popup.
+   static_cast<EmberFloatingSearchHost*>(ember_search_panel_.get())->Close(
+diff --git a/chrome/browser/ui/views/location_bar/location_bar_view.cc b/chrome/browser/ui/views/location_bar/location_bar_view.cc
+--- a/chrome/browser/ui/views/location_bar/location_bar_view.cc
++++ b/chrome/browser/ui/views/location_bar/location_bar_view.cc
+@@ -2404,6 +2404,17 @@
+ 
+ ui::ImageModel LocationBarView::GetLocationIcon(
+     LocationIconView::Delegate::IconFetchedCallback on_icon_fetched) {
++  BrowserView* browser_view = GetWidget()
++      ? BrowserView::GetBrowserViewForNativeWindow(GetWidget()->GetNativeWindow())
++      : nullptr;
++  if (browser_view && browser_view->IsEmberSearchOpen()) {
++    // The host already owns the magnifier. This native leading slot is the
++    // active search provider's real favicon, not a second query-type icon.
++    const gfx::Image image = GetOmniboxController()->client()
++        ->GetFaviconForDefaultSearchProvider(std::move(on_icon_fetched));
++    return image.IsEmpty() ? ui::ImageModel()
++                          : ui::ImageModel::FromImage(image);
++  }
+   bool dark_mode = false;
+   if (location_icon_view_) {
+     auto* background = location_icon_view_->GetBackground();
+diff --git a/chrome/browser/ui/views/location_bar/selected_keyword_view.cc b/chrome/browser/ui/views/location_bar/selected_keyword_view.cc
+--- a/chrome/browser/ui/views/location_bar/selected_keyword_view.cc
++++ b/chrome/browser/ui/views/location_bar/selected_keyword_view.cc
+@@ -242,6 +242,7 @@
+   SetBackgroundVisibility(icon_only ? BackgroundVisibility::kNever
+                                    : BackgroundVisibility::kWithLabel);
+   SetLabelForCurrentWidth();
++  UpdateIcon();
+   PreferredSizeChanged();
+ }
+ 
+@@ -260,8 +261,11 @@
+ }
+ 
+ void SelectedKeywordView::UpdateIcon() {
+-  IconLabelBubbleView::SetImageModel(
+-      GetKeywordIcon(keyword_, omnibox_controller_, profile_));
++  ui::ImageModel initial = GetKeywordIcon(keyword_, omnibox_controller_, profile_);
++  // Keep actual cached/extension images; the host already supplies a magnifier.
++  if (icon_only_ && initial.IsVectorIcon())
++    initial = ui::ImageModel();
++  IconLabelBubbleView::SetImageModel(initial);
+   if (!profile_ || !omnibox_controller_ || keyword_.empty()) return;
+   const TemplateURLService* service =
+       TemplateURLServiceFactory::GetForProfile(profile_);
+diff --git a/chrome/browser/ui/omnibox/chrome_omnibox_client.cc b/chrome/browser/ui/omnibox/chrome_omnibox_client.cc
+--- a/chrome/browser/ui/omnibox/chrome_omnibox_client.cc
++++ b/chrome/browser/ui/omnibox/chrome_omnibox_client.cc
+@@ -188,6 +188,9 @@
+     for (auto request_id : request_ids_) {
+       bitmap_fetcher_service->CancelRequest(request_id);
+     }
++    for (auto request_id : ember_favicon_requests_) {
++      bitmap_fetcher_service->CancelRequest(request_id);
++    }
+   }
+ }
+ 
+@@ -723,6 +726,8 @@
+     return gfx::Image();
+   }
+ 
++  if (browser_ && browser_->is_type_normal())
++    return GetEmberProviderFavicon(default_provider, std::move(on_favicon_fetched));
+   return favicon_cache_.GetFaviconForIconUrl(default_provider->favicon_url(),
+                                              std::move(on_favicon_fetched),
+                                              /*notify_on_empty=*/false);
+@@ -735,9 +740,61 @@
+     return gfx::Image();
+   }
+ 
++  if (browser_ && browser_->is_type_normal() &&
++      template_url->type() != TemplateURL::OMNIBOX_API_EXTENSION)
++    return GetEmberProviderFavicon(template_url, std::move(on_favicon_fetched));
+   return favicon_cache_.GetFaviconForIconUrl(template_url->favicon_url(),
+                                              std::move(on_favicon_fetched),
+                                              /*notify_on_empty=*/false);
++}
++
++gfx::Image ChromeOmniboxClient::GetEmberProviderFavicon(
++    const TemplateURL* provider, FaviconFetchedCallback callback) {
++  const GURL url = provider->favicon_url();
++  if (!url.SchemeIsHTTPOrHTTPS())
++    return favicon_cache_.GetFaviconForIconUrl(url, std::move(callback), false);
++  if (auto it = ember_provider_favicons_.find(url);
++      it != ember_provider_favicons_.end())
++    return it->second;
++  // FaviconCache only reads History's database; fresh/custom keyword icons
++  // need the existing profile image service to fetch their actual favicon.
++  gfx::Image cached = favicon_cache_.GetFaviconForIconUrl(
++      url, base::BindOnce([](const gfx::Image&) {}), false);
++  if (!cached.IsEmpty())
++    return cached;
++  auto* fetcher = BitmapFetcherServiceFactory::GetForBrowserContext(profile_);
++  if (!fetcher)
++    return gfx::Image();
++  auto [it, inserted] = ember_favicon_waiters_.try_emplace(url);
++  if (callback)
++    it->second.push_back(std::move(callback));
++  if (inserted) {
++    ember_favicon_requests_.push_back(fetcher->RequestImage(url, base::BindOnce(
++        [](base::WeakPtr<ChromeOmniboxClient> client, GURL icon_url,
++           SkBitmap bitmap) {
++          if (!client)
++            return;
++          gfx::Image image;
++          if (!bitmap.drawsNothing()) {
++            image = gfx::Image(gfx::ImageSkiaOperations::CreateResizedImage(
++                gfx::ImageSkia::CreateFrom1xBitmap(bitmap),
++                skia::ImageOperations::RESIZE_LANCZOS3, gfx::Size(16, 16)));
++          }
++          // Cache failures as well: typing must not retry a missing icon.
++          if (client->ember_provider_favicons_.size() >= 128)
++            client->ember_provider_favicons_.erase(
++                client->ember_provider_favicons_.begin());
++          client->ember_provider_favicons_[icon_url] = image;
++          auto found = client->ember_favicon_waiters_.find(icon_url);
++          if (found == client->ember_favicon_waiters_.end())
++            return;
++          auto callbacks = std::move(found->second);
++          client->ember_favicon_waiters_.erase(found);
++          for (auto& waiting : callbacks)
++            std::move(waiting).Run(image);
++        }, weak_factory_.GetWeakPtr(), url)));
++  }
++  return gfx::Image();
+ }
+ 
+ gfx::Image ChromeOmniboxClient::GetFaviconForIconUrl(
+diff --git a/chrome/browser/ui/omnibox/chrome_omnibox_client.h b/chrome/browser/ui/omnibox/chrome_omnibox_client.h
+--- a/chrome/browser/ui/omnibox/chrome_omnibox_client.h
++++ b/chrome/browser/ui/omnibox/chrome_omnibox_client.h
+@@ -5,6 +5,7 @@
+ #ifndef CHROME_BROWSER_UI_OMNIBOX_CHROME_OMNIBOX_CLIENT_H_
+ #define CHROME_BROWSER_UI_OMNIBOX_CHROME_OMNIBOX_CLIENT_H_
+ 
++#include <map>
+ #include <memory>
+ #include <vector>
+ 
+@@ -167,6 +168,9 @@
+                                      const AutocompleteMatch& match);
+ 
+  private:
++  gfx::Image GetEmberProviderFavicon(
++      const TemplateURL* provider, FaviconFetchedCallback callback);
++
+   // Performs prerendering for |match|.
+   void DoPrerender(const AutocompleteMatch& match);
+ 
+@@ -180,6 +184,9 @@
+   std::unique_ptr<ChromeAutocompleteSchemeClassifier> scheme_classifier_;
+   std::vector<BitmapFetcherService::RequestId> request_ids_;
+   FaviconCache favicon_cache_;
++  std::map<GURL, gfx::Image> ember_provider_favicons_;
++  std::map<GURL, std::vector<FaviconFetchedCallback>> ember_favicon_waiters_;
++  std::vector<BitmapFetcherService::RequestId> ember_favicon_requests_;
+ 
+   base::WeakPtrFactory<ChromeOmniboxClient> weak_factory_{this};
+ };
+diff --git a/chrome/browser/ui/views/frame/browser_view_browsertest.cc b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+--- a/chrome/browser/ui/views/frame/browser_view_browsertest.cc
++++ b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+@@ -23,6 +23,9 @@
+ #include "chrome/browser/ui/views/omnibox/omnibox_match_cell_view.h"
+ #include "chrome/browser/ui/views/omnibox/omnibox_text_view.h"
+ #include "base/test/scoped_run_loop_timeout.h"
++#include "base/test/test_future.h"
++#include "components/search_engines/template_url.h"
++#include "net/test/embedded_test_server/embedded_test_server.h"
+ #include "chrome/browser/ui/color/chrome_color_id.h"
+ #include "ui/color/color_provider.h"
+ #include "ui/gfx/render_text.h"
+@@ -83,6 +86,7 @@
+ #include "chrome/browser/ui/views/frame/multi_contents_view_drop_target_controller.h"
+ #include "chrome/browser/ui/views/frame/scrim_view.h"
+ #include "chrome/browser/ui/views/frame/top_container_view.h"
++#include "chrome/browser/ui/views/toolbar/toolbar_view.h"
+ #include "chrome/browser/ui/views/side_panel/side_panel.h"
+ #include "chrome/browser/ui/views/side_panel/side_panel_coordinator.h"
+ #include "chrome/browser/ui/views/tabs/tab/tab_accessibility.h"
+@@ -628,6 +632,66 @@
+   browser_view()->RemoveChildViewT(surface);
+ }
+ 
++IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberProviderFaviconsFetchWithoutHistory) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  TemplateURLData data;
++  data.SetShortName(u"Test provider");
++  data.SetKeyword(u"provider");
++  data.SetURL("https://example.test/?q={searchTerms}");
++  data.favicon_url = embedded_test_server()->GetURL("/android/favicon.png");
++  TemplateURL provider(data);
++  auto* client = browser_view()->GetLocationBar()->GetOmniboxController()->client();
++  base::test::TestFuture<gfx::Image> first, second;
++  EXPECT_TRUE(client->GetFaviconForKeywordSearchProvider(
++      &provider, first.GetCallback<const gfx::Image&>()).IsEmpty());
++  gfx::Image simultaneous = client->GetFaviconForKeywordSearchProvider(
++      &provider, second.GetCallback<const gfx::Image&>());
++  ASSERT_TRUE(first.Wait());
++  EXPECT_FALSE(first.Get().IsEmpty());
++  EXPECT_EQ(16, first.Get().Width());
++  if (simultaneous.IsEmpty()) {
++    ASSERT_TRUE(second.Wait());
++    EXPECT_FALSE(second.Get().IsEmpty());
++  }
++  gfx::Image cached = client->GetFaviconForKeywordSearchProvider(
++      &provider, base::BindOnce([](const gfx::Image&) {}));
++  EXPECT_FALSE(cached.IsEmpty());
++  EXPECT_EQ(16, cached.Height());
++}
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberRoundedViewportExteriorKeepsShellTint) {
++  browser_view()->DeprecatedLayoutImmediately();
++  auto* contents = browser_view()->multi_contents_view();
++  const gfx::Rect viewport = views::View::ConvertRectToTarget(
++      contents, browser_view(), contents->GetLocalBounds());
++  ASSERT_GT(contents->GetBackgroundRadii().upper_left(), 0);
++  gfx::Canvas canvas(browser_view()->size(), 1.f, false);
++  browser_view()->background()->Paint(&canvas, browser_view());
++  const SkBitmap bitmap = canvas.GetBitmap();
++  EXPECT_GT(SkColorGetA(bitmap.getColor(viewport.x() + 1, viewport.y() + 1)), 0u);
++  EXPECT_GT(SkColorGetA(bitmap.getColor(
++      viewport.right() - 2, viewport.bottom() - 2)), 0u);
++  EXPECT_EQ(0u, SkColorGetA(bitmap.getColor(
++      viewport.CenterPoint().x(), viewport.CenterPoint().y())));
++}
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberToolbarDoesNotDoubleTintCaption) {
++  auto* toolbar = browser_view()->toolbar();
++  auto* top = browser_view()->top_container();
++  const gfx::Rect bounds = views::View::ConvertRectToTarget(
++      toolbar, top, toolbar->GetLocalBounds());
++  gfx::Canvas canvas(top->size(), 1.f, false);
++  top->background()->Paint(&canvas, top);
++  canvas.Translate(bounds.OffsetFromOrigin());
++  toolbar->background()->Paint(&canvas, toolbar);
++  const SkBitmap bitmap = canvas.GetBitmap();
++  // The composite must retain the same alpha as one shell surface.
++  gfx::Canvas single(toolbar->size(), 1.f, false);
++  toolbar->background()->Paint(&single, toolbar);
++  EXPECT_EQ(single.GetBitmap().getColor(toolbar->width() / 2, 1),
++      bitmap.getColor(bounds.CenterPoint().x(), bounds.y() + 1));
++}
++
+ IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberGlassReceivesContentOnlyDamage) {
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL(
+       "data:text/html,<body style='margin:0;background:%2300ff00'>")));
+diff --git a/chrome/browser/ui/views/location_bar/location_icon_view.cc b/chrome/browser/ui/views/location_bar/location_icon_view.cc
+--- a/chrome/browser/ui/views/location_bar/location_icon_view.cc
++++ b/chrome/browser/ui/views/location_bar/location_icon_view.cc
+@@ -309,6 +309,8 @@
+                      icon_fetch_weak_ptr_factory_.GetWeakPtr()));
+ 
+   if (icon.IsEmpty()) {
++    if (background_hidden_)
++      SetImageModel(ui::ImageModel());
+     return;
+   }
+ 

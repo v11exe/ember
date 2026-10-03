@@ -1,0 +1,27 @@
+--- a/chrome/browser/ui/views/location_bar/location_bar_view.cc
++++ b/chrome/browser/ui/views/location_bar/location_bar_view.cc
+@@ -261,7 +261,9 @@
+ 
+           // Floating search has one outer chrome edge and a visible caret;
+           // retain native rings for controls, tabs and high-contrast mode.
+-          if (v->browser_ && BrowserView::GetBrowserViewForBrowser(v->browser_)->IsEmberSearchOpen() &&
++          const auto* browser_view = v->browser_
++              ? BrowserView::GetBrowserViewForBrowser(v->browser_) : nullptr;
++          if (browser_view && browser_view->IsEmberSearchOpen() &&
+               v->GetNativeTheme()->preferred_contrast() != ui::NativeTheme::PreferredContrast::kMore) {
+             return false;
+           }
+@@ -946,8 +948,11 @@
+     }
+   }
+ 
+-  const bool floating = browser_ &&
+-      BrowserView::GetBrowserViewForBrowser(browser_)->IsEmberSearchOpen();
++  // Initial toolbar layout runs before BrowserView is registered on the
++  // native window. Treat that construction phase as ordinary toolbar layout.
++  const auto* browser_view = browser_
++      ? BrowserView::GetBrowserViewForBrowser(browser_) : nullptr;
++  const bool floating = browser_view && browser_view->IsEmberSearchOpen();
+   selected_keyword_view_->SetIconOnly(floating);
+   if (ShouldShowKeywordBubble()) {
+     location_icon_view_->SetVisible(false);

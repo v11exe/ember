@@ -1,0 +1,890 @@
+--- a/chrome/browser/ui/color/chrome_color_mixers.cc
++++ b/chrome/browser/ui/color/chrome_color_mixers.cc
+@@ -146,6 +146,9 @@
+     ember[kColorOmniboxResultsBackground] = {SkColorSetRGB(25, 27, 30)};
+     ember[kColorOmniboxResultsBackgroundHovered] = {SkColorSetRGB(43, 45, 48)};
+     ember[kColorOmniboxResultsBackgroundSelected] = {SkColorSetRGB(48, 50, 53)};
++    ember[kColorOmniboxResultsFocusIndicator] = {SkColorSetARGB(150, 235, 237, 240)};
++    ember[kColorTabFocusRingActive] = {SkColorSetRGB(220, 225, 230)};
++    ember[kColorTabFocusRingInactive] = {SkColorSetRGB(220, 225, 230)};
+     ember[kColorOmniboxText] = {SkColorSetRGB(237, 239, 242)};
+     ember[kColorOmniboxTextDimmed] = {SkColorSetRGB(177, 183, 191)};
+     ember[kColorOmniboxResultsTextSelected] = {kColorOmniboxText};
+--- a/chrome/browser/ui/omnibox/chrome_omnibox_client.cc
++++ b/chrome/browser/ui/omnibox/chrome_omnibox_client.cc
+@@ -891,6 +891,12 @@
+               text, "match", match, "alternative_nav_match",
+               alternative_nav_match);
+ 
++  if (browser_) {
++    if (auto* view = BrowserView::GetBrowserViewForBrowser(browser_)) {
++      view->ScheduleEmberSearchClose();
++    }
++  }
++
+   std::string extra_headers;
+   for (const auto& header : match.extra_headers) {
+     base::StrAppend(&extra_headers,
+--- a/chrome/browser/ui/views/ember/ember_glass_material.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_material.cc
+@@ -424,15 +424,15 @@
+   }
+   // One neutral smoked surface for browser-owned menus, cards and prompts.
+   // Tint only the cached blurred capture; never filter live page frames.
+-  const float capture_weight = preset == EmberGlassPreset::kMenu ? 0.14f : 0.22f;
++  const float capture_weight = preset == EmberGlassPreset::kMenu ? 0.12f : 0.16f;
+   for (int y = 0; y < result.height(); ++y) {
+     for (int x = 0; x < result.width(); ++x) {
+       const Rgba8 pixel = Unpack(result.getColor(x, y));
+-      const float gray = (pixel.r + pixel.g + pixel.b) / 3.0f;
++      const float gray = pixel.r * .2126f + pixel.g * .7152f + pixel.b * .0722f;
+       *result.getAddr32(x, y) = Pack({
+-          static_cast<uint8_t>(25 + (gray - 25) * capture_weight),
+-          static_cast<uint8_t>(27 + (gray - 27) * capture_weight),
+-          static_cast<uint8_t>(30 + (gray - 30) * capture_weight), 255});
++          static_cast<uint8_t>(25 + (gray * .8f + pixel.r * .2f - 25) * capture_weight),
++          static_cast<uint8_t>(27 + (gray * .8f + pixel.g * .2f - 27) * capture_weight),
++          static_cast<uint8_t>(30 + (gray * .8f + pixel.b * .2f - 30) * capture_weight), 255});
+     }
+   }
+   result.setImmutable();
+--- a/chrome/browser/ui/views/ember/ember_glass_view.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_view.cc
+@@ -49,6 +49,7 @@
+ namespace {
+ 
+ constexpr float kBubbleCornerRadius = 10.0f;
++DEFINE_UI_CLASS_PROPERTY_KEY(int, kEmberGlassCaptureGeneration, 0)
+ 
+ SkColor BubblePrimaryText(bool bright) {
+   return bright ? SkColorSetRGB(31, 34, 39)
+@@ -117,14 +118,17 @@
+ class EmberGlassBitmapBackground : public views::Background {
+  public:
+   EmberGlassBitmapBackground(SkBitmap bitmap,
+-                             std::shared_ptr<EmberGlassTransition::Frame> frame)
+-      : bitmap_(std::move(bitmap)), frame_(std::move(frame)) {}
++                             std::shared_ptr<EmberGlassTransition::Frame> frame,
++                             bool follow_view = false)
++      : follow_view_(follow_view), bitmap_(std::move(bitmap)),
++        frame_(std::move(frame)) {}
+ 
+   void Paint(gfx::Canvas* canvas, views::View* view) const override {
+     cc::PaintCanvas* paint_canvas = canvas->sk_canvas();
+-    const SkRect bounds =
+-        SkRect::MakeXYWH(frame_->bounds.x(), frame_->bounds.y(),
+-                         frame_->bounds.width(), frame_->bounds.height());
++    const SkRect bounds = follow_view_
++        ? SkRect::MakeWH(view->width(), view->height())
++        : SkRect::MakeXYWH(frame_->bounds.x(), frame_->bounds.y(),
++                           frame_->bounds.width(), frame_->bounds.height());
+     paint_canvas->save();
+     paint_canvas->clipRRect(
+         SkRRect::MakeRectXY(bounds, frame_->radius, frame_->radius), true);
+@@ -152,6 +156,7 @@
+   }
+ 
+  private:
++  const bool follow_view_;
+   const SkBitmap bitmap_;
+   const std::shared_ptr<EmberGlassTransition::Frame> frame_;
+ };
+@@ -223,9 +228,12 @@
+     std::unique_ptr<views::ViewTracker> tracker,
+     std::shared_ptr<EmberGlassTransition::Frame> frame,
+     gfx::Rect source_rect,
++    bool follow_view,
++    int generation,
+     SkBitmap bitmap) {
+   views::View* surface = tracker->view();
+-  if (!surface || bitmap.empty()) {
++  if (!surface || bitmap.empty() ||
++      surface->GetProperty(kEmberGlassCaptureGeneration) != generation) {
+     return;
+   }
+   source_rect.set_x(std::clamp(
+@@ -240,9 +248,11 @@
+   if (!panel) {
+     return;
+   }
+-  ApplyBubbleForeground(surface, panel->bright_backdrop);
++  if (!follow_view) {
++    ApplyBubbleForeground(surface, panel->bright_backdrop);
++  }
+   surface->SetBackground(std::make_unique<EmberGlassBitmapBackground>(
+-      panel->bitmap, std::move(frame)));
++      panel->bitmap, std::move(frame), follow_view));
+   surface->SchedulePaint();
+ }
+ 
+@@ -273,8 +283,10 @@
+ void CaptureEmberGlassBubbleBackdrop(BrowserView* browser_view,
+                                      views::View* surface,
+                                      const gfx::Point& screen_origin,
+-                                     content::WebContents* source_contents) {
+-  if (browser_view && surface && surface->GetWidget() &&
++                                     content::WebContents* source_contents,
++                                     bool animate,
++                                     bool constrain_to_source) {
++  if (constrain_to_source && browser_view && surface && surface->GetWidget() &&
+       browser_view->contents_container()) {
+     gfx::Rect usable = browser_view->contents_container()->GetBoundsInScreen();
+     if (source_contents && source_contents->GetPrimaryMainFrame() &&
+@@ -291,20 +303,24 @@
+   if (!surface || surface->size().IsEmpty()) {
+     return;
+   }
++  const int generation = surface->GetProperty(kEmberGlassCaptureGeneration) + 1;
++  surface->SetProperty(kEmberGlassCaptureGeneration, generation);
+   auto transition_frame = std::make_shared<EmberGlassTransition::Frame>();
+   transition_frame->bounds = gfx::RectF(surface->GetLocalBounds());
+   transition_frame->radius = kBubbleCornerRadius;
+   surface->SetBorder(nullptr);
+   surface->SetBackground(std::make_unique<EmberGlassBitmapBackground>(
+-      SkBitmap(), transition_frame));
++      SkBitmap(), transition_frame, !animate));
+   const gfx::Point origin =
+       screen_origin - surface->GetBoundsInScreen().OffsetFromOrigin();
+-  std::unique_ptr<views::View> motion_view =
+-      std::make_unique<EmberGlassBubbleTransition>(surface, origin,
+-                                                   transition_frame);
+-  auto* motion = static_cast<EmberGlassBubbleTransition*>(
+-      surface->AddChildView(std::move(motion_view)));
+-  motion->Start();
++  if (animate) {
++    std::unique_ptr<views::View> motion_view =
++        std::make_unique<EmberGlassBubbleTransition>(surface, origin,
++                                                     transition_frame);
++    auto* motion = static_cast<EmberGlassBubbleTransition*>(
++        surface->AddChildView(std::move(motion_view)));
++    motion->Start();
++  }
+   content::WebContents* web_contents =
+       source_contents ? source_contents
+       : browser_view  ? browser_view->GetActiveWebContents()
+@@ -326,7 +342,7 @@
+       content::GetUIThreadTaskRunner({}),
+       base::BindOnce(&OnBubbleBackdropCaptured,
+                      std::make_unique<views::ViewTracker>(surface),
+-                     transition_frame, source_rect));
++                     transition_frame, source_rect, !animate, generation));
+   renderer_view->CopyFromSurface(
+       gfx::Rect(), renderer_bounds.size(), base::Milliseconds(250),
+       base::BindOnce(
+--- a/chrome/browser/ui/views/ember/ember_glass_view.h
++++ b/chrome/browser/ui/views/ember/ember_glass_view.h
+@@ -37,7 +37,9 @@
+     BrowserView* browser_view,
+     views::View* surface,
+     const gfx::Point& screen_origin,
+-    content::WebContents* source_contents = nullptr);
++    content::WebContents* source_contents = nullptr,
++    bool animate = true,
++    bool constrain_to_source = true);
+ 
+ // Native Views surface for a cached EmberGlass panel. The panel pixels are
+ // stable while child labels/icons and lightweight interaction layers repaint.
+--- a/chrome/browser/ui/views/extensions/extensions_menu_view.cc
++++ b/chrome/browser/ui/views/extensions/extensions_menu_view.cc
+@@ -125,7 +125,10 @@
+       views::DISTANCE_BUBBLE_PREFERRED_WIDTH));
+   SetLayoutManager(std::make_unique<views::BoxLayout>(
+       views::BoxLayout::Orientation::kVertical));
+-  ember::ConfigureEmberGlassBubble(this, this);
++  // The widget root owns the sole glass perimeter across title/body/footer.
++  SetBackgroundColor(SK_ColorTRANSPARENT);
++  SetBackground(nullptr);
++  SetBorder(nullptr);
+   Populate();
+ }
+ 
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -3,6 +3,8 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/browser/ui/views/ember/ember_glass_view.h"
++#include "chrome/browser/ui/omnibox/omnibox_popup_view.h"
+ 
+ #include <stdint.h>
+ 
+@@ -480,7 +482,7 @@
+ 
+ namespace {
+ 
+-constexpr int kEmberSidebarTopInset = 0;
++constexpr int kEmberSidebarTopInset = 32;
+ constexpr int kEmberSidebarHorizontalInset = 8;
+ constexpr int kEmberSidebarBottomInset = 8;
+ constexpr int kEmberSidebarRowSpacing = 6;
+@@ -512,7 +514,7 @@
+       : keys_(std::move(key)) {
+     AddPreTargetHandler(&keys_);
+     SetLayoutManager(std::make_unique<views::BoxLayout>(
+-        views::BoxLayout::Orientation::kHorizontal, gfx::Insets(6), 4));
++        views::BoxLayout::Orientation::kVertical, gfx::Insets(6), 4));
+     SetBackground(views::CreateRoundedRectBackground(
+         SkColorSetARGB(240, 25, 27, 30), 10));
+     SetBorder(views::CreateRoundedRectBorder(
+@@ -2168,9 +2170,12 @@
+   // Return the native location bar to its delegate before teardown destroys
+   // the ToolbarView. Its controller and popup hold delegate pointers.
+   if (ember_search_panel_ && GetLocationBarView()) {
++    CloseEmberSearch(false);
+     auto* location = GetLocationBarView();
+-    toolbar_->AddChildView(ember_search_panel_->RemoveChildViewT(location));
+-  }
++    toolbar_->AddChildView(location->parent()->RemoveChildViewT(location));
++  }
++  ember_search_results_ = nullptr;
++  ember_search_input_row_ = nullptr;
+   ember_search_panel_ = nullptr;
+   ember_search_button_ = nullptr;
+   // Remove the layout manager to avoid dangling. This needs to be earlier than
+@@ -3077,6 +3082,7 @@
+                                      int index,
+                                      int reason) {
+   DCHECK(new_contents);
++  CloseEmberSearch(false);
+   TRACE_EVENT0("ui", "BrowserView::OnActiveTabChanged");
+   views::WebView* active_contents_view = GetActiveContentsWebView();
+   bool tab_change_in_split_view =
+@@ -4244,28 +4250,46 @@
+         base::BindRepeating(&BrowserView::HandleEmberSearchKey,
+                             weak_ptr_factory_.GetWeakPtr()));
+     ember_search_panel_ = AddChildView(std::move(host));
++    ember_search_input_row_ = ember_search_panel_->AddChildView(
++        std::make_unique<views::View>());
++    ember_search_input_row_->SetPreferredSize(gfx::Size(0, 36));
++    ember_search_input_row_->SetLayoutManager(std::make_unique<views::BoxLayout>(
++        views::BoxLayout::Orientation::kHorizontal, gfx::Insets(), 4));
+     location->ClearProperty(views::kFlexBehaviorKey);
+     location->ClearProperty(views::kMarginsKey);
+-    ember_search_panel_->AddChildView(location->parent()->RemoveChildViewT(location));
+-    static_cast<views::BoxLayout*>(ember_search_panel_->GetLayoutManager())
++    ember_search_input_row_->AddChildView(location->parent()->RemoveChildViewT(location));
++    // ToolbarView deliberately hid this layer before it became a floating input.
++    location->layer()->SetOpacity(1.0f);
++    location->SetCanProcessEventsWithinSubtree(true);
++    location->SetPreferredSize(gfx::Size(0, 36));
++    static_cast<views::BoxLayout*>(ember_search_input_row_->GetLayoutManager())
+         ->SetFlexForView(location, 1);
+     // Retain the existing Copy Link action in the floating address surface.
+-    ember_search_panel_->AddChildView(ember_sidebar_address_row_->RemoveChildViewT(
++    ember_search_input_row_->AddChildView(ember_sidebar_address_row_->RemoveChildViewT(
+         ember_sidebar_copy_link_.get()));
+     auto close = std::make_unique<views::LabelButton>(
+         base::BindRepeating(&BrowserView::CloseEmberSearch,
+-                            weak_ptr_factory_.GetWeakPtr()), u"×");
+-    close->SetPreferredSize(gfx::Size(28, 36));
++                            weak_ptr_factory_.GetWeakPtr(), true));
++    close->SetImageModel(views::Button::STATE_NORMAL,
++        ui::ImageModel::FromVectorIcon(vector_icons::kCloseIcon,
++                                      SkColorSetRGB(235, 237, 240), 18));
++    close->SetHorizontalAlignment(gfx::ALIGN_CENTER);
++    close->SetPreferredSize(gfx::Size(36, 36));
++    close->SetTooltipText(u"Close search (Escape)");
+     close->SetAccessibleName(u"Close search (Escape)");
+-    ember_search_panel_->AddChildView(std::move(close));
++    ember_search_input_row_->AddChildView(std::move(close));
+   }
+   ReorderChildView(ember_search_panel_, children().size() - 1);
+   ember_search_panel_->SetVisible(true);
+   location->SetVisible(true);
+   LayoutEmberSearch();
+   if (!already_open) {
++    ++ember_search_generation_;
+     ember_search_bang_alias_.clear();
+     GetLocationBar()->GetOmniboxView()->RevertAll();
++    ember::ConfigureEmberGlassDialog(ember_search_panel_);
++    ember::CaptureEmberGlassBubbleBackdrop(this, ember_search_panel_,
++        ember_search_panel_->GetBoundsInScreen().origin(), nullptr, false, false);
+   }
+   location->FocusLocation(true, false);
+   GetLocationBar()->GetOmniboxView()->SelectAll(false);
+@@ -4312,7 +4336,7 @@
+ }
+ 
+ void BrowserView::HandleEmberSearchKey(ui::KeyEvent* event) {
+-  if (event->type() != ui::EventType::kKeyPressed) {
++  if (!IsEmberSearchOpen() || event->type() != ui::EventType::kKeyPressed) {
+     return;
+   }
+   auto* omnibox = GetLocationBar()->GetOmniboxView();
+@@ -4382,33 +4406,82 @@
+   }
+ }
+ 
+-void BrowserView::CloseEmberSearch() {
++void BrowserView::CloseEmberSearch(bool restore_focus) {
+   if (!ember_search_panel_ || !ember_search_panel_->GetVisible()) {
+     return;
+   }
++  ++ember_search_generation_;
++  // Hide before reverting: late autocomplete updates cannot reopen a popup.
++  ember_search_panel_->SetVisible(false);
+   ember_search_bang_alias_.clear();
++  GetLocationBar()->GetOmniboxController()->StopAutocomplete(true);
+   GetLocationBar()->GetOmniboxView()->RevertAll();
+-  ember_search_panel_->SetVisible(false);
+-  if (auto* contents = GetActiveWebContents()) {
+-    contents->Focus();
+-  }
++  if (auto* popup = GetLocationBarView()->GetOmniboxPopupView()) {
++    popup->UpdatePopupAppearance();
++  }
++  if (restore_focus) {
++    if (auto* contents = GetActiveWebContents()) {
++      contents->Focus();
++    }
++  }
++}
++
++void BrowserView::ScheduleEmberSearchClose() {
++  if (!IsEmberSearchOpen()) {
++    return;
++  }
++  // Native acceptance still holds references to the current match. Revert only
++  // after that callback finishes, and never dismiss a subsequently reopened edit.
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE, base::BindOnce(
++          [](base::WeakPtr<BrowserView> view, unsigned int generation) {
++            if (view && view->ember_search_generation_ == generation) {
++              view->CloseEmberSearch();
++            }
++          }, weak_ptr_factory_.GetWeakPtr(), ember_search_generation_));
++}
++
++bool BrowserView::IsEmberSearchOpen() const {
++  return ember_search_panel_ && ember_search_panel_->GetVisible();
++}
++
++bool BrowserView::IsInEmberSearch(const views::View* view) const {
++  return IsEmberSearchOpen() && ember_search_panel_->Contains(view);
++}
++
++void BrowserView::SetEmberSearchResults(views::View* results) {
++  if (ember_search_results_ != results) {
++    if (ember_search_results_) {
++      ember_search_panel_->RemoveChildView(ember_search_results_);
++    }
++    ember_search_results_ = results;
++    if (results) {
++      ember_search_panel_->AddChildViewRaw(results);
++    }
++  }
++  LayoutEmberSearch();
+ }
+ 
+ void BrowserView::LayoutEmberSearch() {
+   if (!ember_search_panel_ || !ember_search_panel_->GetVisible()) {
+     return;
+   }
+-  auto* active_pane = GetActiveContentsContainerView();
+-  if (!active_pane) {
+-    return;
+-  }
+-  gfx::Rect pane = active_pane->GetBoundsInScreen();
+-  gfx::Point origin = pane.origin();
+-  views::View::ConvertPointFromScreen(this, &origin);
+-  const int panel_width = std::min(680, std::max(0, pane.width() - 24));
+-  ember_search_panel_->SetBounds(origin.x() + (pane.width() - panel_width) / 2,
+-                                origin.y() + 24, panel_width, 48);
++  // Chrome owns this surface, spanning the whole workspace rather than a pane.
++  const int left = std::min(ember_sidebar_width_ + 6, std::max(6, width() - 24));
++  const int panel_width = std::min(680, std::max(0, width() - left - 12));
++  int top = 38;
++  if (ember_search_button_ && ember_search_button_->IsDrawn()) {
++    gfx::Point anchor = ember_search_button_->GetBoundsInScreen().origin();
++    views::View::ConvertPointFromScreen(this, &anchor);
++    top = anchor.y();
++  }
++  const int results_height = ember_search_results_
++      ? ember_search_results_->GetHeightForWidth(std::max(0, panel_width - 12)) : 0;
++  const int desired_height = 48 + (results_height ? results_height + 4 : 0);
++  ember_search_panel_->SetBounds(left, top, panel_width,
++      std::min(desired_height, std::max(48, height() - top - 12)));
+   ember_search_panel_->DeprecatedLayoutImmediately();
++
+ }
+ 
+ void BrowserView::ShowEmberUploadPopup(
+@@ -4453,6 +4526,7 @@
+ }
+ 
+ void BrowserView::OnEmberSidebarPreferenceChanged() {
++  CloseEmberSearch(false);
+   const bool open =
+       GetProfile()->GetPrefs()->GetBoolean(prefs::kEmberSidebarOpen);
+   const bool wide = GetProfile()->GetPrefs()->GetBoolean(prefs::kEmberSidebarWide);
+@@ -5562,6 +5636,7 @@
+ // BrowserView, TabStripModelObserver implementation:
+ 
+ void BrowserView::OnSplitTabChanged(const SplitTabChange& change) {
++  CloseEmberSearch(false);
+   switch (change.type) {
+     case SplitTabChange::Type::kAdded: {
+       const tabs::TabInterface* active_tab =
+@@ -8126,9 +8201,7 @@
+   if (ember_search_panel_ && ember_search_panel_->GetVisible() &&
+       !ember_search_panel_->Contains(focused_now)) {
+     // Preserve the newly clicked control/page focus while ending edit state.
+-    ember_search_bang_alias_.clear();
+-    GetLocationBar()->GetOmniboxView()->RevertAll();
+-    ember_search_panel_->SetVisible(false);
++    CloseEmberSearch(false);
+   }
+ }
+ 
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -186,7 +186,11 @@
+   void SyncEmberSearchBang();
+   bool IsEmberTranslucentNewTab(const content::WebContents* contents) const;
+   void HandleEmberSearchKey(ui::KeyEvent* event);
+-  void CloseEmberSearch();
++  void CloseEmberSearch(bool restore_focus = true);
++  void ScheduleEmberSearchClose();
++  bool IsEmberSearchOpen() const;
++  bool IsInEmberSearch(const views::View* view) const;
++  void SetEmberSearchResults(views::View* results);
+   void LayoutEmberSearch();
+   void ShowEmberUploadPopup(content::RenderFrameHost* render_frame_host,
+                             scoped_refptr<content::FileSelectListener> listener,
+@@ -1235,8 +1239,11 @@
+   raw_ptr<views::View> ember_sidebar_header_ = nullptr;
+   raw_ptr<views::View> ember_sidebar_footer_ = nullptr;
+   bool ember_sidebar_open_ = true;
++  unsigned int ember_search_generation_ = 0;
+   std::u16string ember_search_bang_alias_;
+   raw_ptr<views::View> ember_search_panel_ = nullptr;
++  raw_ptr<views::View> ember_search_input_row_ = nullptr;
++  raw_ptr<views::View> ember_search_results_ = nullptr;
+   raw_ptr<views::LabelButton> ember_search_button_ = nullptr;
+   int ember_sidebar_width_ = 52;
+   int ember_sidebar_motion_from_ = 52;
+--- a/chrome/browser/ui/views/frame/browser_view_browsertest.cc
++++ b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+@@ -32,6 +32,9 @@
+ #include "chrome/test/base/search_test_utils.h"
+ #include "components/search_engines/template_url_service.h"
+ #include "ui/events/event.h"
++#include "ui/views/test/button_test_api.h"
++#include "chrome/browser/ui/views/omnibox/omnibox_popup_view_views.h"
++#include "chrome/browser/ui/views/omnibox/omnibox_view_views.h"
+ #include "chrome/browser/safe_browsing/chrome_enterprise_url_lookup_service_factory.h"
+ #include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/browser_commands_mac.h"
+@@ -409,22 +412,94 @@
+   auto* original_parent = location->parent();
+   auto* omnibox = browser_view()->GetLocationBar()->GetOmniboxView();
+   browser_view()->SetFocusToLocationBar(true);
+-  auto* host = location->parent();
++  auto* host = location->parent()->parent();
+   EXPECT_NE(original_parent, host);
+   EXPECT_TRUE(host->GetVisible());
++  EXPECT_TRUE(location->IsDrawn());
++  EXPECT_EQ(1.0f, location->layer()->opacity());
++  EXPECT_TRUE(location->GetCanProcessEventsWithinSubtree());
++  EXPECT_EQ(browser_view(), host->parent());
+   EXPECT_TRUE(omnibox->IsSelectAll());
+   EXPECT_EQ(location, browser_view()->GetLocationBarView());
+   omnibox->SetUserText(u"discard this draft", false);
+   ui::KeyEvent escape(ui::EventType::kKeyPressed, ui::VKEY_ESCAPE, ui::EF_NONE);
+-  browser_view()->HandleEmberSearchKey(&escape);
++  browser_view()->GetWidget()->OnKeyEvent(&escape);
+   EXPECT_TRUE(escape.handled());
+   EXPECT_FALSE(host->GetVisible());
+   browser_view()->SetFocusToLocationBar(true);
+-  EXPECT_EQ(host, location->parent());
++  EXPECT_EQ(host, location->parent()->parent());
+   EXPECT_TRUE(host->GetVisible());
+   EXPECT_TRUE(omnibox->IsSelectAll());
+   EXPECT_NE(u"discard this draft", omnibox->GetText());
+   browser_view()->CloseEmberSearch();
++}
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberFloatingSearchCloseAndTabLifecycle) {
++  auto* location = browser_view()->GetLocationBarView();
++  browser_view()->ShowEmberSearch();
++  auto* row = location->parent();
++  auto* close = static_cast<views::Button*>(row->children().back());
++  EXPECT_GE(close->width(), 32);
++  EXPECT_GE(close->height(), 32);
++  ui::MouseEvent click(ui::EventType::kMouseReleased, gfx::Point(), gfx::Point(),
++      base::TimeTicks::Now(), ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
++  views::test::ButtonTestApi(close).NotifyClick(click);
++  EXPECT_FALSE(browser_view()->IsEmberSearchOpen());
++  browser_view()->ShowEmberSearch();
++  EXPECT_TRUE(browser_view()->GetLocationBar()->GetOmniboxView()->IsSelectAll());
++  browser_view()->ScheduleEmberSearchClose();
++  base::RunLoop().RunUntilIdle();
++  EXPECT_FALSE(browser_view()->IsEmberSearchOpen());
++  browser_view()->ShowEmberSearch();
++  browser_view()->ScheduleEmberSearchClose();
++  browser_view()->CloseEmberSearch();
++  browser_view()->ShowEmberSearch();
++  base::RunLoop().RunUntilIdle();
++  EXPECT_TRUE(browser_view()->IsEmberSearchOpen());
++  chrome::AddTabAt(browser(), GURL(url::kAboutBlankURL), -1, true);
++  EXPECT_FALSE(browser_view()->IsEmberSearchOpen());
++  browser_view()->ShowEmberSearch();
++  browser()->profile()->GetPrefs()->SetBoolean(prefs::kEmberSidebarWide, true);
++  EXPECT_FALSE(browser_view()->IsEmberSearchOpen());
++  browser_view()->ShowEmberSearch();
++  browser()->tab_strip_model()->AddToNewSplit(
++      {0}, split_tabs::SplitTabVisualData(),
++      split_tabs::SplitTabCreatedSource::kToolbarButton);
++  EXPECT_FALSE(browser_view()->IsEmberSearchOpen());
++  browser_view()->ShowEmberSearch();
++  browser()->tab_strip_model()->ActivateTabAt(0);
++  EXPECT_FALSE(browser_view()->IsEmberSearchOpen());
++}
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberFloatingSearchOwnsNativeResults) {
++  browser_view()->ShowEmberSearch();
++  auto* omnibox = browser_view()->GetLocationBar()->GetOmniboxView();
++  omnibox->SetUserText(u"https://example.test/", true);
++  ui_test_utils::WaitForAutocompleteDone(browser());
++  auto* popup = static_cast<OmniboxPopupViewViews*>(
++      browser_view()->GetLocationBarView()->GetOmniboxPopupView());
++  ASSERT_TRUE(popup->parent());
++  EXPECT_EQ(browser_view(), popup->parent()->parent());
++  EXPECT_EQ(browser_view()->GetWidget(), popup->GetWidget());
++  EXPECT_TRUE(browser_view()->IsInEmberSearch(popup));
++  EXPECT_FALSE(browser_view()->IsInEmberSearch(browser_view()->contents_web_view()));
++  EXPECT_GT(popup->height(), 0);
++  auto* field = static_cast<OmniboxViewViews*>(omnibox);
++  EXPECT_EQ(u"https://example.test/", field->GetText());
++  EXPECT_TRUE(field->GetCursorEnabled());
++  EXPECT_TRUE(field->IsDrawn());
++  auto resized = browser_view()->GetWidget()->GetSize();
++  resized.set_width(std::max(500, resized.width() - 100));
++  browser_view()->GetWidget()->SetSize(resized);
++  browser_view()->GetWidget()->GetRootView()->DeprecatedLayoutImmediately();
++  EXPECT_LE(popup->parent()->GetBoundsInScreen().right(),
++            browser_view()->GetBoundsInScreen().right());
++  EXPECT_TRUE(field->IsDrawn());
++  browser_view()->CloseEmberSearch();
++  EXPECT_FALSE(browser_view()->IsEmberSearchOpen());
++  EXPECT_EQ(nullptr, popup->parent());
++  browser_view()->ShowEmberSearch();
++  EXPECT_TRUE(omnibox->IsSelectAll());
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberFloatingSearchBangBackspaceAndEscape) {
+--- a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
++++ b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+@@ -703,6 +703,20 @@
+       ember_shell_visible ? views().ember_sidebar->GetPreferredSize().width()
+                           : 0;
+   const bool ember_sidebar_visible = ember_sidebar_width > kEmberPageInset;
++  const auto align_ember_top_chrome = [&](auto& top) {
++    if (!ember_shell_visible || ember_sidebar_width <= 0) {
++      return;
++    }
++    // The rail starts below the caption row; genuine brand/toolbar start left.
++    top.bounds.Outset(gfx::Outsets::TLBR(0, ember_sidebar_width, 0, 0));
++    for (auto& [child, child_layout] : top.children) {
++      child_layout.bounds.Offset(ember_sidebar_width, 0);
++      if (child == views().toolbar) {
++        child_layout.bounds.Offset(-ember_sidebar_width, 0);
++        child_layout.bounds.set_width(child_layout.bounds.width() + ember_sidebar_width);
++      }
++    }
++  };
+   if (views().ember_sidebar) {
+     const gfx::Rect sidebar_bounds =
+         ember_sidebar_visible
+@@ -736,6 +750,8 @@
+                 : kEmberTopChromeTabStripLeadingCollapsed;
+         tabstrip_bounds.Inset(gfx::Insets::TLBR(
+             0, tabstrip_leading, 0, kEmberTopChromeTrailingActions));
++        tabstrip_bounds.Offset(-ember_sidebar_width, 0);
++        tabstrip_bounds.set_width(tabstrip_bounds.width() + ember_sidebar_width);
+         tabstrip_bounds.set_height(kEmberTopChromeHeight);
+       }
+       params.SetTop(
+@@ -926,6 +942,7 @@
+         top_container_layout, top_container_params, needs_exclusion);
+     top_container_layout.bounds =
+         GetTopContainerBoundsInParent(top_container_local_bounds, params);
++    align_ember_top_chrome(top_container_layout);
+     params.SetTop(top_container_layout.bounds.bottom());
+ 
+     // Possibly bump the leading margin of the top container out to cover the
+@@ -1063,6 +1080,7 @@
+         params.InLocalCoordinates(params.visual_client_area), needs_exclusion);
+     top_container_layout.bounds =
+         GetTopContainerBoundsInParent(top_container_local_bounds, params);
++    align_ember_top_chrome(top_container_layout);
+     params.SetTop(top_container_layout.bounds.bottom());
+   }
+ 
+--- a/chrome/browser/ui/views/frame/themed_background.cc
++++ b/chrome/browser/ui/views/frame/themed_background.cc
+@@ -54,10 +54,10 @@
+       {width * 0.5f - dx * half_length, height * 0.5f - dy * half_length},
+       {width * 0.5f + dx * half_length, height * 0.5f + dy * half_length}};
+   const SkColor4f base_colors[] = {
+-      SkColor4f::FromColor(SkColorSetRGB(0x20, 0x22, 0x25)),
+-      SkColor4f::FromColor(SkColorSetRGB(0x1C, 0x1E, 0x21)),
+-      SkColor4f::FromColor(SkColorSetRGB(0x18, 0x1A, 0x1D)),
+-      SkColor4f::FromColor(SkColorSetRGB(0x16, 0x18, 0x1B))};
++      SkColor4f::FromColor(SkColorSetARGB(238, 28, 30, 33)),
++      SkColor4f::FromColor(SkColorSetARGB(240, 25, 27, 30)),
++      SkColor4f::FromColor(SkColorSetARGB(242, 23, 25, 28)),
++      SkColor4f::FromColor(SkColorSetARGB(244, 21, 23, 26))};
+   const SkScalar base_stops[] = {0.0f, 0.29f, 0.60f, 1.0f};
+   const SkGradient::Interpolation interpolation = {
+       .fInPremul = SkGradient::Interpolation::InPremul::kYes,
+--- a/chrome/browser/ui/views/location_bar/location_bar_view.cc
++++ b/chrome/browser/ui/views/location_bar/location_bar_view.cc
+@@ -1199,6 +1199,14 @@
+ 
+   auto* const view = static_cast<views::View*>(event->target());
+   CHECK(view);
++  if (auto* chrome = browser_ ? BrowserView::GetBrowserViewForBrowser(browser_) : nullptr;
++      chrome && chrome->IsEmberSearchOpen()) {
++    const bool outside = !chrome->IsInEmberSearch(view);
++    if (outside) {
++      chrome->CloseEmberSearch(false);
++    }
++    return outside;
++  }
+   return !Contains(view);
+ }
+ 
+@@ -1589,7 +1597,15 @@
+ 
+   // Keep the views::Textfield in sync. It needs an opaque background to
+   // correctly enable subpixel AA.
+-  omnibox_view_->SetBackgroundColor(background_color_);
++  const auto* ember_browser_view = browser_
++      ? BrowserView::GetBrowserViewForBrowser(browser_) : nullptr;
++  const bool ember_floating = ember_browser_view && ember_browser_view->IsEmberSearchOpen();
++  if (ember_floating) {
++    // Input and native result rows share the browser-level glass backing.
++    SetBackground(nullptr);
++  }
++  omnibox_view_->SetBackgroundColor(ember_floating ? SK_ColorTRANSPARENT
++                                                 : background_color_);
+ 
+   // The divider between indicators and request chips should have the same color
+   // as the omnibox.
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_view_views.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_view_views.cc
+@@ -325,13 +325,16 @@
+ }
+ 
+ void OmniboxPopupViewViews::UpdatePopupBounds() {
+-  if (widget_) {
++  if (ember_embedded_) {
++    BrowserView::GetBrowserViewForBrowser(location_bar_view_->browser())
++        ->LayoutEmberSearch();
++  } else if (widget_) {
+     widget_->SetTargetBounds(GetTargetBounds());
+   }
+ }
+ 
+ bool OmniboxPopupViewViews::IsOpen() const {
+-  return widget_ != nullptr;
++  return ember_embedded_ || widget_ != nullptr;
+ }
+ 
+ void OmniboxPopupViewViews::InvalidateLine(size_t line) {
+@@ -346,25 +349,36 @@
+ 
+ void OmniboxPopupViewViews::UpdatePopupAppearance() {
+   const auto* autocomplete_controller = controller()->autocomplete_controller();
++  auto* browser_view = location_bar_view_ && location_bar_view_->browser()
++      ? BrowserView::GetBrowserViewForBrowser(location_bar_view_->browser())
++      : nullptr;
++  const bool floating = browser_view && browser_view->GetIsNormalType();
+   const bool should_be_open =
++      (!floating || browser_view->IsEmberSearchOpen()) &&
+       controller()->popup_state_manager()->popup_state() !=
+           OmniboxPopupState::kAim &&
+       !autocomplete_controller->result().empty() &&
+       !omnibox_view_->IsImeShowingPopup();
+-  const bool was_open = !!widget_;
++  const bool was_open = IsOpen();
+ 
+   if (!should_be_open) {
+     if (was_open) {
+       // Check whether omnibox should not close per UI DevTools settings.
+-      if (!widget_->ShouldHandleNativeWidgetActivationChanged(false)) {
++      if (widget_ && !widget_->ShouldHandleNativeWidgetActivationChanged(false)) {
+         return;
+       }
+       // Drop stale metrics callbacks.
+       metrics_weak_factory_.InvalidateWeakPtrs();
+ 
+-      widget_->CloseAnimated();  // This will eventually delete the popup.
+-      widget_->RemoveObserver(&widget_observer_helper_);
+-      widget_.reset();
++      if (ember_embedded_) {
++        ember_embedded_ = false;
++        browser_view->SetEmberSearchResults(nullptr);
++        SetVisible(false);
++      } else {
++        widget_->CloseAnimated();  // This will eventually delete the popup.
++        widget_->RemoveObserver(&widget_observer_helper_);
++        widget_.reset();
++      }
+ 
+       // Update the popup state manager that the classic popup is closing.
+       // Do this AFTER widget operations. `LocationBarView` is subscribed to
+@@ -392,7 +406,11 @@
+ 
+   // Ensure that we have an existing popup widget prior to creating the result
+   // views to ensure the proper initialization of the views hierarchy.
+-  if (!was_open) {
++  if (!was_open && floating) {
++    ember_embedded_ = true;
++    SetVisible(true);
++    browser_view->SetEmberSearchResults(this);
++  } else if (!was_open) {
+     // Drop stale metrics callbacks.
+     metrics_weak_factory_.InvalidateWeakPtrs();
+ 
+@@ -467,10 +485,17 @@
+   }
+ 
+   UpdateContextualSuggestionsGroup(grouped_matches_start_index);
+-  widget_->SetTargetBounds(GetTargetBounds());
++  if (ember_embedded_) {
++    PreferredSizeChanged();
++    browser_view->LayoutEmberSearch();
++  } else {
++    widget_->SetTargetBounds(GetTargetBounds());
++  }
+ 
+   if (!was_open) {
+-    widget_->ShowAnimated();
++    if (widget_) {
++      widget_->ShowAnimated();
++    }
+ 
+     // Popup is now expanded and first item will be selected.
+     UpdateAccessibleStates();
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_view_views.h
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_view_views.h
+@@ -188,6 +188,7 @@
+   // deleted or informed.
+   // TODO(crbug.com/40232479): Migrate this to CLIENT_OWNS_WIDGET.
+   base::WeakPtr<PopupWidget> widget_;
++  bool ember_embedded_ = false;
+ 
+   // Timestamp for when the current omnibox popup creation started.
+   std::optional<base::TimeTicks> popup_create_start_time_;
+--- a/chrome/browser/ui/views/omnibox/omnibox_result_view.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_result_view.cc
+@@ -352,8 +352,7 @@
+         /*for_border_thickness=*/0);
+   }
+ 
+-  const float half_row_height = OmniboxMatchCellView::kRowHeight / 2;
+-  gfx::RoundedCornersF radii = {0, half_row_height, half_row_height, 0};
++  gfx::RoundedCornersF radii(6);
+   return views::CreateRoundedRectBackground(
+       GetOmniboxBackgroundColorId(part_state), radii);
+ }
+--- a/chrome/browser/ui/views/omnibox/omnibox_view_views.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_view_views.cc
+@@ -61,6 +61,7 @@
+ #include "chrome/browser/ui/view_ids.h"
+ #include "chrome/browser/ui/views/chrome_layout_provider.h"
+ #include "chrome/browser/ui/views/location_bar/icon_label_bubble_view.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
+ #include "chrome/browser/ui/views/omnibox/omnibox_popup_closer.h"
+ #include "chrome/browser/ui/views/omnibox/omnibox_text_view.h"
+@@ -2106,6 +2107,15 @@
+   // TODO(crbug.com/478634529): Optimize and remove if possible.
+   base::ScopedSafetyChecksExclusion excluded;
+   PermitExternalProtocolHandler();
++  if (auto* browser_view = location_bar_view_ && location_bar_view_->browser()
++          ? BrowserView::GetBrowserViewForBrowser(location_bar_view_->browser()) : nullptr;
++      browser_view && browser_view->IsEmberSearchOpen()) {
++    ui::KeyEvent chrome_event(event);
++    browser_view->HandleEmberSearchKey(&chrome_event);
++    if (chrome_event.handled()) {
++      return true;
++    }
++  }
+ 
+   if (event.type() == ui::EventType::kKeyReleased) {
+     // The omnibox contents may change while the control key is pressed.
+--- a/chrome/browser/ui/views/tabs/tab.cc
++++ b/chrome/browser/ui/views/tabs/tab.cc
+@@ -58,6 +58,8 @@
+ #include "components/tabs/public/tab_alert.h"
+ #include "components/tabs/public/tab_group.h"
+ #include "components/tabs/public/tab_interface.h"
++#include "chrome/grit/theme_resources.h"
++#include "ui/base/theme_provider.h"
+ #include "third_party/skia/include/core/SkPath.h"
+ #include "third_party/skia/include/core/SkPathBuilder.h"
+ #include "ui/accessibility/ax_enums.mojom.h"
+@@ -156,6 +158,17 @@
+ 
+   // views::HighlightPathGenerator:
+   SkPath GetHighlightPath(const views::View* view) override {
++    // The compact shell needs a focus contour inside the actual tab bounds.
++    // Chromium's standard tab contour includes toolbar overlap/extension arcs.
++    if (view->GetThemeProvider() &&
++        !view->GetThemeProvider()->HasCustomImage(IDR_THEME_TOOLBAR)) {
++      if (view->width() < 12 || view->height() < 12) {
++        return SkPath();
++      }
++      return SkPath::RRect(
++          SkRect::MakeWH(view->width(), view->height()).makeInset(3, 3),
++          5, 5);
++    }
+     return tab_style_views_->GetPath(TabStyle::PathType::kHighlight, 1.0, {});
+   }
+ 
+--- a/chrome/browser/ui/views/tabs/tab_strip.cc
++++ b/chrome/browser/ui/views/tabs/tab_strip.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/views/tabs/tab_strip.h"
++#include "ui/gfx/canvas.h"
+ 
+ #include <stddef.h>
+ 
+@@ -817,6 +818,31 @@
+     tab_strip_->tab_container_->CompleteAnimationAndLayout();
+   }
+ 
++  void OnPaint(gfx::Canvas* canvas) override {
++    views::View::OnPaint(canvas);
++    cc::PaintFlags rim;
++    rim.setAntiAlias(true);
++    rim.setStyle(cc::PaintFlags::kStroke_Style);
++    rim.setStrokeWidth(1);
++    rim.setColor(SkColorSetARGB(48, 235, 237, 240));
++    for (int i = 0; i + 1 < GetTabCount(); ++i) {
++      auto* first = tab_strip_->tab_at(i);
++      auto* second = tab_strip_->tab_at(i + 1);
++      if (!first->split() || first->split() != second->split() ||
++          !first->GetVisible() || !second->GetVisible() ||
++          first->closing() || second->closing()) {
++        continue;
++      }
++      gfx::Rect group = views::View::ConvertRectToTarget(
++          first, this, first->GetLocalBounds());
++      group.Union(views::View::ConvertRectToTarget(
++          second, this, second->GetLocalBounds()));
++      group.Inset(gfx::Insets::VH(1, 3));
++      canvas->DrawRoundRect(gfx::RectF(group), 6, rim);
++      ++i;  // One boundary includes both members and the reserved split glyph.
++    }
++  }
++
+   void PaintChildren(const views::PaintInfo& paint_info) override {
+     std::vector<ZOrderableTabContainerElement> orderable_children;
+     for (views::View* child : children()) {

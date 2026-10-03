@@ -194,10 +194,9 @@ body.unsplash-mode .glass__warp::after {
   width: 100%;
   height: 0;
   overflow: hidden;
-  border-radius: 18px;
-  --glass-radius: 18px;
-  box-shadow: 0 12px 40px rgba(0,0,0,.25), 0 0 0 .5px rgba(255,255,255,.22) inset,
-      0 1px 3px rgba(255,255,255,.16) inset;
+  border-radius: 10px;
+  --glass-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.28), 0 0 0 1px rgba(255,255,255,.14) inset;
   opacity: 0;
   transform: translateY(-6px);
   transition: height var(--dur-3) var(--ease),
@@ -205,6 +204,8 @@ body.unsplash-mode .glass__warp::after {
       transform var(--dur-3) var(--ease);
 }
 .ember-recommendation-list { position: relative; z-index: 1; padding: 5px; }
+.ember-recommendations .glass__warp { background: rgba(18,20,25,.3); }
+body.unsplash-mode .ember-recommendations .glass__warp::after { background: rgba(18,20,25,.3); }
 .ember-recommendations[hidden] { display: none; }
 .ember-recommendations.open { opacity: 1; transform: none; }
 .ember-recommendation {
@@ -213,10 +214,10 @@ body.unsplash-mode .glass__warp::after {
   align-items: center;
   gap: 10px;
   width: 100%;
-  height: 37px;
+  height: 44px;
   padding: 0 12px;
   border: 0;
-  border-radius: 11px;
+  border-radius: 6px;
   background: transparent;
   color: #fff;
   text-align: left;
@@ -226,15 +227,15 @@ body.unsplash-mode .glass__warp::after {
 }
 .ember-recommendation.selected,
 .ember-recommendation:hover {
-  background: rgba(255,255,255,.17);
-  box-shadow: 0 0 0 .5px rgba(255,255,255,.24) inset,
-      0 1px 2px rgba(255,255,255,.13) inset, 0 5px 14px rgba(0,0,0,.12);
+  background: rgba(255,255,255,.09);
+  box-shadow: none;
 }
 .ember-recommendation-icon { width: 17px; height: 17px; flex: none; object-fit: contain; }
-.ember-recommendation-text { display: flex; min-width: 0; flex: 1; gap: 12px; align-items: baseline; }
+.ember-utility-icon { filter: brightness(0) invert(1); opacity: .8; }
+.ember-recommendation-text { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 3px; align-items: stretch; }
 .ember-recommendation-title,
 .ember-recommendation-description { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.ember-recommendation-description { color: rgba(255,255,255,.52); font-size: 11px; }
+.ember-recommendation-description { color: rgba(237,239,242,.68); font-size: 11px; }
 .ember-recommendation-enter { flex: none; color: rgba(255,255,255,.7); font-size: 17px; }
 .ember-recommendation-enter[hidden] { display: none; }
 /* Both the glyph and the word run the search, so both say so with the
@@ -249,3 +250,13 @@ body.unsplash-mode .glass__warp::after {
   * { transition: none !important; animation: none !important; }
   .liquid-glass-root { transform: none !important; }
 }
+
+.ember-recommendation-remove {
+  flex: none; width: 30px; height: 30px; border: 0; border-radius: 5px;
+  background: transparent; color: rgba(255,255,255,.75); cursor: pointer;
+  opacity: 0; font: 18px/1 var(--font);
+}
+.ember-recommendation:hover .ember-recommendation-remove,
+.ember-recommendation.selected .ember-recommendation-remove { opacity: 1; }
+.ember-recommendation-remove:hover { background: rgba(255,255,255,.08); }
+.ember-recommendation-remove:focus-visible { outline: 1px solid rgba(255,255,255,.5); }

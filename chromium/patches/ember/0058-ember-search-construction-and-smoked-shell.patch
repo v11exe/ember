@@ -1,0 +1,267 @@
+diff --git a/chrome/browser/ui/views/frame/themed_background.cc b/chrome/browser/ui/views/frame/themed_background.cc
+--- a/chrome/browser/ui/views/frame/themed_background.cc
++++ b/chrome/browser/ui/views/frame/themed_background.cc
+@@ -46,29 +46,11 @@
+   canvas->Translate(gfx::Vector2d(-origin.x(), -origin.y()));
+   const gfx::Rect bounds = browser_view->GetLocalBounds();
+ 
+-  // CSS 110deg: project the window onto the gradient axis.
+-  constexpr float dx = 0.93969262f;
+-  constexpr float dy = 0.34202014f;
+-  const float half_length = (width * dx + height * dy) * 0.5f;
+-  const SkPoint endpoints[] = {
+-      {width * 0.5f - dx * half_length, height * 0.5f - dy * half_length},
+-      {width * 0.5f + dx * half_length, height * 0.5f + dy * half_length}};
+-  const SkColor4f base_colors[] = {
+-      SkColor4f::FromColor(SkColorSetARGB(190, 25, 27, 30)),
+-      SkColor4f::FromColor(SkColorSetARGB(190, 25, 27, 30)),
+-      SkColor4f::FromColor(SkColorSetARGB(190, 25, 27, 30)),
+-      SkColor4f::FromColor(SkColorSetARGB(190, 25, 27, 30))};
+-  const SkScalar base_stops[] = {0.0f, 0.29f, 0.60f, 1.0f};
+-  const SkGradient::Interpolation interpolation = {
+-      .fInPremul = SkGradient::Interpolation::InPremul::kYes,
+-      .fColorSpace = SkGradient::Interpolation::ColorSpace::kSRGB};
++  // One neutral heavy tint over DWM's live desktop blur. No fixed wallpaper
++  // colours or per-component gradient; all shell owners use this exact paint.
+   cc::PaintFlags flags;
+-  flags.setShader(cc::PaintShader::MakeLinearGradient(
+-      endpoints, base_colors, base_stops, 4, SkTileMode::kClamp, interpolation));
++  flags.setColor(SkColorSetARGB(210, 20, 22, 25));
+   canvas->DrawRect(bounds, flags);
+-
+-  // Neutral material stays continuous across the bounded shell surfaces.
+-
+ }
+ 
+ bool WillPaintCustomImage(const views::View* view, int id) {
+diff --git a/chrome/browser/ui/views/frame/custom_corners.cc b/chrome/browser/ui/views/frame/custom_corners.cc
+--- a/chrome/browser/ui/views/frame/custom_corners.cc
++++ b/chrome/browser/ui/views/frame/custom_corners.cc
+@@ -6,9 +6,11 @@
+ 
+ #include "base/check_op.h"
+ #include "base/i18n/rtl.h"
++#include "chrome/browser/ui/color/chrome_color_id.h"
+ #include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/frame/themed_background.h"
+ #include "third_party/skia/include/core/SkPathBuilder.h"
++#include "ui/color/color_id.h"
+ #include "ui/gfx/scoped_canvas.h"
+ 
+ CustomCorners::CustomCorners(BrowserView& browser_view)
+@@ -55,7 +57,16 @@
+   }
+ 
+   auto paint_color = [&](ColorChoiceWithAlpha choice) {
+-    if (std::holds_alternative<ToolbarTheme>(choice.color) ||
++    // Normal Ember shell layouts also pass palette IDs directly. Those paths
++    // must use the same translucent material as themed frame/toolbar paths.
++    const auto* shell_color_id = std::get_if<ui::ColorId>(&choice.color);
++    const bool ember_shell_color =
++        browser_view().GetIsNormalType() && shell_color_id &&
++        (*shell_color_id == kColorToolbar ||
++         *shell_color_id == ui::kColorFrameActive ||
++         *shell_color_id == ui::kColorFrameInactive);
++    if (ember_shell_color ||
++        std::holds_alternative<ToolbarTheme>(choice.color) ||
+         std::holds_alternative<FrameTheme>(choice.color)) {
+       gfx::ScopedCanvas scoped(canvas);
+       canvas->ClipPath(path, anti_alias);
+diff --git a/chrome/browser/ui/views/frame/custom_corners_background.cc b/chrome/browser/ui/views/frame/custom_corners_background.cc
+--- a/chrome/browser/ui/views/frame/custom_corners_background.cc
++++ b/chrome/browser/ui/views/frame/custom_corners_background.cc
+@@ -260,6 +260,13 @@
+         corners[VisualCorner::kTopLeft].radius.value_or(default_radius_);
+     const SkPath corner_path =
+         SkPath::Rect(SkRect::MakeXYWH(0, 0, corner_radius, corner_radius));
++    gfx::ScopedCanvas corner_canvas(canvas);
++    if (browser_view().GetIsNormalType()) {
++      // The rounded primary path paints its own pixels below. Tint only the
++      // exterior corner here, so translucent shell material is applied once.
++      canvas->ClipPath(GetBackgroundPath(rect, nullptr), true,
++                       SkClipOp::kDifference);
++    }
+     PaintPath(canvas, corner_path, corner_color_, /*anti_alias=*/false);
+   }
+   if (corners[VisualCorner::kTopRight].type ==
+@@ -268,6 +275,13 @@
+         corners[VisualCorner::kTopRight].radius.value_or(default_radius_);
+     const SkPath corner_path = SkPath::Rect(SkRect::MakeXYWH(
+         rect.width() - corner_radius, 0, corner_radius, corner_radius));
++    gfx::ScopedCanvas corner_canvas(canvas);
++    if (browser_view().GetIsNormalType()) {
++      // The rounded primary path paints its own pixels below. Tint only the
++      // exterior corner here, so translucent shell material is applied once.
++      canvas->ClipPath(GetBackgroundPath(rect, nullptr), true,
++                       SkClipOp::kDifference);
++    }
+     PaintPath(canvas, corner_path, corner_color_, /*anti_alias=*/false);
+   }
+   if (corners[VisualCorner::kBottomRight].type ==
+@@ -277,6 +291,13 @@
+     const SkPath corner_path = SkPath::Rect(SkRect::MakeXYWH(
+         rect.width() - corner_radius, rect.height() - corner_radius,
+         corner_radius, corner_radius));
++    gfx::ScopedCanvas corner_canvas(canvas);
++    if (browser_view().GetIsNormalType()) {
++      // The rounded primary path paints its own pixels below. Tint only the
++      // exterior corner here, so translucent shell material is applied once.
++      canvas->ClipPath(GetBackgroundPath(rect, nullptr), true,
++                       SkClipOp::kDifference);
++    }
+     PaintPath(canvas, corner_path, corner_color_, /*anti_alias=*/false);
+   }
+   if (corners[VisualCorner::kBottomLeft].type ==
+@@ -285,6 +306,13 @@
+         corners[VisualCorner::kBottomLeft].radius.value_or(default_radius_);
+     const SkPath corner_path = SkPath::Rect(SkRect::MakeXYWH(
+         0, rect.height() - corner_radius, corner_radius, corner_radius));
++    gfx::ScopedCanvas corner_canvas(canvas);
++    if (browser_view().GetIsNormalType()) {
++      // The rounded primary path paints its own pixels below. Tint only the
++      // exterior corner here, so translucent shell material is applied once.
++      canvas->ClipPath(GetBackgroundPath(rect, nullptr), true,
++                       SkClipOp::kDifference);
++    }
+     PaintPath(canvas, corner_path, corner_color_, /*anti_alias=*/false);
+   }
+ 
+diff --git a/chrome/browser/ui/views/frame/browser_frame_view_win.cc b/chrome/browser/ui/views/frame/browser_frame_view_win.cc
+--- a/chrome/browser/ui/views/frame/browser_frame_view_win.cc
++++ b/chrome/browser/ui/views/frame/browser_frame_view_win.cc
+@@ -775,6 +775,12 @@
+                TopAreaHeight(false) + info.tabstrip_preferred_height);
+   const gfx::Rect titlebar_rect = gfx::ToEnclosingRect(
+       gfx::RectF(0, y, width() * scale, titlebar_height * scale - y));
++  // Normal Ember windows paint their shell in the client Views hierarchy.
++  // An opaque non-client underlay here hides the DWM backdrop, even when the
++  // child frame/sidebar paints are translucent. Keep the native accent edge.
++  if (GetBrowserView()->GetIsNormalType()) {
++    return;
++  }
+   // Paint the titlebar first so we have a background if an area isn't covered
+   // by the theme image.
+   flags.setColor(titlebar_color);
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -1858,6 +1858,7 @@
+     ember_sidebar_ = AddChildView(std::make_unique<views::View>());
+     ember_sidebar_->SetPreferredSize(gfx::Size(ember_sidebar_width_, 0));
+     ember_sidebar_->SetPaintToLayer();
++    ember_sidebar_->layer()->SetFillsBoundsOpaquely(false);
+     ember_sidebar_->layer()->SetMasksToBounds(true);
+     ember_sidebar_->SetBackground(std::make_unique<ThemedBackground>(
+         this, ThemedBackground::kFrameTheme));
+@@ -8396,12 +8397,17 @@
+                    SWP_FRAMECHANGED);
+   // A frame-mode change can reset the system backdrop. Apply the requested
+   // type last so normal, maximized and restored NTPs converge on one state.
++  // Ember's normal shell is dark even when Windows' app theme is light.
++  // This also keeps the system acrylic's luminosity layer from whitening it.
++  const BOOL dark_backdrop = TRUE;
++  DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_backdrop,
++                        sizeof(dark_backdrop));
+   const HRESULT backdrop_result = DwmSetWindowAttribute(
+       hwnd, static_cast<DWMWINDOWATTRIBUTE>(kDwmwaSystemBackdropType),
+       &backdrop_type, sizeof(backdrop_type));
+   // Windows versions without this API retain a readable opaque shell fallback.
+   if (FAILED(backdrop_result)) {
+-    const SkColor fallback = SkColorSetRGB(25, 27, 30);
++    const SkColor fallback = SkColorSetRGB(20, 22, 25);
+     widget->native_widget_private()->SetBackgroundColor(fallback);
+     widget->GetCompositor()->SetBackgroundColor(fallback);
+   }
+diff --git a/chrome/browser/ui/views/frame/browser_view_browsertest.cc b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+--- a/chrome/browser/ui/views/frame/browser_view_browsertest.cc
++++ b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+@@ -68,6 +68,8 @@
+ #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
+ #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view_observer.h"
+ #include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/browser/ui/views/frame/custom_corners_background.h"
++#include "ui/gfx/canvas.h"
+ #include "chrome/browser/ui/views/frame/contents_container_view.h"
+ #include "chrome/browser/ui/views/frame/contents_web_view.h"
+ #include "chrome/browser/ui/views/frame/immersive_mode_tester.h"
+@@ -538,6 +540,50 @@
+   browser_view()->CloseEmberSearch();
+ }
+ 
++IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberDetachedSuggestionTextConstruction) {
++  // The real match-cell constructor sets nonempty ellipsis and separator text
++  // before AddChildViewAt attaches its row to the popup's Widget.
++  OmniboxTextView text(nullptr);
++  ASSERT_FALSE(text.GetColorProvider());
++  text.SetText(u"...");
++  ASSERT_TRUE(text.render_text_for_testing());
++  EXPECT_EQ(u"...", text.GetText());
++  text.SetTextWithStyling(u"Search", {});
++  EXPECT_EQ(u"Search", text.GetText());
++  EXPECT_TRUE(gfx::test::RenderTextTestApi(
++      const_cast<gfx::RenderText*>(text.render_text_for_testing()))
++      .colors().EqualsValueForTesting(SkColorSetRGB(235, 237, 240)));
++}
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberShellCornersHaveOneTranslucentTint) {
++  auto* surface = browser_view()->AddChildView(std::make_unique<views::View>());
++  surface->SetBounds(0, 0, 80, 80);
++  auto background = std::make_unique<CustomCornersBackground>(
++      *surface, *browser_view(), kColorToolbar, ui::kColorFrameActive, 16);
++  CustomCornersBackground::Corners corners;
++  for (auto corner : {CornerOrientation::kTopLeading,
++                      CornerOrientation::kTopTrailing,
++                      CornerOrientation::kBottomLeading,
++                      CornerOrientation::kBottomTrailing}) {
++    corners[corner] = {CustomCornersBackground::CornerType::kRoundedWithBackground,
++                       16};
++  }
++  background->SetCorners(corners);
++  background->SetVisible(true);
++  gfx::Canvas canvas(gfx::Size(80, 80), 1.f, false);
++  background->Paint(&canvas, surface);
++  const SkBitmap bitmap = canvas.GetBitmap();
++  const SkColor centre = bitmap.getColor(40, 40);
++  EXPECT_EQ(210u, SkColorGetA(centre));
++  for (const gfx::Point& point : {gfx::Point(1, 1), gfx::Point(78, 1),
++                                 gfx::Point(1, 78), gfx::Point(78, 78),
++                                 gfx::Point(12, 12)}) {
++    EXPECT_EQ(centre, bitmap.getColor(point.x(), point.y()));
++  }
++  background.reset();
++  browser_view()->RemoveChildViewT(surface);
++}
++
+ IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberGlassReceivesContentOnlyDamage) {
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL(
+       "data:text/html,<body style='margin:0;background:%2300ff00'>")));
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_text_view.cc b/chrome/browser/ui/views/omnibox/omnibox_text_view.cc
+--- a/chrome/browser/ui/views/omnibox/omnibox_text_view.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_text_view.cc
+@@ -222,7 +222,7 @@
+ 
+ void OmniboxTextView::ReapplyStyling() {
+   // No work required if there are no preexisting styles.
+-  if (!cached_classifications_) {
++  if (!cached_classifications_ || !GetColorProvider()) {
+     return;
+   }
+ 
+@@ -294,8 +294,15 @@
+       CONTEXT_OMNIBOX_POPUP, kTextStyle);
+   render_text->SetFontList(font);
+   render_text->SetText(text);
+-  render_text->SetColor(GetColorProvider()->GetColor(
+-      secondary_role_ ? kColorOmniboxResultsTextDimmed : kColorOmniboxText));
++  // OmniboxMatchCellView constructs its ellipsis/separator text before the
++  // row joins a Widget. GetColorProvider() is null during that construction.
++  // Initialize neutral pixels now; OnMatchUpdate applies the owning palette.
++  const auto* provider = GetColorProvider();
++  const ui::ColorId id =
++      secondary_role_ ? kColorOmniboxResultsTextDimmed : kColorOmniboxText;
++  const SkColor fallback = secondary_role_ ? SkColorSetRGB(160, 164, 170)
++                                           : SkColorSetRGB(235, 237, 240);
++  render_text->SetColor(provider ? provider->GetColor(id) : fallback);
+   // Increase space between lines for multiline texts.
+   render_text->SetMinLineHeight(19);
+   return render_text;
