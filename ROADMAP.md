@@ -624,9 +624,9 @@ The button should remain extremely small because this is intended as a constant 
 
 ## 9. Arc-style Split View
 
-**Status:** ⬜ Planned
+**Status:** ✅ Completed
 
-**Current main-branch verification:** no Split View implementation is present yet; treat this feature as upcoming until it is implemented and tested.
+**Native completion:** confirmed complete by the user on `chromium-port` on 3 October 2026. The older main-branch verification does not describe the native implementation.
 
 Small Split View button in the top-right browser chrome.
 
@@ -810,7 +810,7 @@ Workspaces and Profiles should remain separate concepts so multiple workspaces c
 
 **Source:** Vivaldi / Workona concept
 
-**Status:** ⬜ Planned
+**Status:** ✅ Completed
 
 Add a sidebar utility button that opens a search panel.
 
@@ -841,7 +841,7 @@ Important: this is **a sidebar search tool**, not a permanent sidebar tab list.
 
 **Source:** Session Buddy / Tab Session Manager, made more aggressive
 
-**Status:** ⬜ Planned
+**Status:** ✅ Completed
 
 Allow:
 
@@ -917,7 +917,7 @@ Rules should support:
 
 ## 17. Automatic tab hibernation awareness throughout Ember
 
-**Status:** ⬜ Planned
+**Status:** ✅ Completed
 
 Feature #1 should not behave as an isolated optimisation.
 
@@ -999,7 +999,7 @@ The sidebar remains a **media controller**, not a tab list.
 
 ## 20. Per-tab sidebar audio indicator
 
-**Status:** ⬜ Planned
+**Status:** ✅ Completed
 
 Any tab producing sound receives a small speaker indicator in its normal tab UI.
 
@@ -1175,7 +1175,7 @@ Purpose:
 
 **Source:** Safari / Vivaldi
 
-**Status:** ⬜ Planned
+**Status:** ✅ Completed
 
 Hovering a normal tab briefly displays a cached/live preview.
 
@@ -1456,25 +1456,25 @@ It should feel like temporarily drawing directly on the webpage rather than laun
 6. Link Peek
 7. Instant/Favorite sidebar buttons
 8. Copy Link ✅
-9. Split View
+9. Split View ✅
 10. Follower Tabs
 11. In-window floating webpages
 12. Workspaces
 13. Workspace Profiles
-14. Universal sidebar tab search
-15. Fully-offloaded named Sessions
+14. Universal sidebar tab search ✅
+15. Fully-offloaded named Sessions ✅
 16. Automatic workspace routing
-17. Hibernation integration across the entire tab system
+17. Hibernation integration across the entire tab system ✅
 18. Picture-in-Picture
 19. Sidebar media controls
-20. Per-tab audio controls
+20. Per-tab audio controls ✅
 21. Compact / Frameless Mode
 22. Edge-hover UI reveal
 23. Adaptive chrome
 24. Parent/child tab relationships
 25. Duplicate-tab detection
 26. Tab Traces
-27. Hover tab previews
+27. Hover tab previews ✅
 28. Tab renaming
 29. Protected tabs
 30. Back/Forward mouse gestures
