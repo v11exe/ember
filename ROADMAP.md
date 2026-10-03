@@ -7,7 +7,7 @@ the final linked native build and interaction acceptance are tracked in
 `CHROMIUM_PORT_STATUS.md`. Electron-specific implementation references in older
 sections refer to the preserved `main` branch, not code in this checkout.
 
-**Status:** ✅ Completed · ⬜ Planned
+**Status:** ✅ Completed · ⬜ Planned · ❌ No longer planned
 
 ## Global UI rule
 
@@ -18,7 +18,6 @@ Good sidebar candidates:
 - Instant/Favorite site buttons
 - Global tab search
 - Media controls
-- Recent files / Library
 - Downloads/history/bookmarks controls where useful
 - Workspace/profile controls
 - Other browser utilities
@@ -521,7 +520,7 @@ Preserve these rules:
   current list remains global until a real scope model exists. Profiles (#13)
   must resolve Favorite reuse inside the correct browsing session.
 - Split View (#9), Follower Tabs (#10), floating pages (#11), compact chrome
-  (#21), edge-hover chrome (#22), tab search (#14), and recent files (#31) must
+  (#21), edge-hover chrome (#22), and tab search (#14) must
   consume the shared shell geometry instead of maintaining competing insets or
   placing ordinary tabs in the sidebar.
 
@@ -1003,12 +1002,13 @@ The sidebar remains a **media controller**, not a tab list.
 
 Any tab producing sound receives a small speaker indicator in its normal tab UI.
 
-Click:
+Left-click the indicator:
 
 - Mute
 - Unmute
 
-The sidebar media panel provides the expanded controls.
+Planned feature #34 adds a right-click volume slider to this same tab indicator.
+The sidebar media panel remains a separate playback-control feature.
 
 Do not require switching to the offending tab simply to stop its audio.
 
@@ -1261,37 +1261,6 @@ There should be enough movement threshold that normal right-clicking never accid
 
 ---
 
-## 31. Recent Files / Library sidebar panel
-
-**Source:** Arc concept
-
-**Status:** ⬜ Planned
-
-Add a proper browser content utility to the sidebar.
-
-Show recent:
-
-- Downloads
-- Images
-- Screenshots
-- PDFs
-- Other downloaded/opened files
-- Relevant clipboard image where Ember already tracks it
-
-Allow files to be:
-
-- Opened
-- Revealed in Explorer
-- Copied
-- Dragged directly from Ember into webpages
-- Removed from recent history
-
-This complements the recent-file upload UI already being developed.
-
-**Existing related work:** Ember already has a recent-file/clipboard-aware upload picker. That does **not** complete this feature; #31 remains planned until there is a real reusable sidebar Library panel with the actions listed above.
-
----
-
 ## 32. Per-site control panel
 
 **Source:** Orion
@@ -1338,26 +1307,23 @@ No giant translation toolbar unless necessary.
 
 ---
 
-## 34. Per-tab volume booster
+## 34. Per-tab volume slider / booster
 
 **Source:** Opera
 
 **Status:** ⬜ Planned
 
-Beyond ordinary 0–100% volume control, optionally allow boosting unusually quiet media.
+Use the existing volume/speaker indicator in each tab's normal tab UI (#20).
 
-Example:
+- Left-click the indicator to mute or unmute that tab.
+- Right-click the indicator to open a compact, thin rectangular volume popover anchored to that indicator.
+- The popover uses dark Emberglass, with a volume icon on the left followed by a simple white slider.
+- Volume defaults to 100% (full normal volume).
+- The slider supports the full range from 0% to 200%, allowing attenuation below normal volume and boosting above it.
 
-```text
-100%
-150%
-200%
-300%
-```
+Apply the slider to the owning tab's audio, not global browser/system volume. This is accessed from the tab indicator, not the sidebar media panel.
 
-Keep this under the media controls rather than creating another major UI surface.
-
-Apply per tab/media session, not globally unless explicitly selected.
+This section defines future behavior only; do not implement it as part of this roadmap update.
 
 ---
 
@@ -1446,6 +1412,43 @@ It should feel like temporarily drawing directly on the webpage rather than laun
 
 ---
 
+# No longer planned
+
+Removed proposals retain their original numbers. They are excluded from the active priority order.
+
+## 31. Recent Files / Library sidebar panel
+
+**Source:** Arc concept
+
+**Status:** ❌ No longer planned
+
+Removed from the active roadmap by the user on 3 October 2026. Feature number 31 is retained for reference. The description below records the former proposal; it is not an implementation request.
+
+Add a proper browser content utility to the sidebar.
+
+Show recent:
+
+- Downloads
+- Images
+- Screenshots
+- PDFs
+- Other downloaded/opened files
+- Relevant clipboard image where Ember already tracks it
+
+Allow files to be:
+
+- Opened
+- Revealed in Explorer
+- Copied
+- Dragged directly from Ember into webpages
+- Removed from recent history
+
+This complements the recent-file upload UI already being developed.
+
+**Existing related work:** Ember already has a recent-file/clipboard-aware upload picker. Removing this Library proposal does not remove that existing picker.
+
+---
+
 # Combined priority order
 
 1. Automatic tab hibernation / true renderer offloading ✅
@@ -1478,10 +1481,9 @@ It should feel like temporarily drawing directly on the webpage rather than laun
 28. Tab renaming
 29. Protected tabs
 30. Back/Forward mouse gestures
-31. Recent Files / Library sidebar
 32. Per-site controls
 33. Translation
-34. Volume booster
+34. Tab-indicator volume slider / booster (0–200%)
 35. Cross-window state mirroring
 36. Page-aware browser tinting
 37. Freeze + Draw annotation mode
