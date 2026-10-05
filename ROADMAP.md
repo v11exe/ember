@@ -26,6 +26,22 @@ Tab-specific features should modify Ember's actual tab UI rather than adding ano
 
 ---
 
+## Current sidebar utility layout and shared behavior
+
+Accepted in the latest feature run on 5 October 2026.
+
+Footer order, bottom to top:
+
+1. Settings — one cog; opens existing browser Settings.
+2. Extensions — native list/actions.
+3. ChatGPT Snap (#38).
+4. Workspaces (#12) — “Work in progress” placeholder.
+5. Media (#19).
+
+Preserve equally scaled glyphs, usable square hover/press/open states, current dark Emberglass and existing Ember motion, including interruption and reduced motion. Opening another utility dismisses the previously visible utility surface; Snap's draft survives closure and source-page interaction does not dismiss it. Settings dismisses the active utility before opening. Keep thin/wide layouts and the footer inside window bounds. The reported Extensions hover artifacting belongs to this accepted correction run.
+
+---
+
 # Highest priority — features explicitly singled out
 
 ## 1. Aggressive automatic tab hibernation / offloading
@@ -774,6 +790,8 @@ owns the page.
 
 Switching workspace should be instantaneous.
 
+**Current UI:** the sidebar Workspaces button is present, but its popover says only “Work in progress”. This does not complete workspace/profile creation or switching; #12 and #13 remain planned.
+
 ---
 
 ## 13. Profiles attached to Workspaces
@@ -957,7 +975,9 @@ It should coexist cleanly with Ember's broader floating-webpage system but remai
 
 ## 19. Full media controls in the sidebar
 
-**Status:** ⬜ Planned
+**Status:** ✅ Completed
+
+**Acceptance:** user confirmed this run is good to go on 5 October 2026.
 
 The sidebar gets a dedicated media control button/panel.
 
@@ -1007,7 +1027,7 @@ Left-click the indicator:
 - Mute
 - Unmute
 
-Planned feature #34 adds a right-click volume slider to this same tab indicator.
+Completed feature #34 adds a right-click 0–200% volume slider to this same tab indicator.
 The sidebar media panel remains a separate playback-control feature.
 
 Do not require switching to the offending tab simply to stop its audio.
@@ -1311,7 +1331,9 @@ No giant translation toolbar unless necessary.
 
 **Source:** Opera
 
-**Status:** ⬜ Planned
+**Status:** ✅ Completed
+
+**Acceptance:** user confirmed this run is good to go on 5 October 2026.
 
 Use the existing volume/speaker indicator in each tab's normal tab UI (#20).
 
@@ -1323,7 +1345,7 @@ Use the existing volume/speaker indicator in each tab's normal tab UI (#20).
 
 Apply the slider to the owning tab's audio, not global browser/system volume. This is accessed from the tab indicator, not the sidebar media panel.
 
-This section defines future behavior only; do not implement it as part of this roadmap update.
+**Compatibility guardrails:** volume is owned by the tab, with mute separate from remembered gain. Opening the Media panel must not reset a boosted level. Closing a tab must not retarget its popover to a reused tab index.
 
 ---
 
@@ -1412,6 +1434,31 @@ It should feel like temporarily drawing directly on the webpage rather than laun
 
 ---
 
+# Added browser utilities
+
+## 38. ChatGPT Snap: capture → paste → type
+
+**Priority:** HIGH
+**Status:** ✅ Completed
+
+**Acceptance:** user confirmed the feature run is good to go on 5 October 2026.
+
+A sidebar button uses a white capture-frame glyph with the ChatGPT mark inside.
+
+- Capture the focused webpage's visible native Chromium web surface, excluding browser chrome, desktop, Snap and animation feedback; in Split View use the focused source pane.
+- Capture before resizing the source. Briefly darken and restore that page, then slide open a narrow, resizable real ChatGPT side page beside the compact rail.
+- Use the current Profile's normal ChatGPT login/session and a dedicated reusable WebContents. The original page remains interactive.
+- Attach the PNG through Chromium's browser-owned image-paste route without a file picker, external screenshot tool, remote-debugging port or prototype runtime. The native implementation leaves the OS clipboard untouched.
+- Focus the genuine composer for immediate typing. Never automatically send, click Send or use the bang auto-submit path.
+- Preserve drafts and attachments on close/toggle and reuse. A Capture action can add a fresh focused-source screenshot to the current conversation without clearing its draft.
+- Keep asynchronous capture/paste scoped to the intended profile, origin, document and source. Avoid duplicate attachments on retries and cancel obsolete work.
+- Handle login, loading, unavailable capture, attachment rejection and changed ChatGPT composer with clear retry/failure feedback. Paste dispatch alone is not success.
+- Respect native capture limitations, permissions and sandboxing; protected content may not appear in the snapshot.
+
+**Compatibility:** share footer ownership, dark glass and Ember motion with other utilities. Keep source-page clicks interactive while Snap stays open. Workspaces remains a placeholder; this does not complete #12/#13 or the arbitrary floating-webpage feature #11.
+
+---
+
 # No longer planned
 
 Removed proposals retain their original numbers. They are excluded from the active priority order.
@@ -1457,7 +1504,7 @@ This complements the recent-file upload UI already being developed.
 4. Internet Archive fallback ✅
 5. Ctrl+Tab visual switcher ✅
 6. Link Peek
-7. Instant/Favorite sidebar buttons
+7. Instant/Favorite sidebar buttons ✅
 8. Copy Link ✅
 9. Split View ✅
 10. Follower Tabs
@@ -1469,7 +1516,7 @@ This complements the recent-file upload UI already being developed.
 16. Automatic workspace routing
 17. Hibernation integration across the entire tab system ✅
 18. Picture-in-Picture
-19. Sidebar media controls
+19. Sidebar media controls ✅
 20. Per-tab audio controls ✅
 21. Compact / Frameless Mode
 22. Edge-hover UI reveal
@@ -1483,7 +1530,8 @@ This complements the recent-file upload UI already being developed.
 30. Back/Forward mouse gestures
 32. Per-site controls
 33. Translation
-34. Tab-indicator volume slider / booster (0–200%)
+34. Tab-indicator volume slider / booster (0–200%) ✅
 35. Cross-window state mirroring
 36. Page-aware browser tinting
 37. Freeze + Draw annotation mode
+38. ChatGPT Snap ✅
