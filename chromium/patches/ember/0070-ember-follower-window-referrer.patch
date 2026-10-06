@@ -1,0 +1,12 @@
+diff --git a/chrome/browser/ui/browser.cc b/chrome/browser/ui/browser.cc
+--- a/chrome/browser/ui/browser.cc
++++ b/chrome/browser/ui/browser.cc
+@@ -1918,7 +1918,7 @@
+     return false;
+   }
+   content::NavigationController::LoadURLParams load(params.target_url);
+-  load.referrer = content::Referrer(params.referrer);
++  load.referrer = content::Referrer(*params.referrer);
+   load.initiator_frame_token = opener->GetFrameToken();
+   load.initiator_process_id = opener->GetProcess()->GetDeprecatedID();
+   load.initiator_origin = opener->GetLastCommittedOrigin();

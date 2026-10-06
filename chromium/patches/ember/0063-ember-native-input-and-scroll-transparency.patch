@@ -1,0 +1,264 @@
+diff --git a/chrome/browser/ui/views/ember/ember_utility_controller.cc b/chrome/browser/ui/views/ember/ember_utility_controller.cc
+--- a/chrome/browser/ui/views/ember/ember_utility_controller.cc
++++ b/chrome/browser/ui/views/ember/ember_utility_controller.cc
+@@ -277,13 +277,22 @@
+                               base::Unretained(this))),
+       capture_transition_(base::BindRepeating(
+           [](EmberUtilityController* owner,
+-             const EmberGlassTransition::Frame&) { owner->SchedulePaint(); },
++             const EmberGlassTransition::Frame&) {
++            owner->UpdateCaptureFeedback();
++          },
+           base::Unretained(this))) {
+-  // WebContents uses its own native compositor surface. Ordinary parent paint
+-  // would sit behind it; this transparent layer owns only utility/feedback
+-  // pixels.
+-  SetPaintToLayer();
+-  layer()->SetFillsBoundsOpaquely(false);
++  // Keep this full-window owner layerless. Widget's native-child targeting
++  // checks layer rectangles before Views hit testing, so even a transparent
++  // owner layer would intercept every webpage event. Only bounded surfaces
++  // have interactive layers; capture feedback has a separate non-event layer.
++  auto feedback = std::make_unique<views::View>();
++  feedback->SetCanProcessEventsWithinSubtree(false);
++  feedback->SetPaintToLayer();
++  feedback->layer()->SetFillsBoundsOpaquely(false);
++  feedback->SetBackground(
++      views::CreateSolidBackground(SkColorSetARGB(35, 0, 0, 0)));
++  feedback->SetVisible(false);
++  capture_feedback_ = AddChildView(std::move(feedback));
+   SetEventTargeter(std::make_unique<views::ViewTargeter>(this));
+   browser_view_->browser()->tab_strip_model()->AddObserver(this);
+   SyncSources();
+@@ -692,7 +701,7 @@
+     scroll->SetHorizontalScrollBarMode(
+         views::ScrollView::ScrollBarMode::kDisabled);
+     scroll->SetDrawOverflowIndicator(false);
+-    scroll->SetBackground(nullptr);
++    scroll->SetBackgroundColor(std::nullopt);
+     media_body_ = scroll->SetContents(std::make_unique<views::View>());
+     media_body_->SetPreferredSize(gfx::Size(300, 300));
+     media_scroll_ = popover_body_->AddChildView(std::move(scroll));
+@@ -1065,7 +1074,7 @@
+                   if (!owner || generation != owner->snap_generation_)
+                     return;
+                   owner->capture_bounds_ = gfx::Rect();
+-                  owner->SchedulePaint();
++                  owner->UpdateCaptureFeedback();
+                   owner->EnsureSnapPage();
+                   owner->SnapStatus(
+                       u"Preparing image. Log in to ChatGPT if needed.");
+@@ -1134,7 +1143,7 @@
+   browser_view_->InvalidateLayout();
+   Relayout();
+   capture_bounds_ = gfx::Rect();
+-  SchedulePaint();
++  UpdateCaptureFeedback();
+ }
+ void EmberUtilityController::ApplySnapFrame(
+     const EmberGlassTransition::Frame& frame) {
+@@ -1158,6 +1167,7 @@
+ }
+ void EmberUtilityController::Relayout() {
+   SetBoundsRect(browser_view_->GetLocalBounds());
++  UpdateCaptureFeedback();
+   if (popover_ && anchor_) {
+     gfx::Point origin = anchor_->GetBoundsInScreen().right_center();
+     views::View::ConvertPointFromScreen(this, &origin);
+@@ -1209,7 +1219,7 @@
+   feedback_timer_.Stop();
+   capture_transition_.Reset();
+   capture_bounds_ = gfx::Rect();
+-  SchedulePaint();
++  UpdateCaptureFeedback();
+   pending_capture_.reset();
+   paste_digest_.clear();
+   paste_phase_ = PastePhase::kIdle;
+@@ -1338,7 +1348,7 @@
+     }
+     paste_dispatched_ = true;
+     pending_capture_.reset();
+-    SnapStatus(u"Waiting for image attachmentâ€¦");
++    SnapStatus(u"Waiting for image attachment…");
+     return;
+   }
+   if (*state == "attached" && paste_phase_ == PastePhase::kPasted) {
+@@ -1359,15 +1369,18 @@
+     const {
+   return snap_page_ ? snap_page_->web_contents() : nullptr;
+ }
+-void EmberUtilityController::OnPaint(gfx::Canvas* canvas) {
+-  if (capture_bounds_.IsEmpty() || pending_capture_.drawsNothing())
++void EmberUtilityController::UpdateCaptureFeedback() {
++  if (!capture_feedback_)
++    return;
++  const bool visible = GetWidget() && !capture_bounds_.IsEmpty() &&
++                       !pending_capture_.drawsNothing();
++  capture_feedback_->SetVisible(visible);
++  if (!visible)
+     return;
+   gfx::Rect feedback = capture_bounds_;
+   feedback.Offset(-GetBoundsInScreen().x(), -GetBoundsInScreen().y());
+-  cc::PaintFlags flags;
+-  flags.setColor(
+-      SkColorSetARGB(35 * capture_transition_.frame().opacity, 0, 0, 0));
+-  canvas->DrawRect(feedback, flags);
++  capture_feedback_->SetBoundsRect(feedback);
++  capture_feedback_->layer()->SetOpacity(capture_transition_.frame().opacity);
+ }
+ bool EmberUtilityController::DoesIntersectRect(const views::View*,
+                                                const gfx::Rect& rect) const {
+diff --git a/chrome/browser/ui/views/ember/ember_utility_controller.h b/chrome/browser/ui/views/ember/ember_utility_controller.h
+--- a/chrome/browser/ui/views/ember/ember_utility_controller.h
++++ b/chrome/browser/ui/views/ember/ember_utility_controller.h
+@@ -71,6 +71,9 @@
+   void Relayout();
+   Utility active() const { return active_; }
+   views::View* footer_for_testing() const { return footer_; }
++  views::View* capture_feedback_for_testing() const {
++    return capture_feedback_;
++  }
+   views::View* popover_content_for_testing() const { return popover_body_; }
+   views::Slider* volume_for_testing() const { return volume_slider_; }
+   views::Slider* seek_for_testing() const { return seek_slider_; }
+@@ -92,7 +95,6 @@
+   void AddedToWidget() override;
+   void RemovedFromWidget() override;
+   void OnWidgetActivationChanged(views::Widget* widget, bool active) override;
+-  void OnPaint(gfx::Canvas* canvas) override;
+   void OnMouseEvent(ui::MouseEvent* event) override;
+   void OnKeyEvent(ui::KeyEvent* event) override;
+   void OnTabStripModelChanged(TabStripModel*,
+@@ -132,6 +134,7 @@
+   void ApplySnapFrame(const EmberGlassTransition::Frame& frame);
+   bool SourceStillValid() const;
+   void ScheduleSourceRefresh();
++  void UpdateCaptureFeedback();
+ 
+   const raw_ptr<BrowserView> browser_view_;
+   Utility active_ = Utility::kNone;
+@@ -163,6 +166,7 @@
+   bool seeking_ = false;
+   bool refresh_pending_ = false;
+ 
++  raw_ptr<views::View> capture_feedback_ = nullptr;
+   raw_ptr<views::View> snap_surface_ = nullptr;
+   raw_ptr<SnapPage> snap_page_ = nullptr;
+   raw_ptr<views::Label> snap_status_ = nullptr;
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -1997,7 +1997,9 @@
+         views::ScrollView::ScrollBarMode::kDisabled);
+     favorite_scroll->SetDrawOverflowIndicator(false);
+     favorite_scroll->ClipHeightTo(0, 320);
+-    favorite_scroll->SetBackground(nullptr);
++    // Clear ScrollView's configured background, including its viewport.
++    // SetBackground(nullptr) alone is undone on attachment/theme changes.
++    favorite_scroll->SetBackgroundColor(std::nullopt);
+     ember_sidebar_favorites_ =
+         favorite_scroll->SetContents(std::make_unique<views::View>());
+     auto* favorite_scroll_ptr =
+diff --git a/chrome/browser/ui/views/frame/browser_view_browsertest.cc b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+--- a/chrome/browser/ui/views/frame/browser_view_browsertest.cc
++++ b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+@@ -40,6 +40,7 @@
+ #include "ui/gfx/render_text.h"
+ #include "ui/gfx/render_text_test_api.h"
+ #include "ui/views/view_utils.h"
++#include "ui/views/controls/scroll_view.h"
+ #include "base/test/values_test_util.h"
+ #include "base/time/time.h"
+ #include "build/build_config.h"
+@@ -997,8 +998,7 @@
+   gfx::Animation::SetPrefersReducedMotionForTesting(true);
+   owner->Toggle(Utility::kWorkspaces, workspace);
+   EXPECT_EQ(Utility::kWorkspaces, owner->active());
+-  ASSERT_TRUE(owner->layer());
+-  EXPECT_FALSE(owner->layer()->fills_bounds_opaquely());
++  EXPECT_EQ(nullptr, owner->layer());
+   ASSERT_EQ(1u, owner->popover_content_for_testing()->children().size());
+   gfx::Point rail_edge = workspace->GetBoundsInScreen().right_center();
+   rail_edge.Offset(-1, 0);
+@@ -1023,6 +1023,81 @@
+   EXPECT_EQ(Utility::kNone, owner->active());
+   EXPECT_TRUE(escape.handled());
+   gfx::Animation::SetPrefersReducedMotionForTesting(false);
++}
++
++#if BUILDFLAG(IS_WIN)
++IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++                       EmberUtilityLayersAllowNativePageInput) {
++  using Utility = ember::EmberUtilityController::Utility;
++  auto* owner = browser_view()->ember_utilities();
++  auto* widget = browser_view()->GetWidget();
++  widget->GetRootView()->DeprecatedLayoutImmediately();
++  EXPECT_EQ(nullptr, owner->layer());
++  auto* child = active_web_contents()->GetNativeView();
++  auto* root = widget->GetNativeWindow();
++  while (child && child->parent() != root)
++    child = child->parent();
++  ASSERT_TRUE(child);
++  ASSERT_NE(root->layer()->children().end(),
++            std::ranges::find(root->layer()->children(), child->layer()));
++  gfx::Point page_point = active_web_contents()
++                              ->GetRenderWidgetHostView()
++                              ->GetViewBounds()
++                              .right_center();
++  page_point.Offset(-40, 0);
++  views::View::ConvertPointFromScreen(widget->GetRootView(), &page_point);
++  const auto page_receives_input = [&] {
++    return widget->ShouldDescendIntoChildForEventHandling(
++        root->layer(), child, child->layer(), page_point);
++  };
++  EXPECT_TRUE(page_receives_input());
++  auto* shade = owner->capture_feedback_for_testing();
++  ASSERT_TRUE(shade->layer());
++  EXPECT_FALSE(shade->GetCanProcessEventsWithinSubtree());
++  // Visible capture feedback must paint over the source without blocking its
++  // native renderer; checking Views::HitTestRect alone missed this regression.
++  shade->SetBoundsRect(owner->GetLocalBounds());
++  shade->SetVisible(true);
++  EXPECT_TRUE(page_receives_input());
++  shade->SetVisible(false);
++  auto* anchor = owner->footer_for_testing()->children()[1].get();
++  gfx::Animation::SetPrefersReducedMotionForTesting(true);
++  owner->Toggle(Utility::kWorkspaces, anchor);
++  widget->GetRootView()->DeprecatedLayoutImmediately();
++  EXPECT_TRUE(page_receives_input());
++  gfx::Point panel_point =
++      owner->popover_content_for_testing()->GetBoundsInScreen().CenterPoint();
++  views::View::ConvertPointFromScreen(widget->GetRootView(), &panel_point);
++  EXPECT_FALSE(widget->ShouldDescendIntoChildForEventHandling(
++      root->layer(), child, child->layer(), panel_point));
++  owner->Close(false, true);
++  EXPECT_TRUE(page_receives_input());
++  gfx::Animation::SetPrefersReducedMotionForTesting(false);
++}
++#endif
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++                       EmberFavoritesViewportStaysTransparent) {
++  auto* sidebar =
++      browser_view()->ember_utilities()->footer_for_testing()->parent();
++  views::ScrollView* scroll = nullptr;
++  for (const auto& child : sidebar->children())
++    if (auto* candidate = views::AsViewClass<views::ScrollView>(child))
++      scroll = candidate;
++  ASSERT_TRUE(scroll);
++  for (const bool wide : {false, true}) {
++    browser()->profile()->GetPrefs()->SetBoolean(prefs::kEmberSidebarWide,
++                                                 wide);
++    browser_view()->GetWidget()->SetSize(gfx::Size(640, 360));
++    browser_view()->GetWidget()->GetRootView()->DeprecatedLayoutImmediately();
++    scroll->OnThemeChanged();
++    EXPECT_FALSE(scroll->GetBackgroundColor().has_value());
++    EXPECT_EQ(nullptr, scroll->background());
++    ASSERT_TRUE(scroll->contents());
++    EXPECT_EQ(nullptr, scroll->contents()->parent()->background());
++    if (scroll->contents()->layer())
++      EXPECT_FALSE(scroll->contents()->layer()->fills_bounds_opaquely());
++  }
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(BrowserViewTest,

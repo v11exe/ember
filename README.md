@@ -14,6 +14,8 @@ The native browser is maintained as a pinned Chromium patch stack plus a small r
 
 The selection popup, sidebar Extensions placement, New Tab photo option and corrected shell controls have passed focused source checks. A newly linked full browser still needs the runtime checks in [CHROMIUM_PORT_STATUS.md](CHROMIUM_PORT_STATUS.md).
 
+Run 5 adds the five-button utility footer, real media controls, per-tab 0–200% audio gain and a reusable ChatGPT capture side page in source. Workspaces currently says “Work in progress”. Full-build runtime acceptance is pending; see [the native status record](CHROMIUM_PORT_STATUS.md).
+
 ## Build on Windows
 
 Requirements: Windows x64, Visual Studio 2026 C++ tools, Windows SDK 10.0.26100, Python 3, Git, 7-Zip, at least 16 GiB RAM and sufficient free space on the work-root drive. The doctor reports exact missing requirements.

@@ -160,6 +160,18 @@
     {
       "source": "newtab/Necosmic-PersonalUse.otf",
       "destination": "chrome/browser/resources/new_tab_page_third_party/Necosmic-PersonalUse.otf"
+    },
+    {
+      "source": "snap/ember-snap-composer.js",
+      "destination": "chrome/browser/resources/ember/ember-snap-composer.js"
+    },
+    {
+      "source": "snap/chatgpt-mark.svg",
+      "destination": "chrome/browser/resources/ember/chatgpt-mark.svg"
+    },
+    {
+      "source": "page-state/ember-page-state.js",
+      "destination": "chrome/browser/resources/ember/ember-page-state.js"
     }
   ]
 }

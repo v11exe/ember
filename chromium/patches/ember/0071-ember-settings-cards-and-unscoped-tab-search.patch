@@ -1,0 +1,904 @@
+diff --git a/chrome/browser/autocomplete/tab_matcher_desktop.cc b/chrome/browser/autocomplete/tab_matcher_desktop.cc
+--- a/chrome/browser/autocomplete/tab_matcher_desktop.cc
++++ b/chrome/browser/autocomplete/tab_matcher_desktop.cc
+@@ -90,22 +90,29 @@
+     const AutocompleteInput* input,
+     bool exclude_active_tab) const {
+   std::vector<TabMatcher::TabWrapper> open_tabs;
+-  const bool allow_content =
+-      input && input->text().size() >= 2 && input->text().size() <= 128 &&
+-      !input->IsZeroSuggest() && !input->in_keyword_mode() &&
+-      !ember::ResolveBangInput(
+-           TemplateURLServiceFactory::GetForProfile(profile_), input->text())
+-           .is_valid();
++  const bool allow_tab_activation =
++      input && !input->IsZeroSuggest() && !input->in_keyword_mode();
++  if (allow_tab_activation &&
++      ember::ResolveBangInput(
++          TemplateURLServiceFactory::GetForProfile(profile_), input->text())
++          .is_valid()) {
++    return open_tabs;  // An explicit bang keeps its own provider and action.
++  }
++  const bool allow_content = allow_tab_activation &&
++                             input->text().size() >= 2 &&
++                             input->text().size() <= 128;
+   for (auto* web_contents :
+-       GetOpenWebContents(allow_content ? false : exclude_active_tab)) {
++       GetOpenWebContents(allow_tab_activation ? false : exclude_active_tab)) {
+     open_tabs.emplace_back(web_contents->GetTitle(),
+                            web_contents->GetLastCommittedURL(),
+                            web_contents->GetLastActiveTime());
+     auto* state = ember::EmberPageState::FromWebContents(web_contents);
+-    if (allow_content && state &&
+-        web_contents->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
++    if (allow_tab_activation && state) {
+       auto& wrapper = open_tabs.back();
+-      wrapper.ember_readable_text = state->text();
++      if (allow_content &&
++          web_contents->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
++        wrapper.ember_readable_text = state->text();
++      }
+       wrapper.ember_tab_identity = state->identity();
+       wrapper.ember_document_generation = state->generation();
+     }
+diff --git a/chrome/browser/resources/settings/appearance_page/appearance_page.html b/chrome/browser/resources/settings/appearance_page/appearance_page.html
+--- a/chrome/browser/resources/settings/appearance_page/appearance_page.html
++++ b/chrome/browser/resources/settings/appearance_page/appearance_page.html
+@@ -260,175 +260,6 @@
+           </div>
+         </template>
+ 
+-        <div class="cr-row hr"><div class="flex cr-padded-text">
+-          <h2>Ember sidebar and Favorites</h2><div class="secondary">Choose the rail width and edit your saved site shortcuts.</div>
+-        </div></div>
+-        <div class="cr-row hr">
+-          <div class="flex cr-padded-text" aria-hidden="true">
+-            Wide sidebar
+-            <div class="secondary">One favicon column in either width; Ctrl+L opens search</div>
+-          </div>
+-          <settings-toggle-button pref="{{prefs.ember.sidebar.wide}}"
+-              label="Wide sidebar">
+-          </settings-toggle-button>
+-        </div>
+-        <div class="cr-row">
+-          <div class="flex cr-padded-text" aria-hidden="true">
+-            Ember Favorites rows
+-            <div class="secondary">One through seven rows</div>
+-          </div>
+-          <settings-dropdown-menu id="emberFavoritesRows"
+-              label="Ember Favorites rows"
+-              pref-key="ember.favorites.rows"
+-              menu-options="[[emberFavoritesRowOptions_]]">
+-          </settings-dropdown-menu>
+-        </div>
+-
+-        <div class="cr-row">
+-          <div class="flex cr-padded-text">
+-            Favorite sites
+-            <div class="secondary">In sidebar order; sites beyond the visible grid remain saved</div>
+-          </div>
+-        </div>
+-        <template is="dom-repeat" items="[[emberFavorites_]]" as="favorite">
+-          <div class="ember-favorite-row" data-id$="[[favorite.id]]"
+-              data-index$="[[index]]">
+-            <input class="ember-favorite-title" aria-label="Favorite name"
+-                value="[[favorite.title]]" on-change="onEmberFavoriteEdited_">
+-            <input class="ember-favorite-url" aria-label="Favorite URL"
+-                value="[[favorite.url]]" on-change="onEmberFavoriteEdited_">
+-            <cr-button data-delta="-1" aria-label="Move favorite up"
+-                on-click="onEmberFavoriteMove_">↑</cr-button>
+-            <cr-button data-delta="1" aria-label="Move favorite down"
+-                on-click="onEmberFavoriteMove_">↓</cr-button>
+-            <cr-button aria-label="Remove favorite"
+-                on-click="onEmberFavoriteRemove_">×</cr-button>
+-          </div>
+-        </template>
+-        <div class="ember-favorite-row">
+-          <input class="ember-favorite-title" id="emberFavoriteNewTitle"
+-              aria-label="New favorite name" placeholder="Site name">
+-          <input class="ember-favorite-url" id="emberFavoriteNewUrl"
+-              aria-label="New favorite URL" placeholder="https://example.com">
+-          <cr-button on-click="onEmberFavoriteAdd_">Add</cr-button>
+-        </div>
+-        <div class="ember-favorite-error" hidden$="[[!emberFavoritesError_]]">
+-          [[emberFavoritesError_]]
+-        </div>
+-
+-        <div class="cr-row hr"><div class="flex cr-padded-text">
+-          <h2>Ember New Tab</h2><div class="secondary">Choose the wordmark and optional photo background.</div>
+-        </div></div>
+-        <div class="cr-row hr">
+-          <div class="flex cr-padded-text" aria-hidden="true">
+-            Show Ember name on New Tab
+-            <div class="secondary">Show the wordmark below the logo</div>
+-          </div>
+-          <settings-toggle-button pref="{{prefs.ember.new_tab.show_wordmark}}"
+-              label="Show Ember name on New Tab">
+-          </settings-toggle-button>
+-        </div>
+-
+-        <div class="cr-row hr">
+-          <div class="flex cr-padded-text" aria-hidden="true">
+-            Unsplash New Tab background
+-            <div class="secondary">Show a centered photo instead of Windows translucent glass</div>
+-          </div>
+-          <settings-toggle-button pref="{{prefs.ember.new_tab.unsplash.enabled}}"
+-              label="Unsplash New Tab background">
+-          </settings-toggle-button>
+-        </div>
+-        <template is="dom-if" if="[[prefs.ember.new_tab.unsplash.enabled.value]]">
+-          <div class="cr-row">
+-            <div class="flex cr-padded-text" aria-hidden="true">
+-              Photo section
+-            </div>
+-            <settings-dropdown-menu id="emberUnsplashTopic"
+-                label="Unsplash photo section"
+-                pref-key="ember.new_tab.unsplash.topic"
+-                menu-options="[[emberUnsplashTopicOptions_]]">
+-            </settings-dropdown-menu>
+-          </div>
+-          <div class="cr-row">
+-            <div class="flex cr-padded-text">
+-              Unsplash Access Key
+-              <div class="secondary">Create an app at unsplash.com/developers and paste its Access Key. A Secret Key is not needed.</div>
+-            </div>
+-            <input id="emberUnsplashAccessKey" type="password"
+-                aria-label="Unsplash Access Key" autocomplete="off"
+-                value="[[prefs.ember.new_tab.unsplash.access_key.value]]"
+-                on-change="onEmberUnsplashAccessKeyChanged_">
+-          </div>
+-        </template>
+-
+-        <div class="cr-row hr"><div class="flex cr-padded-text">
+-          <h2>Ember selection conversions</h2><div class="secondary">Convert selected values locally using your preferred units.</div>
+-        </div></div>
+-        <div class="cr-row hr">
+-          <div class="flex cr-padded-text" aria-hidden="true">
+-            Selection conversions
+-            <div class="secondary">Show a small conversion near selected prices, measurements and times</div>
+-          </div>
+-          <settings-toggle-button pref="{{prefs.ember.conversions.enabled}}"
+-              label="Selection conversions">
+-          </settings-toggle-button>
+-        </div>
+-        <div class="cr-row">
+-          <div class="flex cr-padded-text" aria-hidden="true">Preferred currency</div>
+-          <settings-dropdown-menu label="Preferred currency" pref-key="ember.conversions.currency"
+-              menu-options="[[emberConversionCurrencyOptions_]]">
+-          </settings-dropdown-menu>
+-        </div>
+-        <div class="cr-row">
+-          <div class="flex cr-padded-text" aria-hidden="true">Temperature</div>
+-          <settings-dropdown-menu label="Temperature" pref-key="ember.conversions.temperature"
+-              menu-options="[[emberConversionTemperatureOptions_]]">
+-          </settings-dropdown-menu>
+-        </div>
+-        <div class="cr-row">
+-          <div class="flex cr-padded-text" aria-hidden="true">Distance</div>
+-          <settings-dropdown-menu label="Distance" pref-key="ember.conversions.distance"
+-              menu-options="[[emberConversionSystemOptions_]]">
+-          </settings-dropdown-menu>
+-        </div>
+-        <div class="cr-row">
+-          <div class="flex cr-padded-text" aria-hidden="true">Weight</div>
+-          <settings-dropdown-menu label="Weight" pref-key="ember.conversions.weight"
+-              menu-options="[[emberConversionSystemOptions_]]">
+-          </settings-dropdown-menu>
+-        </div>
+-        <div class="cr-row">
+-          <div class="flex cr-padded-text" aria-hidden="true">Volume</div>
+-          <settings-dropdown-menu label="Volume" pref-key="ember.conversions.volume"
+-              menu-options="[[emberConversionVolumeOptions_]]">
+-          </settings-dropdown-menu>
+-        </div>
+-        <div class="cr-row">
+-          <div class="flex cr-padded-text" aria-hidden="true">Clock</div>
+-          <settings-dropdown-menu label="Clock" pref-key="ember.conversions.clock"
+-              menu-options="[[emberConversionClockOptions_]]">
+-          </settings-dropdown-menu>
+-        </div>
+-        <div class="cr-row">
+-          <div class="flex cr-padded-text" aria-hidden="true">Time zone</div>
+-          <settings-dropdown-menu label="Time zone" pref-key="ember.conversions.time_zone"
+-              menu-options="[[emberConversionTimeZoneOptions_]]">
+-          </settings-dropdown-menu>
+-        </div>
+-
+-        <div class="cr-row hr"><div class="flex cr-padded-text">
+-          <h2>Ember webpage fullscreen</h2><div class="secondary">Choose how website and video fullscreen requests use the window.</div>
+-        </div></div>
+-        <settings-toggle-button class="hr"
+-            pref="{{prefs.ember.fullscreen.within_window}}"
+-            label="Keep webpage fullscreen inside the window"
+-            sub-label="Fill the requesting webpage or split pane while keeping Ember chrome. F11 expands the window; Escape exits webpage fullscreen.">
+-        </settings-toggle-button>
+-        <cr-link-row class="hr" label="Ember Search and Quick Searches"
+-            sub-label="Edit shortcuts, aliases and site search URLs."
+-            on-click="onEmberQuickSearchesClick_" role-description="$i18n{subpageArrowRoleDescription}">
+-        </cr-link-row>
+-
+         <settings-toggle-button id="showTabSearchButton" class="hr"
+             pref="{{prefs.tab_search.pinned_to_tabstrip}}"
+             label="$i18n{showTabSearchButton}"
+@@ -566,6 +397,173 @@
+           label="$i18n{allowSplitViewDragAndDrop}">
+       </settings-toggle-button>
+     </settings-section>
++    <settings-section id="emberSidebarSection" route-path="default"
++        page-title="Ember sidebar and Favorites">
++      <div class="cr-row first">
++        <div class="secondary">Choose the rail width and edit your saved site shortcuts.</div>
++      </div>
++      <settings-toggle-button id="emberWideSidebar" class="hr"
++          pref="{{prefs.ember.sidebar.wide}}"
++          label="Wide sidebar"
++          sub-label="One favicon column in either width; Ctrl+L opens search">
++      </settings-toggle-button>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">
++            Ember Favorites rows
++            <div class="secondary">One through seven rows</div>
++          </div>
++          <settings-dropdown-menu id="emberFavoritesRows"
++              label="Ember Favorites rows"
++              pref-key="ember.favorites.rows"
++              menu-options="[[emberFavoritesRowOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++
++        <div class="cr-row">
++          <div class="flex cr-padded-text">
++            Favorite sites
++            <div class="secondary">In sidebar order; sites beyond the visible grid remain saved</div>
++          </div>
++        </div>
++        <template is="dom-repeat" items="[[emberFavorites_]]" as="favorite">
++          <div class="ember-favorite-row" data-id$="[[favorite.id]]"
++              data-index$="[[index]]">
++            <input class="ember-favorite-title" aria-label="Favorite name"
++                value="[[favorite.title]]" on-change="onEmberFavoriteEdited_">
++            <input class="ember-favorite-url" aria-label="Favorite URL"
++                value="[[favorite.url]]" on-change="onEmberFavoriteEdited_">
++            <cr-button data-delta="-1" aria-label="Move favorite up"
++                on-click="onEmberFavoriteMove_">↑</cr-button>
++            <cr-button data-delta="1" aria-label="Move favorite down"
++                on-click="onEmberFavoriteMove_">↓</cr-button>
++            <cr-button aria-label="Remove favorite"
++                on-click="onEmberFavoriteRemove_">×</cr-button>
++          </div>
++        </template>
++        <div class="ember-favorite-row">
++          <input class="ember-favorite-title" id="emberFavoriteNewTitle"
++              aria-label="New favorite name" placeholder="Site name">
++          <input class="ember-favorite-url" id="emberFavoriteNewUrl"
++              aria-label="New favorite URL" placeholder="https://example.com">
++          <cr-button on-click="onEmberFavoriteAdd_">Add</cr-button>
++        </div>
++        <div class="ember-favorite-error" hidden$="[[!emberFavoritesError_]]">
++          [[emberFavoritesError_]]
++        </div>
++
++    </settings-section>
++    <settings-section id="emberNewTabSection" route-path="default"
++        page-title="Ember New Tab">
++      <div class="cr-row first">
++        <div class="secondary">Choose the wordmark and optional photo background.</div>
++      </div>
++      <settings-toggle-button id="emberShowWordmark" class="hr"
++          pref="{{prefs.ember.new_tab.show_wordmark}}"
++          label="Show Ember name on New Tab"
++          sub-label="Show the wordmark below the logo">
++      </settings-toggle-button>
++
++      <settings-toggle-button id="emberUnsplashEnabled" class="hr"
++          pref="{{prefs.ember.new_tab.unsplash.enabled}}"
++          label="Unsplash New Tab background"
++          sub-label="Show a centered photo instead of Windows translucent glass">
++      </settings-toggle-button>
++        <template is="dom-if" if="[[prefs.ember.new_tab.unsplash.enabled.value]]">
++          <div class="cr-row">
++            <div class="flex cr-padded-text" aria-hidden="true">
++              Photo section
++            </div>
++            <settings-dropdown-menu id="emberUnsplashTopic"
++                label="Unsplash photo section"
++                pref-key="ember.new_tab.unsplash.topic"
++                menu-options="[[emberUnsplashTopicOptions_]]">
++            </settings-dropdown-menu>
++          </div>
++          <div class="cr-row">
++            <div class="flex cr-padded-text">
++              Unsplash Access Key
++              <div class="secondary">Create an app at unsplash.com/developers and paste its Access Key. A Secret Key is not needed.</div>
++            </div>
++            <input id="emberUnsplashAccessKey" type="password"
++                aria-label="Unsplash Access Key" autocomplete="off"
++                value="[[prefs.ember.new_tab.unsplash.access_key.value]]"
++                on-change="onEmberUnsplashAccessKeyChanged_">
++          </div>
++        </template>
++
++    </settings-section>
++    <settings-section id="emberConversionsSection" route-path="default"
++        page-title="Ember selection conversions">
++      <div class="cr-row first">
++        <div class="secondary">Convert selected values locally using your preferred units.</div>
++      </div>
++      <settings-toggle-button id="emberConversionsEnabled" class="hr"
++          pref="{{prefs.ember.conversions.enabled}}"
++          label="Selection conversions"
++          sub-label="Show a small conversion near selected prices, measurements and times">
++      </settings-toggle-button>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Preferred currency</div>
++          <settings-dropdown-menu label="Preferred currency" pref-key="ember.conversions.currency"
++              menu-options="[[emberConversionCurrencyOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Temperature</div>
++          <settings-dropdown-menu label="Temperature" pref-key="ember.conversions.temperature"
++              menu-options="[[emberConversionTemperatureOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Distance</div>
++          <settings-dropdown-menu label="Distance" pref-key="ember.conversions.distance"
++              menu-options="[[emberConversionSystemOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Weight</div>
++          <settings-dropdown-menu label="Weight" pref-key="ember.conversions.weight"
++              menu-options="[[emberConversionSystemOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Volume</div>
++          <settings-dropdown-menu label="Volume" pref-key="ember.conversions.volume"
++              menu-options="[[emberConversionVolumeOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Clock</div>
++          <settings-dropdown-menu label="Clock" pref-key="ember.conversions.clock"
++              menu-options="[[emberConversionClockOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Time zone</div>
++          <settings-dropdown-menu label="Time zone" pref-key="ember.conversions.time_zone"
++              menu-options="[[emberConversionTimeZoneOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++
++    </settings-section>
++    <settings-section id="emberFullscreenSection" route-path="default"
++        page-title="Ember webpage fullscreen">
++      <div class="cr-row first">
++        <div class="secondary">Choose how website and video fullscreen requests use the window.</div>
++      </div>
++        <settings-toggle-button class="hr"
++            pref="{{prefs.ember.fullscreen.within_window}}"
++            label="Keep webpage fullscreen inside the window"
++            sub-label="Fill the requesting webpage or split pane while keeping Ember chrome. F11 expands the window; Escape exits webpage fullscreen.">
++        </settings-toggle-button>
++    </settings-section>
++    <settings-section id="emberSearchSection" route-path="default"
++        page-title="Ember Search and Quick Searches">
++        <cr-link-row label="Quick Searches"
++            sub-label="Edit shortcuts, aliases and site search URLs."
++            on-click="onEmberQuickSearchesClick_" role-description="$i18n{subpageArrowRoleDescription}">
++        </cr-link-row>
++    </settings-section>
+     <template is="dom-if" if="[[showManagedThemeDialog_]]" restamp>
+       <managed-dialog on-close="onManagedDialogClosed_"
+           title="$i18n{themeManagedDialogTitle}"
+diff --git a/chrome/browser/ui/omnibox/chrome_omnibox_client.cc b/chrome/browser/ui/omnibox/chrome_omnibox_client.cc
+--- a/chrome/browser/ui/omnibox/chrome_omnibox_client.cc
++++ b/chrome/browser/ui/omnibox/chrome_omnibox_client.cc
+@@ -36,6 +36,9 @@
+ #include "chrome/browser/command_updater.h"
+ #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
+ #include "chrome/browser/favicon/favicon_service_factory.h"
++#include "chrome/browser/favicon/favicon_utils.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
+ #include "chrome/browser/feedback/public/feedback_source.h"
+ #include "chrome/browser/feedback/show_feedback_page.h"
+ #include "chrome/browser/history/history_service_factory.h"
+@@ -713,6 +716,36 @@
+   }
+ }
+ 
++gfx::Image ChromeOmniboxClient::GetFaviconForOpenTabMatch(
++    const AutocompleteMatch& match) const {
++  auto identity_info = match.additional_info.find("ember_content_tab");
++  auto generation_info = match.additional_info.find("ember_content_generation");
++  uint64_t identity = 0, generation = 0;
++  if (identity_info == match.additional_info.end() ||
++      generation_info == match.additional_info.end() ||
++      !base::StringToUint64(identity_info->second, &identity) ||
++      !base::StringToUint64(generation_info->second, &generation)) {
++    return gfx::Image();
++  }
++  for (auto* browser : GetAllBrowserWindowInterfaces()) {
++    if (browser->GetProfile() != profile_) {
++      continue;
++    }
++    auto* model = browser->GetTabStripModel();
++    for (int index = 0; index < model->count(); ++index) {
++      auto* contents = model->GetWebContentsAt(index);
++      auto* state = ember::EmberPageState::FromWebContents(contents);
++      if (state && state->identity() == identity &&
++          state->generation() == generation &&
++          contents->GetLastCommittedURL() == match.destination_url) {
++        const gfx::Image icon = favicon::TabFaviconFromWebContents(contents);
++        return icon.IsEmpty() ? favicon::GetDefaultFavicon() : icon;
++      }
++    }
++  }
++  return gfx::Image();
++}
++
+ gfx::Image ChromeOmniboxClient::GetFaviconForPageUrl(
+     const GURL& page_url,
+     FaviconFetchedCallback on_favicon_fetched) {
+diff --git a/chrome/browser/ui/omnibox/chrome_omnibox_client.h b/chrome/browser/ui/omnibox/chrome_omnibox_client.h
+--- a/chrome/browser/ui/omnibox/chrome_omnibox_client.h
++++ b/chrome/browser/ui/omnibox/chrome_omnibox_client.h
+@@ -105,6 +105,8 @@
+                        bool default_match_changed,
+                        bool should_prerender,
+                        const BitmapFetchedCallback& on_bitmap_fetched) override;
++  gfx::Image GetFaviconForOpenTabMatch(
++      const AutocompleteMatch& match) const override;
+   gfx::Image GetFaviconForPageUrl(
+       const GURL& page_url,
+       FaviconFetchedCallback on_favicon_fetched) override;
+diff --git a/chrome/browser/ui/omnibox/omnibox_controller.cc b/chrome/browser/ui/omnibox/omnibox_controller.cc
+--- a/chrome/browser/ui/omnibox/omnibox_controller.cc
++++ b/chrome/browser/ui/omnibox/omnibox_controller.cc
+@@ -40,7 +40,9 @@
+           /*omnibox_controller=*/this)),
+       popup_state_manager_(std::make_unique<OmniboxPopupStateManager>()) {
+   AutocompleteControllerConfig autocomplete_controller_config{
+-      .provider_types = AutocompleteClassifier::DefaultOmniboxProviders()};
++      .provider_types = AutocompleteClassifier::DefaultOmniboxProviders(),
++      // Ember floating search reuses this native controller without @tabs.
++      .unscoped_open_tab_suggestions = true};
+   if (omnibox::IsWebUIOmniboxPopupEnabled()) {
+     autocomplete_controller_config.show_iph_matches = false;
+   }
+diff --git a/chrome/browser/ui/omnibox/omnibox_edit_model.cc b/chrome/browser/ui/omnibox/omnibox_edit_model.cc
+--- a/chrome/browser/ui/omnibox/omnibox_edit_model.cc
++++ b/chrome/browser/ui/omnibox/omnibox_edit_model.cc
+@@ -1826,6 +1826,12 @@
+     return extension_icon;
+   }
+ 
++  const gfx::Image tab_icon =
++      controller_->client()->GetFaviconForOpenTabMatch(match);
++  if (!tab_icon.IsEmpty()) {
++    return controller_->client()->GetSizedIcon(tab_icon);
++  }
++
+   const TemplateURL* turl =
+       match.associated_keyword.empty()
+           ? nullptr
+diff --git a/chrome/browser/ui/views/frame/browser_view_browsertest.cc b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+--- a/chrome/browser/ui/views/frame/browser_view_browsertest.cc
++++ b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+@@ -69,6 +69,9 @@
+ #include "chrome/browser/search_engines/template_url_service_factory.h"
+ #include "chrome/browser/ui/ember_favorites.h"
+ #include "chrome/browser/ui/omnibox/omnibox_controller.h"
++#include "components/omnibox/browser/omnibox_client.h"
++#include "chrome/browser/ui/views/omnibox/omnibox_result_view.h"
++#include "chrome/browser/ui/views/omnibox/omnibox_row_view.h"
+ #include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
+ #include "chrome/browser/ui/omnibox/omnibox_view.h"
+ #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
+@@ -2999,3 +3002,160 @@
+       browser(), embedded_test_server()->GetURL("/title2.html")));
+   EXPECT_FALSE(state->reading_toast_for_testing());
+ }
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++                       EmberUnscopedContentSearchUsesRealControllerAndInput) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  const auto url = embedded_test_server()->GetURL("/empty.html");
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url));
++  auto* model = browser()->tab_strip_model();
++  auto* first = model->GetWebContentsAt(0);
++  ASSERT_TRUE(content::ExecJs(first, R"(
++    document.title = 'Lunar manual';
++    document.body.innerHTML = '<div style="height:4000px"></div><p id="passage">ember lunar needle readable passage</p><div style="height:3000px"></div>';
++  )"));
++  auto* state = ember::EmberPageState::FromWebContents(first);
++  ASSERT_TRUE(state);
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return state->text().find(u"ember lunar needle") != std::u16string::npos;
++  }));
++  chrome::AddTabAt(browser(), url, -1, true);
++  auto* duplicate = model->GetWebContentsAt(1);
++  ASSERT_TRUE(content::WaitForLoadStop(duplicate));
++  ASSERT_TRUE(content::ExecJs(
++      duplicate,
++      "document.title='Duplicate manual'; document.body.textContent='ember "
++      "lunar needle duplicate passage'"));
++  auto* duplicate_state = ember::EmberPageState::FromWebContents(duplicate);
++  ASSERT_TRUE(duplicate_state);
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return duplicate_state->text().find(u"ember lunar needle") !=
++           std::u16string::npos;
++  }));
++  chrome::AddTabAt(browser(), embedded_test_server()->GetURL("/title2.html"),
++                   -1, true);
++  ASSERT_TRUE(content::WaitForLoadStop(model->GetActiveWebContents()));
++  const int count = model->count();
++  browser_view()->ShowEmberSearch();
++  auto* title_controller =
++      browser_view()->GetLocationBar()->GetOmniboxController();
++  browser_view()->GetLocationBar()->GetOmniboxView()->SetUserText(
++      u"Lunar manual", true);
++  bool title_found = false;
++  for (const auto& match :
++       title_controller->autocomplete_controller()->result()) {
++    auto identity = match.additional_info.find("ember_content_tab");
++    if (identity != match.additional_info.end() &&
++        identity->second == base::NumberToString(state->identity())) {
++      title_found = true;
++      EXPECT_EQ(u"Open in Different Tab", match.contents);
++      EXPECT_EQ(u"Lunar manual", match.description);
++      EXPECT_TRUE(match.additional_info.at("ember_content_query").empty());
++    }
++  }
++  EXPECT_TRUE(title_found);
++  browser_view()->CloseEmberSearch();
++  for (bool keyboard : {false, true}) {
++    ASSERT_TRUE(content::ExecJs(first, "window.scrollTo(0,0)"));
++    model->ActivateTabAt(2);
++    browser_view()->ShowEmberSearch();
++    auto* controller = browser_view()->GetLocationBar()->GetOmniboxController();
++    browser_view()->GetLocationBar()->GetOmniboxView()->SetUserText(
++        u"ember lunar needle", true);
++    size_t selected_line = OmniboxPopupSelection::kNoMatch;
++    size_t identities = 0;
++    const auto& result = controller->autocomplete_controller()->result();
++    for (size_t line = 0; line < result.size(); ++line) {
++      const auto& match = result.match_at(line);
++      auto identity = match.additional_info.find("ember_content_tab");
++      if (identity == match.additional_info.end()) {
++        continue;
++      }
++      ++identities;
++      if (identity->second == base::NumberToString(state->identity())) {
++        selected_line = line;
++        EXPECT_EQ(u"Open in Different Tab", match.contents);
++        EXPECT_NE(std::u16string::npos,
++                  match.description.find(u"ember lunar needle"));
++        EXPECT_FALSE(
++            controller->client()->GetFaviconForOpenTabMatch(match).IsEmpty());
++      }
++    }
++    EXPECT_EQ(2u, identities);
++    ASSERT_NE(OmniboxPopupSelection::kNoMatch, selected_line);
++    auto* widget = browser_view()->GetWidget();
++#if BUILDFLAG(IS_WIN)
++    auto* native = widget->GetNativeWindow();
++    auto* dispatcher = native->GetHost()->dispatcher();
++#endif
++    if (keyboard) {
++      for (size_t step = 0;
++           controller->edit_model()->GetPopupSelection().line !=
++               selected_line &&
++           step < result.size();
++           ++step) {
++        ui::KeyEvent tab(ui::EventType::kKeyPressed, ui::VKEY_TAB, ui::EF_NONE);
++#if BUILDFLAG(IS_WIN)
++        dispatcher->OnEventFromSource(&tab);
++#else
++        widget->OnKeyEvent(&tab);
++#endif
++      }
++      ASSERT_EQ(selected_line,
++                controller->edit_model()->GetPopupSelection().line);
++      EXPECT_EQ(OmniboxPopupSelection::NORMAL,
++                controller->edit_model()->GetPopupSelection().state);
++      ui::KeyEvent enter(ui::EventType::kKeyPressed, ui::VKEY_RETURN,
++                         ui::EF_NONE);
++#if BUILDFLAG(IS_WIN)
++      dispatcher->OnEventFromSource(&enter);
++#else
++      widget->OnKeyEvent(&enter);
++#endif
++    } else {
++      auto* popup = static_cast<OmniboxPopupViewViews*>(
++          browser_view()->GetLocationBarView()->GetOmniboxPopupView());
++      OmniboxResultView* row = nullptr;
++      std::vector<views::View*> pending = {popup};
++      while (!pending.empty()) {
++        auto* view = pending.back();
++        pending.pop_back();
++        if (auto* candidate = views::AsViewClass<OmniboxRowView>(view);
++            candidate && candidate->line() == selected_line) {
++          row = candidate->result_view();
++          break;
++        }
++        for (const auto& child : view->children()) {
++          pending.push_back(child.get());
++        }
++      }
++      ASSERT_TRUE(row);
++      gfx::Point point = row->GetBoundsInScreen().CenterPoint();
++      views::View::ConvertPointFromScreen(widget->GetRootView(), &point);
++#if BUILDFLAG(IS_WIN)
++      aura::Window::ConvertPointToTarget(native, native->GetRootWindow(),
++                                         &point);
++#endif
++      ui::MouseEvent press(ui::EventType::kMousePressed, point, point,
++                           base::TimeTicks::Now(), ui::EF_LEFT_MOUSE_BUTTON,
++                           ui::EF_LEFT_MOUSE_BUTTON);
++      ui::MouseEvent release(ui::EventType::kMouseReleased, point, point,
++                             base::TimeTicks::Now(), ui::EF_NONE,
++                             ui::EF_LEFT_MOUSE_BUTTON);
++#if BUILDFLAG(IS_WIN)
++      dispatcher->OnEventFromSource(&press);
++      dispatcher->OnEventFromSource(&release);
++#else
++      widget->OnMouseEvent(&press);
++      widget->OnMouseEvent(&release);
++#endif
++    }
++    EXPECT_EQ(0, model->active_index());
++    EXPECT_EQ(count, model->count());
++    ASSERT_TRUE(base::test::RunUntil([&] {
++      return content::EvalJs(first, "window.scrollY > 2000").ExtractBool();
++    }));
++    EXPECT_TRUE(base::test::RunUntil(
++        [&] { return !browser_view()->IsEmberSearchOpen(); }));
++  }
++}
+diff --git a/chrome/test/data/webui/settings/appearance_page_test.ts b/chrome/test/data/webui/settings/appearance_page_test.ts
+--- a/chrome/test/data/webui/settings/appearance_page_test.ts
++++ b/chrome/test/data/webui/settings/appearance_page_test.ts
+@@ -40,6 +40,36 @@
+   colorSchemeCallbackRouter = remote;
+ 
+   const fakePrefs = [
++    {key: 'ember.sidebar.wide', type: chrome.settingsPrivate.PrefType.BOOLEAN,
++     value: true},
++    {key: 'ember.favorites.rows', type: chrome.settingsPrivate.PrefType.NUMBER,
++     value: 3},
++    {key: 'ember.new_tab.show_wordmark',
++     type: chrome.settingsPrivate.PrefType.BOOLEAN, value: false},
++    {key: 'ember.new_tab.unsplash.enabled',
++     type: chrome.settingsPrivate.PrefType.BOOLEAN, value: false},
++    {key: 'ember.new_tab.unsplash.topic',
++     type: chrome.settingsPrivate.PrefType.STRING, value: ''},
++    {key: 'ember.new_tab.unsplash.access_key',
++     type: chrome.settingsPrivate.PrefType.STRING, value: ''},
++    {key: 'ember.conversions.enabled',
++     type: chrome.settingsPrivate.PrefType.BOOLEAN, value: true},
++    {key: 'ember.conversions.currency',
++     type: chrome.settingsPrivate.PrefType.STRING, value: 'GBP'},
++    {key: 'ember.conversions.temperature',
++     type: chrome.settingsPrivate.PrefType.STRING, value: 'f'},
++    {key: 'ember.conversions.distance',
++     type: chrome.settingsPrivate.PrefType.STRING, value: 'imperial'},
++    {key: 'ember.conversions.weight',
++     type: chrome.settingsPrivate.PrefType.STRING, value: 'metric'},
++    {key: 'ember.conversions.volume',
++     type: chrome.settingsPrivate.PrefType.STRING, value: 'metric'},
++    {key: 'ember.conversions.clock',
++     type: chrome.settingsPrivate.PrefType.STRING, value: '12'},
++    {key: 'ember.conversions.time_zone',
++     type: chrome.settingsPrivate.PrefType.STRING, value: 'auto'},
++    {key: 'ember.fullscreen.within_window',
++     type: chrome.settingsPrivate.PrefType.BOOLEAN, value: true},
+     {
+       key: 'autogenerated.theme.policy.color',
+       type: chrome.settingsPrivate.PrefType.NUMBER,
+@@ -218,6 +248,44 @@
+     MetricsBrowserProxyImpl.setInstance(metricsBrowserProxy);
+ 
+     return createAppearancePage();
++  });
++
++
++
++  test('emberSectionsHaveIndependentNativeCards', async () => {
++    await flushTasks();
++    const root = appearancePage.shadowRoot!;
++    for (const [id, title] of [
++      ['emberSidebarSection', 'Ember sidebar and Favorites'],
++      ['emberNewTabSection', 'Ember New Tab'],
++      ['emberConversionsSection', 'Ember selection conversions'],
++      ['emberFullscreenSection', 'Ember webpage fullscreen'],
++      ['emberSearchSection', 'Ember Search and Quick Searches'],
++    ]) {
++      const section = root.querySelector<HTMLElement>(`#${id}`)!;
++      assertTrue(!!section);
++      assertEquals(root, section.parentNode);
++      assertEquals(title, section.getAttribute('page-title'));
++      assertEquals('default', section.getAttribute('route-path'));
++      assertTrue(!!section.shadowRoot!.querySelector('#header #title'));
++      assertTrue(!!section.shadowRoot!.querySelector('#card'));
++      assertFalse(!!section.querySelector('h2'));
++      assertFalse(!!section.querySelector('settings-section'));
++    }
++    for (const id of ['emberWideSidebar', 'emberShowWordmark',
++                     'emberUnsplashEnabled', 'emberConversionsEnabled']) {
++      const toggle = root.querySelector<HTMLElement>(`#${id}`)!;
++      assertEquals('SETTINGS-SECTION', toggle.parentElement!.tagName);
++      assertTrue(!!toggle.getAttribute('label'));
++      assertTrue(!!toggle.getAttribute('sub-label'));
++    }
++    assertEquals(true, appearancePage.get('prefs.ember.sidebar.wide.value'));
++    assertEquals(3, appearancePage.get('prefs.ember.favorites.rows.value'));
++    assertEquals(false,
++        appearancePage.get('prefs.ember.new_tab.show_wordmark.value'));
++    assertEquals('f',
++        appearancePage.get('prefs.ember.conversions.temperature.value'));
++    assertEquals('12', appearancePage.get('prefs.ember.conversions.clock.value'));
+   });
+ 
+   const THEME_ID_PREF = 'prefs.extensions.theme.id.value';
+diff --git a/components/omnibox/browser/omnibox_client.cc b/components/omnibox/browser/omnibox_client.cc
+--- a/components/omnibox/browser/omnibox_client.cc
++++ b/components/omnibox/browser/omnibox_client.cc
+@@ -136,6 +136,11 @@
+ 
+ void OmniboxClient::OnUserPastedInOmniboxResultingInValidURL() {}
+ 
++gfx::Image OmniboxClient::GetFaviconForOpenTabMatch(
++    const AutocompleteMatch& match) const {
++  return gfx::Image();
++}
++
+ gfx::Image OmniboxClient::GetFaviconForPageUrl(
+     const GURL& page_url,
+     FaviconFetchedCallback on_favicon_fetched) {
+diff --git a/components/omnibox/browser/omnibox_client.h b/components/omnibox/browser/omnibox_client.h
+--- a/components/omnibox/browser/omnibox_client.h
++++ b/components/omnibox/browser/omnibox_client.h
+@@ -276,6 +276,9 @@
+   // be run with an empty result.
+   using FaviconFetchedCallback =
+       base::OnceCallback<void(const gfx::Image& favicon)>;
++  // The exact live tab icon, including unsaved/dynamic favicons.
++  virtual gfx::Image GetFaviconForOpenTabMatch(
++      const AutocompleteMatch& match) const;
+   virtual gfx::Image GetFaviconForPageUrl(
+       const GURL& page_url,
+       FaviconFetchedCallback on_favicon_fetched);
+diff --git a/components/omnibox/browser/open_tab_provider.cc b/components/omnibox/browser/open_tab_provider.cc
+--- a/components/omnibox/browser/open_tab_provider.cc
++++ b/components/omnibox/browser/open_tab_provider.cc
+@@ -170,15 +170,23 @@
+             ? base::i18n::ToLower(open_tab.ember_readable_text)
+                   .find(adjusted_input_text)
+             : std::u16string::npos;
+-    if (content_at != std::u16string::npos) {
+-      auto match = CreateOpenTabMatch(adjusted_input, open_tab.title, url, 1200,
+-                                      nullptr);
++    const int score = Score(input, input_query_nodes, open_tab);
++    if (content_at != std::u16string::npos ||
++        (score > 0 && open_tab.ember_tab_identity != 0)) {
++      auto match = CreateOpenTabMatch(adjusted_input, open_tab.title, url,
++                                      std::max(1200, score), nullptr);
+       match.allowed_to_be_default_match = false;
+-      match.contents = open_tab.title + u" — Open in Tab";
++      match.fill_into_edit = adjusted_input.text();
++      // Keep the action in the normal address lane; the title and readable
++      // passage occupy the other lane, without displaying the page URL.
++      match.contents = u"Open in Different Tab";
+       match.contents_class = {{0, ACMatchClassification::NONE}};
+-      const size_t start = content_at > 48 ? content_at - 48 : 0;
+-      match.description = (start ? u"…" : u"") +
+-                          open_tab.ember_readable_text.substr(start, 180);
++      match.description = open_tab.title;
++      if (content_at != std::u16string::npos) {
++        const size_t start = content_at > 48 ? content_at - 48 : 0;
++        match.description += u" — " + (start ? std::u16string(u"…") : u"") +
++                             open_tab.ember_readable_text.substr(start, 180);
++      }
+       match.description_class = ClassifyTermMatches(
+           FindTermMatches(adjusted_input.text(), match.description),
+           match.description.size(), ACMatchClassification::MATCH,
+@@ -189,16 +197,16 @@
+       match.RecordAdditionalInfo(
+           "ember_content_generation",
+           base::NumberToString(open_tab.ember_document_generation));
+-      match.RecordAdditionalInfo("ember_content_query",
+-                                 base::UTF16ToUTF8(adjusted_input.text()));
++      match.RecordAdditionalInfo(
++          "ember_content_query",
++          content_at == std::u16string::npos
++              ? std::string()
++              : base::UTF16ToUTF8(adjusted_input.text()));
+       matches_.push_back(std::move(match));
+       if (matches_.size() >= 8) {
+         break;
+       }
+-      continue;
+-    }
+-    int score = Score(input, input_query_nodes, open_tab);
+-    if (score > 0) {
++    } else if (score > 0) {
+       matches_.push_back(CreateOpenTabMatch(adjusted_input, open_tab.title, url,
+                                             score, template_url));
+     }
+diff --git a/components/omnibox/browser/open_tab_provider_unittest.cc b/components/omnibox/browser/open_tab_provider_unittest.cc
+--- a/components/omnibox/browser/open_tab_provider_unittest.cc
++++ b/components/omnibox/browser/open_tab_provider_unittest.cc
+@@ -223,3 +223,68 @@
+   ASSERT_EQ(0UL, open_tab_provider().matches().size());
+ #endif
+ }
++
++TEST_F(OpenTabProviderTest, EmberUnscopedContentKeepsDuplicateTabIdentities) {
++  auto& matcher = static_cast<FakeTabMatcher&>(
++      const_cast<TabMatcher&>(client().GetTabMatcher()));
++  for (uint64_t identity : {41u, 42u}) {
++    TabMatcher::TabWrapper tab(u"Unrelated title",
++                               GURL("https://example.test/"), base::Time());
++    tab.ember_readable_text =
++        u"A readable passage containing the lunar needle.";
++    tab.ember_tab_identity = identity;
++    tab.ember_document_generation = 7;
++    matcher.AddOpenTab(tab);
++  }
++  AutocompleteInput input(u"lunar needle", metrics::OmniboxEventProto::OTHER,
++                          TestSchemeClassifier());
++  open_tab_provider().Start(input, false);
++  ASSERT_EQ(2u, open_tab_provider().matches().size());
++  const auto& first = open_tab_provider().matches()[0];
++  const auto& second = open_tab_provider().matches()[1];
++  EXPECT_EQ(u"Open in Different Tab", first.contents);
++  EXPECT_EQ(u"lunar needle", first.fill_into_edit);
++  EXPECT_FALSE(first.allowed_to_be_default_match);
++  EXPECT_NE(std::u16string::npos, first.description.find(u"lunar needle"));
++  EXPECT_EQ("7", first.additional_info.at("ember_content_generation"));
++  EXPECT_EQ("lunar needle", first.additional_info.at("ember_content_query"));
++  EXPECT_NE(first.additional_info.at("ember_content_tab"),
++            second.additional_info.at("ember_content_tab"));
++  EXPECT_EQ(first.destination_url, second.destination_url);
++}
++
++TEST_F(OpenTabProviderTest, EmberTitleOnlyActivationDoesNotInventAPassage) {
++  TabMatcher::TabWrapper tab(u"Lunar manual", GURL("https://example.test/"),
++                             base::Time());
++  tab.ember_tab_identity = 43;
++  tab.ember_document_generation = 8;
++  static_cast<FakeTabMatcher&>(
++      const_cast<TabMatcher&>(client().GetTabMatcher()))
++      .AddOpenTab(tab);
++  AutocompleteInput input(u"lunar", metrics::OmniboxEventProto::OTHER,
++                          TestSchemeClassifier());
++  open_tab_provider().Start(input, false);
++  ASSERT_EQ(1u, open_tab_provider().matches().size());
++  const auto& match = open_tab_provider().matches().front();
++  EXPECT_EQ(u"Open in Different Tab", match.contents);
++  EXPECT_EQ(u"Lunar manual", match.description);
++  EXPECT_EQ("43", match.additional_info.at("ember_content_tab"));
++  EXPECT_TRUE(match.additional_info.at("ember_content_query").empty());
++  EXPECT_FALSE(match.allowed_to_be_default_match);
++}
++
++TEST_F(OpenTabProviderTest, EmberContentResultCountStaysBounded) {
++  auto& matcher = static_cast<FakeTabMatcher&>(
++      const_cast<TabMatcher&>(client().GetTabMatcher()));
++  for (uint64_t identity = 1; identity <= 12; ++identity) {
++    TabMatcher::TabWrapper tab(u"Other", GURL("https://example.test/"),
++                               base::Time());
++    tab.ember_tab_identity = identity;
++    tab.ember_readable_text = u"A bounded lunar needle.";
++    matcher.AddOpenTab(tab);
++  }
++  AutocompleteInput input(u"lunar needle", metrics::OmniboxEventProto::OTHER,
++                          TestSchemeClassifier());
++  open_tab_provider().Start(input, false);
++  EXPECT_EQ(8u, open_tab_provider().matches().size());
++}

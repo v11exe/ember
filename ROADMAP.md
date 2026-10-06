@@ -7,7 +7,7 @@ the final linked native build and interaction acceptance are tracked in
 `CHROMIUM_PORT_STATUS.md`. Electron-specific implementation references in older
 sections refer to the preserved `main` branch, not code in this checkout.
 
-**Status:** ✅ Completed · ⬜ Planned · ❌ No longer planned
+**Status:** ✅ Completed · 🟨 Implemented, runtime acceptance pending · ⬜ Planned · ❌ No longer planned
 
 ## Global UI rule
 
@@ -669,45 +669,40 @@ The controls should stay visually unobtrusive until hovered.
 
 ---
 
-## 10. Follower Tab
+## 10. Split follower mode
 
-**Source:** Vivaldi, heavily modified for Ember
+**Status:** Source implemented in 0069, popup-referrer build correction in 0070; linked runtime acceptance pending.
 
-**Status:** ⬜ Planned
+Arrange Split View offers “Make right pane the follower” and “Make left pane
+the follower”; an active direction becomes “Stop … pane following” and disables
+the opposite action. Stacked splits use top/bottom wording. State belongs to the
+split pair and its actual WebContents identities, survives swap/orientation,
+and clears on unsplit, detach, closure or contents replacement. Session restore
+starts with following off. Ordinary native Ctrl+W remains unchanged.
 
-Right-click a normal tab:
+Genuine HTTP(S) outbound link navigation from the source loads once in the
+existing follower, leaving the source URL/document and tab count unchanged.
+Native same-tab link attribution, modified-click OpenURLParams and validated
+new-window creation cover ordinary links, Ctrl/middle-click, target=_blank and
+explicit-gesture window.open. The follower keeps normal navigation behavior.
+Native initiator/referrer/download policy, popup checks, permissions, sandbox,
+redirect processing and security checks remain authoritative. Pair epochs and
+weak document/contents references cancel stale posted dispatches.
 
-```text
-Open Follower Tab
-```
+Forms/POST, reloads, typed navigation, same-document anchors, explicit downloads,
+external protocols and unrelated autonomous navigation retain their native paths.
+No POST is replayed or extra tab/window temporarily created. The existing
+follower gets no new source WindowProxy/opener relationship; routed window.open
+returns null. Scripts needing a popup handle cannot use that relationship.
+Generic SPA handlers that prevent navigation and call history.pushState are not
+intercepted; arbitrary page scripts are not rewritten. The native request path
+may already have run source beforeunload before the navigation throttle; this
+requires linked QA on pages with unload handlers. Browser-native window.open
+parameters identify explicit user activation, not a script's link provenance.
 
-This creates a follower associated with that source tab.
-
-Normal usage:
-
-1. Main tab contains a list/search/results page.
-2. Clicking links sends their destination into the follower.
-3. The original page remains untouched.
-4. Clicking another result replaces the follower's page.
-
-Follower-specific rules:
-
-- `Ctrl+W` while focused on the follower **must not close the follower**.
-- Links inside the follower that attempt to open a new tab/window should instead load into the existing follower.
-- `target="_blank"`, `window.open()`, middle-click behaviour where appropriate, etc. should be intercepted.
-- The follower therefore acts like a reusable destination viewport rather than producing tab spam.
-- Give it an explicit close control when the user actually wants to destroy it.
-- Visually show which primary tab it follows.
-- Closing the source tab can either detach or explicitly close its follower according to Ember's chosen behaviour.
-
-This is particularly useful for:
-
-- Google
-- GitHub issues
-- Reddit
-- Documentation
-- YouTube results
-- Shopping/search pages
+Acceptance: either direction, stop/opposite disabled, stale menu, swap and
+orientation, detach/replace/unsplit, redirects, modified/new-window links,
+download/form exclusions, sandbox/popup restrictions and rapid toggle teardown.
 
 ---
 
@@ -825,32 +820,44 @@ Workspaces and Profiles should remain separate concepts so multiple workspaces c
 
 ## 14. Universal tab search from the sidebar
 
-**Source:** Vivaldi / Workona concept
+**Status:** Native title/content results corrected in 0071 after the linked
+0069/0070 controller-gating defect; linked runtime acceptance pending.
 
-**Status:** ✅ Completed
+Retain the universal search requirement across open tabs, other windows,
+workspaces, sleeping tabs, recently closed tabs and saved sessions wherever the
+corresponding native feature/provider is available.
 
-Add a sidebar utility button that opens a search panel.
+The existing floating omnibox keeps Chromium's URL, web search, history,
+favicon, bang resolution, ranking and keyboard acceptance. A readable-text
+match adds one passage per tab, its title, actual favicon and “Open in Different
+Tab” in the address lane. Title-only hits use the same exact-tab action without
+inventing a passage. The real controller enables unscoped open-tab suggestions
+for ordinary floating input, while bang/keyword priority remains. Acceptance
+activates the exact existing tab/window in the same profile, re-finds the query and scrolls
+to it, with a temporary CSS Highlight when the match fits one text node. It
+never opens a duplicate or changes every tab's native Ctrl+F session.
 
-It searches:
+The isolated-world index excludes scripts/styles, editable/password/draft
+content and restricted internal pages. Text is process-local, capped at 64K
+UTF-16 characters per document and 64 cached tabs (8 MiB total), with eight
+content suggestions per query. Visible documents refresh every three seconds;
+already-live hidden documents refresh every thirty seconds. Mutations reuse a
+clean snapshot. Queries never wake discarded renderers; discard replacement
+carries only available local cache. No page index is persisted or sent remotely.
+Exact profile, tab identity, document generation and URL guard acceptance;
+navigation/closure discard old data and a missing passage quietly leaves the
+selected page alone. Bang/keyword input retains priority.
 
-- Currently open tabs
-- Other windows
-- Other workspaces
-- Sleeping tabs
-- Recently closed tabs
-- Saved sessions
+Boundaries: current primary main-frame light DOM only; cross-origin frames,
+closed/open shadow trees and unloaded lazy/infinite text are not indexed.
+Scanning caps nodes/time/text, so content beyond the bounded snapshot is absent.
+Matches spanning inline text nodes scroll without an inaccurate highlight.
+Workspace/session search remains contingent on those native feature owners;
+this extension does not invent workspace stores or a permanent sidebar tab list.
 
-Typing:
-
-```text
-github ember
-```
-
-should immediately show matching pages.
-
-Selecting an existing tab switches to it instead of opening another duplicate.
-
-Important: this is **a sidebar search tool**, not a permanent sidebar tab list.
+Acceptance: Unicode/case expansion, inline passages, duplicate URLs, stale
+navigation/closure, private/profile isolation, sleeping tabs, focused split
+panes, other windows, lazy changes and rapid bang/query switching.
 
 ---
 
@@ -1013,6 +1020,17 @@ Core controls:
 If several tabs are producing media, allow switching between them inside the panel.
 
 The sidebar remains a **media controller**, not a tab list.
+
+**Implementation / compatibility guardrails (Run 5):**
+- Patch 0068 corrects the live-proven 0x0 Media contents bounds while the viewport/controls painted at 300x300. Set real bounds alongside preferred size for Windows bounds-based scrolling; host glass in the actual native client. Regressions compile for both scrolling feature states and real native control actions; corrected runtime hover/slider/source behavior awaits user relink.
+- Patch 0067 removes unsafe glass View pre-target registration (CDB reproduced the close crash in native handler removal), uses a Views Escape accelerator and an explicit native client frame. Fixed Media pointer/hover/control behavior remains unverified until the user rebuilds. Native regressions enter via Aura and cover platform destruction; object compilation is not runtime acceptance.
+- Native MediaSession observers track existing WebContents without waking discarded renderers. Selection is retained across ordinary focus/split changes, and removed sources cannot become reused tab indices.
+- Patch 0064 corrects utility click routing for both Views/Aura targets and bounds native Media paint layers with preferred-size scrolling; runtime clicks and full artwork/text/slider appearance still require the user’s linked check.
+- Real metadata/artwork, supported previous/play/pause/next, seek position/duration, source selector, mute, 0–100% volume, native PiP action and Go to tab are wired. Unsupported actions are disabled; no sessions produces a clear empty state. Short windows scroll panel content while the five-button footer stays fixed.
+- Media opening never resets #34's remembered boosted gain. Only adjusting its ordinary volume slider writes 0–100%; mute remains independent. Source menu models survive routine position updates.
+- Shared utility ownership includes native Extensions menus/popups, search, Workspaces, Snap and the tab-volume popover. Transient outside/Escape dismissal differs from Snap's interactive source-page behavior.
+- Patch 0065 targeting did not resolve the user’s linked Media input failure. Patch 0066 gives Media/Workspaces/tab-volume controls a separate browser-owned native popup input/focus root, preserving Emberglass motion/material and source ownership. Immediate utility switches hide the prior native window; teardown closes retained transitions. Artwork fits proportionally inside its transparent 72 DIP slot. Native root/control/hover/focus and aspect-ratio regressions compile; linked pointer, slider and source-selector acceptance remains pending.
+- Native affected-object and browser-test compilation plus runnable composer/port tests are verification evidence, not runtime acceptance. Verify actual media websites, source changes, split focus, navigation/closure, seeking, PiP and mute after the user's full build.
 
 ---
 
@@ -1347,6 +1365,15 @@ Apply the slider to the owning tab's audio, not global browser/system volume. Th
 
 **Compatibility guardrails:** volume is owned by the tab, with mute separate from remembered gain. Opening the Media panel must not reset a boosted level. Closing a tab must not retarget its popover to a reused tab index.
 
+**Implementation / compatibility guardrails (Run 5):**
+- Right-click inside the actual audio/muting indicator opens a thin 216×44 DIP Emberglass popover: native white volume glyph and white continuous 0–200% slider. Outside that indicator, the native tab context menu remains unchanged. Left-click still uses Chromium's mute action.
+- Patch 0064 enables the existing native speaker mute action independently of Chrome’s experimental flag, adds the shared interrupted/reduced-motion square feedback and corrects its pressed icon. Native regression compilation covers mute/unmute while retaining boosted gain; audible acceptance remains pending.
+- The tab controller resolves the owning WebContents before focus changes. Keyboard/native Slider accessibility and restrained percentage tooltips are retained; removal closes the surface instead of targeting a reused index.
+- Browser-side gain follows the WebContents audio group through the existing AudioStreamFactory into OutputController's PCM callback, before device mixing. This covers native PCM paths used by cross-origin frames, HTML media, WebAudio and WebRTC, including newly created streams/service reconnects/device changes. No injected page gain graph or system-volume changes are used.
+- Gain and mute are separate. New tabs start at 100%, unmute restores remembered gain, discarded WebContents carry gain to their replacement, and no profile persistence is added. Media's ordinary slider can intentionally reduce a boost; opening it cannot.
+- Encoded bitstream passthrough cannot be boosted because it has no PCM samples; no extra loudness headroom/limiter is synthesized, so boosted full-scale audio can clip. Audible runtime coverage remains user verification.
+- A native PCM callback test covers 0/50/100/200% samples and an audio-factory test covers gain across idle/reconnected streams and frame ownership; browser tests cover background ownership, mute memory, source closure and new-tab defaults. These native tests compile but have not run because their executables are not linked locally.
+
 ---
 
 ## 35. Mirrored tabs/state across Ember windows
@@ -1438,30 +1465,116 @@ It should feel like temporarily drawing directly on the webpage rather than laun
 
 ## 38. ChatGPT Snap: capture → paste → type
 
-**Priority:** HIGH
+**Priority:** HIGH — approved Run 5 alongside #19 and #34.
+
 **Status:** ✅ Completed
 
 **Acceptance:** user confirmed the feature run is good to go on 5 October 2026.
 
-A sidebar button uses a white capture-frame glyph with the ChatGPT mark inside.
+A single Snap click captures the focused webpage's visible native web surface, briefly darkens/restores that same surface, then opens a reusable narrow real ChatGPT side page beside the compact rail. The original page remains interactive. Snap adds the captured image to the genuine composer and focuses it; message submission always belongs to the user.
 
-- Capture the focused webpage's visible native Chromium web surface, excluding browser chrome, desktop, Snap and animation feedback; in Split View use the focused source pane.
-- Capture before resizing the source. Briefly darken and restore that page, then slide open a narrow, resizable real ChatGPT side page beside the compact rail.
-- Use the current Profile's normal ChatGPT login/session and a dedicated reusable WebContents. The original page remains interactive.
-- Attach the PNG through Chromium's browser-owned image-paste route without a file picker, external screenshot tool, remote-debugging port or prototype runtime. The native implementation leaves the OS clipboard untouched.
-- Focus the genuine composer for immediate typing. Never automatically send, click Send or use the bang auto-submit path.
-- Preserve drafts and attachments on close/toggle and reuse. A Capture action can add a fresh focused-source screenshot to the current conversation without clearing its draft.
-- Keep asynchronous capture/paste scoped to the intended profile, origin, document and source. Avoid duplicate attachments on retries and cancel obsolete work.
-- Handle login, loading, unavailable capture, attachment rejection and changed ChatGPT composer with clear retry/failure feedback. Paste dispatch alone is not success.
-- Respect native capture limitations, permissions and sandboxing; protected content may not appear in the snapshot.
+**Requirements and durable contracts:**
+- Freeze source WebContents/document/URL and current surface size before dismissing previous utility/search surfaces or changing focus/layout. In Split View use its focused pane. Native CopyFromSurface excludes all browser chrome, rail, desktop, Snap UI and feedback; no external screenshot utility, debugging port, launcher or special profile is involved.
+- Reuse a dedicated chatgpt.com WebContents in the current Profile, preserving normal cookies/login. Default width 340 DIP is resizable from 260–560 DIP, bounded by remaining page width. Opening temporarily uses the compact rail; closing restores the user's persisted wide/compact choice and page geometry.
+- Bottom-left Retry checks pending work; bottom-right Capture takes a fresh image of the currently focused source webview into the same current chat/composer. Keep its draft and attachments, freeze the existing destination document/URL, cancel superseded work and leave the side page geometry intact. No new chat or automatic submission.
+- Close/toggle hides the side page while retaining its text and attachments. Source-page clicks leave Snap open; another utility, search, Settings or Escape dismisses its surface. Interrupted transitions settle safely before a fresh capture.
+- Use Chromium's existing PasteFromImageBytes input route, wrapped by a browser-only PasteImage method restricted to the exact focused primary frame and normal native paste permission. This dispatches a trusted PNG-file paste event and leaves the OS clipboard entirely untouched. No file picker, bang auto-submit, Send click or composer-text rewrite occurs.
+- Preparation requires an authenticated account control or a verified same-origin session response, and a single visible genuine composer on exact HTTPS chatgpt.com in the intended Profile. Native document/URL/generation checks guard asynchronous responses; DOM checks retain existing drafts/attachments, detect changed composers/conversations and require a trusted paste whose PNG SHA-256 matches the capture, new attachment evidence, no upload activity and the site’s enabled Send readiness. Dispatch alone is never success.
+- Keep at most one bounded pending capture (16 MP / 64 MiB bitmap, 3-second capture timeout). Login/composer preparation waits up to 120 seconds, then offers Retry while retaining the image for another 60 seconds. Retry never repeats a dispatched paste. Closure, source removal/navigation and cancellation invalidate pending work and listeners; browser teardown releases the retained side page.
+- Patch 0064 separates pending session/composer load, confirmed guest and lookup failure; the responsive account-control fallback calls only HTTPS chatgpt.com/api/auth/session with same-origin credentials, no redirects and a 10-second cancellable timeout. Only authentication truth is retained, never identity/token data. Endpoint compatibility with the current live ChatGPT session remains unverified. Retry visibly restarts readiness checking without repasting.
+- Patch 0065 normalizes responsive wrappers into genuine editable nodes, deduplicates candidate matches, ignores hidden or 1-pixel legacy fields, and refuses multiple live editors. Explicit native content targeting includes Retry. No composer text, existing attachments or submission behavior changes.
+- Patch 0066 gives native pasted files the filename image.png; the previous shared-buffer path produced an empty filename, despite displaying a preview. This is a concrete paste-format correction, not proof that the site’s reported network failure was solely caused by it. Native WebView focus is requested before dispatch; temporarily unavailable paste retains the capture. Retry rechecks a dispatched attachment without repasting, recognizes explicit upload failures, and tolerates same-surface editor recreation only after capture-byte proof. Existing drafts remain untouched.
+- Provide concise capture/login/composer/rejected-attachment feedback. Protected video can fail or produce masked pixels through Chromium's native capture policy. Permissions, sandbox and origin checks remain intact.
+- Patch 0068 removes the renderer clipboard-read/recent-page-interaction gate from browser-owned image paste, following ordinary native Paste semantics. An explicit Snap/Capture action automatically prepares and focuses its exact composer without requiring a page click; it never grants website clipboard permissions or reads the system clipboard. Exact focused-frame and caller profile/origin/document/generation guards remain. Native regression compilation covers a new page with no recent interaction and renderer paste denied; one-click typing focus still requires linked runtime acceptance.
 
-**Compatibility:** share footer ownership, dark glass and Ember motion with other utilities. Keep source-page clicks interactive while Snap stays open. Workspaces remains a placeholder; this does not complete #12/#13 or the arbitrary floating-webpage feature #11.
+**Compatibility:** #9's focused split source stays authoritative; #1/#17 discarded tabs are never awakened to populate utilities. #12/#13 remain planned: their footer button contains only “Work in progress”. The footer order, bottom to top, is Settings, Extensions, Snap, Workspaces, Media; there is one Settings cog. Preserve the approved 0060 shell/search material and motion, 19 DIP favourite favicons, native extension list/actions and existing upload picker (archived #31).
+
+**Verification:** Runnable isolated composer tests cover login, focus/composer/conversation changes, matching PNG bytes (including unrelated trusted PNG rejection), attachment readiness/rejection, cancellation, retry generations, draft retention and no submission. Native browser-test compilation covers image-byte paste/clipboard retention without a prior webpage interaction, focused-split capture cancellation before resize and dedicated normal-Profile draft reuse. The user confirmed live image upload and the 0067 Capture button, but reports one-click autofocus still fails. Automatic typing focus, repeat Capture into the current chat, draft reuse, resizing and protected-media behavior await the user after linking 0068. ChatGPT DOM changes fail conservatively; Chromium's image-byte API dispatches attachment events rather than inserting a default HTML fragment.
 
 ---
 
 # No longer planned
 
 Removed proposals retain their original numbers. They are excluded from the active priority order.
+
+## 39. Organised Ember settings
+
+**Status:** Native section-card/duplicate-label correction in 0071; production
+WebUI and focused regression compile; linked QA pending.
+
+Chromium Settings Appearance groups the existing sidebar/Favorites, New Tab,
+selection conversion, webpage fullscreen and Quick Searches controls in separate
+native settings-section cards, with headings outside each card, native spacing
+and concise descriptions. Each toggle owns one label/sub-label. Search and Quick
+Searches remain on their existing native Search Engines route, with an Appearance
+link. Preserve values/defaults, profile
+rules, bookmark IDs/TemplateURLs, search visibility, accessibility, conditional
+Unsplash controls, deep links and back navigation. Native security and other
+Chromium settings remain visible. Do not add empty speculative groups or a
+second preference store. Internal caches/migration flags are not user settings.
+
+---
+
+## 40. Webpage fullscreen within the window
+
+**Status:** Source implemented in 0069; linked runtime acceptance pending.
+
+A persisted “Keep webpage fullscreen inside the window” preference defaults OFF.
+When enabled, genuine DOM fullscreen uses Chromium's fullscreen-within-tab state
+in the requesting viewport/split pane and retains window bounds/chrome. Native
+fullscreen permissions and origin/exit/lock affordances remain enforced.
+F11 expands/restores the browser while preserving webpage fullscreen; Escape or
+site API exit closes content plus only the F11 expansion owned by this feature.
+A browser already in F11 stays independently owned. Frame/document loss, tab
+switch/detach/closure and disabling the preference exit safely. Check interrupted
+transitions, nested/iframe requests, splits, window/display changes and locks.
+
+---
+
+## 41. Return to reading position after reload
+
+**Status:** Source implemented in 0069; isolated renderer checks pass; runtime pending.
+
+Snapshot the owning page's real reading scroller before a same-URL reload,
+without recording form text. After a successful matching reload, offer the native
+glass “Return to reading position” toast with Return for five usable seconds;
+hover/focus pauses expiry. Never jump automatically. Return uses a nearby readable
+anchor and clamped pixel fallback, waiting at most two seconds for layout and
+cancelling on user/application scrolling or route changes. Support substantial
+nested reading scrollers with document fallback. New navigation/reload/closure
+invalidates old actions; top-of-page, redirects, errors and history/BFCache do not
+offer an unrelated restoration. Reading state stays tab-local and in memory.
+
+---
+
+## 42. Sidebar Downloads
+
+**Status:** Source implemented in 0069; linked runtime acceptance pending.
+
+A dedicated Downloads button sits directly above Media in the bottom utility
+stack, retaining 19 DIP icons, 36 DIP targets, centered 28 DIP square feedback and
+shared Ember motion. Its compact dark EmberGlass panel hosts Chromium's genuine
+download models, warnings/security subpages and command handlers: filename,
+status, orange determinate/unknown-total progress, supported pause/resume/cancel,
+completed-file open, reveal in folder and full download history. Multiple,
+empty, completed and failed states use the native item lifecycle.
+
+Both the row button and its native menu offer “Copy download address”: the final
+HTTP(S) DownloadItem URL after redirects, rather than the referring webpage or
+local path. Blob/data/file downloads have no portable network address, so the
+action is unavailable. A copied signed/authenticated address retains its native
+expiry/cookie requirements; no replacement URL or credential bypass is invented.
+
+Downloads and all other utilities/search/extensions dismiss one another. Native
+Escape/outside click/focus restoration and shared reduced-motion behavior remain.
+The primary scrolling viewport is fixed while progress/membership updates reuse
+existing controls, with weak models and popup generations rejecting stale
+callbacks. Native security subpages may intentionally expand for warning details.
+At most 100 recent rows are retained during an opening; full history stays native.
+Check short windows/DPI, empty-to-live membership, close/reopen/switch races,
+unknown totals, pause/resume/failed files and dangerous/blocked download actions.
+
+---
 
 ## 31. Recent Files / Library sidebar panel
 
@@ -1507,11 +1620,11 @@ This complements the recent-file upload UI already being developed.
 7. Instant/Favorite sidebar buttons ✅
 8. Copy Link ✅
 9. Split View ✅
-10. Follower Tabs
+10. Split follower mode (source implemented; runtime pending)
 11. In-window floating webpages
 12. Workspaces
 13. Workspace Profiles
-14. Universal sidebar tab search ✅
+14. Universal sidebar tab search (content extension runtime pending)
 15. Fully-offloaded named Sessions ✅
 16. Automatic workspace routing
 17. Hibernation integration across the entire tab system ✅
@@ -1535,3 +1648,8 @@ This complements the recent-file upload UI already being developed.
 36. Page-aware browser tinting
 37. Freeze + Draw annotation mode
 38. ChatGPT Snap ✅
+
+39. Organised Ember settings (source implemented; runtime pending)
+40. Webpage fullscreen within the window (source implemented; runtime pending)
+41. Return to reading position (source implemented; runtime pending)
+42. Sidebar Downloads (source implemented; runtime pending)

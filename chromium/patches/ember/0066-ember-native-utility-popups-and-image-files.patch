@@ -1,0 +1,472 @@
+diff --git a/chrome/browser/ui/views/ember/ember_utility_controller.cc b/chrome/browser/ui/views/ember/ember_utility_controller.cc
+--- a/chrome/browser/ui/views/ember/ember_utility_controller.cc
++++ b/chrome/browser/ui/views/ember/ember_utility_controller.cc
+@@ -66,8 +66,35 @@
+ constexpr SkColor kForeground = SkColorSetRGB(235, 237, 240);
+ constexpr int kMute = -1, kGoToTab = -2;
+ 
+-// Native Slider handles keyboard/accessibility and pointer capture; only paint
+-// differs. Values remain continuous, and no page script is involved in audio.
++// A native owned widget gives utility controls their own input/focus root.
++// Retain EmberGlassView material and motion, including interrupted closes.
++class UtilityPopupSurface : public EmberGlassView {
++ public:
++  explicit UtilityPopupSurface(base::RepeatingClosure close)
++      : EmberGlassView(EmberGlassPreset::kPopover), close_(std::move(close)) {}
++  void AddedToWidget() override {
++    GetWidget()->GetNativeWindow()->AddPreTargetHandler(this);
++  }
++  void RemovedFromWidget() override {
++    if (GetWidget()) {
++      GetWidget()->GetNativeWindow()->RemovePreTargetHandler(this);
++    }
++  }
++  void OnKeyEvent(ui::KeyEvent* event) override {
++    if (event->type() == ui::EventType::kKeyPressed &&
++        event->key_code() == ui::VKEY_ESCAPE) {
++      event->SetHandled();
++      close_.Run();
++    } else {
++      EmberGlassView::OnKeyEvent(event);
++    }
++  }
++
++ private:
++  base::RepeatingClosure close_;
++};
++
++// Native Slider owns keyboard/accessibility and pointer capture.
+ class WhiteSlider : public views::Slider {
+  public:
+   METADATA_HEADER(WhiteSlider, views::Slider)
+@@ -87,7 +114,8 @@
+     flags.setColor(SkColorSetARGB(GetEnabled() ? 240 : 65, 255, 255, 255));
+     canvas->DrawRoundRect(gfx::RectF(left, y - 1.5, point - left, 3), 1.5,
+                           flags);
+-    canvas->DrawCircle(gfx::PointF(point, y), HasFocus() ? 5 : 4, flags);
++    canvas->DrawCircle(gfx::PointF(point, y),
++                       HasFocus() || IsMouseHovered() ? 5 : 4, flags);
+   }
+ };
+ BEGIN_METADATA(WhiteSlider)
+@@ -102,6 +130,15 @@
+ }
+ }  // namespace
+ 
++gfx::Size FitMediaArtworkSize(const gfx::Size& size) {
++  if (size.IsEmpty()) {
++    return gfx::Size();
++  }
++  const double scale =
++      std::min({1.0, 72.0 / size.width(), 72.0 / size.height()});
++  return gfx::Size(std::max(1, int(std::round(size.width() * scale))),
++                   std::max(1, int(std::round(size.height() * scale))));
++}
+ gfx::ImageSkia ConvertMediaArtwork(const SkBitmap& image) {
+   if (image.drawsNothing())
+     return {};
+@@ -302,6 +339,14 @@
+   SyncSources();
+ }
+ EmberUtilityController::~EmberUtilityController() {
++  Close(false, true);
++  // Finish pending native popups before their observer/controller disappears.
++  while (!closing_popovers_.empty()) {
++    auto* widget = closing_popovers_.back()->GetWidget();
++    closing_popovers_.pop_back();
++    widget->RemoveObserver(this);
++    widget->CloseNow();
++  }
+   CancelPendingSnap();
+   browser_view_->browser()->tab_strip_model()->RemoveObserver(this);
+   if (GetWidget())
+@@ -320,6 +365,17 @@
+     GetWidget()->GetNativeWindow()->RemovePreTargetHandler(this);
+   }
+   listening_ = false;
++}
++void EmberUtilityController::OnWidgetDestroying(views::Widget* widget) {
++  widget->RemoveObserver(this);
++  std::erase_if(closing_popovers_, [widget](auto surface) {
++    return surface->GetWidget() == widget;
++  });
++  if (widget == popover_widget_) {
++    popover_widget_ = nullptr;
++    popover_ = nullptr;
++    Close(false, true);
++  }
+ }
+ void EmberUtilityController::OnWidgetActivationChanged(views::Widget*,
+                                                        bool active) {
+@@ -442,7 +498,7 @@
+   const bool was_open = active_ != Utility::kNone;
+   if (immediate)
+     for (const auto& surface : closing_popovers_)
+-      surface->SetVisible(false);
++      surface->GetWidget()->Hide();
+   active_ = Utility::kNone;
+   position_timer_.Stop();
+   seeking_ = false;
+@@ -454,17 +510,20 @@
+   ExtensionsMenuView::Hide();
+   if (popover_) {
+     auto* old = popover_.get();
++    popover_widget_ = nullptr;
+     popover_ = nullptr;
+     closing_popovers_.push_back(old);
+     old->SetCanProcessEventsWithinSubtree(false);
+     if (immediate)
+-      old->SetVisible(false);
++      old->GetWidget()->Hide();
+     old->CloseAnimated(base::BindOnce(
+         [](base::WeakPtr<EmberUtilityController> owner,
+            EmberGlassView* surface) {
+-          if (owner && surface->parent() == owner.get()) {
++          if (owner) {
+             std::erase(owner->closing_popovers_, surface);
+-            owner->RemoveChildViewT(surface);
++            auto* widget = surface->GetWidget();
++            widget->RemoveObserver(owner.get());
++            widget->Close();
+           }
+         },
+         weak_factory_.GetWeakPtr(), old));
+@@ -536,13 +595,29 @@
+       std::clamp(origin.y() - height, 4,
+                  std::max(4, this->height() - height - 4)),
+       panel_width, std::min(height, this->height() - 8));
+-  popover_ =
+-      static_cast<EmberGlassView*>(AddChildView(std::unique_ptr<views::View>(
+-          std::make_unique<EmberGlassView>(EmberGlassPreset::kPopover))));
+-  // EmberGlassView has a shadow/capture gutter; contents occupy its panel box.
+   gfx::Rect bounds = panel;
+   bounds.Outset(EmberGlassView::kShadowMargin);
+-  popover_->SetBoundsRect(bounds);
++  gfx::Rect screen_bounds = bounds;
++  screen_bounds.Offset(GetBoundsInScreen().origin().OffsetFromOrigin());
++  auto* widget = new views::Widget;
++  views::Widget::InitParams params(
++      views::Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET,
++      views::Widget::InitParams::TYPE_POPUP);
++  params.parent = GetWidget()->GetNativeView();
++  params.context = GetWidget()->GetNativeView();
++  params.opacity = views::Widget::InitParams::WindowOpacity::kTranslucent;
++  params.activatable = views::Widget::InitParams::Activatable::kYes;
++  params.shadow_type = views::Widget::InitParams::ShadowType::kNone;
++  params.bounds = screen_bounds;
++  params.name = "EmberUtilityPopup";
++  widget->Init(std::move(params));
++  popover_widget_ = widget;
++  popover_ = widget->SetContentsView(std::make_unique<UtilityPopupSurface>(
++      base::BindRepeating(&EmberUtilityController::Close,
++                          weak_factory_.GetWeakPtr(), true, false, false)));
++  popover_->SetBoundsRect(gfx::Rect(bounds.size()));
++  widget->AddObserver(this);
++  widget->Show();
+   popover_body_ =
+       popover_->contents()->AddChildView(std::make_unique<views::View>());
+   popover_body_->SetBoundsRect(popover_->GetPanelBounds());
+@@ -792,11 +867,14 @@
+                                         ? source->metadata->title
+                                         : media_->GetTitle()
+                                   : u"No media available");
+-  if (available && !source->artwork.isNull())
++  if (available && !source->artwork.isNull()) {
+     artwork_->SetImage(ui::ImageModel::FromImageSkia(source->artwork));
+-  else
++    artwork_->SetImageSize(FitMediaArtworkSize(source->artwork.size()));
++  } else {
++    artwork_->SetImageSize(gfx::Size(48, 48));
+     artwork_->SetImage(ui::ImageModel::FromVectorIcon(
+         vector_icons::kPlayArrowIcon, SkColorSetARGB(90, 255, 255, 255), 48));
++  }
+   std::vector<ui::SimpleComboboxModel::Item> choices;
+   std::vector<std::u16string> labels;
+   size_t selected = 0;
+@@ -1125,7 +1203,8 @@
+     auto retry = std::make_unique<views::LabelButton>(
+         base::BindRepeating(
+             [](EmberUtilityController* owner) {
+-              if (owner->paste_phase_ == PastePhase::kWaiting &&
++              if ((owner->paste_phase_ == PastePhase::kWaiting ||
++                   owner->paste_phase_ == PastePhase::kPrepared) &&
+                   owner->SourceStillValid() &&
+                   !owner->pending_capture_.drawsNothing()) {
+                 owner->feedback_timer_.Stop();
+@@ -1135,6 +1214,17 @@
+                     base::BindRepeating(&EmberUtilityController::PollSnap,
+                                         owner->weak_factory_.GetWeakPtr()));
+                 owner->SnapStatus(u"Checking ChatGPT sign-in and composer...");
++                owner->PollSnap();
++              } else if (owner->paste_phase_ == PastePhase::kPasted &&
++                         owner->paste_dispatched_) {
++                owner->feedback_timer_.Stop();
++                owner->snap_started_ = base::TimeTicks::Now();
++                owner->snap_timer_.Start(
++                    FROM_HERE, base::Milliseconds(250),
++                    base::BindRepeating(&EmberUtilityController::PollSnap,
++                                        owner->weak_factory_.GetWeakPtr()));
++                owner->SnapStatus(
++                    u"Checking existing attachment; no image repaste.");
+                 owner->PollSnap();
+               } else if (owner->paste_phase_ == PastePhase::kIdle &&
+                          !owner->paste_dispatched_) {
+@@ -1196,7 +1286,10 @@
+         std::clamp(origin.x() + 8, 4, std::max(4, width() - w - 4)),
+         std::clamp(origin.y() - h, 4, std::max(4, height() - h - 4)), w, h);
+     panel.Outset(EmberGlassView::kShadowMargin);
+-    popover_->SetBoundsRect(panel);
++    gfx::Rect screen_panel = panel;
++    screen_panel.Offset(GetBoundsInScreen().origin().OffsetFromOrigin());
++    popover_widget_->SetBounds(screen_panel);
++    popover_->SetBoundsRect(gfx::Rect(panel.size()));
+     popover_body_->SetBoundsRect(popover_->GetPanelBounds());
+     if (media_scroll_)
+       media_scroll_->SetBoundsRect(popover_body_->GetLocalBounds());
+@@ -1267,10 +1360,10 @@
+     snap_timer_.Stop();
+     if (paste_phase_ == PastePhase::kWaiting)
+       SnapStatus(u"ChatGPT not ready. Retry; image kept briefly.");
+-    else {
+-      CancelPendingSnap();
+-      SnapStatus(
+-          u"Attachment unconfirmed. Check draft before capturing again.");
++    else if (paste_phase_ == PastePhase::kPrepared) {
++      SnapStatus(u"Paste not ready. Focus ChatGPT composer, then Retry.");
++    } else {
++      SnapStatus(u"Attachment not ready. Retry checks the existing image.");
+     }
+     // Waiting capture has an absolute, bounded lifetime even without a retry.
+     feedback_timer_.Start(
+@@ -1345,6 +1438,7 @@
+     paste_phase_ = PastePhase::kPrepared;
+     paste_url_ = contents->GetLastCommittedURL();
+     paste_document_ = contents->GetPrimaryMainFrame()->GetWeakDocumentPtr();
++    snap_page_->RequestFocus();
+     contents->Focus();
+     PollSnap();
+     return;
+@@ -1353,15 +1447,19 @@
+     if (!paste_document_.AsRenderFrameHostIfValid() ||
+         contents->GetLastCommittedURL() != paste_url_)
+       return;
+-    paste_phase_ =
+-        PastePhase::kPasted;  // Commit before native asynchronous dispatch.
++    if (contents->GetFocusedFrame() != contents->GetPrimaryMainFrame()) {
++      snap_page_->RequestFocus();
++      contents->Focus();
++      SnapStatus(u"Focusing ChatGPT composer...");
++      return;
++    }
+     if (!contents->PasteImage(pending_capture_,
+                               paste_document_.AsRenderFrameHostIfValid(),
+                               &paste_digest_)) {
+-      CancelPendingSnap();
+-      SnapStatus(u"Image paste unavailable. Close and try again.");
++      SnapStatus(u"Paste not ready. Focus ChatGPT composer, then Retry.");
+       return;
+     }
++    paste_phase_ = PastePhase::kPasted;
+     paste_dispatched_ = true;
+     pending_capture_.reset();
+     SnapStatus(u"Waiting for image attachment…");
+@@ -1371,6 +1469,13 @@
+     CancelPendingSnap();
+     SnapStatus(u"Image attached. Type your message.");
+     contents->Focus();
++    return;
++  }
++  if (*state == "rejected" && paste_dispatched_) {
++    snap_timer_.Stop();
++    SnapStatus(
++        u"ChatGPT upload failed. Retry its attachment; Ember will not "
++        u"duplicate it.");
+     return;
+   }
+   if (*state == "changed" || *state == "rejected") {
+@@ -1415,7 +1520,7 @@
+   // Route through the actual content, not the glass/shadow/capture wrapper.
+   // This also leaves native Slider pointer capture and Button hover dispatch
+   // with the selected descendant, rather than the full-window utility owner.
+-  for (views::View* surface : {popover_body_.get(), snap_surface_.get()}) {
++  for (views::View* surface : {snap_surface_.get()}) {
+     if (!surface || !surface->IsDrawn() ||
+         !surface->GetCanProcessEventsWithinSubtree()) {
+       continue;
+@@ -1431,7 +1536,7 @@
+ }
+ bool EmberUtilityController::DoesIntersectRect(const views::View*,
+                                                const gfx::Rect& rect) const {
+-  for (views::View* surface : {popover_body_.get(), snap_surface_.get()}) {
++  for (views::View* surface : {snap_surface_.get()}) {
+     if (!surface || !surface->IsDrawn() ||
+         !surface->GetCanProcessEventsWithinSubtree()) {
+       continue;
+diff --git a/chrome/browser/ui/views/ember/ember_utility_controller.h b/chrome/browser/ui/views/ember/ember_utility_controller.h
+--- a/chrome/browser/ui/views/ember/ember_utility_controller.h
++++ b/chrome/browser/ui/views/ember/ember_utility_controller.h
+@@ -37,6 +37,8 @@
+ 
+ // Normalize decoded MediaSession artwork for native Views, or return empty.
+ gfx::ImageSkia ConvertMediaArtwork(const SkBitmap& image);
++// Shrink to the artwork slot without distorting or painting letterbox bars.
++gfx::Size FitMediaArtworkSize(const gfx::Size& size);
+ 
+ // One owner per browser. Transient menus and the reusable Snap page share
+ // logical dismissal with search and native extension popups.
+@@ -98,6 +100,7 @@
+   bool DoesIntersectRect(const views::View*, const gfx::Rect&) const override;
+   void AddedToWidget() override;
+   void RemovedFromWidget() override;
++  void OnWidgetDestroying(views::Widget* widget) override;
+   void OnWidgetActivationChanged(views::Widget* widget, bool active) override;
+   void OnMouseEvent(ui::MouseEvent* event) override;
+   void OnKeyEvent(ui::KeyEvent* event) override;
+@@ -145,6 +148,7 @@
+   raw_ptr<views::View> anchor_ = nullptr;
+   raw_ptr<views::View> footer_ = nullptr;
+   std::map<Utility, raw_ptr<EmberUtilityButton>> buttons_;
++  raw_ptr<views::Widget> popover_widget_ = nullptr;
+   raw_ptr<EmberGlassView> popover_ = nullptr;
+   std::vector<raw_ptr<EmberGlassView>> closing_popovers_;
+   raw_ptr<views::View> popover_body_ = nullptr;
+diff --git a/chrome/browser/ui/views/frame/browser_view_browsertest.cc b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+--- a/chrome/browser/ui/views/frame/browser_view_browsertest.cc
++++ b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+@@ -1070,8 +1070,9 @@
+   gfx::Point panel_point =
+       owner->popover_content_for_testing()->GetBoundsInScreen().CenterPoint();
+   views::View::ConvertPointFromScreen(widget->GetRootView(), &panel_point);
+-  EXPECT_FALSE(widget->ShouldDescendIntoChildForEventHandling(
++  EXPECT_TRUE(widget->ShouldDescendIntoChildForEventHandling(
+       root->layer(), child, child->layer(), panel_point));
++  EXPECT_NE(widget, owner->popover_content_for_testing()->GetWidget());
+   owner->Close(false, true);
+   EXPECT_TRUE(page_receives_input());
+   gfx::Animation::SetPrefersReducedMotionForTesting(false);
+@@ -1123,21 +1124,27 @@
+     auto* slider = owner->volume_for_testing();
+     ASSERT_TRUE(slider);
+     gfx::Point point = slider->GetBoundsInScreen().CenterPoint();
+-    views::View::ConvertPointFromScreen(widget->GetRootView(), &point);
+-    EXPECT_EQ(slider, widget->GetRootView()->GetEventHandlerForPoint(point));
++    auto* popup_root = slider->GetWidget()->GetRootView();
++    EXPECT_NE(widget, slider->GetWidget());
++    EXPECT_TRUE(slider->GetWidget()->CanActivate());
++    slider->RequestFocus();
++    EXPECT_TRUE(slider->HasFocus());
++    views::View::ConvertPointFromScreen(popup_root, &point);
++    EXPECT_EQ(slider, popup_root->GetEventHandlerForPoint(point));
+     owner->Toggle(Utility::kMedia, anchor);
+     widget->GetRootView()->DeprecatedLayoutImmediately();
+     slider = owner->volume_for_testing();
+     ASSERT_TRUE(slider);
+     point = slider->GetBoundsInScreen().CenterPoint();
+-    views::View::ConvertPointFromScreen(widget->GetRootView(), &point);
+-    EXPECT_EQ(slider, widget->GetRootView()->GetEventHandlerForPoint(point));
++    popup_root = slider->GetWidget()->GetRootView();
++    views::View::ConvertPointFromScreen(popup_root, &point);
++    EXPECT_EQ(slider, popup_root->GetEventHandlerForPoint(point));
+     auto* play = owner->media_action_for_testing(
+         int(media_session::mojom::MediaSessionAction::kPlay));
+     ASSERT_TRUE(play);
+     point = play->GetBoundsInScreen().CenterPoint();
+-    views::View::ConvertPointFromScreen(widget->GetRootView(), &point);
+-    EXPECT_EQ(play, widget->GetRootView()->GetEventHandlerForPoint(point));
++    views::View::ConvertPointFromScreen(popup_root, &point);
++    EXPECT_EQ(play, popup_root->GetEventHandlerForPoint(point));
+     owner->Close(false, true);
+   }
+   gfx::Animation::SetPrefersReducedMotionForTesting(false);
+@@ -1227,6 +1234,13 @@
+ 
+ IN_PROC_BROWSER_TEST_F(BrowserViewTest,
+                        EmberMediaArtworkNormalizesDecodedPixels) {
++  EXPECT_EQ(gfx::Size(72, 41),
++            ember::FitMediaArtworkSize(gfx::Size(1920, 1080)));
++  EXPECT_EQ(gfx::Size(41, 72),
++            ember::FitMediaArtworkSize(gfx::Size(1080, 1920)));
++  EXPECT_EQ(gfx::Size(72, 72), ember::FitMediaArtworkSize(gfx::Size(400, 400)));
++  EXPECT_EQ(gfx::Size(2, 1), ember::FitMediaArtworkSize(gfx::Size(2, 1)));
++  EXPECT_TRUE(ember::FitMediaArtworkSize(gfx::Size()).IsEmpty());
+   // MediaSessionImpl converts downloaded artwork to RGBA. On Windows, passing
+   // that directly to ImageSkia used to hit a release CHECK asynchronously, even
+   // when the Media panel was closed and a background page supplied the image.
+@@ -1295,7 +1309,7 @@
+   ASSERT_TRUE(previous);
+   ASSERT_TRUE(base::test::RunUntil([&] { return previous->GetEnabled(); }));
+   const auto click_control = [&](views::View* control) {
+-    auto* root = browser_view()->GetWidget()->GetRootView();
++    auto* root = control->GetWidget()->GetRootView();
+     root->DeprecatedLayoutImmediately();
+     gfx::Point point = control->GetBoundsInScreen().CenterPoint();
+     views::View::ConvertPointFromScreen(root, &point);
+@@ -1303,6 +1317,7 @@
+     ui::MouseEvent move(ui::EventType::kMouseMoved, point, point,
+                         base::TimeTicks::Now(), ui::EF_NONE, ui::EF_NONE);
+     root->OnMouseEvent(&move);
++    EXPECT_TRUE(control->IsMouseHovered());
+     ui::MouseEvent press(ui::EventType::kMousePressed, point, point,
+                          base::TimeTicks::Now(), ui::EF_LEFT_MOUSE_BUTTON,
+                          ui::EF_LEFT_MOUSE_BUTTON);
+@@ -1341,7 +1356,7 @@
+       const file = event.clipboardData.files[0];
+       event.preventDefault();
+       resolve({trusted:event.isTrusted, type:file?.type, size:file?.size,
+-        text:document.getElementById('composer').textContent});
++        name:file?.name, text:document.getElementById('composer').textContent});
+     }, {once:true}));
+   )JS"));
+   {
+@@ -1358,7 +1373,8 @@
+   EXPECT_EQ(true, content::EvalJs(
+                       contents,
+                       "received.then(e => e.trusted && e.type === 'image/png' "
+-                      "&& e.size > 0 && e.text === 'Keep my draft')"));
++                      "&& e.name === 'image.png' && e.size > 0 && e.text === "
++                      "'Keep my draft')"));
+   EXPECT_EQ(clipboard_sequence,
+             ui::Clipboard::GetForCurrentThread()->GetSequenceNumber(
+                 ui::ClipboardBuffer::kCopyPaste));
+diff --git a/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc b/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc
+--- a/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc
++++ b/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc
+@@ -108,6 +108,7 @@
+ #include "third_party/blink/renderer/core/exported/web_plugin_container_impl.h"
+ #include "third_party/blink/renderer/core/exported/web_settings_impl.h"
+ #include "third_party/blink/renderer/core/exported/web_view_impl.h"
++#include "third_party/blink/renderer/core/fileapi/file.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame_ukm_aggregator.h"
+ #include "third_party/blink/renderer/core/frame/local_frame_view.h"
+@@ -160,6 +161,8 @@
+ #include "third_party/blink/renderer/core/timing/window_performance.h"
+ #include "third_party/blink/renderer/core/view_transition/view_transition.h"
+ #include "third_party/blink/renderer/core/view_transition/view_transition_utils.h"
++#include "third_party/blink/renderer/platform/blob/blob_data.h"
++#include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
+ #include "third_party/blink/renderer/platform/graphics/animation_worklet_mutator_dispatcher_impl.h"
+ #include "third_party/blink/renderer/platform/graphics/color_space_gamut.h"
+ #include "third_party/blink/renderer/platform/graphics/compositor_mutator_client.h"
+@@ -4786,10 +4789,17 @@
+ 
+   DataObject* data_object = DataObject::Create();
+ 
+-  data_object->AddFileSharedBuffer(SharedBuffer::Create(image_bytes),
+-                                   /*is_accessible_from_start_frame=*/true,
+-                                   KURL(), media_format,
+-                                   /*content_disposition=*/AtomicString());
++  // A shared-buffer item with an empty source URL produces an unnamed File.
++  // Upload services need a genuine filename just like ordinary clipboard PNGs.
++  auto data = std::make_unique<BlobData>();
++  data->SetContentType(
++      MIMETypeRegistry::GetWellKnownMIMETypeForExtension(media_format));
++  data->AppendBytes(
++      base::span<const uint8_t>(image_bytes.data(), image_bytes.size()));
++  const uint64_t length = data->length();
++  auto blob = BlobDataHandle::Create(std::move(data), length);
++  data_object->Add(MakeGarbageCollected<File>(
++      String("image.") + media_format, base::Time::Now(), std::move(blob)));
+ 
+   DataTransfer* const data_transfer =
+       DataTransfer::Create(DataTransfer::kCopyAndPaste,

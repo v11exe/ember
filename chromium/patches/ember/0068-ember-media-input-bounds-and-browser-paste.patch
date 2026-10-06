@@ -1,0 +1,167 @@
+diff --git a/chrome/browser/ui/views/ember/ember_utility_controller.cc b/chrome/browser/ui/views/ember/ember_utility_controller.cc
+--- a/chrome/browser/ui/views/ember/ember_utility_controller.cc
++++ b/chrome/browser/ui/views/ember/ember_utility_controller.cc
+@@ -627,14 +627,14 @@
+   params.name = "EmberUtilityPopup";
+   widget->Init(std::move(params));
+   popover_widget_ = widget;
+-  widget->GetContentsView()->SetLayoutManager(
+-      std::make_unique<views::FillLayout>());
++  auto* client_contents = widget->GetClientContentsView();
++  client_contents->SetLayoutManager(std::make_unique<views::FillLayout>());
+   std::unique_ptr<views::View> popup_view =
+       std::make_unique<UtilityPopupSurface>(
+           base::BindRepeating(&EmberUtilityController::Close,
+                               weak_factory_.GetWeakPtr(), true, false, false));
+   popover_ = static_cast<EmberGlassView*>(
+-      widget->GetContentsView()->AddChildView(std::move(popup_view)));
++      client_contents->AddChildView(std::move(popup_view)));
+   popover_->SetBoundsRect(gfx::Rect(bounds.size()));
+   widget->AddObserver(this);
+   widget->Show();
+@@ -799,6 +799,11 @@
+     scroll->SetBackgroundColor(std::nullopt);
+     media_body_ = scroll->SetContents(std::make_unique<views::View>());
+     media_body_->SetPreferredSize(gfx::Size(300, 300));
++    // Windows uses bounds-based scrolling. Preferred size selects scrollbars
++    // but does not size a plain View: layered children can paint outside its
++    // empty bounds while hit testing stops at the viewport. Keep actual bounds
++    // in agreement with the manually positioned controls in both scroll modes.
++    media_body_->SetBoundsRect(gfx::Rect(300, 300));
+     scroll->SetUseContentsPreferredSize(true);
+     media_scroll_ = popover_body_->AddChildView(std::move(scroll));
+     media_scroll_->SetBoundsRect(popover_body_->GetLocalBounds());
+@@ -1406,7 +1411,7 @@
+     if (paste_phase_ == PastePhase::kWaiting)
+       SnapStatus(u"ChatGPT not ready. Retry; image kept briefly.");
+     else if (paste_phase_ == PastePhase::kPrepared) {
+-      SnapStatus(u"Paste not ready. Focus ChatGPT composer, then Retry.");
++      SnapStatus(u"Image paste unavailable. Retry keeps this capture.");
+     } else {
+       SnapStatus(u"Attachment not ready. Retry checks the existing image.");
+     }
+@@ -1505,7 +1510,7 @@
+     if (!contents->PasteImage(pending_capture_,
+                               paste_document_.AsRenderFrameHostIfValid(),
+                               &paste_digest_)) {
+-      SnapStatus(u"Paste not ready. Focus ChatGPT composer, then Retry.");
++      SnapStatus(u"Image paste unavailable. Retry keeps this capture.");
+       return;
+     }
+     paste_phase_ = PastePhase::kPasted;
+diff --git a/chrome/browser/ui/views/frame/browser_view_browsertest.cc b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+--- a/chrome/browser/ui/views/frame/browser_view_browsertest.cc
++++ b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+@@ -24,6 +24,9 @@
+ #include "ui/gfx/image/image_skia_rep.h"
+ #include "chrome/browser/ui/views/ember/ember_utility_button.h"
+ #include "base/test/run_until.h"
++#include "base/test/scoped_feature_list.h"
++#include "content/public/browser/content_browser_client.h"
++#include "content/public/common/content_client.h"
+ #include "ui/views/controls/combobox/combobox.h"
+ #include "ui/views/test/combobox_test_api.h"
+ #include "ui/base/clipboard/clipboard.h"
+@@ -1114,7 +1117,24 @@
+   gfx::Animation::SetPrefersReducedMotionForTesting(false);
+ }
+ 
+-IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++class BrowserViewUtilityScrollTest : public BrowserViewTest,
++                                     public testing::WithParamInterface<bool> {
++ public:
++  void SetUp() override {
++    scroll_features_.InitWithFeatureState(
++        features::kUiCompositorScrollWithLayers, GetParam());
++    BrowserViewTest::SetUp();
++  }
++
++ private:
++  base::test::ScopedFeatureList scroll_features_;
++};
++
++INSTANTIATE_TEST_SUITE_P(AllScrollModes,
++                         BrowserViewUtilityScrollTest,
++                         testing::Bool());
++
++IN_PROC_BROWSER_TEST_P(BrowserViewUtilityScrollTest,
+                        EmberUtilityRootRoutesToControlsAfterRepeatedLayout) {
+   using Utility = ember::EmberUtilityController::Utility;
+   auto* owner = browser_view()->ember_utilities();
+@@ -1131,6 +1151,7 @@
+     EXPECT_NE(widget, slider->GetWidget());
+     EXPECT_TRUE(slider->GetWidget()->CanActivate());
+     ASSERT_TRUE(slider->GetWidget()->non_client_view());
++    EXPECT_TRUE(slider->GetWidget()->GetClientContentsView()->Contains(slider));
+     gfx::Point client_point = point;
+     views::View::ConvertPointFromScreen(slider->GetWidget()->GetRootView(),
+                                         &client_point);
+@@ -1151,6 +1172,11 @@
+     auto* play = owner->media_action_for_testing(
+         int(media_session::mojom::MediaSessionAction::kPlay));
+     ASSERT_TRUE(play);
++    for (views::View* ancestor = play; ancestor != popup_root;
++         ancestor = ancestor->parent()) {
++      ASSERT_TRUE(ancestor);
++      EXPECT_FALSE(ancestor->GetLocalBounds().IsEmpty());
++    }
+     point = play->GetBoundsInScreen().CenterPoint();
+     views::View::ConvertPointFromScreen(popup_root, &point);
+     EXPECT_EQ(play, popup_root->GetEventHandlerForPoint(point));
+@@ -1301,7 +1327,7 @@
+   EXPECT_TRUE(ember::ConvertMediaArtwork(without_pixels).isNull());
+ }
+ 
+-IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++IN_PROC_BROWSER_TEST_P(BrowserViewUtilityScrollTest,
+                        EmberMediaActionsKeepSourceAcrossFocus) {
+   using Action = media_session::mojom::MediaSessionAction;
+   using Utility = ember::EmberUtilityController::Utility;
+@@ -1432,8 +1458,10 @@
+ 
+ IN_PROC_BROWSER_TEST_F(BrowserViewTest,
+                        EmberNativeImagePastePreservesClipboardAndDraft) {
++  // A new side page has no prior page click or granted clipboard permission.
++  chrome::AddTabAt(browser(), GURL(url::kAboutBlankURL), -1, true);
+   auto* contents = active_web_contents();
+-  contents->Focus();
++  contents->FocusThroughTabTraversal(false);
+   ASSERT_TRUE(content::ExecJs(contents, R"JS(
+     document.body.innerHTML = '<div id="composer" contenteditable>Keep my draft</div>';
+     document.getElementById('composer').focus();
+@@ -1443,7 +1471,15 @@
+       resolve({trusted:event.isTrusted, type:file?.type, size:file?.size,
+         name:file?.name, text:document.getElementById('composer').textContent});
+     }, {once:true}));
+-  )JS"));
++  )JS",
++                              content::EXECUTE_SCRIPT_NO_USER_GESTURE));
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return contents->GetFocusedFrame() == contents->GetPrimaryMainFrame();
++  }));
++  EXPECT_FALSE(contents->HasRecentInteraction());
++  EXPECT_FALSE(
++      content::GetContentClientForTesting()->browser()->IsClipboardPasteAllowed(
++          contents->GetPrimaryMainFrame()));
+   {
+     ui::ScopedClipboardWriter writer(ui::ClipboardBuffer::kCopyPaste);
+     writer.WriteText(u"Retain clipboard contents");
+diff --git a/content/browser/web_contents/web_contents_impl.cc b/content/browser/web_contents/web_contents_impl.cc
+--- a/content/browser/web_contents/web_contents_impl.cc
++++ b/content/browser/web_contents/web_contents_impl.cc
+@@ -6827,10 +6827,14 @@
+ bool WebContentsImpl::PasteImage(const SkBitmap& image,
+                                  RenderFrameHost* destination,
+                                  std::string* png_digest) {
++  // This browser-owned command follows Paste(), not the renderer's clipboard
++  // IPC permission check. A sidebar capture click need not be a prior webpage
++  // interaction. No clipboard is read and no website permission is granted;
++  // the caller authorizes the exact profile/origin/document for its user
++  // action.
+   if (IsBeingDestroyed() || !destination ||
+       destination != GetPrimaryMainFrame() ||
+       destination != GetFocusedFrame() ||
+-      !GetContentClient()->browser()->IsClipboardPasteAllowed(destination) ||
+       image.drawsNothing() || image.computeByteSize() > 64 * 1024 * 1024)
+     return false;
+   auto* input_handler = GetFocusedFrameWidgetInputHandler();

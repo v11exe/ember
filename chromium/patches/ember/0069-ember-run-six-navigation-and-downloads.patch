@@ -1,0 +1,3178 @@
+diff --git a/chrome/browser/autocomplete/tab_matcher_desktop.cc b/chrome/browser/autocomplete/tab_matcher_desktop.cc
+--- a/chrome/browser/autocomplete/tab_matcher_desktop.cc
++++ b/chrome/browser/autocomplete/tab_matcher_desktop.cc
+@@ -5,6 +5,9 @@
+ #include "chrome/browser/autocomplete/tab_matcher_desktop.h"
+ 
+ #include "base/feature_list.h"
++#include "chrome/browser/ui/ember_page_state.h"
++#include "chrome/browser/search_engines/ember_bangs.h"
++#include "chrome/browser/search_engines/template_url_service_factory.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+@@ -87,10 +90,25 @@
+     const AutocompleteInput* input,
+     bool exclude_active_tab) const {
+   std::vector<TabMatcher::TabWrapper> open_tabs;
+-  for (auto* web_contents : GetOpenWebContents(exclude_active_tab)) {
++  const bool allow_content =
++      input && input->text().size() >= 2 && input->text().size() <= 128 &&
++      !input->IsZeroSuggest() && !input->in_keyword_mode() &&
++      !ember::ResolveBangInput(
++           TemplateURLServiceFactory::GetForProfile(profile_), input->text())
++           .is_valid();
++  for (auto* web_contents :
++       GetOpenWebContents(allow_content ? false : exclude_active_tab)) {
+     open_tabs.emplace_back(web_contents->GetTitle(),
+                            web_contents->GetLastCommittedURL(),
+                            web_contents->GetLastActiveTime());
++    auto* state = ember::EmberPageState::FromWebContents(web_contents);
++    if (allow_content && state &&
++        web_contents->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
++      auto& wrapper = open_tabs.back();
++      wrapper.ember_readable_text = state->text();
++      wrapper.ember_tab_identity = state->identity();
++      wrapper.ember_document_generation = state->generation();
++    }
+   }
+ 
+   return open_tabs;
+diff --git a/chrome/browser/browser_resources.grd b/chrome/browser/browser_resources.grd
+--- a/chrome/browser/browser_resources.grd
++++ b/chrome/browser/browser_resources.grd
+@@ -204,6 +204,7 @@
+         <!-- FedCM -->
+         <part file="ui/views/webid/resources/webid_resources.grdp" />
+       </if>
++      <include name="IDR_EMBER_PAGE_STATE" file="resources/ember/ember-page-state.js" type="BINDATA" />
+       <include name="IDR_EMBER_SNAP_COMPOSER" file="resources/ember/ember-snap-composer.js" type="BINDATA" />
+       <include name="IDR_EMBER_SNAP_MARK" file="resources/ember/chatgpt-mark.svg" type="BINDATA" />
+     </includes>
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -3,6 +3,9 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/chrome_content_browser_client.h"
++#if !BUILDFLAG(IS_ANDROID)
++#include "chrome/browser/ui/ember_page_state.h"
++#endif
+ 
+ #include <algorithm>
+ #include <iterator>
+@@ -5686,6 +5689,9 @@
+ void ChromeContentBrowserClient::CreateThrottlesForNavigation(
+     content::NavigationThrottleRegistry& registry) {
+   CreateAndAddChromeThrottlesForNavigation(registry);
++#if !BUILDFLAG(IS_ANDROID)
++  ember::AddEmberNavigationThrottle(registry);
++#endif
+ }
+ 
+ std::vector<std::unique_ptr<content::CommitDeferringCondition>>
+diff --git a/chrome/browser/download/download_commands.cc b/chrome/browser/download/download_commands.cc
+--- a/chrome/browser/download/download_commands.cc
++++ b/chrome/browser/download/download_commands.cc
+@@ -128,6 +128,20 @@
+ 
+ }  // namespace
+ 
++bool DownloadCommands::CanCopyDownloadAddress() const {
++  return model_ && model_->GetURL().is_valid() &&
++         model_->GetURL().SchemeIsHTTPOrHTTPS();
++}
++void DownloadCommands::CopyDownloadAddress() {
++  if (!CanCopyDownloadAddress()) {
++    return;
++  }
++  // DownloadItem's GetURL is the final file URL after redirects, not the
++  // referring webpage, original page link or local filesystem path.
++  ui::ScopedClipboardWriter writer(ui::ClipboardBuffer::kCopyPaste);
++  writer.WriteText(base::UTF8ToUTF16(model_->GetURL().spec()));
++}
++
+ DownloadCommands::DownloadCommands(base::WeakPtr<DownloadUIModel> model)
+     : model_(model) {
+   DCHECK(model_);
+diff --git a/chrome/browser/download/download_commands.h b/chrome/browser/download/download_commands.h
+--- a/chrome/browser/download/download_commands.h
++++ b/chrome/browser/download/download_commands.h
+@@ -75,6 +75,8 @@
+   GURL GetLearnMoreURLForInterruptedDownload() const;
+   void CopyFileAsImageToClipboard();
+   bool CanBeCopiedToClipboard() const;
++  bool CanCopyDownloadAddress() const;
++  void CopyDownloadAddress();
+ 
+  private:
+   FRIEND_TEST_ALL_PREFIXES(
+diff --git a/chrome/browser/download/download_commands_unittest.cc b/chrome/browser/download/download_commands_unittest.cc
+--- a/chrome/browser/download/download_commands_unittest.cc
++++ b/chrome/browser/download/download_commands_unittest.cc
+@@ -5,6 +5,8 @@
+ #include "chrome/browser/download/download_commands.h"
+ 
+ #include <vector>
++#include "base/functional/bind.h"
++#include "ui/base/clipboard/test/test_clipboard.h"
+ 
+ #include "base/strings/stringprintf.h"
+ #include "chrome/browser/download/download_item_model.h"
+@@ -191,3 +193,32 @@
+   EXPECT_FALSE(commands().IsCommandVisible(DownloadCommands::CANCEL));
+   commands().ExecuteCommand(DownloadCommands::OPEN_WHEN_COMPLETE);
+ }
++
++TEST_F(DownloadCommandsTest, EmberCopiesFinalDownloadAddress) {
++  ui::TestClipboard::CreateForCurrentThread();
++  ON_CALL(item(), GetURL())
++      .WillByDefault(
++          ReturnRefOfCopy(GURL("https://cdn.example/file.zip?token=123")));
++  ON_CALL(item(), GetOriginalUrl())
++      .WillByDefault(ReturnRefOfCopy(GURL("https://example/redirect")));
++  commands().CopyDownloadAddress();
++  std::u16string copied;
++  ui::Clipboard::GetForCurrentThread()->ReadText(
++      ui::ClipboardBuffer::kCopyPaste, std::nullopt,
++      base::BindOnce(
++          [](std::u16string* value, std::u16string text) { *value = text; },
++          &copied));
++  EXPECT_EQ(copied, u"https://cdn.example/file.zip?token=123");
++  ui::Clipboard::DestroyClipboardForCurrentThread();
++}
++TEST_F(DownloadCommandsTest, EmberRejectsNonNetworkAndDestroyedAddresses) {
++  ON_CALL(item(), GetURL())
++      .WillByDefault(ReturnRefOfCopy(GURL("blob:https://example/id")));
++  EXPECT_FALSE(commands().CanCopyDownloadAddress());
++  ON_CALL(item(), GetURL())
++      .WillByDefault(ReturnRefOfCopy(GURL("file:///C:/private/file.zip")));
++  EXPECT_FALSE(commands().CanCopyDownloadAddress());
++  InvalidModel();
++  EXPECT_FALSE(commands().CanCopyDownloadAddress());
++  commands().CopyDownloadAddress();
++}
+diff --git a/chrome/browser/download/download_ui_context_menu.cc b/chrome/browser/download/download_ui_context_menu.cc
+--- a/chrome/browser/download/download_ui_context_menu.cc
++++ b/chrome/browser/download/download_ui_context_menu.cc
+@@ -86,11 +86,18 @@
+   } else {
+     model = GetInProgressMenuModel(is_download);
+   }
++  if (!model->GetIndexOfCommandId(10001)) {
++    model->AddSeparator(ui::MenuSeparatorType::NORMAL_SEPARATOR);
++    model->AddItem(10001, u"Copy download address");
++  }
+   RecordCommandsEnabled(model);
+   return model;
+ }
+ 
+ bool DownloadUiContextMenu::IsCommandIdEnabled(int command_id) const {
++  if (command_id == 10001) {
++    return download_commands_ && download_commands_->CanCopyDownloadAddress();
++  }
+   if (!download_commands_) {
+     return false;
+   }
+@@ -100,6 +107,9 @@
+ }
+ 
+ bool DownloadUiContextMenu::IsCommandIdChecked(int command_id) const {
++  if (command_id == 10001) {
++    return false;
++  }
+   if (!download_commands_) {
+     return false;
+   }
+@@ -109,6 +119,9 @@
+ }
+ 
+ bool DownloadUiContextMenu::IsCommandIdVisible(int command_id) const {
++  if (command_id == 10001) {
++    return download_commands_ && download_commands_->CanCopyDownloadAddress();
++  }
+   if (!download_commands_) {
+     return false;
+   }
+@@ -118,6 +131,12 @@
+ }
+ 
+ void DownloadUiContextMenu::ExecuteCommand(int command_id, int event_flags) {
++  if (command_id == 10001) {
++    if (download_commands_) {
++      download_commands_->CopyDownloadAddress();
++    }
++    return;
++  }
+   if (!download_commands_) {
+     return;
+   }
+diff --git a/chrome/browser/extensions/api/settings_private/prefs_util.cc b/chrome/browser/extensions/api/settings_private/prefs_util.cc
+--- a/chrome/browser/extensions/api/settings_private/prefs_util.cc
++++ b/chrome/browser/extensions/api/settings_private/prefs_util.cc
+@@ -267,6 +267,8 @@
+       settings_api::PrefType::kDictionary;
+   (*s_allowlist)[::prefs::kVerticalTabsEnabled] =
+       settings_api::PrefType::kBoolean;
++  (*s_allowlist)[::prefs::kEmberContentFullscreen] =
++      settings_api::PrefType::kBoolean;
+   (*s_allowlist)[::prefs::kEmberSidebarWide] = settings_api::PrefType::kBoolean;
+   (*s_allowlist)[::prefs::kEmberFavoritesColumns] =
+       settings_api::PrefType::kNumber;
+diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -1731,6 +1731,7 @@
+   registry->RegisterIntegerPref(prefs::kEmberFavoritesRows, 7);
+   registry->RegisterBooleanPref(prefs::kEmberSidebarOpen, true);
+   registry->RegisterBooleanPref(prefs::kEmberSidebarWide, false);
++  registry->RegisterBooleanPref(prefs::kEmberContentFullscreen, false);
+   registry->RegisterBooleanPref(prefs::kEmberNewTabShowWordmark, true);
+   registry->RegisterBooleanPref(prefs::kEmberUnsplashEnabled, false);
+   registry->RegisterStringPref(prefs::kEmberUnsplashAccessKey, "");
+diff --git a/chrome/browser/resources/settings/appearance_page/appearance_page.html b/chrome/browser/resources/settings/appearance_page/appearance_page.html
+--- a/chrome/browser/resources/settings/appearance_page/appearance_page.html
++++ b/chrome/browser/resources/settings/appearance_page/appearance_page.html
+@@ -260,100 +260,9 @@
+           </div>
+         </template>
+ 
+-        <div class="cr-row hr">
+-          <div class="flex cr-padded-text" aria-hidden="true">
+-            Show Ember name on New Tab
+-            <div class="secondary">Show the wordmark below the logo</div>
+-          </div>
+-          <settings-toggle-button pref="{{prefs.ember.new_tab.show_wordmark}}"
+-              label="Show Ember name on New Tab">
+-          </settings-toggle-button>
+-        </div>
+-
+-        <div class="cr-row hr">
+-          <div class="flex cr-padded-text" aria-hidden="true">
+-            Unsplash New Tab background
+-            <div class="secondary">Show a centered photo instead of Windows translucent glass</div>
+-          </div>
+-          <settings-toggle-button pref="{{prefs.ember.new_tab.unsplash.enabled}}"
+-              label="Unsplash New Tab background">
+-          </settings-toggle-button>
+-        </div>
+-        <template is="dom-if" if="[[prefs.ember.new_tab.unsplash.enabled.value]]">
+-          <div class="cr-row">
+-            <div class="flex cr-padded-text" aria-hidden="true">
+-              Photo section
+-            </div>
+-            <settings-dropdown-menu id="emberUnsplashTopic"
+-                label="Unsplash photo section"
+-                pref-key="ember.new_tab.unsplash.topic"
+-                menu-options="[[emberUnsplashTopicOptions_]]">
+-            </settings-dropdown-menu>
+-          </div>
+-          <div class="cr-row">
+-            <div class="flex cr-padded-text">
+-              Unsplash Access Key
+-              <div class="secondary">Create an app at unsplash.com/developers and paste its Access Key. A Secret Key is not needed.</div>
+-            </div>
+-            <input id="emberUnsplashAccessKey" type="password"
+-                aria-label="Unsplash Access Key" autocomplete="off"
+-                value="[[prefs.ember.new_tab.unsplash.access_key.value]]"
+-                on-change="onEmberUnsplashAccessKeyChanged_">
+-          </div>
+-        </template>
+-
+-        <div class="cr-row hr">
+-          <div class="flex cr-padded-text" aria-hidden="true">
+-            Selection conversions
+-            <div class="secondary">Show a small conversion near selected prices, measurements and times</div>
+-          </div>
+-          <settings-toggle-button pref="{{prefs.ember.conversions.enabled}}"
+-              label="Selection conversions">
+-          </settings-toggle-button>
+-        </div>
+-        <div class="cr-row">
+-          <div class="flex cr-padded-text" aria-hidden="true">Preferred currency</div>
+-          <settings-dropdown-menu pref-key="ember.conversions.currency"
+-              menu-options="[[emberConversionCurrencyOptions_]]">
+-          </settings-dropdown-menu>
+-        </div>
+-        <div class="cr-row">
+-          <div class="flex cr-padded-text" aria-hidden="true">Temperature</div>
+-          <settings-dropdown-menu pref-key="ember.conversions.temperature"
+-              menu-options="[[emberConversionTemperatureOptions_]]">
+-          </settings-dropdown-menu>
+-        </div>
+-        <div class="cr-row">
+-          <div class="flex cr-padded-text" aria-hidden="true">Distance</div>
+-          <settings-dropdown-menu pref-key="ember.conversions.distance"
+-              menu-options="[[emberConversionSystemOptions_]]">
+-          </settings-dropdown-menu>
+-        </div>
+-        <div class="cr-row">
+-          <div class="flex cr-padded-text" aria-hidden="true">Weight</div>
+-          <settings-dropdown-menu pref-key="ember.conversions.weight"
+-              menu-options="[[emberConversionSystemOptions_]]">
+-          </settings-dropdown-menu>
+-        </div>
+-        <div class="cr-row">
+-          <div class="flex cr-padded-text" aria-hidden="true">Volume</div>
+-          <settings-dropdown-menu pref-key="ember.conversions.volume"
+-              menu-options="[[emberConversionVolumeOptions_]]">
+-          </settings-dropdown-menu>
+-        </div>
+-        <div class="cr-row">
+-          <div class="flex cr-padded-text" aria-hidden="true">Clock</div>
+-          <settings-dropdown-menu pref-key="ember.conversions.clock"
+-              menu-options="[[emberConversionClockOptions_]]">
+-          </settings-dropdown-menu>
+-        </div>
+-        <div class="cr-row">
+-          <div class="flex cr-padded-text" aria-hidden="true">Time zone</div>
+-          <settings-dropdown-menu pref-key="ember.conversions.time_zone"
+-              menu-options="[[emberConversionTimeZoneOptions_]]">
+-          </settings-dropdown-menu>
+-        </div>
+-
++        <div class="cr-row hr"><div class="flex cr-padded-text">
++          <h2>Ember sidebar and Favorites</h2><div class="secondary">Choose the rail width and edit your saved site shortcuts.</div>
++        </div></div>
+         <div class="cr-row hr">
+           <div class="flex cr-padded-text" aria-hidden="true">
+             Wide sidebar
+@@ -406,6 +315,119 @@
+         <div class="ember-favorite-error" hidden$="[[!emberFavoritesError_]]">
+           [[emberFavoritesError_]]
+         </div>
++
++        <div class="cr-row hr"><div class="flex cr-padded-text">
++          <h2>Ember New Tab</h2><div class="secondary">Choose the wordmark and optional photo background.</div>
++        </div></div>
++        <div class="cr-row hr">
++          <div class="flex cr-padded-text" aria-hidden="true">
++            Show Ember name on New Tab
++            <div class="secondary">Show the wordmark below the logo</div>
++          </div>
++          <settings-toggle-button pref="{{prefs.ember.new_tab.show_wordmark}}"
++              label="Show Ember name on New Tab">
++          </settings-toggle-button>
++        </div>
++
++        <div class="cr-row hr">
++          <div class="flex cr-padded-text" aria-hidden="true">
++            Unsplash New Tab background
++            <div class="secondary">Show a centered photo instead of Windows translucent glass</div>
++          </div>
++          <settings-toggle-button pref="{{prefs.ember.new_tab.unsplash.enabled}}"
++              label="Unsplash New Tab background">
++          </settings-toggle-button>
++        </div>
++        <template is="dom-if" if="[[prefs.ember.new_tab.unsplash.enabled.value]]">
++          <div class="cr-row">
++            <div class="flex cr-padded-text" aria-hidden="true">
++              Photo section
++            </div>
++            <settings-dropdown-menu id="emberUnsplashTopic"
++                label="Unsplash photo section"
++                pref-key="ember.new_tab.unsplash.topic"
++                menu-options="[[emberUnsplashTopicOptions_]]">
++            </settings-dropdown-menu>
++          </div>
++          <div class="cr-row">
++            <div class="flex cr-padded-text">
++              Unsplash Access Key
++              <div class="secondary">Create an app at unsplash.com/developers and paste its Access Key. A Secret Key is not needed.</div>
++            </div>
++            <input id="emberUnsplashAccessKey" type="password"
++                aria-label="Unsplash Access Key" autocomplete="off"
++                value="[[prefs.ember.new_tab.unsplash.access_key.value]]"
++                on-change="onEmberUnsplashAccessKeyChanged_">
++          </div>
++        </template>
++
++        <div class="cr-row hr"><div class="flex cr-padded-text">
++          <h2>Ember selection conversions</h2><div class="secondary">Convert selected values locally using your preferred units.</div>
++        </div></div>
++        <div class="cr-row hr">
++          <div class="flex cr-padded-text" aria-hidden="true">
++            Selection conversions
++            <div class="secondary">Show a small conversion near selected prices, measurements and times</div>
++          </div>
++          <settings-toggle-button pref="{{prefs.ember.conversions.enabled}}"
++              label="Selection conversions">
++          </settings-toggle-button>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Preferred currency</div>
++          <settings-dropdown-menu label="Preferred currency" pref-key="ember.conversions.currency"
++              menu-options="[[emberConversionCurrencyOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Temperature</div>
++          <settings-dropdown-menu label="Temperature" pref-key="ember.conversions.temperature"
++              menu-options="[[emberConversionTemperatureOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Distance</div>
++          <settings-dropdown-menu label="Distance" pref-key="ember.conversions.distance"
++              menu-options="[[emberConversionSystemOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Weight</div>
++          <settings-dropdown-menu label="Weight" pref-key="ember.conversions.weight"
++              menu-options="[[emberConversionSystemOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Volume</div>
++          <settings-dropdown-menu label="Volume" pref-key="ember.conversions.volume"
++              menu-options="[[emberConversionVolumeOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Clock</div>
++          <settings-dropdown-menu label="Clock" pref-key="ember.conversions.clock"
++              menu-options="[[emberConversionClockOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++        <div class="cr-row">
++          <div class="flex cr-padded-text" aria-hidden="true">Time zone</div>
++          <settings-dropdown-menu label="Time zone" pref-key="ember.conversions.time_zone"
++              menu-options="[[emberConversionTimeZoneOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++
++        <div class="cr-row hr"><div class="flex cr-padded-text">
++          <h2>Ember webpage fullscreen</h2><div class="secondary">Choose how website and video fullscreen requests use the window.</div>
++        </div></div>
++        <settings-toggle-button class="hr"
++            pref="{{prefs.ember.fullscreen.within_window}}"
++            label="Keep webpage fullscreen inside the window"
++            sub-label="Fill the requesting webpage or split pane while keeping Ember chrome. F11 expands the window; Escape exits webpage fullscreen.">
++        </settings-toggle-button>
++        <cr-link-row class="hr" label="Ember Search and Quick Searches"
++            sub-label="Edit shortcuts, aliases and site search URLs."
++            on-click="onEmberQuickSearchesClick_" role-description="$i18n{subpageArrowRoleDescription}">
++        </cr-link-row>
+ 
+         <settings-toggle-button id="showTabSearchButton" class="hr"
+             pref="{{prefs.tab_search.pinned_to_tabstrip}}"
+diff --git a/chrome/browser/resources/settings/appearance_page/appearance_page.ts b/chrome/browser/resources/settings/appearance_page/appearance_page.ts
+--- a/chrome/browser/resources/settings/appearance_page/appearance_page.ts
++++ b/chrome/browser/resources/settings/appearance_page/appearance_page.ts
+@@ -578,6 +578,10 @@
+     return homepageValue || this.i18n('customWebAddress');
+   }
+ 
++  private onEmberQuickSearchesClick_() {
++    Router.getInstance().navigateTo(routes.SEARCH_ENGINES);
++  }
++
+   private onCustomizeFontsClick_() {
+     Router.getInstance().navigateTo(routes.FONTS);
+   }
+diff --git a/chrome/browser/resources/settings/search_page/search_engines_page.html b/chrome/browser/resources/settings/search_page/search_engines_page.html
+--- a/chrome/browser/resources/settings/search_page/search_engines_page.html
++++ b/chrome/browser/resources/settings/search_page/search_engines_page.html
+@@ -74,7 +74,7 @@
+ 
+     <div class="cr-row first">
+         <div class="flex cr-padded-text">
+-          <h2>Quick Searches</h2>
++          <h2>Ember Search and Quick Searches</h2>
+           <div class="secondary">Type a shortcut and a space to search a site.
+             For example, <b>yt cats</b> searches YouTube.</div>
+           <div class="secondary">To add one, enter a name, a short shortcut,
+diff --git a/chrome/browser/ui/browser.cc b/chrome/browser/ui/browser.cc
+--- a/chrome/browser/ui/browser.cc
++++ b/chrome/browser/ui/browser.cc
+@@ -3,6 +3,8 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/ember_page_state.h"
++#include "content/common/frame.mojom.h"
+ 
+ #include <stddef.h>
+ 
+@@ -1563,6 +1565,25 @@
+     }
+   }
+ 
++  if (auto* destination = ember::GetSplitFollower(source);
++      destination && params.user_gesture && params.url.SchemeIsHTTPOrHTTPS() &&
++      !params.post_data &&
++      ui::PageTransitionCoreTypeIs(params.transition,
++                                   ui::PAGE_TRANSITION_LINK) &&
++      params.disposition != WindowOpenDisposition::SAVE_TO_DISK &&
++      params.url.GetWithoutRef() !=
++          source->GetLastCommittedURL().GetWithoutRef()) {
++    // Modified clicks use the native OpenURLParams, retaining initiator,
++    // referrer, download policy and renderer security context exactly once.
++    content::NavigationController::LoadURLParams load(params);
++    load.frame_tree_node_id = content::FrameTreeNodeId();
++    auto navigation = destination->GetController().LoadURLWithParams(load);
++    if (navigation_handle_callback && navigation) {
++      std::move(navigation_handle_callback).Run(*navigation);
++    }
++    return source;
++  }
++
+   chrome::ConfigureTabGroupForNavigation(popup_delegate->nav_params());
+ 
+   base::WeakPtr<content::NavigationHandle> navigation_handle =
+@@ -1885,6 +1906,35 @@
+       std::make_unique<RepostFormWarningController>(source), source);
+ }
+ 
++bool Browser::RouteEmberFollowerWindowOpen(
++    content::RenderFrameHost* opener,
++    const content::mojom::CreateNewWindowParams& params) {
++  auto* source = content::WebContents::FromRenderFrameHost(opener);
++  auto* destination = ember::GetSplitFollower(source);
++  if (!destination || !params.started_with_transient_activation ||
++      params.is_form_submission || params.form_submission_post_data ||
++      !params.target_url.SchemeIsHTTPOrHTTPS() ||
++      params.disposition == WindowOpenDisposition::NEW_PICTURE_IN_PICTURE) {
++    return false;
++  }
++  content::NavigationController::LoadURLParams load(params.target_url);
++  load.referrer = content::Referrer(params.referrer);
++  load.initiator_frame_token = opener->GetFrameToken();
++  load.initiator_process_id = opener->GetProcess()->GetDeprecatedID();
++  load.initiator_origin = opener->GetLastCommittedOrigin();
++  load.source_site_instance = opener->GetSiteInstance();
++  load.is_renderer_initiated = true;
++  load.has_user_gesture = true;
++  load.transition_type = ui::PAGE_TRANSITION_LINK;
++  load.download_policy = params.download_policy;
++  load.impression = params.impression;
++  load.was_opener_suppressed = true;
++  // Reusing an unrelated browsing context never grants the source a new
++  // WindowProxy/opener relationship. window.open returns null after routing.
++  destination->GetController().LoadURLWithParams(load);
++  return true;
++}
++
+ bool Browser::IsWebContentsCreationOverridden(
+     content::RenderFrameHost* opener,
+     content::SiteInstance* source_site_instance,
+@@ -2503,6 +2553,7 @@
+   DUMP_WILL_BE_CHECK(!is_delete_scheduled_);
+ 
+   SetAsDelegate(contents, true);
++  ember::EmberPageState::CreateForWebContents(contents);
+ 
+   // Disable pinch zooming in undocked dev tools window due to poor UX.
+   if (app_name() == DevToolsWindow::kDevToolsApp) {
+@@ -2711,6 +2762,7 @@
+   browser_window_features()->exclusive_access_manager()->OnTabClosing(
+       old_contents);
+   OnTabInsertedAt(new_contents, index);
++  ember::EmberPageState::CarryDiscardCache(old_contents, new_contents);
+ 
+   if (!new_contents->GetController().IsInitialBlankNavigation()) {
+     // Send out notification so that observers are updated appropriately.
+diff --git a/chrome/browser/ui/browser.h b/chrome/browser/ui/browser.h
+--- a/chrome/browser/ui/browser.h
++++ b/chrome/browser/ui/browser.h
+@@ -807,6 +807,9 @@
+   bool ShouldFocusLocationBarByDefault(content::WebContents* source) override;
+   bool ShouldFocusPageAfterCrash(content::WebContents* source) override;
+   void ShowRepostFormWarningDialog(content::WebContents* source) override;
++  bool RouteEmberFollowerWindowOpen(
++      content::RenderFrameHost* opener,
++      const content::mojom::CreateNewWindowParams& params) override;
+   bool IsWebContentsCreationOverridden(
+       content::RenderFrameHost* opener,
+       content::SiteInstance* source_site_instance,
+diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -3947,6 +3947,8 @@
+       "views/extensions/windows_utils_views.cc",
+       "ember_favorites.cc",
+       "ember_favorites.h",
++      "ember_page_state.cc",
++      "ember_page_state.h",
+       "views/find_bar_host.cc",
+       "views/find_bar_host.h",
+       "views/find_bar_owner.h",
+diff --git a/chrome/browser/ui/download/download_bubble_contents_view_info.h b/chrome/browser/ui/download/download_bubble_contents_view_info.h
+--- a/chrome/browser/ui/download/download_bubble_contents_view_info.h
++++ b/chrome/browser/ui/download/download_bubble_contents_view_info.h
+@@ -21,6 +21,9 @@
+     return row_list_view_info_;
+   }
+ 
++  DownloadBubbleRowListViewInfo& mutable_row_list_view_info() {
++    return row_list_view_info_;
++  }
+   const DownloadBubbleSecurityViewInfo& security_view_info() const {
+     return security_view_info_;
+   }
+diff --git a/chrome/browser/ui/download/download_bubble_row_list_view_info.cc b/chrome/browser/ui/download/download_bubble_row_list_view_info.cc
+--- a/chrome/browser/ui/download/download_bubble_row_list_view_info.cc
++++ b/chrome/browser/ui/download/download_bubble_row_list_view_info.cc
+@@ -14,9 +14,8 @@
+ 
+ DownloadBubbleRowListViewInfo::DownloadBubbleRowListViewInfo(
+     std::vector<DownloadUIModel::DownloadUIModelPtr> models) {
+-  CHECK(!models.empty());
+-
+-  if (!models.front()->GetEndTime().is_null()) {
++  // An explicitly opened complete Downloads panel can start empty.
++  if (!models.empty() && !models.front()->GetEndTime().is_null()) {
+     last_completed_time_ = models.front()->GetEndTime();
+   }
+ 
+diff --git a/chrome/browser/ui/ember_page_state.cc b/chrome/browser/ui/ember_page_state.cc
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/ui/ember_page_state.cc
+@@ -0,0 +1,639 @@
++// Copyright 2026 The Ember Authors
++// BSD-style license in LICENSE.
++#include "chrome/browser/ui/ember_page_state.h"
++#include <algorithm>
++#include <deque>
++#include <utility>
++#include "base/functional/bind.h"
++#include "base/json/json_writer.h"
++#include "base/no_destructor.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/task/single_thread_task_runner.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/browser/ui/views/ember/ember_glass_view.h"
++#include "chrome/browser/ui/views/ember/ember_typography.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/common/chrome_isolated_world_ids.h"
++#include "chrome/grit/browser_resources.h"
++#include "components/tabs/public/split_tab_data.h"
++#include "components/tabs/public/tab_interface.h"
++#include "content/public/browser/navigation_controller.h"
++#include "content/public/browser/navigation_handle.h"
++#include "content/public/browser/navigation_throttle.h"
++#include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/weak_document_ptr.h"
++#include "content/public/browser/web_contents.h"
++#include "ui/accessibility/ax_enums.mojom.h"
++#include "ui/base/hit_test.h"
++#include "ui/base/resource/resource_bundle.h"
++#include "ui/views/controls/button/label_button.h"
++#include "ui/views/controls/label.h"
++#include "ui/views/layout/fill_layout.h"
++#include "ui/base/metadata/metadata_impl_macros.h"
++#include "ui/views/widget/widget.h"
++#include "ui/views/window/frame_view.h"
++
++namespace ember {
++namespace {
++uint64_t NextIdentity() {
++  static uint64_t id = 0;
++  return ++id;
++}
++auto& CacheOwners() {
++  static base::NoDestructor<std::deque<base::WeakPtr<EmberPageState>>> owners;
++  return *owners;
++}
++class ReadingFrame : public views::FrameView {
++ public:
++  gfx::Rect GetBoundsForClientView() const override { return GetLocalBounds(); }
++  int NonClientHitTest(const gfx::Point& point) override {
++    gfx::Rect panel = GetLocalBounds();
++    panel.Inset(EmberGlassView::kShadowMargin);
++    return panel.Contains(point) ? HTCLIENT : HTTRANSPARENT;
++  }
++};
++class ReadingWidget : public views::Widget {
++ public:
++  std::unique_ptr<views::FrameView> CreateFrameView() override {
++    return std::make_unique<ReadingFrame>();
++  }
++};
++class ReadingSurface : public EmberGlassView {
++  METADATA_HEADER(ReadingSurface, views::View)
++ public:
++  explicit ReadingSurface(base::RepeatingClosure dismiss)
++      : EmberGlassView(EmberGlassPreset::kPopover),
++        dismiss_(std::move(dismiss)) {
++    AddAccelerator(ui::Accelerator(ui::VKEY_ESCAPE, ui::EF_NONE));
++  }
++  bool AcceleratorPressed(const ui::Accelerator&) override {
++    dismiss_.Run();
++    return true;
++  }
++
++ private:
++  base::RepeatingClosure dismiss_;
++};
++
++BEGIN_METADATA(ReadingSurface)
++END_METADATA
++
++uint64_t FollowerGeneration(content::WebContents* source) {
++  auto* tab = tabs::TabInterface::MaybeGetFromContents(source);
++  auto* browser = tab ? tab->GetBrowserWindowInterface() : nullptr;
++  if (!browser || !tab->GetSplit() ||
++      !browser->GetTabStripModel()->ContainsSplit(*tab->GetSplit())) {
++    return 0;
++  }
++  return browser->GetTabStripModel()
++      ->GetSplitData(*tab->GetSplit())
++      ->ember_follower_generation();
++}
++
++class EmberNavigationThrottle : public content::NavigationThrottle {
++ public:
++  explicit EmberNavigationThrottle(
++      content::NavigationThrottleRegistry& registry)
++      : NavigationThrottle(registry) {}
++  const char* GetNameForLogging() override { return "EmberPairAndReading"; }
++  ThrottleCheckResult WillStartRequest() override {
++    auto* handle = navigation_handle();
++    auto* source = handle->GetWebContents();
++    if (!handle->IsInPrimaryMainFrame() || handle->IsSameDocument() ||
++        handle->IsPageActivation()) {
++      return PROCEED;
++    }
++    if (handle->GetReloadType() != content::ReloadType::NONE &&
++        handle->GetURL() == source->GetLastCommittedURL() &&
++        handle->GetURL().SchemeIsHTTPOrHTTPS()) {
++      auto* state = EmberPageState::FromWebContents(source);
++      if (!state || !source->GetPrimaryMainFrame() ||
++          !source->GetPrimaryMainFrame()->IsRenderFrameLive()) {
++        return PROCEED;
++      }
++      state->SnapshotReload(
++          handle->GetNavigationId(),
++          base::BindOnce(&EmberNavigationThrottle::ContinueReload,
++                         weak_.GetWeakPtr()));
++      // A hung renderer must never block ordinary reload indefinitely.
++      timeout_.Start(FROM_HERE, base::Milliseconds(400), this,
++                     &EmberNavigationThrottle::ContinueReload);
++      return DEFER;
++    }
++    auto* destination = GetSplitFollower(source);
++    if (!destination || !handle->WasInitiatedByLinkClick() ||
++        !handle->HasUserGesture() || handle->IsFormSubmission() ||
++        handle->IsPost() || !handle->GetURL().SchemeIsHTTPOrHTTPS() ||
++        handle->GetURL().GetWithoutRef() ==
++            source->GetLastCommittedURL().GetWithoutRef()) {
++      return PROCEED;
++    }
++    content::NavigationController::LoadURLParams load(handle->GetURL());
++    load.referrer = content::Referrer(handle->GetReferrer());
++    load.initiator_frame_token = handle->GetInitiatorFrameToken();
++    load.initiator_process_id = handle->GetInitiatorProcessId();
++    load.initiator_origin = handle->GetInitiatorOrigin();
++    load.initiator_base_url = handle->GetInitiatorBaseUrl();
++    load.initiator_navigation_state = handle->GetInitiatorNavigationState();
++    load.source_site_instance = handle->GetSourceSiteInstance();
++    load.is_renderer_initiated = handle->IsRendererInitiated();
++    load.has_user_gesture = handle->HasUserGesture();
++    load.transition_type = handle->GetPageTransition();
++    // Cancel before any network request. Revalidate pair ownership at dispatch,
++    // preserving the destination's native controller/security/redirect path.
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE,
++        base::BindOnce(
++            [](base::WeakPtr<content::WebContents> source,
++               base::WeakPtr<content::WebContents> destination,
++               split_tabs::SplitTabId pair_id, uint64_t pair_generation,
++               content::WeakDocumentPtr document,
++               content::NavigationController::LoadURLParams load) {
++              auto* tab =
++                  source
++                      ? tabs::TabInterface::MaybeGetFromContents(source.get())
++                      : nullptr;
++              if (source && destination && tab && tab->GetSplit() == pair_id &&
++                  document.AsRenderFrameHostIfValid() &&
++                  FollowerGeneration(source.get()) == pair_generation &&
++                  GetSplitFollower(source.get()) == destination.get()) {
++                destination->GetController().LoadURLWithParams(load);
++              }
++            },
++            source->GetWeakPtr(), destination->GetWeakPtr(),
++            tabs::TabInterface::MaybeGetFromContents(source)
++                ->GetSplit()
++                .value(),
++            FollowerGeneration(source),
++            source->GetPrimaryMainFrame()->GetWeakDocumentPtr(),
++            std::move(load)));
++    return CANCEL_AND_IGNORE;
++  }
++
++ private:
++  void ContinueReload() {
++    if (resumed_) {
++      return;
++    }
++    resumed_ = true;
++    timeout_.Stop();
++    Resume();
++  }
++  bool resumed_ = false;
++  base::OneShotTimer timeout_;
++  base::WeakPtrFactory<EmberNavigationThrottle> weak_{this};
++};
++}  // namespace
++
++content::WebContents* GetSplitFollower(content::WebContents* source) {
++  if (!source || source->IsBeingDestroyed()) {
++    return nullptr;
++  }
++  auto* tab = tabs::TabInterface::MaybeGetFromContents(source);
++  auto* browser = tab ? tab->GetBrowserWindowInterface() : nullptr;
++  if (!browser || !tab->GetSplit()) {
++    return nullptr;
++  }
++  auto* model = browser->GetTabStripModel();
++  if (!model->ContainsSplit(*tab->GetSplit())) {
++    return nullptr;
++  }
++  auto* destination =
++      model->GetSplitData(*tab->GetSplit())->GetEmberFollowerFor(source);
++  return destination && !destination->IsBeingDestroyed() &&
++                 destination->GetBrowserContext() == source->GetBrowserContext()
++             ? destination
++             : nullptr;
++}
++void AddEmberNavigationThrottle(content::NavigationThrottleRegistry& registry) {
++  if (registry.GetNavigationHandle().IsInPrimaryMainFrame()) {
++    registry.AddThrottle(std::make_unique<EmberNavigationThrottle>(registry));
++  }
++}
++
++class EmberPageState::Toast {
++ public:
++  Toast(EmberPageState* state, BrowserView* browser) : owner_(state) {
++    auto* contents = state->web_contents();
++    const gfx::Rect page = contents->GetViewBounds();
++    const int width = std::min(400, page.width() - 16);
++    if (width < 260 || page.height() < 80) {
++      return;
++    }
++    gfx::Rect panel(page.x() + (page.width() - width) / 2, page.bottom() - 64,
++                    width, 44);
++    gfx::Rect bounds = panel;
++    bounds.Outset(EmberGlassView::kShadowMargin);
++    widget_ = std::make_unique<ReadingWidget>();
++    views::Widget::InitParams params(
++        views::Widget::InitParams::CLIENT_OWNS_WIDGET,
++        views::Widget::InitParams::TYPE_BUBBLE);
++    params.parent = browser->GetWidget()->GetNativeView();
++    params.context = params.parent;
++    params.opacity = views::Widget::InitParams::WindowOpacity::kTranslucent;
++    params.activatable = views::Widget::InitParams::Activatable::kYes;
++    params.shadow_type = views::Widget::InitParams::ShadowType::kNone;
++    params.bounds = bounds;
++    params.name = "EmberReadingPosition";
++    widget_->Init(std::move(params));
++    auto* client = widget_->GetClientContentsView();
++    client->SetLayoutManager(std::make_unique<views::FillLayout>());
++    auto weak = state->weak_.GetWeakPtr();
++    auto dismiss = base::BindRepeating(
++        [](base::WeakPtr<EmberPageState> state) {
++          if (state) {
++            state->HideToast();
++          }
++        },
++        weak);
++    surface_ = client->AddChildView(std::make_unique<ReadingSurface>(dismiss));
++    surface_->SetBoundsRect(gfx::Rect(bounds.size()));
++    auto* body = surface_->contents();
++    const auto local = surface_->GetPanelBounds();
++    auto* label = body->AddChildView(
++        std::make_unique<views::Label>(u"Return to reading position"));
++    label->SetFontList(FontForStyle(TextStyle::kSecondary));
++    label->SetEnabledColor(SK_ColorWHITE);
++    label->SetBackgroundColor(SK_ColorTRANSPARENT);
++    label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++    label->SetBounds(local.x() + 12, local.y() + 8, width - 126, 28);
++    action_ = body->AddChildView(std::make_unique<views::LabelButton>(
++        base::BindRepeating(
++            [](base::WeakPtr<EmberPageState> state) {
++              if (state) {
++                state->ReturnToReading();
++              }
++            },
++            weak),
++        u"Return"));
++    action_->SetEnabledTextColors(SK_ColorWHITE);
++    action_->SetBounds(local.right() - 108, local.y() + 6, 72, 32);
++    action_->SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
++    dismiss_ =
++        body->AddChildView(std::make_unique<views::LabelButton>(dismiss, u"×"));
++    dismiss_->GetViewAccessibility().SetName(u"Dismiss reading position");
++    dismiss_->SetEnabledTextColors(SK_ColorWHITE);
++    dismiss_->SetBounds(local.right() - 36, local.y() + 6, 32, 32);
++    widget_->ShowInactive();
++    // EmberGlassView owns its panel paint and mask; update that material rather
++    // than installing a second native-bubble background underneath it.
++    auto material = std::make_shared<EmberGlassMaterial>();
++    auto generation = std::make_shared<uint64_t>(0);
++    StartEmberGlassBackdropCapture(
++        surface_, contents,
++        base::BindRepeating(
++            [](EmberGlassView* surface,
++               std::shared_ptr<EmberGlassMaterial> material,
++               std::shared_ptr<uint64_t> generation, const SkBitmap& bitmap,
++               const gfx::Rect& renderer_bounds) {
++              gfx::Rect sample = surface->GetPanelBounds();
++              sample.Offset(surface->GetBoundsInScreen().origin() -
++                            renderer_bounds.origin());
++              sample.Inset(-EmberGlassView::kBackdropMargin);
++              const auto* panel = material->RenderPanel(
++                  bitmap, sample, ++*generation, EmberGlassPreset::kPopover);
++              if (panel) {
++                surface->SetPanel(*panel);
++              }
++            },
++            base::Unretained(surface_.get()), material, generation));
++    surface_->OpenFrom(
++        gfx::Point(width / 2 + EmberGlassView::kShadowMargin, local.bottom()));
++    surface_->GetViewAccessibility().AnnounceText(
++        u"Return to reading position. Return action available.");
++    last_tick_ = base::TimeTicks::Now();
++    timer_.Start(FROM_HERE, base::Milliseconds(100),
++                 base::BindRepeating(&Toast::Tick, base::Unretained(this)));
++  }
++  ~Toast() {
++    timer_.Stop();
++    widget_.reset();
++  }
++  views::Widget* widget() const { return widget_.get(); }
++
++ private:
++  void Tick() {
++    if (!widget_ || widget_->IsClosed()) {
++      timer_.Stop();
++      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++          FROM_HERE, base::BindOnce(
++                         [](base::WeakPtr<Toast> toast) {
++                           if (toast) {
++                             toast->owner_->HideToast();
++                           }
++                         },
++                         weak_.GetWeakPtr()));
++      return;
++    }
++    auto now = base::TimeTicks::Now();
++    auto* focused = widget_->GetFocusManager()->GetFocusedView();
++    const bool paused =
++        surface_->IsMouseHovered() || action_->IsMouseHovered() ||
++        dismiss_->IsMouseHovered() || (focused && surface_->Contains(focused));
++    if (!paused) {
++      remaining_ -= now - last_tick_;
++    }
++    last_tick_ = now;
++    // Follow the owning pane on resize, without retargeting another tab.
++    const auto page = owner_->web_contents()->GetViewBounds();
++    if (owner_->web_contents()->GetVisibility() !=
++            content::Visibility::VISIBLE ||
++        remaining_ <= base::TimeDelta() || page.width() < 276) {
++      timer_.Stop();
++      surface_->CloseAnimated(base::BindOnce(
++          [](base::WeakPtr<Toast> toast) {
++            if (toast) {
++              toast->owner_->HideToast();
++            }
++          },
++          weak_.GetWeakPtr()));
++      return;
++    }
++    gfx::Rect bounds = widget_->GetWindowBoundsInScreen();
++    bounds.set_x(page.x() + (page.width() - bounds.width()) / 2);
++    bounds.set_y(page.bottom() - 64 - EmberGlassView::kShadowMargin);
++    widget_->SetBounds(bounds);
++  }
++  raw_ptr<EmberPageState> owner_;
++  std::unique_ptr<views::Widget> widget_;
++  raw_ptr<ReadingSurface> surface_ = nullptr;
++  raw_ptr<views::LabelButton> action_ = nullptr, dismiss_ = nullptr;
++  base::RepeatingTimer timer_;
++  base::TimeDelta remaining_ = base::Seconds(5);
++  base::TimeTicks last_tick_;
++  base::WeakPtrFactory<Toast> weak_{this};
++};
++
++WEB_CONTENTS_USER_DATA_KEY_IMPL(EmberPageState);
++EmberPageState::EmberPageState(content::WebContents* contents)
++    : WebContentsObserver(contents),
++      WebContentsUserData<EmberPageState>(*contents),
++      identity_(NextIdentity()) {
++  index_timer_.Start(
++      FROM_HERE,
++      web_contents()->GetVisibility() == content::Visibility::VISIBLE
++          ? base::Seconds(3)
++          : base::Seconds(30),
++      this, &EmberPageState::UpdateIndex);
++}
++EmberPageState::~EmberPageState() {
++  HideToast();
++}
++void EmberPageState::Execute(const std::string& operation,
++                             base::Value argument,
++                             base::OnceCallback<void(base::Value)> callback) {
++  auto* frame = web_contents()->GetPrimaryMainFrame();
++  if (!web_contents()->GetLastCommittedURL().SchemeIsHTTPOrHTTPS() || !frame ||
++      !frame->IsRenderFrameLive()) {
++    std::move(callback).Run(base::Value());
++    return;
++  }
++  std::string script =
++      ui::ResourceBundle::GetSharedInstance().LoadDataResourceString(
++          IDR_EMBER_PAGE_STATE);
++  script += "\n;globalThis.__emberPageState." + operation + "(" +
++            base::WriteJson(argument).value_or("null") + ");";
++  frame->ExecuteJavaScriptInIsolatedWorld(base::UTF8ToUTF16(script),
++                                          std::move(callback),
++                                          ISOLATED_WORLD_ID_CHROME_INTERNAL);
++}
++void EmberPageState::SetText(std::u16string text) {
++  text_ = text.substr(0, 65536);
++  auto& owners = CacheOwners();
++  std::erase_if(owners, [this](const auto& owner) {
++    return !owner || owner.get() == this;
++  });
++  if (text_.empty()) {
++    return;
++  }
++  // At most 64 x 64K UTF-16 characters (8 MiB), process-local, including OTR.
++  while (owners.size() >= 64) {
++    if (owners.front()) {
++      owners.front()->text_.clear();
++    }
++    owners.pop_front();
++  }
++  owners.push_back(weak_.GetWeakPtr());
++}
++void EmberPageState::UpdateIndex() {
++  if (index_pending_ || web_contents()->IsLoading() ||
++      !web_contents()->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
++    return;
++  }
++  auto* frame = web_contents()->GetPrimaryMainFrame();
++  if (!frame || !frame->IsRenderFrameLive()) {
++    return;  // Never wake a discarded renderer.
++  }
++  index_pending_ = true;
++  const auto document = frame->GetWeakDocumentPtr();
++  const auto generation = generation_;
++  Execute(
++      "index", base::Value(),
++      base::BindOnce(
++          [](base::WeakPtr<EmberPageState> state,
++             content::WeakDocumentPtr document, uint64_t generation,
++             base::Value result) {
++            if (!state || generation != state->generation_) {
++              return;
++            }
++            state->index_pending_ = false;
++            if (!document.AsRenderFrameHostIfValid() || !result.is_dict()) {
++              return;
++            }
++            const auto* url = result.GetDict().FindString("url");
++            const auto* text = result.GetDict().FindString("text");
++            if (!url ||
++                GURL(*url) != state->web_contents()->GetLastCommittedURL() ||
++                !text) {
++              return;
++            }
++            state->cache_url_ = GURL(*url);
++            state->SetText(base::UTF8ToUTF16(*text));
++          },
++          weak_.GetWeakPtr(), document, generation));
++}
++void EmberPageState::SnapshotReload(int64_t navigation_id,
++                                    base::OnceClosure resume) {
++  reload_id_ = navigation_id;
++  const auto generation = generation_;
++  const auto url = web_contents()->GetLastCommittedURL();
++  auto* frame = web_contents()->GetPrimaryMainFrame();
++  const auto document = frame->GetWeakDocumentPtr();
++  Execute("snapshot", base::Value(),
++          base::BindOnce(
++              [](base::WeakPtr<EmberPageState> state, uint64_t generation,
++                 int64_t id, GURL url, content::WeakDocumentPtr document,
++                 base::OnceClosure resume, base::Value value) {
++                if (state && generation == state->generation_ &&
++                    state->reload_id_ == id &&
++                    state->web_contents()->GetLastCommittedURL() == url &&
++                    document.AsRenderFrameHostIfValid() && value.is_dict()) {
++                  const auto* saved_url = value.GetDict().FindString("url");
++                  const auto y = value.GetDict().FindDouble("y");
++                  const auto integer_y = value.GetDict().FindInt("y");
++                  if (saved_url && GURL(*saved_url) == url &&
++                      ((y && *y >= 32) || (integer_y && *integer_y >= 32))) {
++                    state->reading_snapshot_ = std::move(value);
++                  }
++                }
++                std::move(resume).Run();
++              },
++              weak_.GetWeakPtr(), generation, navigation_id, url, document,
++              std::move(resume)));
++}
++void EmberPageState::DidStartNavigation(content::NavigationHandle* handle) {
++  if (!handle->IsInPrimaryMainFrame()) {
++    return;
++  }
++  ++generation_;
++  index_pending_ = false;
++  HideToast();
++  reading_snapshot_ = base::Value();
++  reload_succeeded_ = false;
++  reload_id_ = -1;
++  SetText(std::u16string());
++  if (!pending_find_.empty() && (handle->GetURL() != pending_find_url_ ||
++                                 !web_contents()->WasDiscarded())) {
++    pending_find_.clear();
++  }
++}
++void EmberPageState::DidFinishNavigation(content::NavigationHandle* handle) {
++  if (!handle->IsInPrimaryMainFrame() || !handle->HasCommitted()) {
++    return;
++  }
++  reload_succeeded_ =
++      handle->GetNavigationId() == reload_id_ && !handle->IsErrorPage() &&
++      handle->GetReloadType() != content::ReloadType::NONE &&
++      reading_snapshot_.is_dict() &&
++      reading_snapshot_.GetDict().FindString("url") &&
++      GURL(*reading_snapshot_.GetDict().FindString("url")) == handle->GetURL();
++  if (reload_succeeded_) {
++    reading_deadline_ = base::TimeTicks::Now() + base::Seconds(5);
++  }
++  if (!pending_find_.empty() && handle->GetURL() != pending_find_url_) {
++    pending_find_.clear();
++  }
++}
++void EmberPageState::DidStopLoading() {
++  UpdateIndex();
++  if (reload_succeeded_) {
++    ShowReadingToast();
++  }
++  FindPassage();
++}
++void EmberPageState::OnVisibilityChanged(content::Visibility visibility) {
++  index_timer_.Start(FROM_HERE,
++                     visibility == content::Visibility::VISIBLE
++                         ? base::Seconds(3)
++                         : base::Seconds(30),
++                     this, &EmberPageState::UpdateIndex);
++  if (visibility == content::Visibility::VISIBLE) {
++    UpdateIndex();
++    if (reload_succeeded_ && base::TimeTicks::Now() < reading_deadline_) {
++      ShowReadingToast();
++    }
++  } else {
++    HideToast();
++  }
++}
++void EmberPageState::ShowReadingToast() {
++  if (toast_ ||
++      web_contents()->GetVisibility() != content::Visibility::VISIBLE) {
++    return;
++  }
++  auto* tab = tabs::TabInterface::MaybeGetFromContents(web_contents());
++  auto* browser = tab ? tab->GetBrowserWindowInterface() : nullptr;
++  auto* view =
++      browser ? BrowserView::GetBrowserViewForBrowser(browser) : nullptr;
++  if (!view || !view->GetWidget()) {
++    return;
++  }
++  toast_ = std::make_unique<Toast>(this, view);
++  reload_succeeded_ = false;
++}
++void EmberPageState::ReturnToReading() {
++  if (reading_snapshot_.is_dict()) {
++    Execute("restore", reading_snapshot_.Clone(), base::DoNothing());
++  }
++  web_contents()->Focus();
++  HideToast();
++}
++views::Widget* EmberPageState::reading_toast_for_testing() const {
++  return toast_ ? toast_->widget() : nullptr;
++}
++void EmberPageState::HideToast() {
++  const bool focused =
++      toast_ && toast_->widget() && toast_->widget()->IsActive();
++  toast_.reset();
++  if (!focused || !web_contents()) {
++    return;
++  }
++  auto* tab = tabs::TabInterface::MaybeGetFromContents(web_contents());
++  auto* browser = tab ? tab->GetBrowserWindowInterface() : nullptr;
++  if (browser &&
++      browser->GetTabStripModel()->GetActiveWebContents() == web_contents() &&
++      web_contents()->GetVisibility() == content::Visibility::VISIBLE) {
++    web_contents()->Focus();
++  }
++}
++void EmberPageState::FindPassage() {
++  if (pending_find_.empty() || web_contents()->IsLoading()) {
++    return;
++  }
++  if (pending_find_url_ != web_contents()->GetLastCommittedURL()) {
++    pending_find_.clear();
++    return;
++  }
++  auto query = std::exchange(pending_find_, std::u16string());
++  Execute("find", base::Value(base::UTF16ToUTF8(query)), base::DoNothing());
++}
++bool EmberPageState::ActivateContentMatch(Profile* profile,
++                                          uint64_t identity,
++                                          uint64_t generation,
++                                          const GURL& url,
++                                          const std::u16string& query) {
++  for (auto* browser : GetAllBrowserWindowInterfaces()) {
++    if (browser->GetProfile() != profile) {
++      continue;
++    }
++    auto* model = browser->GetTabStripModel();
++    for (int index = 0; index < model->count(); ++index) {
++      auto* contents = model->GetWebContentsAt(index);
++      auto* state = FromWebContents(contents);
++      if (!state || state->identity_ != identity ||
++          state->generation_ != generation ||
++          contents->GetLastCommittedURL() != url) {
++        continue;
++      }
++      state->pending_find_ = query;
++      state->pending_find_url_ = url;
++      auto weak_state = state->weak_.GetWeakPtr();
++      auto weak_contents = contents->GetWeakPtr();
++      model->ActivateTabAt(index);
++      browser->GetWindow()->Activate();
++      if (weak_contents) {
++        weak_contents->Focus();
++      }
++      if (weak_state) {
++        weak_state->FindPassage();
++      }
++      return true;
++    }
++  }
++  return false;  // Stale acceptance never falls through to opening a duplicate.
++}
++void EmberPageState::CarryDiscardCache(content::WebContents* old_contents,
++                                       content::WebContents* new_contents) {
++  auto* old = FromWebContents(old_contents);
++  auto* replacement = FromWebContents(new_contents);
++  if (!old || !replacement || !new_contents->WasDiscarded()) {
++    return;
++  }
++  replacement->cache_url_ = old->cache_url_;
++  replacement->SetText(old->text_);
++}
++}  // namespace ember
+diff --git a/chrome/browser/ui/ember_page_state.h b/chrome/browser/ui/ember_page_state.h
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/ui/ember_page_state.h
+@@ -0,0 +1,74 @@
++// Copyright 2026 The Ember Authors
++// BSD-style license in LICENSE.
++#ifndef CHROME_BROWSER_UI_EMBER_PAGE_STATE_H_
++#define CHROME_BROWSER_UI_EMBER_PAGE_STATE_H_
++#include <memory>
++#include <string>
++#include "base/functional/callback.h"
++#include "base/memory/weak_ptr.h"
++#include "base/timer/timer.h"
++#include "base/values.h"
++#include "content/public/browser/web_contents_observer.h"
++#include "content/public/browser/web_contents_user_data.h"
++class Profile;
++namespace views {
++class Widget;
++}
++namespace content {
++class NavigationThrottleRegistry;
++}
++namespace ember {
++content::WebContents* GetSplitFollower(content::WebContents* source);
++void AddEmberNavigationThrottle(content::NavigationThrottleRegistry& registry);
++class EmberPageState : public content::WebContentsObserver,
++                       public content::WebContentsUserData<EmberPageState> {
++ public:
++  ~EmberPageState() override;
++  views::Widget* reading_toast_for_testing() const;
++  uint64_t identity() const { return identity_; }
++  uint64_t generation() const { return generation_; }
++  const std::u16string& text() const { return text_; }
++  void SnapshotReload(int64_t navigation_id, base::OnceClosure resume);
++  void DidStartNavigation(content::NavigationHandle*) override;
++  void DidFinishNavigation(content::NavigationHandle*) override;
++  void DidStopLoading() override;
++  void OnVisibilityChanged(content::Visibility) override;
++  static bool ActivateContentMatch(Profile*,
++                                   uint64_t identity,
++                                   uint64_t generation,
++                                   const GURL&,
++                                   const std::u16string& query);
++  static void CarryDiscardCache(content::WebContents* old_contents,
++                                content::WebContents* new_contents);
++
++ private:
++  friend class content::WebContentsUserData<EmberPageState>;
++  explicit EmberPageState(content::WebContents*);
++  class Toast;
++  void Execute(const std::string& operation,
++               base::Value argument,
++               base::OnceCallback<void(base::Value)> callback);
++  void UpdateIndex();
++  void SetText(std::u16string text);
++  void ShowReadingToast();
++  void ReturnToReading();
++  void HideToast();
++  void FindPassage();
++  uint64_t identity_;
++  uint64_t generation_ = 0;
++  std::u16string text_;
++  GURL cache_url_;
++  bool index_pending_ = false;
++  int64_t reload_id_ = -1;
++  base::Value reading_snapshot_;
++  bool reload_succeeded_ = false;
++  base::TimeTicks reading_deadline_;
++  std::u16string pending_find_;
++  GURL pending_find_url_;
++  base::RepeatingTimer index_timer_;
++  std::unique_ptr<Toast> toast_;
++  base::WeakPtrFactory<EmberPageState> weak_{this};
++  WEB_CONTENTS_USER_DATA_KEY_DECL();
++};
++}  // namespace ember
++#endif
+diff --git a/chrome/browser/ui/exclusive_access/exclusive_access_manager.cc b/chrome/browser/ui/exclusive_access/exclusive_access_manager.cc
+--- a/chrome/browser/ui/exclusive_access/exclusive_access_manager.cc
++++ b/chrome/browser/ui/exclusive_access/exclusive_access_manager.cc
+@@ -95,6 +95,16 @@
+ #if !BUILDFLAG(IS_MAC)  // App mode (kiosk) is not available on Mac yet.
+   app_mode = IsRunningInAppMode();
+ #endif
++
++  if (fullscreen_controller_.IsEmberContentFullscreen()) {
++    if (keyboard_lock_controller_.RequiresPressAndHoldEscToExit()) {
++      return EXCLUSIVE_ACCESS_BUBBLE_TYPE_KEYBOARD_LOCK_EXIT_INSTRUCTION;
++    }
++    if (pointer_lock_controller_.IsPointerLocked()) {
++      return EXCLUSIVE_ACCESS_BUBBLE_TYPE_FULLSCREEN_POINTERLOCK_EXIT_INSTRUCTION;
++    }
++    return EXCLUSIVE_ACCESS_BUBBLE_TYPE_FULLSCREEN_EXIT_INSTRUCTION;
++  }
+ 
+   if (fullscreen_controller_.IsWindowFullscreenForTabOrPending()) {
+     if (!fullscreen_controller_.IsTabFullscreen()) {
+diff --git a/chrome/browser/ui/exclusive_access/fullscreen_controller.cc b/chrome/browser/ui/exclusive_access/fullscreen_controller.cc
+--- a/chrome/browser/ui/exclusive_access/fullscreen_controller.cc
++++ b/chrome/browser/ui/exclusive_access/fullscreen_controller.cc
+@@ -5,6 +5,7 @@
+ #include "chrome/browser/ui/exclusive_access/fullscreen_controller.h"
+ 
+ #include "base/check.h"
++#include <utility>
+ #include "base/command_line.h"
+ #include "base/functional/bind.h"
+ #include "base/location.h"
+@@ -97,7 +98,33 @@
+          !IsFullscreenCausedByTab();
+ }
+ 
++bool FullscreenController::IsEmberContentFullscreen() const {
++  return !!ember_fullscreen_contents_;
++}
++
+ void FullscreenController::ToggleBrowserFullscreenMode(bool user_initiated) {
++  if (IsEmberContentFullscreen()) {
++    if (started_fullscreen_transition_) {
++      RunOrDeferUntilTransitionIsComplete(
++          base::BindOnce(&FullscreenController::ToggleBrowserFullscreenMode,
++                         weak_ptr_factory_.GetWeakPtr(), user_initiated));
++      return;
++    }
++    auto* context = exclusive_access_manager()->context();
++    const bool entering = !context->IsFullscreen();
++    if (entering && user_initiated && !context->CanUserEnterFullscreen()) {
++      return;
++    }
++    if (!entering && user_initiated && !context->CanUserExitFullscreen()) {
++      return;
++    }
++    // Only expansion after content entry belongs to this feature. A browser
++    // already in F11 at entry is independent and survives site API/Escape exit.
++    ember_owns_window_expansion_ = entering;
++  }
++  if (!IsEmberContentFullscreen()) {
++    ++ember_fullscreen_generation_;
++  }
+   extension_url_.reset();
+   ToggleFullscreenModeInternal(FullscreenInternalOption::kBrowser, nullptr,
+                                display::kInvalidDisplayId, user_initiated);
+@@ -186,6 +213,40 @@
+   DCHECK(CanEnterFullscreenModeForTab(requesting_frame));
+   auto* web_contents = WebContents::FromRenderFrameHost(requesting_frame);
+   DCHECK(web_contents);
++
++#if !BUILDFLAG(IS_ANDROID)
++  if (exclusive_access_manager()
++          ->context()
++          ->GetProfile()
++          ->GetPrefs()
++          ->GetBoolean(prefs::kEmberContentFullscreen)) {
++    if (ember_fullscreen_contents_ &&
++        ember_fullscreen_contents_.get() != web_contents) {
++      ExitEmberContentFullscreen();
++    }
++    ember_fullscreen_contents_ = web_contents->GetWeakPtr();
++    requesting_origin_ = requesting_frame->GetLastCommittedOrigin();
++    FullscreenWithinTabHelper::CreateForWebContents(web_contents);
++    auto* helper = FullscreenWithinTabHelper::FromWebContents(web_contents);
++    helper->SetIsFullscreenWithinTab(true);
++    helper->SetEmberDocumentExit(
++        requesting_frame->GetGlobalId(),
++        base::BindRepeating(&FullscreenController::EmberFullscreenDocumentLost,
++                            weak_ptr_factory_.GetWeakPtr(),
++                            ++ember_fullscreen_generation_));
++    if (ember_fullscreen_prefs_.IsEmpty()) {
++      ember_fullscreen_prefs_.Init(
++          exclusive_access_manager()->context()->GetProfile()->GetPrefs());
++      ember_fullscreen_prefs_.Add(
++          prefs::kEmberContentFullscreen,
++          base::BindRepeating(&FullscreenController::ExitEmberContentFullscreen,
++                              weak_ptr_factory_.GetWeakPtr()));
++    }
++    exclusive_access_manager()->UpdateBubble(base::NullCallback(), true);
++    PostFullscreenChangeNotification();
++    return;
++  }
++#endif
+ 
+   if (MaybeToggleFullscreenWithinTab(web_contents, true)) {
+     // During tab capture of fullscreen-within-tab views, the browser window
+@@ -264,7 +325,47 @@
+   PostFullscreenChangeNotification();
+ }
+ 
++void FullscreenController::EmberFullscreenDocumentLost(uint64_t generation) {
++  if (generation == ember_fullscreen_generation_) {
++    ExitEmberContentFullscreen();
++  }
++}
++
++void FullscreenController::ExitEmberContentFullscreen() {
++  auto contents = ember_fullscreen_contents_;
++  ember_fullscreen_contents_.reset();
++  ++ember_fullscreen_generation_;
++  if (!contents) {
++    return;
++  }
++  FullscreenWithinTabHelper::RemoveForWebContents(contents.get());
++  contents->ExitFullscreen(false);
++  requesting_origin_ = url::Origin();
++  const bool exit_expansion =
++      std::exchange(ember_owns_window_expansion_, false);
++  if (exit_expansion) {
++    RunOrDeferUntilTransitionIsComplete(base::BindOnce(
++        [](base::WeakPtr<FullscreenController> controller,
++           uint64_t generation) {
++          if (controller &&
++              controller->ember_fullscreen_generation_ == generation &&
++              controller->exclusive_access_manager()
++                  ->context()
++                  ->IsFullscreen()) {
++            controller->ExitFullscreenModeInternal();
++          }
++        },
++        weak_ptr_factory_.GetWeakPtr(), ember_fullscreen_generation_));
++  }
++  exclusive_access_manager()->UpdateBubble(base::NullCallback(), true);
++  PostFullscreenChangeNotification();
++}
++
+ void FullscreenController::ExitFullscreenModeForTab(WebContents* web_contents) {
++  if (web_contents == ember_fullscreen_contents_.get()) {
++    ExitEmberContentFullscreen();
++    return;
++  }
+   if (MaybeToggleFullscreenWithinTab(web_contents, false)) {
+     // During tab capture of fullscreen-within-tab views, the browser window
+     // fullscreen state is unchanged, so return now.
+@@ -334,7 +435,18 @@
+ }
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ 
++void FullscreenController::OnTabDeactivated(WebContents* contents) {
++  if (contents == ember_fullscreen_contents_.get()) {
++    ExitEmberContentFullscreen();
++  }
++  ExclusiveAccessControllerBase::OnTabDeactivated(contents);
++}
++
+ void FullscreenController::OnTabDetachedFromView(WebContents* old_contents) {
++  if (old_contents == ember_fullscreen_contents_.get()) {
++    ExitEmberContentFullscreen();
++    return;
++  }
+   if (!IsFullscreenWithinTab(old_contents)) {
+     return;
+   }
+@@ -365,6 +477,10 @@
+ }
+ 
+ void FullscreenController::OnTabClosing(WebContents* web_contents) {
++  if (web_contents == ember_fullscreen_contents_.get()) {
++    ExitEmberContentFullscreen();
++    return;
++  }
+   if (IsFullscreenWithinTab(web_contents)) {
+     web_contents->ExitFullscreen(
+         /* will_cause_resize */ IsFullscreenCausedByTab());
+@@ -424,6 +540,10 @@
+ }
+ 
+ bool FullscreenController::HandleUserPressedEscape() {
++  if (IsEmberContentFullscreen()) {
++    ExitEmberContentFullscreen();
++    return true;
++  }
+   WebContents* const active_web_contents =
+       exclusive_access_manager()->context()->GetWebContentsForExclusiveAccess();
+   if (IsFullscreenWithinTab(active_web_contents)) {
+@@ -469,6 +589,9 @@
+ }
+ 
+ url::Origin FullscreenController::GetOriginForExclusiveAccessBubble() const {
++  if (IsEmberContentFullscreen()) {
++    return requesting_origin_;
++  }
+   if (exclusive_access_tab()) {
+     return GetRequestingOrigin();
+   }
+@@ -481,6 +604,10 @@
+ }
+ 
+ void FullscreenController::ExitExclusiveAccessIfNecessary() {
++  if (IsEmberContentFullscreen()) {
++    ExitEmberContentFullscreen();
++    return;
++  }
+   if (IsWindowFullscreenForTabOrPending()) {
+     ExitFullscreenModeForTab(exclusive_access_tab());
+   } else {
+diff --git a/chrome/browser/ui/exclusive_access/fullscreen_controller.h b/chrome/browser/ui/exclusive_access/fullscreen_controller.h
+--- a/chrome/browser/ui/exclusive_access/fullscreen_controller.h
++++ b/chrome/browser/ui/exclusive_access/fullscreen_controller.h
+@@ -13,6 +13,7 @@
+ #include "base/memory/weak_ptr.h"
+ #include "base/task/cancelable_task_tracker.h"
+ #include "base/time/time.h"
++#include "components/prefs/pref_change_registrar.h"
+ #include "chrome/browser/ui/exclusive_access/exclusive_access_controller_base.h"
+ #include "chrome/browser/ui/exclusive_access/fullscreen_tab_params.h"
+ #include "components/content_settings/core/common/content_settings.h"
+@@ -77,6 +78,7 @@
+   // transitioned to fullscreen by a browser (i.e., not tab-initiated) mode
+   // transition.
+   bool IsFullscreenForBrowser() const;
++  bool IsEmberContentFullscreen() const;
+ 
+   // Toggle in or out of browser fullscreen mode. Certain windows will block
+   // `user_initiated` requests; see `CanUserEnterFullscreen()` for details.
+@@ -151,6 +153,7 @@
+   // Override from ExclusiveAccessControllerBase.
+   void OnTabDetachedFromView(content::WebContents* web_contents) override;
+   void OnTabClosing(content::WebContents* web_contents) override;
++  void OnTabDeactivated(content::WebContents* web_contents) override;
+   bool HandleUserPressedEscape() override;
+   void HandleUserHeldEscape() override;
+   void HandleUserReleasedEscapeEarly() override;
+@@ -183,6 +186,12 @@
+ 
+  private:
+   friend class ExclusiveAccessTest;
++  void ExitEmberContentFullscreen();
++  void EmberFullscreenDocumentLost(uint64_t generation);
++  base::WeakPtr<content::WebContents> ember_fullscreen_contents_;
++  bool ember_owns_window_expansion_ = false;
++  uint64_t ember_fullscreen_generation_ = 0;
++  PrefChangeRegistrar ember_fullscreen_prefs_;
+ 
+   enum class FullscreenInternalOption { kBrowser, kTab };
+ 
+diff --git a/chrome/browser/ui/exclusive_access/fullscreen_controller_browsertest.cc b/chrome/browser/ui/exclusive_access/fullscreen_controller_browsertest.cc
+--- a/chrome/browser/ui/exclusive_access/fullscreen_controller_browsertest.cc
++++ b/chrome/browser/ui/exclusive_access/fullscreen_controller_browsertest.cc
+@@ -28,6 +28,7 @@
+ #include "components/input/native_web_keyboard_event.h"
+ #include "components/prefs/pref_service.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/test/browser_test_utils.h"
+ #include "content/public/common/url_constants.h"
+ #include "content/public/test/browser_test.h"
+ #include "net/test/embedded_test_server/embedded_test_server.h"
+@@ -681,3 +682,52 @@
+                    ->keyboard_lock_controller()
+                    ->IsKeyboardLockActive());
+ }
++
++IN_PROC_BROWSER_TEST_F(FullscreenControllerTest,
++                       EmberPaneFullscreenRestoresOwnedExpansion) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), embedded_test_server()->GetURL("/empty.html")));
++  auto* contents = browser()->tab_strip_model()->GetActiveWebContents();
++  browser()->profile()->GetPrefs()->SetBoolean(prefs::kEmberContentFullscreen,
++                                               true);
++  const auto bounds = browser()->window()->GetBounds();
++  ASSERT_TRUE(content::ExecJs(contents,
++                              "document.documentElement.requestFullscreen()"));
++  EXPECT_TRUE(GetFullscreenController()->IsEmberContentFullscreen());
++  EXPECT_FALSE(browser()->window()->IsFullscreen());
++  EXPECT_EQ(browser()->window()->GetBounds(), bounds);
++  EXPECT_EQ(content::EvalJs(contents, "!!document.fullscreenElement"), true);
++  ui_test_utils::ToggleFullscreenModeAndWait(browser());
++  EXPECT_TRUE(browser()->window()->IsFullscreen());
++  ui_test_utils::ToggleFullscreenModeAndWait(browser());
++  EXPECT_EQ(browser()->window()->GetBounds(), bounds);
++  EXPECT_EQ(content::EvalJs(contents, "!!document.fullscreenElement"), true);
++  ui_test_utils::ToggleFullscreenModeAndWait(browser());
++  EXPECT_TRUE(SendEscapeToExclusiveAccessManager());
++  WaitAndVerifyFullscreenState(false, false);
++  EXPECT_FALSE(GetFullscreenController()->IsEmberContentFullscreen());
++  EXPECT_EQ(content::EvalJs(contents, "!!document.fullscreenElement"), false);
++}
++IN_PROC_BROWSER_TEST_F(FullscreenControllerTest,
++                       EmberPaneFullscreenPreservesPriorF11AndPrefExit) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), embedded_test_server()->GetURL("/empty.html")));
++  auto* contents = browser()->tab_strip_model()->GetActiveWebContents();
++  browser()->profile()->GetPrefs()->SetBoolean(prefs::kEmberContentFullscreen,
++                                               true);
++  ui_test_utils::ToggleFullscreenModeAndWait(browser());
++  ASSERT_TRUE(content::ExecJs(contents,
++                              "document.documentElement.requestFullscreen()"));
++  ASSERT_TRUE(content::ExecJs(contents, "document.exitFullscreen()"));
++  EXPECT_FALSE(GetFullscreenController()->IsEmberContentFullscreen());
++  EXPECT_TRUE(browser()->window()->IsFullscreen());
++  ASSERT_TRUE(content::ExecJs(contents,
++                              "document.documentElement.requestFullscreen()"));
++  browser()->profile()->GetPrefs()->SetBoolean(prefs::kEmberContentFullscreen,
++                                               false);
++  EXPECT_FALSE(GetFullscreenController()->IsEmberContentFullscreen());
++  EXPECT_TRUE(browser()->window()->IsFullscreen());
++  ui_test_utils::ToggleFullscreenModeAndWait(browser());
++}
+diff --git a/chrome/browser/ui/exclusive_access/fullscreen_within_tab_helper.cc b/chrome/browser/ui/exclusive_access/fullscreen_within_tab_helper.cc
+--- a/chrome/browser/ui/exclusive_access/fullscreen_within_tab_helper.cc
++++ b/chrome/browser/ui/exclusive_access/fullscreen_within_tab_helper.cc
+@@ -3,12 +3,38 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/exclusive_access/fullscreen_within_tab_helper.h"
++#include "base/task/single_thread_task_runner.h"
++#include "content/public/browser/render_frame_host.h"
+ 
+ FullscreenWithinTabHelper::FullscreenWithinTabHelper(
+     content::WebContents* contents)
+-    : content::WebContentsUserData<FullscreenWithinTabHelper>(*contents) {}
++    : content::WebContentsObserver(contents),
++      content::WebContentsUserData<FullscreenWithinTabHelper>(*contents) {}
+ 
+ FullscreenWithinTabHelper::~FullscreenWithinTabHelper() = default;
++
++void FullscreenWithinTabHelper::SetEmberDocumentExit(
++    content::GlobalRenderFrameHostId frame,
++    base::RepeatingClosure exit) {
++  ember_requesting_frame_ = frame;
++  ember_document_exit_ = std::move(exit);
++}
++
++void FullscreenWithinTabHelper::PrimaryPageChanged(content::Page&) {
++  // The exit removes this helper; never destroy an observer in its callback.
++  if (ember_document_exit_) {
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE, ember_document_exit_);
++  }
++}
++
++void FullscreenWithinTabHelper::RenderFrameDeleted(
++    content::RenderFrameHost* frame) {
++  if (ember_document_exit_ && frame->GetGlobalId() == ember_requesting_frame_) {
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE, ember_document_exit_);
++  }
++}
+ 
+ // static
+ void FullscreenWithinTabHelper::RemoveForWebContents(
+diff --git a/chrome/browser/ui/exclusive_access/fullscreen_within_tab_helper.h b/chrome/browser/ui/exclusive_access/fullscreen_within_tab_helper.h
+--- a/chrome/browser/ui/exclusive_access/fullscreen_within_tab_helper.h
++++ b/chrome/browser/ui/exclusive_access/fullscreen_within_tab_helper.h
+@@ -5,6 +5,9 @@
+ #ifndef CHROME_BROWSER_UI_EXCLUSIVE_ACCESS_FULLSCREEN_WITHIN_TAB_HELPER_H_
+ #define CHROME_BROWSER_UI_EXCLUSIVE_ACCESS_FULLSCREEN_WITHIN_TAB_HELPER_H_
+ 
++#include "base/functional/callback.h"
++#include "content/public/browser/web_contents_observer.h"
++#include "content/public/browser/global_routing_id.h"
+ #include "content/public/browser/web_contents_user_data.h"
+ 
+ // Helper used by FullscreenController to track the state of a WebContents that
+@@ -19,7 +22,8 @@
+ // FullscreenWithinTabHelper is created on-demand, and its lifecycle is tied to
+ // that of its associated WebContents. It is automatically destroyed.
+ class FullscreenWithinTabHelper
+-    : public content::WebContentsUserData<FullscreenWithinTabHelper> {
++    : public content::WebContentsObserver,
++      public content::WebContentsUserData<FullscreenWithinTabHelper> {
+  public:
+   FullscreenWithinTabHelper(const FullscreenWithinTabHelper&) = delete;
+   FullscreenWithinTabHelper& operator=(const FullscreenWithinTabHelper&) =
+@@ -33,6 +37,11 @@
+     is_fullscreen_within_tab_ = is_fullscreen;
+   }
+ 
++  void SetEmberDocumentExit(content::GlobalRenderFrameHostId frame,
++                            base::RepeatingClosure exit);
++  void PrimaryPageChanged(content::Page&) override;
++  void RenderFrameDeleted(content::RenderFrameHost* frame) override;
++
+   // Immediately remove and destroy the FullscreenWithinTabHelper instance
+   // associated with |web_contents|.
+   static void RemoveForWebContents(content::WebContents* web_contents);
+@@ -42,6 +51,8 @@
+   explicit FullscreenWithinTabHelper(content::WebContents* ignored);
+ 
+   bool is_fullscreen_within_tab_ = false;
++  content::GlobalRenderFrameHostId ember_requesting_frame_;
++  base::RepeatingClosure ember_document_exit_;
+ 
+   WEB_CONTENTS_USER_DATA_KEY_DECL();
+ };
+diff --git a/chrome/browser/ui/omnibox/chrome_omnibox_client.cc b/chrome/browser/ui/omnibox/chrome_omnibox_client.cc
+--- a/chrome/browser/ui/omnibox/chrome_omnibox_client.cc
++++ b/chrome/browser/ui/omnibox/chrome_omnibox_client.cc
+@@ -3,6 +3,8 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/omnibox/chrome_omnibox_client.h"
++#include "chrome/browser/ui/ember_page_state.h"
++#include "base/strings/string_number_conversions.h"
+ 
+ #include <stddef.h>
+ 
+@@ -954,6 +956,22 @@
+     }
+   }
+ 
++  if (auto tab = match.additional_info.find("ember_content_tab");
++      tab != match.additional_info.end()) {
++    auto document = match.additional_info.find("ember_content_generation");
++    auto query = match.additional_info.find("ember_content_query");
++    uint64_t identity = 0, generation = 0;
++    if (document != match.additional_info.end() &&
++        query != match.additional_info.end() &&
++        base::StringToUint64(tab->second, &identity) &&
++        base::StringToUint64(document->second, &generation)) {
++      ember::EmberPageState::ActivateContentMatch(
++          profile_, identity, generation, destination_url,
++          base::UTF8ToUTF16(query->second));
++    }
++    return;
++  }
++
+   std::string extra_headers;
+   for (const auto& header : match.extra_headers) {
+     base::StrAppend(&extra_headers,
+diff --git a/chrome/browser/ui/tabs/split_tab_menu_model.cc b/chrome/browser/ui/tabs/split_tab_menu_model.cc
+--- a/chrome/browser/ui/tabs/split_tab_menu_model.cc
++++ b/chrome/browser/ui/tabs/split_tab_menu_model.cc
+@@ -83,6 +83,9 @@
+       return "SendFeedback";
+     case SplitTabMenuModel::CommandId::kToggleOrientation:
+       return "ToggleOrientation";
++    case SplitTabMenuModel::CommandId::kEmberFollowStart:
++    case SplitTabMenuModel::CommandId::kEmberFollowEnd:
++      return "EmberFollower";
+   }
+ }
+ 
+@@ -118,6 +121,13 @@
+       tab_strip_model_(tab_strip_model),
+       menu_source_(menu_source),
+       split_tab_index_(split_tab_index) {
++  auto* tab =
++      split_tab_index && tab_strip_model_->ContainsIndex(*split_tab_index)
++          ? tab_strip_model_->GetTabAtIndex(*split_tab_index)
++          : tab_strip_model_->GetActiveTab();
++  if (tab) {
++    ember_split_id_ = tab->GetSplit();
++  }
+   AddItemWithStringIdAndIcon(
+       GetCommandIdInt(CommandId::kExitSplit), IDS_SPLIT_TAB_SEPARATE_VIEWS,
+       ui::ImageModel::FromVectorIcon(
+@@ -172,6 +182,10 @@
+       GetIndexOfCommandId(GetCommandIdInt(CommandId::kExitSplit)).value(),
+       kExitSplitMenuItem);
+ 
++  AddSeparator(ui::MenuSeparatorType::NORMAL_SEPARATOR);
++  AddItem(GetCommandIdInt(CommandId::kEmberFollowEnd), std::u16string());
++  AddItem(GetCommandIdInt(CommandId::kEmberFollowStart), std::u16string());
++
+   // Only render feedback in the toolbar button menu.
+   if (menu_source == MenuSource::kToolbarButton &&
+       chrome::CanShowFeedback(tab_strip_model->profile())) {
+@@ -186,15 +200,60 @@
+ 
+ SplitTabMenuModel::~SplitTabMenuModel() = default;
+ 
++bool SplitTabMenuModel::IsCommandIdEnabled(int command_id) const {
++  if (!ember_split_id_ || !tab_strip_model_->ContainsSplit(*ember_split_id_)) {
++    return false;
++  }
++  const auto* data = tab_strip_model_->GetSplitData(*ember_split_id_);
++  const auto tabs = data->ListTabs();
++  if (tabs.size() != 2) {
++    return false;
++  }
++  auto id = GetCommandIdEnum(command_id);
++  if (id != CommandId::kEmberFollowStart && id != CommandId::kEmberFollowEnd) {
++    return true;
++  }
++  const size_t index =
++      (id == CommandId::kEmberFollowStart) !=
++              (GetSplitLayout() == split_tabs::SplitTabLayout::kSideBySide &&
++               base::i18n::IsRTL())
++          ? 0
++          : 1;
++  return !data->GetEmberFollower() ||
++         data->GetEmberFollower() == tabs[index]->GetContents();
++}
++
+ bool SplitTabMenuModel::IsItemForCommandIdDynamic(int command_id) const {
+   const CommandId id = GetCommandIdEnum(command_id);
+   return id == CommandId::kReversePosition || id == CommandId::kCloseStartTab ||
+-         id == CommandId::kCloseEndTab || id == CommandId::kToggleOrientation;
++         id == CommandId::kCloseEndTab || id == CommandId::kToggleOrientation ||
++         id == CommandId::kEmberFollowStart || id == CommandId::kEmberFollowEnd;
+ }
+ 
+ std::u16string SplitTabMenuModel::GetLabelForCommandId(int command_id) const {
+   const CommandId id = GetCommandIdEnum(command_id);
+ 
++  if (!ember_split_id_ || !tab_strip_model_->ContainsSplit(*ember_split_id_)) {
++    return u"Split no longer available";
++  }
++  if (id == CommandId::kEmberFollowStart || id == CommandId::kEmberFollowEnd) {
++    const auto* data = tab_strip_model_->GetSplitData(*ember_split_id_);
++    const auto tabs = data->ListTabs();
++    const bool start = id == CommandId::kEmberFollowStart;
++    const size_t index =
++        start != (GetSplitLayout() == split_tabs::SplitTabLayout::kSideBySide &&
++                  base::i18n::IsRTL())
++            ? 0
++            : 1;
++    const bool following = tabs.size() == 2 && data->GetEmberFollower() ==
++                                                   tabs[index]->GetContents();
++    const std::u16string position =
++        GetSplitLayout() == split_tabs::SplitTabLayout::kSideBySide
++            ? (start ? u"left" : u"right")
++            : (start ? u"top" : u"bottom");
++    return following ? u"Stop " + position + u" pane following"
++                     : u"Make " + position + u" pane the follower";
++  }
+   if (id == CommandId::kReversePosition) {
+     return l10n_util::GetStringUTF16(IDS_SPLIT_TAB_REVERSE_VIEWS);
+   } else if (id == CommandId::kCloseStartTab) {
+@@ -219,6 +278,12 @@
+ }
+ 
+ ui::ImageModel SplitTabMenuModel::GetIconForCommandId(int command_id) const {
++  const auto command = GetCommandIdEnum(command_id);
++  if (command == CommandId::kEmberFollowStart ||
++      command == CommandId::kEmberFollowEnd || !ember_split_id_ ||
++      !tab_strip_model_->ContainsSplit(*ember_split_id_)) {
++    return ui::ImageModel();
++  }
+   const split_tabs::SplitTabActiveLocation active_split_tab_location =
+       split_tabs::GetLastActiveTabLocation(tab_strip_model_, GetSplitTabId());
+ 
+@@ -253,6 +318,9 @@
+ }
+ 
+ void SplitTabMenuModel::ExecuteCommand(int command_id, int event_flags) {
++  if (!IsCommandIdEnabled(command_id)) {
++    return;
++  }
+   const split_tabs::SplitTabId split_id = GetSplitTabId();
+   split_tabs::SplitTabData* const split_tab_data =
+       tab_strip_model_->GetSplitData(split_id);
+@@ -260,6 +328,23 @@
+   CHECK_EQ(tabs_in_split.size(), 2U);
+   CommandId split_command_id = GetCommandIdEnum(command_id);
+   switch (split_command_id) {
++    case CommandId::kEmberFollowStart:
++    case CommandId::kEmberFollowEnd: {
++      const size_t index =
++          (split_command_id == CommandId::kEmberFollowStart) !=
++                  (GetSplitLayout() ==
++                       split_tabs::SplitTabLayout::kSideBySide &&
++                   base::i18n::IsRTL())
++              ? 0
++              : 1;
++      auto* destination = tabs_in_split[index]->GetContents();
++      if (split_tab_data->GetEmberFollower() == destination) {
++        split_tab_data->ClearEmberFollower();
++      } else {
++        split_tab_data->SetEmberFollower(destination);
++      }
++      return;  // Do not submit Ember commands to the upstream persisted enum.
++    }
+     case CommandId::kReversePosition:
+       tab_strip_model_->ReverseTabsInSplit(split_id);
+       break;
+@@ -317,12 +402,8 @@
+ }
+ 
+ split_tabs::SplitTabId SplitTabMenuModel::GetSplitTabId() const {
+-  tabs::TabInterface* const tab =
+-      split_tab_index_.has_value()
+-          ? tab_strip_model_->GetTabAtIndex(split_tab_index_.value())
+-          : tab_strip_model_->GetActiveTab();
+-  CHECK(tab->IsSplit());
+-  return tab->GetSplit().value();
++  CHECK(ember_split_id_);
++  return *ember_split_id_;
+ }
+ 
+ const gfx::VectorIcon& SplitTabMenuModel::GetReversePositionIcon(
+diff --git a/chrome/browser/ui/tabs/split_tab_menu_model.h b/chrome/browser/ui/tabs/split_tab_menu_model.h
+--- a/chrome/browser/ui/tabs/split_tab_menu_model.h
++++ b/chrome/browser/ui/tabs/split_tab_menu_model.h
+@@ -12,6 +12,7 @@
+ #include "chrome/browser/ui/tabs/existing_base_sub_menu_model.h"
+ #include "ui/base/interaction/element_identifier.h"
+ #include "ui/menus/simple_menu_model.h"
++#include "components/split_tabs/split_tab_id.h"
+ 
+ class TabStripModel;
+ 
+@@ -51,6 +52,9 @@
+     kSendFeedback,
+     kToggleOrientation,
+     kMaxValue = kToggleOrientation,
++    // Ember commands are deliberately outside the upstream metrics enum.
++    kEmberFollowStart = 100,
++    kEmberFollowEnd = 101,
+   };
+   // LINT.ThenChange(//tools/metrics/histograms/metadata/tab/enums.xml:SplitViewMenuEntry)
+ 
+@@ -68,6 +72,7 @@
+   ~SplitTabMenuModel() override;
+ 
+   // ui::SimpleMenuModel::Delegate override
++  bool IsCommandIdEnabled(int command_id) const override;
+   bool IsItemForCommandIdDynamic(int command_id) const override;
+   std::u16string GetLabelForCommandId(int command_id) const override;
+   ui::ImageModel GetIconForCommandId(int command_id) const override;
+@@ -91,6 +96,7 @@
+   // This represents the tab that this menu model should be operating on. If
+   // nothing is provided, use the currently active tab.
+   std::optional<int> split_tab_index_;
++  std::optional<split_tabs::SplitTabId> ember_split_id_;
+ };
+ 
+ #endif  // CHROME_BROWSER_UI_TABS_SPLIT_TAB_MENU_MODEL_H_
+diff --git a/chrome/browser/ui/views/download/bubble/download_bubble_contents_view.cc b/chrome/browser/ui/views/download/bubble/download_bubble_contents_view.cc
+--- a/chrome/browser/ui/views/download/bubble/download_bubble_contents_view.cc
++++ b/chrome/browser/ui/views/download/bubble/download_bubble_contents_view.cc
+@@ -69,7 +69,8 @@
+       navigation_handler_(navigation_handler),
+       bubble_delegate_(bubble_delegate) {
+   SetProperty(views::kElementIdentifierKey, kToolbarDownloadBubbleElementId);
+-  CHECK(!info_->row_list_view_info().rows().empty());
++  CHECK(mode == DownloadBubbleMode::kComplete ||
++        !info_->row_list_view_info().rows().empty());
+   SetLayoutManager(std::make_unique<views::FlexLayout>())
+       ->SetOrientation(views::LayoutOrientation::kVertical);
+ 
+diff --git a/chrome/browser/ui/views/download/bubble/download_bubble_primary_view.cc b/chrome/browser/ui/views/download/bubble/download_bubble_primary_view.cc
+--- a/chrome/browser/ui/views/download/bubble/download_bubble_primary_view.cc
++++ b/chrome/browser/ui/views/download/bubble/download_bubble_primary_view.cc
+@@ -132,7 +132,7 @@
+ }
+ 
+ views::View* DownloadBubblePrimaryView::GetInitiallyFocusedView() {
+-  if (row_list_view_->children().empty()) {
++  if (row_list_view_->NumRows() == 0) {
+     return nullptr;
+   }
+   return static_cast<DownloadBubbleRowView*>(row_list_view_->children().front())
+diff --git a/chrome/browser/ui/views/download/bubble/download_bubble_row_list_view.cc b/chrome/browser/ui/views/download/bubble/download_bubble_row_list_view.cc
+--- a/chrome/browser/ui/views/download/bubble/download_bubble_row_list_view.cc
++++ b/chrome/browser/ui/views/download/bubble/download_bubble_row_list_view.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/views/download/bubble/download_bubble_row_list_view.h"
++#include "ui/views/controls/label.h"
+ 
+ #include "chrome/browser/download/bubble/download_bubble_ui_controller.h"
+ #include "chrome/browser/ui/views/chrome_layout_provider.h"
+@@ -28,6 +29,10 @@
+   SetNotifyEnterExitOnChild(true);
+   info_->AddObserver(this);
+ 
++  auto empty = std::make_unique<views::Label>(u"No recent downloads");
++  empty->SetPreferredSize(gfx::Size(fixed_width_, 64));
++  ember_empty_label_ = AddChildView(std::move(empty));
++  ember_empty_label_->SetVisible(info_->rows().empty());
+   for (const DownloadBubbleRowViewInfo& row_info : info_->rows()) {
+     AddRow(row_info);
+   }
+@@ -41,10 +46,12 @@
+     const DownloadBubbleRowViewInfo& row_info) {
+   const ContentId& id = row_info.model()->GetContentId();
+   CHECK(!rows_by_id_.contains(id));
+-  auto* child = AddChildView(std::make_unique<DownloadBubbleRowView>(
+-      row_info, bubble_controller_, navigation_handler_, browser_,
+-      fixed_width_));
++  auto* child = AddChildViewAt(std::make_unique<DownloadBubbleRowView>(
++                                   row_info, bubble_controller_,
++                                   navigation_handler_, browser_, fixed_width_),
++                               rows_by_id_.size());
+   rows_by_id_[id] = child;
++  ember_empty_label_->SetVisible(false);
+ }
+ 
+ std::unique_ptr<DownloadBubbleRowView> DownloadBubbleRowListView::RemoveRow(
+@@ -59,7 +66,9 @@
+       break;
+     }
+   }
+-  return RemoveChildViewT(row);
++  auto removed = RemoveChildViewT(row);
++  ember_empty_label_->SetVisible(rows_by_id_.empty());
++  return removed;
+ }
+ 
+ DownloadBubbleRowView* DownloadBubbleRowListView::GetRow(
+@@ -71,8 +80,8 @@
+ }
+ 
+ size_t DownloadBubbleRowListView::NumRows() const {
+-  size_t num_rows = children().size();
+-  CHECK_EQ(num_rows, rows_by_id_.size());
++  size_t num_rows = rows_by_id_.size();
++  CHECK_EQ(children().size(), num_rows + 1);
+   return num_rows;
+ }
+ 
+diff --git a/chrome/browser/ui/views/download/bubble/download_bubble_row_list_view.h b/chrome/browser/ui/views/download/bubble/download_bubble_row_list_view.h
+--- a/chrome/browser/ui/views/download/bubble/download_bubble_row_list_view.h
++++ b/chrome/browser/ui/views/download/bubble/download_bubble_row_list_view.h
+@@ -73,6 +73,7 @@
+   base::WeakPtr<DownloadBubbleUIController> bubble_controller_;
+   base::WeakPtr<DownloadBubbleNavigationHandler> navigation_handler_;
+   int fixed_width_ = 0;
++  raw_ptr<views::View> ember_empty_label_ = nullptr;
+ 
+   // This is owned by the DownloadBubbleContentsView owning `this`.
+   raw_ref<const DownloadBubbleRowListViewInfo> info_;
+diff --git a/chrome/browser/ui/views/download/bubble/download_bubble_row_list_view_browsertest.cc b/chrome/browser/ui/views/download/bubble/download_bubble_row_list_view_browsertest.cc
+--- a/chrome/browser/ui/views/download/bubble/download_bubble_row_list_view_browsertest.cc
++++ b/chrome/browser/ui/views/download/bubble/download_bubble_row_list_view_browsertest.cc
+@@ -121,4 +121,24 @@
+   EXPECT_EQ(row_list_view_->NumRows(), 0u);
+ }
+ 
++IN_PROC_BROWSER_TEST_F(DownloadBubbleRowListViewBrowserTest,
++                       EmberEmptyLiveMembership) {
++  InitItems(2);
++  InitRowListView(0);
++  EXPECT_EQ(row_list_view_->NumRows(), 0u);
++  EXPECT_TRUE(row_list_view_->children().back()->GetVisible());
++  info_->AddRow(MakeModel(0));
++  auto* first = row_list_view_->GetRow(GetIdForItem(0));
++  ASSERT_TRUE(first);
++  EXPECT_EQ(row_list_view_->children().front().get(), first);
++  EXPECT_FALSE(row_list_view_->children().back()->GetVisible());
++  info_->AddRow(MakeModel(1));
++  EXPECT_EQ(row_list_view_->GetRow(GetIdForItem(0)), first);
++  EXPECT_EQ(row_list_view_->NumRows(), 2u);
++  info_->RemoveRow(GetIdForItem(0));
++  info_->RemoveRow(GetIdForItem(1));
++  EXPECT_EQ(row_list_view_->NumRows(), 0u);
++  EXPECT_TRUE(row_list_view_->children().back()->GetVisible());
++}
++
+ }  // namespace
+diff --git a/chrome/browser/ui/views/download/bubble/download_bubble_row_view.cc b/chrome/browser/ui/views/download/bubble/download_bubble_row_view.cc
+--- a/chrome/browser/ui/views/download/bubble/download_bubble_row_view.cc
++++ b/chrome/browser/ui/views/download/bubble/download_bubble_row_view.cc
+@@ -451,6 +451,18 @@
+   AddQuickAction(DownloadCommands::SHOW_IN_FOLDER);
+   AddQuickAction(DownloadCommands::CANCEL);
+   AddQuickAction(DownloadCommands::OPEN_WHEN_COMPLETE);
++  auto copy_address = views::CreateVectorImageButtonWithNativeTheme(
++      base::BindRepeating(
++          [](DownloadBubbleRowView* row) {
++            DownloadCommands commands(row->model()->GetWeakPtr());
++            commands.CopyDownloadAddress();
++          },
++          base::Unretained(this)),
++      vector_icons::kContentCopyIcon);
++  copy_address->SetTooltipText(u"Copy download address");
++  copy_address->GetViewAccessibility().SetName(u"Copy download address");
++  ember_copy_address_ =
++      quick_action_holder_->AddChildView(std::move(copy_address));
+   quick_action_holder_->SetVisible(false);
+   quick_action_holder_->SetProperty(views::kViewIgnoredByLayoutKey, true);
+   quick_action_holder_->SetBackground(
+@@ -499,6 +511,7 @@
+   progress_bar_ = progress_bar_holder_->AddChildView(
+       std::make_unique<views::ProgressBar>());
+   progress_bar_->SetPreferredHeight(kProgressBarHeight);
++  progress_bar_->SetForegroundColor(SkColorSetRGB(255, 143, 48));
+   progress_bar_->SetBorder(views::CreateEmptyBorder(
+       gfx::Insets::TLBR(ChromeLayoutProvider::Get()->GetDistanceMetric(
+                             views::DISTANCE_RELATED_CONTROL_VERTICAL),
+@@ -687,6 +700,9 @@
+ }
+ 
+ void DownloadBubbleRowView::UpdateButtons() {
++  DownloadCommands copy_commands(info_->model()->GetWeakPtr());
++  ember_copy_address_->SetVisible(copy_commands.CanCopyDownloadAddress());
++  ember_copy_address_->SetEnabled(copy_commands.CanCopyDownloadAddress());
+   // Things like focus and tooltips are broken if we make an action
+   // button invisible, then visible. Instead, keep track of which action
+   // buttons should be made invisible so we only change visibility once.
+diff --git a/chrome/browser/ui/views/download/bubble/download_bubble_row_view.h b/chrome/browser/ui/views/download/bubble/download_bubble_row_view.h
+--- a/chrome/browser/ui/views/download/bubble/download_bubble_row_view.h
++++ b/chrome/browser/ui/views/download/bubble/download_bubble_row_view.h
+@@ -132,6 +132,7 @@
+ 
+   void UpdateStatusText();
+   void UpdateButtons();
++  raw_ptr<views::ImageButton> ember_copy_address_ = nullptr;
+   void UpdateProgressBar();
+   void UpdateLabels();
+   void RecordMetricsOnUpdate();
+diff --git a/chrome/browser/ui/views/download/bubble/download_toolbar_ui_controller.cc b/chrome/browser/ui/views/download/bubble/download_toolbar_ui_controller.cc
+--- a/chrome/browser/ui/views/download/bubble/download_toolbar_ui_controller.cc
++++ b/chrome/browser/ui/views/download/bubble/download_toolbar_ui_controller.cc
+@@ -3,6 +3,10 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/views/download/bubble/download_toolbar_ui_controller.h"
++#include "chrome/browser/ui/views/ember/ember_utility_controller.h"
++#include "chrome/browser/ui/views/ember/ember_glass_view.h"
++#include "chrome/browser/ui/views/download/bubble/download_bubble_primary_view.h"
++#include "ui/views/controls/scroll_view.h"
+ 
+ #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
+ 
+@@ -474,9 +478,12 @@
+ }
+ 
+ void DownloadToolbarUIController::TearDownPreBrowserWindowDestruction() {
++  ember_rows_timer_.Stop();
++  HideDetails();
+   immersive_revealed_lock_.reset();
+   // DownloadDisplayController depends on BrowserView.
+   controller_.reset();
++  weak_factory_.InvalidateWeakPtrs();
+   browser_view_ = nullptr;
+ }
+ 
+@@ -774,7 +781,10 @@
+ void DownloadToolbarUIController::CloseDialog(
+     views::Widget::ClosedReason reason) {
+   if (bubble_delegate_) {
+-    bubble_delegate_->GetWidget()->CloseWithReason(reason);
++    auto* widget = bubble_delegate_->GetWidget();
++    bubble_contents_->SetCanProcessEventsWithinSubtree(false);
++    OnBubbleClosing();
++    widget->CloseWithReason(reason);
+   }
+ }
+ 
+@@ -819,6 +829,53 @@
+ 
+ void DownloadToolbarUIController::DeactivateAutoClose() {
+   auto_close_bubble_timer_.Stop();
++}
++
++void DownloadToolbarUIController::CloseEmberDownloads(bool immediate) {
++  if (bubble_delegate_ && immediate) {
++    bubble_delegate_->GetWidget()->Hide();
++  }
++  CloseDialog(views::Widget::ClosedReason::kUnspecified);
++}
++void DownloadToolbarUIController::ShowEmberDownloads(views::View* anchor) {
++  if (!anchor || !anchor->GetWidget()) {
++    return;
++  }
++  if (bubble_delegate_ && bubble_contents_ &&
++      !bubble_contents_->GetCanProcessEventsWithinSubtree()) {
++    CloseEmberDownloads(true);
++  }
++  if (bubble_delegate_) {
++    bubble_delegate_->GetWidget()->Show();
++    bubble_delegate_->GetWidget()->Activate();
++    return;
++  }
++  primary_view_mode_ = DownloadBubbleMode::kComplete;
++  pending_security_content_.reset();
++  if (auto* utilities = browser_view_->ember_utilities()) {
++    utilities->BeforeDownloads();
++  }
++  ember_downloads_ = true;
++  OnBubbleAnchorAssembled(views::BubbleAnchor(anchor));
++  controller_->OnButtonPressed();
++}
++
++void DownloadToolbarUIController::RefreshEmberRows() {
++  if (!ember_downloads_ || !bubble_contents_) {
++    return;
++  }
++  auto& rows = bubble_contents_->info().mutable_row_list_view_info();
++  // Existing DownloadUIModels observe their owning items; only membership
++  // needs reconciliation. Never replace controls while progress changes.
++  auto models = bubble_controller_->GetMainView();
++  for (auto& model : models) {
++    if (rows.rows().size() >= 100) {
++      break;
++    }
++    if (!rows.GetRowInfo(model->GetContentId())) {
++      rows.AddRow(std::move(model));
++    }
++  }
+ }
+ 
+ void DownloadToolbarUIController::InvokeUI() {
+@@ -948,6 +1005,14 @@
+     return;
+   }
+ 
++  if (auto* utilities = browser_view_->ember_utilities()) {
++    if (auto* anchor = utilities->downloads_anchor();
++        anchor && anchor->GetWidget()) {
++      ember_downloads_ = true;
++      OnBubbleAnchorAssembled(views::BubbleAnchor(anchor));
++      return;
++    }
++  }
+   auto* container = GetPinnedToolbarActions(browser_view_);
+   if (!container) {
+     return;
+@@ -970,8 +1035,15 @@
+   }
+   std::vector<DownloadUIModel::DownloadUIModelPtr> primary_view_models =
+       GetPrimaryViewModels();
+-  if (primary_view_models.empty()) {
+-    return;
++  if (primary_view_models.empty() &&
++      (!ember_downloads_ ||
++       primary_view_mode_ == DownloadBubbleMode::kPartial)) {
++    return;
++  }
++  if (ember_downloads_ &&
++      browser_view_->ember_utilities()->active() !=
++          ember::EmberUtilityController::Utility::kDownloads) {
++    browser_view_->ember_utilities()->BeforeDownloads();
+   }
+ 
+   // If we are in immersive fullscreen, reveal the toolbar to show the bubble.
+@@ -984,7 +1056,9 @@
+     }
+   }
+   auto bubble_delegate = std::make_unique<views::BubbleDialogDelegate>(
+-      anchor.value(), views::BubbleBorder::TOP_RIGHT,
++      anchor.value(),
++      ember_downloads_ ? views::BubbleBorder::LEFT_BOTTOM
++                       : views::BubbleBorder::TOP_RIGHT,
+       views::BubbleBorder::DIALOG_SHADOW,
+       /*autosize=*/true);
+   bubble_delegate->SetOwnedByWidget(
+@@ -997,9 +1071,14 @@
+   bubble_delegate->SetButtons(static_cast<int>(ui::mojom::DialogButton::kNone));
+   bubble_delegate->SetDefaultButton(
+       static_cast<int>(ui::mojom::DialogButton::kNone));
+-  bubble_delegate->RegisterWindowClosingCallback(
+-      base::BindOnce(&DownloadToolbarUIController::OnBubbleClosing,
+-                     weak_factory_.GetWeakPtr()));
++  bubble_delegate->RegisterWindowClosingCallback(base::BindOnce(
++      [](base::WeakPtr<DownloadToolbarUIController> owner,
++         uint64_t generation) {
++        if (owner && owner->ember_bubble_generation_ == generation) {
++          owner->OnBubbleClosing();
++        }
++      },
++      weak_factory_.GetWeakPtr(), ++ember_bubble_generation_));
+   auto bubble_contents = std::make_unique<DownloadBubbleContentsView>(
+       browser_view_->browser()->AsWeakPtr(), bubble_controller_->GetWeakPtr(),
+       GetWeakPtr(), primary_view_mode_,
+@@ -1011,12 +1090,42 @@
+   // The contents view displays the primary view by default.
+   bubble_delegate->set_margins(GetPrimaryViewMargin());
+   bubble_delegate->SetEnableArrowKeyTraversal(true);
++  if (ember_downloads_) {
++    bubble_delegate->SetCancelCallbackWithClose(base::BindRepeating(
++        [](base::WeakPtr<DownloadToolbarUIController> owner) {
++          if (owner) {
++            owner->CloseDialog(views::Widget::ClosedReason::kEscKeyPressed);
++          }
++          return false;
++        },
++        weak_factory_.GetWeakPtr()));
++  }
+   bubble_delegate_ = bubble_delegate.get();
+   views::Widget* bubble_widget =
+       views::BubbleDialogDelegate::CreateBubbleDeprecated(
+           std::move(bubble_delegate),
+           views::Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET);
+   CHECK(bubble_widget);
++  if (ember_downloads_) {
++    bubble_widget->SetColorModeOverride(ui::ColorProviderKey::ColorMode::kDark);
++    ember::ConfigureEmberGlassBubble(bubble_contents_, bubble_delegate_, true);
++    auto* scroll =
++        bubble_contents_->primary_view_for_testing()->scroll_view_for_testing();
++    auto* contents =
++        browser_view_->browser()->tab_strip_model()->GetActiveWebContents();
++    const int height = std::clamp((contents ? contents->GetViewBounds().height()
++                                            : browser_view_->height()) -
++                                      160,
++                                  80, 280);
++    scroll->ClipHeightTo(height, height);
++    scroll->SetBackgroundColor(std::nullopt);
++    bubble_delegate_->SizeToContents();
++    ember::CaptureEmberGlassBubbleBackdrop(
++        browser_view_, bubble_contents_,
++        bubble_widget->GetWindowBoundsInScreen().origin());
++    ember_rows_timer_.Start(FROM_HERE, base::Milliseconds(300), this,
++                            &DownloadToolbarUIController::RefreshEmberRows);
++  }
+ 
+   if (primary_view_mode_ != DownloadBubbleMode::kPartial &&
+       !button_click_time_.is_null()) {
+@@ -1054,7 +1163,7 @@
+ 
+   // For IPH bubble. The IPH should show when the partial view is closed, either
+   // manually or automatically.
+-  if (primary_view_mode_ == DownloadBubbleMode::kPartial) {
++  if (primary_view_mode_ == DownloadBubbleMode::kPartial && !ember_downloads_) {
+     bubble_delegate_->SetCloseCallback(
+         base::BindOnce(&DownloadToolbarUIController::OnPartialViewClosed,
+                        weak_factory_.GetWeakPtr()));
+@@ -1068,6 +1177,15 @@
+ }
+ 
+ void DownloadToolbarUIController::OnBubbleClosing() {
++  if (!bubble_delegate_) {
++    return;
++  }
++  ++ember_bubble_generation_;
++  ember_rows_timer_.Stop();
++  ember_downloads_ = false;
++  if (auto* utilities = browser_view_->ember_utilities()) {
++    utilities->DownloadsClosed();
++  }
+   immersive_revealed_lock_.reset();
+   bubble_delegate_ = nullptr;
+   bubble_contents_ = nullptr;
+@@ -1211,7 +1329,8 @@
+ }
+ 
+ void DownloadToolbarUIController::OnAnyRowRemoved() {
+-  if (bubble_contents_->info().row_list_view_info().rows().empty()) {
++  if (bubble_contents_ && !ember_downloads_ &&
++      bubble_contents_->info().row_list_view_info().rows().empty()) {
+     CloseDialog(views::Widget::ClosedReason::kUnspecified);
+   }
+ }
+diff --git a/chrome/browser/ui/views/download/bubble/download_toolbar_ui_controller.h b/chrome/browser/ui/views/download/bubble/download_toolbar_ui_controller.h
+--- a/chrome/browser/ui/views/download/bubble/download_toolbar_ui_controller.h
++++ b/chrome/browser/ui/views/download/bubble/download_toolbar_ui_controller.h
+@@ -110,6 +110,8 @@
+   // Invoke download UI.  If the download bubble isn't showing, this will show
+   // it, otherwise it will open chrome://downloads.
+   void InvokeUI();
++  void ShowEmberDownloads(views::View* anchor);
++  void CloseEmberDownloads(bool immediate);
+ 
+   // If |has_pending_download_started_animation_| is true, shows an animation of
+   // a download icon moving upwards towards the toolbar icon.
+@@ -235,6 +237,10 @@
+   // Set when a bubble is going to be created, i.e. `bubble_delegate_`
+   // will likely be non-null soon if this is true.
+   bool pending_bubble_ = false;
++  bool ember_downloads_ = false;
++  uint64_t ember_bubble_generation_ = 0;
++  base::RepeatingTimer ember_rows_timer_;
++  void RefreshEmberRows();
+ 
+   // Security page content to show when the bubble finishes being created.
+   std::optional<offline_items_collection::ContentId> pending_security_content_;
+diff --git a/chrome/browser/ui/views/ember/ember_glass_view.cc b/chrome/browser/ui/views/ember/ember_glass_view.cc
+--- a/chrome/browser/ui/views/ember/ember_glass_view.cc
++++ b/chrome/browser/ui/views/ember/ember_glass_view.cc
+@@ -55,6 +55,7 @@
+ 
+ constexpr float kBubbleCornerRadius = 10.0f;
+ DEFINE_UI_CLASS_PROPERTY_KEY(int, kEmberGlassCaptureGeneration, 0)
++DEFINE_UI_CLASS_PROPERTY_KEY(bool, kEmberNativeForeground, false)
+ DEFINE_UI_CLASS_PROPERTY_KEY(views::View*, kEmberBackdropCapture, nullptr)
+ 
+ // One stream targets the requesting renderer frame sink, never the browser
+@@ -175,7 +176,9 @@
+ // The extensions bubble is a separate Widget, so its labels cannot inherit
+ // the captured page's luminance from the browser's ColorProvider. Apply the
+ // same two foreground ramps as EmberGlassView after the backdrop is sampled.
+-void ApplyBubbleForeground(views::View* view, bool bright) {
++void ApplyBubbleForeground(views::View* view,
++                           bool bright,
++                           bool preserve_native = false) {
+   if (auto* scroll = views::AsViewClass<views::ScrollView>(view)) {
+     scroll->SetBackgroundColor(std::nullopt);
+   }
+@@ -183,6 +186,12 @@
+   // through noninteractive container fills while retaining controls' states.
+   if (!views::AsViewClass<views::Button>(view)) {
+     view->SetBackground(nullptr);
++  }
++  if (preserve_native) {
++    for (views::View* child : view->children()) {
++      ApplyBubbleForeground(child, bright, true);
++    }
++    return;
+   }
+   const SkColor primary = BubblePrimaryText(bright);
+   const SkColor secondary = BubbleSecondaryText(bright);
+@@ -371,7 +380,8 @@
+     return;
+   }
+   if (!follow_view) {
+-    ApplyBubbleForeground(surface, panel->bright_backdrop);
++    ApplyBubbleForeground(surface, panel->bright_backdrop,
++                          surface->GetProperty(kEmberNativeForeground));
+   }
+   surface->SetBackground(std::make_unique<EmberGlassBitmapBackground>(
+       panel->bitmap, std::move(frame), follow_view));
+@@ -382,9 +392,11 @@
+ }  // namespace
+ 
+ void ConfigureEmberGlassBubble(views::View* surface,
+-                               views::BubbleDialogDelegate* bubble) {
++                               views::BubbleDialogDelegate* bubble,
++                               bool preserve_native_foreground) {
+   CHECK(surface);
+   CHECK(bubble);
++  surface->SetProperty(kEmberNativeForeground, preserve_native_foreground);
+   bubble->SetBackgroundColor(SK_ColorTRANSPARENT);
+   if (surface->GetWidget()) {
+     if (auto* frame = views::AsViewClass<views::BubbleFrameView>(
+@@ -398,7 +410,8 @@
+ 
+ void ConfigureEmberGlassDialog(views::View* surface) {
+   CHECK(surface);
+-  ApplyBubbleForeground(surface, false);
++  ApplyBubbleForeground(surface, false,
++                        surface->GetProperty(kEmberNativeForeground));
+   surface->SetPaintToLayer();
+   surface->layer()->SetFillsBoundsOpaquely(false);
+   surface->layer()->SetRoundedCornerRadius(
+diff --git a/chrome/browser/ui/views/ember/ember_glass_view.h b/chrome/browser/ui/views/ember/ember_glass_view.h
+--- a/chrome/browser/ui/views/ember/ember_glass_view.h
++++ b/chrome/browser/ui/views/ember/ember_glass_view.h
+@@ -25,7 +25,8 @@
+ // Applies the shared translucent EmberGlass treatment to a native bubble while
+ // preserving the bubble's existing child hierarchy and command plumbing.
+ void ConfigureEmberGlassBubble(views::View* surface,
+-                               views::BubbleDialogDelegate* bubble);
++                               views::BubbleDialogDelegate* bubble,
++                               bool preserve_native_foreground = false);
+ 
+ // Applies the same material to a browser-owned modal dialog whose delegate is
+ // not a BubbleDialogDelegate.
+diff --git a/chrome/browser/ui/views/ember/ember_utility_controller.cc b/chrome/browser/ui/views/ember/ember_utility_controller.cc
+--- a/chrome/browser/ui/views/ember/ember_utility_controller.cc
++++ b/chrome/browser/ui/views/ember/ember_utility_controller.cc
+@@ -1,6 +1,7 @@
+ // Copyright 2026 The Chromium Authors
+ // Use of this source code is governed by a BSD-style license in LICENSE.
+ #include "chrome/browser/ui/views/ember/ember_utility_controller.h"
++#include "chrome/browser/ui/views/download/bubble/download_toolbar_ui_controller.h"
+ 
+ #include <algorithm>
+ #include <cmath>
+@@ -432,6 +433,8 @@
+           ui::ImageModel::FromVectorIcon(*icon, kForeground, 19));
+     buttons_[utility] = footer->AddChildView(std::move(button));
+   };
++  add(Utility::kDownloads, u"Downloads", EmberUtilityButton::Glyph::kNative,
++      &kDownloadIcon);
+   add(Utility::kMedia, u"Media", EmberUtilityButton::Glyph::kMedia, nullptr);
+   add(Utility::kWorkspaces, u"Workspaces",
+       EmberUtilityButton::Glyph::kWorkspace, nullptr);
+@@ -453,6 +456,27 @@
+   for (auto& [utility, button] : buttons_)
+     button->SetOpen(active_ == utility);
+ }
++views::View* EmberUtilityController::downloads_anchor() const {
++  auto it = buttons_.find(Utility::kDownloads);
++  return it == buttons_.end() ? nullptr : it->second.get();
++}
++void EmberUtilityController::BeforeDownloads() {
++  Close(false, true);
++  browser_view_->CloseEmberSearch(false);
++  active_ = Utility::kDownloads;
++  anchor_ = downloads_anchor();
++  UpdateButtons();
++}
++void EmberUtilityController::DownloadsClosed() {
++  if (active_ == Utility::kDownloads) {
++    active_ = Utility::kNone;
++    if (anchor_ && anchor_->GetWidget()) {
++      anchor_->RequestFocus();
++    }
++    anchor_ = nullptr;
++    UpdateButtons();
++  }
++}
+ void EmberUtilityController::BeforeExtensions() {
+   Close(false, true);
+   browser_view_->CloseEmberSearch(false);
+@@ -469,6 +493,17 @@
+   }
+ }
+ void EmberUtilityController::Toggle(Utility utility, views::View* anchor) {
++  if (utility == Utility::kDownloads) {
++    if (active_ == Utility::kDownloads) {
++      Close(true, true);
++      return;
++    }
++    if (auto* downloads =
++            DownloadToolbarUIController::From(browser_view_->browser())) {
++      downloads->ShowEmberDownloads(anchor);
++    }
++    return;
++  }
+   if (active_ == utility) {
+     Close();
+     return;
+@@ -511,10 +546,17 @@
+                                    bool immediate,
+                                    bool keep_capture) {
+   const bool was_open = active_ != Utility::kNone;
++  const bool was_downloads = active_ == Utility::kDownloads;
+   if (immediate)
+     for (const auto& surface : closing_popovers_)
+       surface->GetWidget()->Hide();
+   active_ = Utility::kNone;
++  if (was_downloads) {
++    if (auto* downloads =
++            DownloadToolbarUIController::From(browser_view_->browser())) {
++      downloads->CloseEmberDownloads(immediate);
++    }
++  }
+   position_timer_.Stop();
+   seeking_ = false;
+   if (auto* ext = browser_view_->toolbar()
+diff --git a/chrome/browser/ui/views/ember/ember_utility_controller.h b/chrome/browser/ui/views/ember/ember_utility_controller.h
+--- a/chrome/browser/ui/views/ember/ember_utility_controller.h
++++ b/chrome/browser/ui/views/ember/ember_utility_controller.h
+@@ -54,6 +54,7 @@
+   enum class Utility {
+     kNone,
+     kMedia,
++    kDownloads,
+     kWorkspaces,
+     kSnap,
+     kExtensions,
+@@ -66,6 +67,9 @@
+   void Close(bool restore_focus = true,
+              bool immediate = false,
+              bool keep_capture = false);
++  void BeforeDownloads();
++  void DownloadsClosed();
++  views::View* downloads_anchor() const;
+   void BeforeExtensions();
+   void ExtensionsClosed();
+   void ShowVolume(content::WebContents* contents, views::View* anchor);
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -2043,7 +2043,7 @@
+         ->SetFlexForView(sidebar_spacer, 1);
+     ember_sidebar_footer_ =
+         ember_sidebar_->AddChildView(std::make_unique<views::View>());
+-    ember_sidebar_footer_->SetPreferredSize(gfx::Size(0, 196));
++    ember_sidebar_footer_->SetPreferredSize(gfx::Size(0, 236));
+     auto* footer_layout = ember_sidebar_footer_->SetLayoutManager(
+         std::make_unique<views::BoxLayout>(
+             views::BoxLayout::Orientation::kVertical, gfx::Insets(), 4));
+diff --git a/chrome/browser/ui/views/frame/browser_view_browsertest.cc b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+--- a/chrome/browser/ui/views/frame/browser_view_browsertest.cc
++++ b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+@@ -3,6 +3,12 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/browser/ui/ember_page_state.h"
++#include "content/public/test/test_navigation_observer.h"
++#include "chrome/browser/ui/views/download/bubble/download_toolbar_ui_controller.h"
++#include "chrome/browser/ui/views/download/bubble/download_bubble_contents_view.h"
++#include "chrome/browser/ui/tabs/split_tab_menu_model.h"
++#include "components/tabs/public/split_tab_data.h"
+ 
+ #include <memory>
+ #include <optional>
+@@ -93,6 +99,12 @@
+ #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
+ #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view_observer.h"
+ #include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/browser/ui/ember_page_state.h"
++#include "content/public/test/test_navigation_observer.h"
++#include "chrome/browser/ui/views/download/bubble/download_toolbar_ui_controller.h"
++#include "chrome/browser/ui/views/download/bubble/download_bubble_contents_view.h"
++#include "chrome/browser/ui/tabs/split_tab_menu_model.h"
++#include "components/tabs/public/split_tab_data.h"
+ #include "chrome/browser/ui/views/frame/custom_corners_background.h"
+ #include "ui/gfx/canvas.h"
+ #include "chrome/browser/ui/views/frame/contents_container_view.h"
+@@ -975,20 +987,21 @@
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(BrowserViewTest,
+-                       EmberUtilitiesKeepFiveFooterTargetsAndExclusiveState) {
++                       EmberUtilitiesKeepSixFooterTargetsAndExclusiveState) {
+   using Utility = ember::EmberUtilityController::Utility;
+   auto* owner = browser_view()->ember_utilities();
+   ASSERT_TRUE(owner);
+   auto* footer = owner->footer_for_testing();
+-  ASSERT_EQ(5u, footer->children().size());
+-  auto* media = static_cast<ember::EmberUtilityButton*>(footer->children()[0]);
++  ASSERT_EQ(6u, footer->children().size());
++  EXPECT_EQ(u"Downloads", footer->children()[0]->GetTooltipText());
++  auto* media = static_cast<ember::EmberUtilityButton*>(footer->children()[1]);
+   auto* workspace =
+-      static_cast<ember::EmberUtilityButton*>(footer->children()[1]);
+-  auto* snap = static_cast<ember::EmberUtilityButton*>(footer->children()[2]);
++      static_cast<ember::EmberUtilityButton*>(footer->children()[2]);
++  auto* snap = static_cast<ember::EmberUtilityButton*>(footer->children()[3]);
+   EXPECT_EQ(u"Media", media->GetTooltipText());
+   EXPECT_EQ(u"Workspaces", workspace->GetTooltipText());
+   EXPECT_EQ(u"ChatGPT Snap", snap->GetTooltipText());
+-  EXPECT_EQ(u"Settings", footer->children()[4]->GetTooltipText());
++  EXPECT_EQ(u"Settings", footer->children()[5]->GetTooltipText());
+   for (const bool wide : {false, true}) {
+     browser()->profile()->GetPrefs()->SetBoolean(prefs::kEmberSidebarWide,
+                                                  wide);
+@@ -1068,7 +1081,7 @@
+   shade->SetVisible(true);
+   EXPECT_TRUE(page_receives_input());
+   shade->SetVisible(false);
+-  auto* anchor = owner->footer_for_testing()->children()[1].get();
++  auto* anchor = owner->footer_for_testing()->children()[2].get();
+   gfx::Animation::SetPrefersReducedMotionForTesting(true);
+   owner->Toggle(Utility::kWorkspaces, anchor);
+   widget->GetRootView()->DeprecatedLayoutImmediately();
+@@ -1092,7 +1105,7 @@
+   auto* widget = browser_view()->GetWidget();
+   gfx::Animation::SetPrefersReducedMotionForTesting(true);
+   for (Utility utility : {Utility::kMedia, Utility::kWorkspaces}) {
+-    owner->Toggle(utility, owner->footer_for_testing()->children()[0].get());
++    owner->Toggle(utility, owner->footer_for_testing()->children()[1].get());
+     widget->GetRootView()->DeprecatedLayoutImmediately();
+     auto* body = owner->popover_content_for_testing();
+     gfx::Point point = body->GetBoundsInScreen().CenterPoint();
+@@ -1139,7 +1152,7 @@
+   using Utility = ember::EmberUtilityController::Utility;
+   auto* owner = browser_view()->ember_utilities();
+   auto* widget = browser_view()->GetWidget();
+-  auto* anchor = owner->footer_for_testing()->children()[0].get();
++  auto* anchor = owner->footer_for_testing()->children()[1].get();
+   gfx::Animation::SetPrefersReducedMotionForTesting(true);
+   for (int pass = 0; pass < 3; ++pass) {
+     owner->ShowVolume(active_web_contents(), anchor);
+@@ -1188,7 +1201,7 @@
+ IN_PROC_BROWSER_TEST_F(BrowserViewTest,
+                        EmberUtilityNativeDestructionAndEscapeAreSafe) {
+   auto* owner = browser_view()->ember_utilities();
+-  auto* anchor = owner->footer_for_testing()->children()[0].get();
++  auto* anchor = owner->footer_for_testing()->children()[1].get();
+   gfx::Animation::SetPrefersReducedMotionForTesting(true);
+   for (int pass = 0; pass < 3; ++pass) {
+     owner->ShowVolume(active_web_contents(), anchor);
+@@ -1265,7 +1278,7 @@
+   chrome::AddTabAt(browser(), GURL(url::kAboutBlankURL), -1, true);
+   auto* second = active_web_contents();
+   EXPECT_DOUBLE_EQ(1.0, second->GetAudioVolume());
+-  auto* anchor = owner->footer_for_testing()->children()[0].get();
++  auto* anchor = owner->footer_for_testing()->children()[1].get();
+   owner->ShowVolume(first, anchor);
+   auto* slider = owner->volume_for_testing();
+   ASSERT_TRUE(slider);
+@@ -1360,7 +1373,7 @@
+   auto* first = active_web_contents();
+   ASSERT_EQ(true, content::EvalJs(first, script));
+   auto* owner = browser_view()->ember_utilities();
+-  auto* anchor = owner->footer_for_testing()->children()[0].get();
++  auto* anchor = owner->footer_for_testing()->children()[1].get();
+   owner->Toggle(Utility::kMedia, anchor);
+   ASSERT_TRUE(base::test::RunUntil(
+       [&] { return owner->media_contents_for_testing() == first; }));
+@@ -1522,7 +1535,7 @@
+   ASSERT_TRUE(focused == first || focused == second);
+   const auto original = focused->GetRenderWidgetHostView()->GetViewBounds();
+   auto* owner = browser_view()->ember_utilities();
+-  auto* anchor = owner->footer_for_testing()->children()[2].get();
++  auto* anchor = owner->footer_for_testing()->children()[3].get();
+   owner->Toggle(Utility::kSnap, anchor);
+   EXPECT_EQ(focused, owner->capture_source_for_testing());
+   EXPECT_EQ(original, focused->GetRenderWidgetHostView()->GetViewBounds());
+@@ -1546,7 +1559,7 @@
+                        EmberSnapReusesProfilePageAndDraftAfterClose) {
+   using Utility = ember::EmberUtilityController::Utility;
+   auto* owner = browser_view()->ember_utilities();
+-  auto* anchor = owner->footer_for_testing()->children()[2].get();
++  auto* anchor = owner->footer_for_testing()->children()[3].get();
+   // about:blank exercises unavailable-capture feedback without providing an
+   // image. Stop the real side page's network load before setting a local draft.
+   owner->Toggle(Utility::kSnap, anchor);
+@@ -1594,7 +1607,7 @@
+                        EmberFooterFeedbackStaysBoundedAfterInterruptions) {
+   auto* owner = browser_view()->ember_utilities();
+   auto* button = static_cast<ember::EmberUtilityButton*>(
+-      owner->footer_for_testing()->children()[1]);
++      owner->footer_for_testing()->children()[2]);
+   gfx::Animation::SetPrefersReducedMotionForTesting(true);
+   for (int i = 0; i < 20; ++i) {
+     button->SetState(views::Button::STATE_HOVERED);
+@@ -2838,3 +2851,151 @@
+   // crash due to operations on detached layers.
+   BrowserView::GetBrowserViewForBrowser(browser2)->GetWidget()->CloseNow();
+ }
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberFollowerIdentityAndStaleMenu) {
++  chrome::AddTabAt(browser(), GURL(), -1, true);
++  auto* model = browser()->tab_strip_model();
++  model->ActivateTabAt(0);
++  auto id =
++      model->AddToNewSplit({1}, split_tabs::SplitTabVisualData(),
++                           split_tabs::SplitTabCreatedSource::kToolbarButton);
++  auto* source = model->GetWebContentsAt(0);
++  auto* follower = model->GetWebContentsAt(1);
++  auto* data = model->GetSplitData(id);
++  SplitTabMenuModel menu(model, SplitTabMenuModel::MenuSource::kToolbarButton);
++  menu.ExecuteCommand(101, 0);
++  EXPECT_EQ(ember::GetSplitFollower(source), follower);
++  EXPECT_FALSE(ember::GetSplitFollower(follower));
++  EXPECT_FALSE(menu.IsCommandIdEnabled(100));
++  EXPECT_EQ(menu.GetLabelForCommandId(101), u"Stop right pane following");
++  const auto epoch = data->ember_follower_generation();
++  model->ReverseTabsInSplit(id);
++  EXPECT_EQ(ember::GetSplitFollower(source), follower);
++  EXPECT_EQ(menu.GetLabelForCommandId(100), u"Stop left pane following");
++  model->UpdateSplitLayout(id, split_tabs::SplitTabLayout::kStacked);
++  EXPECT_EQ(menu.GetLabelForCommandId(100), u"Stop top pane following");
++  data->ClearEmberFollower();
++  data->SetEmberFollower(follower);
++  EXPECT_GT(data->ember_follower_generation(), epoch);
++  model->RemoveSplit(id);
++  EXPECT_FALSE(ember::GetSplitFollower(source));
++  EXPECT_FALSE(menu.IsCommandIdEnabled(101));
++  menu.ExecuteCommand(101, 0);
++}
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++                       EmberDownloadsMutualExclusionAndReopen) {
++  using Utility = ember::EmberUtilityController::Utility;
++  gfx::Animation::SetPrefersReducedMotionForTesting(true);
++  auto* utilities = browser_view()->ember_utilities();
++  auto* downloads = DownloadToolbarUIController::From(browser());
++  ASSERT_TRUE(downloads);
++  utilities->Toggle(Utility::kDownloads, utilities->downloads_anchor());
++  EXPECT_EQ(utilities->active(), Utility::kDownloads);
++  ASSERT_TRUE(downloads->bubble_contents_for_testing());
++  EXPECT_TRUE(downloads->IsShowingDetails());
++  auto* media = utilities->footer_for_testing()->children()[1].get();
++  utilities->Toggle(Utility::kMedia, media);
++  EXPECT_EQ(utilities->active(), Utility::kMedia);
++  EXPECT_FALSE(downloads->IsShowingDetails());
++  utilities->Toggle(Utility::kDownloads, utilities->downloads_anchor());
++  EXPECT_EQ(utilities->active(), Utility::kDownloads);
++  EXPECT_FALSE(utilities->popover_content_for_testing());
++  ASSERT_TRUE(downloads->bubble_contents_for_testing());
++  utilities->Close();
++  EXPECT_EQ(utilities->active(), Utility::kNone);
++  EXPECT_FALSE(downloads->IsShowingDetails());
++  base::RunLoop().RunUntilIdle();
++  // Old native-window callbacks cannot clear a newly reopened panel.
++  utilities->Toggle(Utility::kDownloads, utilities->downloads_anchor());
++  base::RunLoop().RunUntilIdle();
++  EXPECT_EQ(utilities->active(), Utility::kDownloads);
++  EXPECT_TRUE(downloads->IsShowingDetails());
++  utilities->Close(false, true);
++  gfx::Animation::SetPrefersReducedMotionForTesting(false);
++}
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++                       EmberFollowerNativeLinksKeepSourceAndTabCount) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  const auto source_url = embedded_test_server()->GetURL("/title1.html");
++  const auto target_url = embedded_test_server()->GetURL("/title2.html");
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), source_url));
++  chrome::AddTabAt(browser(), GURL(url::kAboutBlankURL), -1, true);
++  auto* model = browser()->tab_strip_model();
++  model->ActivateTabAt(0);
++  const auto split =
++      model->AddToNewSplit({1}, split_tabs::SplitTabVisualData(),
++                           split_tabs::SplitTabCreatedSource::kToolbarButton);
++  auto* source = model->GetWebContentsAt(0);
++  auto* follower = model->GetWebContentsAt(1);
++  model->GetSplitData(split)->SetEmberFollower(follower);
++  for (const std::string target :
++       {std::string("_self"), std::string("_blank")}) {
++    content::TestNavigationObserver navigation(follower);
++    ASSERT_TRUE(content::ExecJs(
++        source,
++        content::JsReplace(
++            "{ const link = document.createElement('a'); link.href = $1; "
++            "link.target = $2; document.body.append(link); link.click(); }",
++            target_url, target)));
++    navigation.Wait();
++    EXPECT_EQ(follower->GetLastCommittedURL(), target_url);
++    EXPECT_EQ(source->GetLastCommittedURL(), source_url);
++    EXPECT_EQ(model->count(), 2);
++    ASSERT_TRUE(content::NavigateToURL(follower, GURL(url::kAboutBlankURL)));
++  }
++  content::TestNavigationObserver popup_navigation(follower);
++  EXPECT_EQ(
++      content::EvalJs(
++          source, content::JsReplace("window.open($1) === null", target_url)),
++      true);
++  popup_navigation.Wait();
++  EXPECT_EQ(model->count(), 2);
++  EXPECT_EQ(source->GetLastCommittedURL(), source_url);
++  model->GetSplitData(split)->ClearEmberFollower();
++}
++IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++                       EmberContentAcceptanceRejectsStaleAndForeignProfile) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  const auto url = embedded_test_server()->GetURL("/title1.html");
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url));
++  auto* model = browser()->tab_strip_model();
++  auto* first = model->GetWebContentsAt(0);
++  auto* state = ember::EmberPageState::FromWebContents(first);
++  ASSERT_TRUE(state);
++  const auto identity = state->identity(), generation = state->generation();
++  chrome::AddTabAt(browser(), url, -1, true);
++  EXPECT_FALSE(ember::EmberPageState::ActivateContentMatch(
++      browser()->profile()->GetPrimaryOTRProfile(true), identity, generation,
++      url, u"Title"));
++  EXPECT_TRUE(ember::EmberPageState::ActivateContentMatch(
++      browser()->profile(), identity, generation, url, u"Title"));
++  EXPECT_EQ(model->active_index(), 0);
++  EXPECT_EQ(model->count(), 2);
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), embedded_test_server()->GetURL("/title2.html")));
++  EXPECT_FALSE(ember::EmberPageState::ActivateContentMatch(
++      browser()->profile(), identity, generation, url, u"Title"));
++  EXPECT_EQ(model->count(), 2);
++}
++IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++                       EmberReadingOffersOnlySuccessfulSamePageReload) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), embedded_test_server()->GetURL("/empty.html")));
++  auto* contents = browser()->tab_strip_model()->GetActiveWebContents();
++  ASSERT_TRUE(content::ExecJs(
++      contents, "document.body.style.height='8000px'; window.scrollTo(0,600)"));
++  auto* state = ember::EmberPageState::FromWebContents(contents);
++  ASSERT_TRUE(state);
++  EXPECT_FALSE(state->reading_toast_for_testing());
++  contents->GetController().Reload(content::ReloadType::NORMAL, false);
++  ASSERT_TRUE(content::WaitForLoadStop(contents));
++  base::RunLoop().RunUntilIdle();
++  ASSERT_TRUE(state->reading_toast_for_testing());
++  EXPECT_EQ(content::EvalJs(contents, "window.scrollY"), 0);
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), embedded_test_server()->GetURL("/title2.html")));
++  EXPECT_FALSE(state->reading_toast_for_testing());
++}
+diff --git a/chrome/common/pref_names.h b/chrome/common/pref_names.h
+--- a/chrome/common/pref_names.h
++++ b/chrome/common/pref_names.h
+@@ -35,6 +35,8 @@
+ inline constexpr char kEmberFavoritesColumns[] = "ember.favorites.columns";
+ inline constexpr char kEmberFavoritesRows[] = "ember.favorites.rows";
+ inline constexpr char kEmberSidebarOpen[] = "ember.sidebar.open";
++inline constexpr char kEmberContentFullscreen[] =
++    "ember.fullscreen.within_window";
+ inline constexpr char kEmberSidebarWide[] = "ember.sidebar.wide";
+ inline constexpr char kEmberNewTabShowWordmark[] = "ember.new_tab.show_wordmark";
+ inline constexpr char kEmberUnsplashEnabled[] = "ember.new_tab.unsplash.enabled";
+diff --git a/components/omnibox/browser/autocomplete_result.cc b/components/omnibox/browser/autocomplete_result.cc
+--- a/components/omnibox/browser/autocomplete_result.cc
++++ b/components/omnibox/browser/autocomplete_result.cc
+@@ -1818,7 +1818,12 @@
+     type = AutocompleteMatchDedupeType::kNormal;
+   }
+ 
+-  return std::make_tuple(match.stripped_destination_url.spec(), type);
++  std::string key = match.stripped_destination_url.spec();
++  if (auto tab = match.additional_info.find("ember_content_tab");
++      tab != match.additional_info.end()) {
++    key += "|ember-content-tab:" + tab->second;
++  }
++  return std::make_tuple(key, type);
+ }
+ 
+ void AutocompleteResult::LimitNumberOfUrlsShown(
+diff --git a/components/omnibox/browser/open_tab_provider.cc b/components/omnibox/browser/open_tab_provider.cc
+--- a/components/omnibox/browser/open_tab_provider.cc
++++ b/components/omnibox/browser/open_tab_provider.cc
+@@ -8,6 +8,7 @@
+ 
+ #include "base/i18n/case_conversion.h"
+ #include "base/strings/string_util.h"
++#include "base/strings/string_number_conversions.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "components/omnibox/browser/suggestion_group_util.h"
+ #if BUILDFLAG(IS_ANDROID)
+@@ -164,6 +165,38 @@
+     if (!url.is_valid()) {
+       continue;
+     }
++    const auto content_at =
++        adjusted_input_text.size() >= 2 && !open_tab.ember_readable_text.empty()
++            ? base::i18n::ToLower(open_tab.ember_readable_text)
++                  .find(adjusted_input_text)
++            : std::u16string::npos;
++    if (content_at != std::u16string::npos) {
++      auto match = CreateOpenTabMatch(adjusted_input, open_tab.title, url, 1200,
++                                      nullptr);
++      match.allowed_to_be_default_match = false;
++      match.contents = open_tab.title + u" — Open in Tab";
++      match.contents_class = {{0, ACMatchClassification::NONE}};
++      const size_t start = content_at > 48 ? content_at - 48 : 0;
++      match.description = (start ? u"…" : u"") +
++                          open_tab.ember_readable_text.substr(start, 180);
++      match.description_class = ClassifyTermMatches(
++          FindTermMatches(adjusted_input.text(), match.description),
++          match.description.size(), ACMatchClassification::MATCH,
++          ACMatchClassification::NONE);
++      match.RecordAdditionalInfo(
++          "ember_content_tab",
++          base::NumberToString(open_tab.ember_tab_identity));
++      match.RecordAdditionalInfo(
++          "ember_content_generation",
++          base::NumberToString(open_tab.ember_document_generation));
++      match.RecordAdditionalInfo("ember_content_query",
++                                 base::UTF16ToUTF8(adjusted_input.text()));
++      matches_.push_back(std::move(match));
++      if (matches_.size() >= 8) {
++        break;
++      }
++      continue;
++    }
+     int score = Score(input, input_query_nodes, open_tab);
+     if (score > 0) {
+       matches_.push_back(CreateOpenTabMatch(adjusted_input, open_tab.title, url,
+diff --git a/components/omnibox/browser/tab_matcher.h b/components/omnibox/browser/tab_matcher.h
+--- a/components/omnibox/browser/tab_matcher.h
++++ b/components/omnibox/browser/tab_matcher.h
+@@ -39,6 +39,9 @@
+     std::u16string title;
+     GURL url;
+     base::Time last_shown_time;
++    std::u16string ember_readable_text;
++    uint64_t ember_tab_identity = 0;
++    uint64_t ember_document_generation = 0;
+ 
+     TabWrapper(std::u16string title, GURL url, base::Time last_shown_time) {
+       this->title = title;
+diff --git a/components/tabs/impl/split_tab_data.cc b/components/tabs/impl/split_tab_data.cc
+--- a/components/tabs/impl/split_tab_data.cc
++++ b/components/tabs/impl/split_tab_data.cc
+@@ -5,6 +5,8 @@
+ #include "components/tabs/public/split_tab_data.h"
+ 
+ #include <memory>
++#include "base/functional/bind.h"
++#include "content/public/browser/web_contents.h"
+ 
+ #include "components/split_tabs/split_tab_visual_data.h"
+ #include "components/tabs/public/split_tab_collection.h"
+@@ -23,6 +25,67 @@
+ 
+ std::vector<tabs::TabInterface*> SplitTabData::ListTabs() const {
+   return collection_->GetTabsRecursive();
++}
++
++void SplitTabData::ClearEmberFollower() {
++  ++ember_follower_generation_;
++  ember_source_.reset();
++  ember_follower_.reset();
++  ember_membership_subscriptions_.clear();
++}
++
++void SplitTabData::SetEmberFollower(content::WebContents* destination) {
++  ClearEmberFollower();
++  const auto tabs = ListTabs();
++  if (tabs.size() != 2 || !destination) {
++    return;
++  }
++  for (auto* tab : tabs) {
++    if (tab->GetContents() == destination) {
++      ember_follower_ = destination->GetWeakPtr();
++    } else {
++      ember_source_ = tab->GetContents()->GetWeakPtr();
++    }
++  }
++  if (!GetEmberFollower()) {
++    ClearEmberFollower();
++    return;
++  }
++  for (auto* tab : tabs) {
++    ember_membership_subscriptions_.push_back(
++        tab->RegisterWillDetach(base::BindRepeating(
++            [](SplitTabData* data, tabs::TabInterface*,
++               tabs::TabInterface::DetachReason) {
++              data->ClearEmberFollower();
++            },
++            base::Unretained(this))));
++    ember_membership_subscriptions_.push_back(
++        tab->RegisterWillDiscardContents(base::BindRepeating(
++            [](SplitTabData* data, tabs::TabInterface*, content::WebContents*,
++               content::WebContents*) { data->ClearEmberFollower(); },
++            base::Unretained(this))));
++  }
++}
++
++content::WebContents* SplitTabData::GetEmberFollower() const {
++  if (!ember_source_ || !ember_follower_) {
++    return nullptr;
++  }
++  const auto tabs = ListTabs();
++  if (tabs.size() != 2) {
++    return nullptr;
++  }
++  bool source = false, follower = false;
++  for (auto* tab : tabs) {
++    source |= tab->GetContents() == ember_source_.get();
++    follower |= tab->GetContents() == ember_follower_.get();
++  }
++  return source && follower ? ember_follower_.get() : nullptr;
++}
++
++content::WebContents* SplitTabData::GetEmberFollowerFor(
++    content::WebContents* source) const {
++  return source == ember_source_.get() ? GetEmberFollower() : nullptr;
+ }
+ 
+ tabs::TabCollection::Handle SplitTabData::GetCollectionHandle() const {
+diff --git a/components/tabs/public/split_tab_data.h b/components/tabs/public/split_tab_data.h
+--- a/components/tabs/public/split_tab_data.h
++++ b/components/tabs/public/split_tab_data.h
+@@ -6,6 +6,8 @@
+ #define COMPONENTS_TABS_PUBLIC_SPLIT_TAB_DATA_H_
+ 
+ #include <vector>
++#include "base/memory/weak_ptr.h"
++#include "base/callback_list.h"
+ 
+ #include "components/split_tabs/split_tab_id.h"
+ #include "components/split_tabs/split_tab_visual_data.h"
+@@ -31,6 +33,16 @@
+ 
+   std::vector<tabs::TabInterface*> ListTabs() const;
+ 
++  // Pair-local, nonserialized state. Both WebContents identities must still
++  // be members; reordering/orientation never changes the chosen identities.
++  void SetEmberFollower(content::WebContents* destination);
++  void ClearEmberFollower();
++  uint64_t ember_follower_generation() const {
++    return ember_follower_generation_;
++  }
++  content::WebContents* GetEmberFollower() const;
++  content::WebContents* GetEmberFollowerFor(content::WebContents* source) const;
++
+   // Returns the TabCollection handle associated with this split.
+   tabs::TabCollection::Handle GetCollectionHandle() const;
+ 
+@@ -40,6 +52,10 @@
+ 
+  private:
+   raw_ptr<tabs::SplitTabCollection> collection_;
++  uint64_t ember_follower_generation_ = 0;
++  base::WeakPtr<content::WebContents> ember_source_;
++  base::WeakPtr<content::WebContents> ember_follower_;
++  std::vector<base::CallbackListSubscription> ember_membership_subscriptions_;
+   SplitTabVisualData visual_data_;
+   split_tabs::SplitTabId id_;
+ };
+diff --git a/content/browser/web_contents/web_contents_impl.cc b/content/browser/web_contents/web_contents_impl.cc
+--- a/content/browser/web_contents/web_contents_impl.cc
++++ b/content/browser/web_contents/web_contents_impl.cc
+@@ -5535,6 +5535,10 @@
+     CHECK(session_storage_namespace_impl->IsFromContext(dom_storage_context));
+   }
+ 
++  if (delegate_ && delegate_->RouteEmberFollowerWindowOpen(opener, params)) {
++    return nullptr;
++  }
++
+   // TODO(crbug.com/40202416): Support a way for MPArch guests to support this.
+   if (delegate_ &&
+       delegate_->IsWebContentsCreationOverridden(
+diff --git a/content/public/browser/web_contents_delegate.cc b/content/public/browser/web_contents_delegate.cc
+--- a/content/public/browser/web_contents_delegate.cc
++++ b/content/public/browser/web_contents_delegate.cc
+@@ -145,6 +145,12 @@
+   return true;
+ }
+ 
++bool WebContentsDelegate::RouteEmberFollowerWindowOpen(
++    RenderFrameHost*,
++    const mojom::CreateNewWindowParams&) {
++  return false;
++}
++
+ bool WebContentsDelegate::IsWebContentsCreationOverridden(
+     RenderFrameHost* opener,
+     SiteInstance* source_site_instance,
+diff --git a/content/public/browser/web_contents_delegate.h b/content/public/browser/web_contents_delegate.h
+--- a/content/public/browser/web_contents_delegate.h
++++ b/content/public/browser/web_contents_delegate.h
+@@ -19,6 +19,7 @@
+ #include "base/types/expected.h"
+ #include "build/build_config.h"
+ #include "content/common/content_export.h"
++#include "content/common/frame.mojom-forward.h"
+ #include "content/public/browser/eye_dropper.h"
+ #include "content/public/browser/fullscreen_types.h"
+ #include "content/public/browser/immersive_playback_options.h"
+@@ -375,6 +376,12 @@
+   //
+   // If an delegate returns true, it can optionally also override
+   // CreateCustomWebContents() below to provide their own WebContents.
++  // Called after upstream popup/sandbox/URL/activation validation and before
++  // allocating a window. True consumes the open into an existing destination.
++  virtual bool RouteEmberFollowerWindowOpen(
++      RenderFrameHost* opener,
++      const mojom::CreateNewWindowParams& params);
++
+   virtual bool IsWebContentsCreationOverridden(
+       RenderFrameHost* opener,
+       SiteInstance* source_site_instance,

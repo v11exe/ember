@@ -1,0 +1,3188 @@
+diff --git a/chrome/browser/browser_resources.grd b/chrome/browser/browser_resources.grd
+--- a/chrome/browser/browser_resources.grd
++++ b/chrome/browser/browser_resources.grd
+@@ -204,6 +204,8 @@
+         <!-- FedCM -->
+         <part file="ui/views/webid/resources/webid_resources.grdp" />
+       </if>
++      <include name="IDR_EMBER_SNAP_COMPOSER" file="resources/ember/ember-snap-composer.js" type="BINDATA" />
++      <include name="IDR_EMBER_SNAP_MARK" file="resources/ember/chatgpt-mark.svg" type="BINDATA" />
+     </includes>
+   </release>
+ </grit>
+diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -3971,6 +3971,10 @@
+       "views/ember/ember_glass_transition.cc",
+       "views/ember/ember_glass_transition.h",
+       "views/ember/ember_glass_view.cc",
++      "views/ember/ember_utility_button.cc",
++      "views/ember/ember_utility_button.h",
++      "views/ember/ember_utility_controller.cc",
++      "views/ember/ember_utility_controller.h",
+       "views/ember/ember_glass_view.h",
+       "views/ember/ember_selection_popup.cc",
+       "views/ember/ember_selection_popup.h",
+diff --git a/chrome/browser/ui/tabs/tab_strip_model.cc b/chrome/browser/ui/tabs/tab_strip_model.cc
+--- a/chrome/browser/ui/tabs/tab_strip_model.cc
++++ b/chrome/browser/ui/tabs/tab_strip_model.cc
+@@ -427,6 +427,7 @@
+ 
+   TabStripSelectionChange selection(GetActiveTab(),
+                                     selection_model().GetListSelectionModel());
++  new_contents->SetAudioVolume(GetWebContentsAt(index)->GetAudioVolume());
+   WebContents* raw_new_contents = new_contents.get();
+   std::unique_ptr<WebContents> old_contents =
+       GetTabModelAtIndex(index)->DiscardContents(std::move(new_contents));
+diff --git a/chrome/browser/ui/views/ember/ember_utility_button.cc b/chrome/browser/ui/views/ember/ember_utility_button.cc
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/ui/views/ember/ember_utility_button.cc
+@@ -0,0 +1,131 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license in LICENSE.
++#include "chrome/browser/ui/views/ember/ember_utility_button.h"
++#include <algorithm>
++#include "third_party/skia/include/core/SkPathBuilder.h"
++#include "ui/base/metadata/metadata_impl_macros.h"
++#include "chrome/grit/browser_resources.h"
++#include "third_party/skia/include/utils/SkParsePath.h"
++#include "ui/base/resource/resource_bundle.h"
++#include "ui/gfx/canvas.h"
++#include "ui/views/animation/ink_drop.h"
++#include "ui/views/animation/ink_drop_host.h"
++#include "ui/views/controls/focus_ring.h"
++#include "ui/views/controls/highlight_path_generator.h"
++namespace ember {
++EmberSquareFeedback::EmberSquareFeedback(views::View* owner) : owner_(owner) {
++  animation_.SetSlideDuration(base::Milliseconds(120));
++}
++void EmberSquareFeedback::Set(bool hovered, bool pressed, bool open) {
++  pressed_ = pressed;
++  open_ = open;
++  if (gfx::Animation::PrefersReducedMotion())
++    animation_.Reset(hovered ? 1 : 0);
++  else if (hovered)
++    animation_.Show();
++  else
++    animation_.Hide();
++  owner_->SchedulePaint();
++}
++void EmberSquareFeedback::AnimationProgressed(const gfx::Animation*) {
++  owner_->SchedulePaint();
++}
++void EmberSquareFeedback::Paint(gfx::Canvas* canvas) const {
++  const float amount = std::max(float(animation_.GetCurrentValue()),
++                                open_ || pressed_ ? 1.f : 0.f);
++  if (!amount)
++    return;
++  const int side = std::min({28, owner_->width(), owner_->height()});
++  const gfx::RectF rect((owner_->width() - side) / 2.f,
++                        (owner_->height() - side) / 2.f, side, side);
++  canvas->Save();
++  canvas->ClipRect(owner_->GetLocalBounds());
++  cc::PaintFlags fill;
++  fill.setAntiAlias(true);
++  fill.setColor(SkColorSetARGB((pressed_ ? 38
++                                : open_  ? 30
++                                         : 22) *
++                                   amount,
++                               255, 255, 255));
++  canvas->DrawRoundRect(rect, 6, fill);
++  fill.setStyle(cc::PaintFlags::kStroke_Style);
++  fill.setStrokeWidth(1);
++  fill.setColor(SkColorSetARGB(24 * amount, 255, 255, 255));
++  canvas->DrawRoundRect(rect, 6, fill);
++  canvas->Restore();
++}
++EmberUtilityButton::EmberUtilityButton(PressedCallback callback,
++                                       std::u16string name,
++                                       Glyph glyph)
++    : LabelButton(std::move(callback)), glyph_(glyph) {
++  SetPreferredSize(gfx::Size(36, 36));
++  SetHorizontalAlignment(gfx::ALIGN_CENTER);
++  SetAccessibleName(name);
++  SetTooltipText(name);
++  SetFocusBehavior(FocusBehavior::ALWAYS);
++  views::InkDrop::Get(this)->SetMode(views::InkDropHost::InkDropMode::OFF);
++  views::FocusRing::Install(this);
++  views::InstallRoundRectHighlightPathGenerator(this, gfx::Insets(4), 6);
++}
++void EmberUtilityButton::SetOpen(bool open) {
++  open_ = open;
++  feedback_.Set(GetState() == STATE_HOVERED, GetState() == STATE_PRESSED,
++                open_);
++}
++void EmberUtilityButton::StateChanged(ButtonState old_state) {
++  LabelButton::StateChanged(old_state);
++  feedback_.Set(GetState() == STATE_HOVERED, GetState() == STATE_PRESSED,
++                open_);
++}
++void EmberUtilityButton::OnThemeChanged() {
++  LabelButton::OnThemeChanged();
++  SetBackground(nullptr);
++}
++void EmberUtilityButton::OnPaintBackground(gfx::Canvas* canvas) {
++  feedback_.Paint(canvas);
++  if (glyph_ == Glyph::kNative)
++    return;
++  const float x = width() / 2.f, y = height() / 2.f;
++  cc::PaintFlags flags;
++  flags.setAntiAlias(true);
++  flags.setColor(SkColorSetRGB(235, 237, 240));
++  flags.setStyle(cc::PaintFlags::kStroke_Style);
++  flags.setStrokeWidth(1.35);
++  if (glyph_ == Glyph::kWorkspace) {
++    for (int row = 0; row < 2; ++row)
++      for (int col = 0; col < 2; ++col)
++        canvas->DrawRoundRect(
++            gfx::RectF(x - 8 + col * 9, y - 8 + row * 9, 7, 7), 1.3, flags);
++    return;
++  }
++  // Capture frame plus the real knot as vector paths, legible at rail scale.
++  const std::string svg =
++      ui::ResourceBundle::GetSharedInstance().LoadDataResourceString(
++          IDR_EMBER_SNAP_MARK);
++  const size_t begin = svg.find("d=\"");
++  SkPath mark;
++  if (begin != std::string::npos) {
++    const size_t end = svg.find('"', begin + 3);
++    SkParsePath::FromSVGString(svg.substr(begin + 3, end - begin - 3).c_str(),
++                               &mark);
++  }
++  canvas->Save();
++  canvas->Translate(gfx::Vector2d(x - 6, y - 6));
++  canvas->Scale(.5f, .5f);
++  flags.setStyle(cc::PaintFlags::kFill_Style);
++  canvas->DrawPath(mark, flags);
++  canvas->Restore();
++  flags.setStyle(cc::PaintFlags::kStroke_Style);
++  for (int corner = 0; corner < 4; ++corner) {
++    const float dx = corner & 1 ? 1 : -1, dy = corner & 2 ? 1 : -1;
++    SkPathBuilder frame;
++    frame.moveTo(x + dx * 5, y + dy * 10);
++    frame.lineTo(x + dx * 9, y + dy * 10);
++    frame.quadTo(x + dx * 10, y + dy * 10, x + dx * 10, y + dy * 9);
++    frame.lineTo(x + dx * 10, y + dy * 5);
++    canvas->DrawPath(frame.detach(), flags);
++  }
++}
++BEGIN_METADATA(EmberUtilityButton)
++END_METADATA
++}  // namespace ember
+diff --git a/chrome/browser/ui/views/ember/ember_utility_button.h b/chrome/browser/ui/views/ember/ember_utility_button.h
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/ui/views/ember/ember_utility_button.h
+@@ -0,0 +1,45 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license in LICENSE.
++#ifndef CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_UTILITY_BUTTON_H_
++#define CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_UTILITY_BUTTON_H_
++#include "ui/gfx/animation/animation_delegate.h"
++#include "ui/base/metadata/metadata_header_macros.h"
++#include "ui/gfx/animation/slide_animation.h"
++#include "ui/views/controls/button/label_button.h"
++namespace ember {
++// Ordinary bounded paint, never an independently composited toolbar InkDrop.
++// Show/Hide sample the current slide, so enter/leave reversals remain
++// continuous.
++class EmberSquareFeedback : public gfx::AnimationDelegate {
++ public:
++  explicit EmberSquareFeedback(views::View* owner);
++  void Set(bool hovered, bool pressed, bool open);
++  void Paint(gfx::Canvas* canvas) const;
++  void AnimationProgressed(const gfx::Animation*) override;
++
++ private:
++  const raw_ptr<views::View> owner_;
++  gfx::SlideAnimation animation_{this};
++  bool pressed_ = false;
++  bool open_ = false;
++};
++class EmberUtilityButton : public views::LabelButton {
++ public:
++  METADATA_HEADER(EmberUtilityButton, views::LabelButton)
++ public:
++  enum class Glyph { kNative, kWorkspace, kSnap };
++  EmberUtilityButton(PressedCallback callback,
++                     std::u16string name,
++                     Glyph glyph = Glyph::kNative);
++  void SetOpen(bool open);
++  void StateChanged(ButtonState old_state) override;
++  void OnPaintBackground(gfx::Canvas* canvas) override;
++  void OnThemeChanged() override;
++
++ private:
++  Glyph glyph_;
++  bool open_ = false;
++  EmberSquareFeedback feedback_{this};
++};
++}  // namespace ember
++#endif
+diff --git a/chrome/browser/ui/views/ember/ember_utility_controller.cc b/chrome/browser/ui/views/ember/ember_utility_controller.cc
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/ui/views/ember/ember_utility_controller.cc
+@@ -0,0 +1,1399 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license in LICENSE.
++#include "chrome/browser/ui/views/ember/ember_utility_controller.h"
++
++#include <algorithm>
++#include <cmath>
++#include <set>
++#include "base/json/json_writer.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/task/single_thread_task_runner.h"
++#include "base/task/bind_post_task.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/browser_commands.h"
++#include "chrome/browser/ui/navigator/browser_navigator.h"
++#include "chrome/browser/ui/navigator/browser_navigator_params.h"
++#include "chrome/browser/ui/prefs/prefs_tab_helper.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/browser/ui/views/ember/ember_glass_view.h"
++#include "chrome/browser/ui/views/ember/ember_utility_button.h"
++#include "chrome/browser/ui/views/extensions/extensions_toolbar_desktop.h"
++#include "chrome/browser/ui/views/extensions/extensions_toolbar_button.h"
++#include "chrome/browser/ui/views/extensions/extensions_menu_view.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/browser/ui/views/toolbar/toolbar_view.h"
++#include "chrome/browser/ui/webui/chrome_web_contents_handler.h"
++#include "chrome/common/chrome_isolated_world_ids.h"
++#include "chrome/grit/browser_resources.h"
++#include "components/permissions/permission_request_manager.h"
++#include "components/vector_icons/vector_icons.h"
++#include "components/viz/common/frame_sinks/copy_output_result.h"
++#include "chrome/app/vector_icons/vector_icons.h"
++#include "content/public/browser/media_session.h"
++#include "content/public/browser/file_select_listener.h"
++#include "content/public/browser/navigation_handle.h"
++#include "content/public/browser/navigation_controller.h"
++#include "ui/aura/window.h"
++#include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/render_widget_host_view.h"
++#include "content/public/browser/web_contents_observer.h"
++#include "mojo/public/cpp/bindings/receiver.h"
++#include "services/media_session/public/mojom/media_session.mojom.h"
++#include "ui/base/resource/resource_bundle.h"
++#include "ui/base/models/simple_combobox_model.h"
++#include "ui/base/metadata/metadata_impl_macros.h"
++#include "ui/views/controls/combobox/combobox.h"
++#include "ui/events/keycodes/keyboard_codes.h"
++#include "ui/gfx/canvas.h"
++#include "ui/gfx/paint_vector_icon.h"
++#include "ui/views/accessibility/view_accessibility.h"
++#include "ui/views/background.h"
++#include "ui/views/controls/image_view.h"
++#include "ui/views/controls/label.h"
++#include "ui/views/controls/resize_area.h"
++#include "ui/views/controls/scroll_view.h"
++#include "ui/views/controls/webview/webview.h"
++#include "ui/views/layout/box_layout.h"
++#include "ui/views/view_targeter.h"
++#include "ui/views/widget/widget.h"
++
++namespace ember {
++namespace {
++using Action = media_session::mojom::MediaSessionAction;
++constexpr SkColor kForeground = SkColorSetRGB(235, 237, 240);
++constexpr int kMute = -1, kGoToTab = -2;
++
++// Native Slider handles keyboard/accessibility and pointer capture; only paint
++// differs. Values remain continuous, and no page script is involved in audio.
++class WhiteSlider : public views::Slider {
++ public:
++  METADATA_HEADER(WhiteSlider, views::Slider)
++ public:
++  explicit WhiteSlider(views::SliderListener* listener) : Slider(listener) {}
++  void OnPaint(gfx::Canvas* canvas) override {
++    const float left = 5, right = std::max(5, width() - 5), y = height() / 2.f;
++    const float point = left + (right - left) * GetValue();
++    cc::PaintFlags flags;
++    flags.setAntiAlias(true);
++    flags.setColor(SkColorSetARGB(GetEnabled() ? 60 : 25, 255, 255, 255));
++    canvas->DrawRoundRect(gfx::RectF(left, y - 1.5, right - left, 3), 1.5,
++                          flags);
++    flags.setColor(SkColorSetARGB(GetEnabled() ? 240 : 65, 255, 255, 255));
++    canvas->DrawRoundRect(gfx::RectF(left, y - 1.5, point - left, 3), 1.5,
++                          flags);
++    canvas->DrawCircle(gfx::PointF(point, y), HasFocus() ? 5 : 4, flags);
++  }
++};
++BEGIN_METADATA(WhiteSlider)
++END_METADATA
++std::u16string TimeText(base::TimeDelta time) {
++  if (time.is_max() || time.is_negative())
++    return u"--:--";
++  const int64_t seconds = time.InSeconds();
++  const int64_t remainder = seconds % 60;
++  return base::NumberToString16(seconds / 60) + u":" +
++         (remainder < 10 ? u"0" : u"") + base::NumberToString16(remainder);
++}
++}  // namespace
++
++class EmberUtilityController::Source
++    : public content::WebContentsObserver,
++      public media_session::mojom::MediaSessionObserver {
++ public:
++  Source(EmberUtilityController* owner, content::WebContents* contents)
++      : WebContentsObserver(contents), owner_(owner) {
++    Bind(content::MediaSession::GetIfExists(contents));
++  }
++  void Bind(content::MediaSession* session) {
++    if (!session || receiver_.is_bound())
++      return;
++    session->AddObserver(receiver_.BindNewPipeAndPassRemote());
++  }
++  void MediaSessionCreated(content::MediaSession* session) override {
++    Bind(session);
++  }
++  void MediaSessionInfoChanged(
++      media_session::mojom::MediaSessionInfoPtr value) override {
++    info = std::move(value);
++    Changed();
++  }
++  void MediaSessionMetadataChanged(
++      const std::optional<media_session::MediaMetadata>& value) override {
++    metadata = value;
++    Changed();
++  }
++  void MediaSessionActionsChanged(const std::vector<Action>& value) override {
++    actions = value;
++    Changed();
++  }
++  void MediaSessionPositionChanged(
++      const std::optional<media_session::MediaPosition>& value) override {
++    position = value;
++    Changed();
++  }
++  void MediaSessionImagesChanged(
++      const base::flat_map<media_session::mojom::MediaSessionImageType,
++                           std::vector<media_session::MediaImage>>& images)
++      override {
++    artwork = gfx::ImageSkia();
++    const uint64_t generation = ++art_generation_;
++    auto it =
++        images.find(media_session::mojom::MediaSessionImageType::kArtwork);
++    auto* session = content::MediaSession::GetIfExists(web_contents());
++    if (session && it != images.end() && !it->second.empty()) {
++      session->GetMediaImageBitmap(
++          it->second.front(), 32, 96,
++          base::BindOnce(
++              [](base::WeakPtr<Source> source, uint64_t generation,
++                 const SkBitmap& image) {
++                if (!source || generation != source->art_generation_)
++                  return;
++                if (!image.drawsNothing())
++                  source->artwork = gfx::ImageSkia::CreateFrom1xBitmap(image);
++                source->Changed();
++              },
++              weak_.GetWeakPtr(), generation));
++    }
++    Changed();
++  }
++  void DidUpdateAudioMutingState(bool) override { Changed(); }
++  void DidUpdateAudioVolume(double) override { Changed(); }
++  void PrimaryPageChanged(content::Page&) override {
++    ++art_generation_;
++    info.reset();
++    metadata.reset();
++    actions.clear();
++    position.reset();
++    artwork = gfx::ImageSkia();
++    Changed();
++  }
++  void WebContentsDestroyed() override {
++    info.reset();
++    receiver_.reset();
++    owner_->ScheduleSourceRefresh();
++    owner_->SourceChanged(web_contents());
++  }
++  bool Available() const {
++    return web_contents() && !web_contents()->IsBeingDestroyed() && info &&
++           info->state !=
++               media_session::mojom::MediaSessionInfo::SessionState::kInactive;
++  }
++  bool Has(Action action) const {
++    return std::ranges::find(actions, action) != actions.end();
++  }
++  media_session::mojom::MediaSessionInfoPtr info;
++  std::optional<media_session::MediaMetadata> metadata;
++  std::optional<media_session::MediaPosition> position;
++  std::vector<Action> actions;
++  gfx::ImageSkia artwork;
++
++ private:
++  void Changed() { owner_->SourceChanged(web_contents()); }
++  const raw_ptr<EmberUtilityController> owner_;
++  uint64_t art_generation_ = 0;
++  mojo::Receiver<media_session::mojom::MediaSessionObserver> receiver_{this};
++  base::WeakPtrFactory<Source> weak_{this};
++};
++
++// A real, reusable WebContents in the current Profile. Website permissions are
++// still handled by Chromium; the embedding delegate grants none of its own.
++class EmberUtilityController::SnapPage : public views::WebView {
++ public:
++  METADATA_HEADER(SnapPage, views::WebView)
++ public:
++  SnapPage(Profile* profile, EmberUtilityController* owner)
++      : WebView(profile), owner_(owner) {
++    SetOwnedWebContents(content::WebContents::Create(
++        content::WebContents::CreateParams(profile)));
++    PrefsTabHelper::CreateForWebContents(web_contents());
++    permissions::PermissionRequestManager::CreateForWebContents(web_contents());
++    web_contents()->GetController().LoadURL(
++        GURL("https://chatgpt.com/"), content::Referrer(),
++        ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
++  }
++  content::WebContents* OpenURLFromTab(
++      content::WebContents* source,
++      const content::OpenURLParams& params,
++      base::OnceCallback<void(content::NavigationHandle&)> callback) override {
++    if (params.disposition == WindowOpenDisposition::CURRENT_TAB) {
++      source->GetController().LoadURLWithParams(
++          content::NavigationController::LoadURLParams(params));
++      return source;
++    }
++    return handler_.OpenURLFromTab(web_contents()->GetBrowserContext(), source,
++                                   params, std::move(callback));
++  }
++  content::WebContents* AddNewContents(
++      content::WebContents* source,
++      std::unique_ptr<content::WebContents> contents,
++      const GURL& target,
++      WindowOpenDisposition disposition,
++      const blink::mojom::WindowFeatures& features,
++      bool gesture,
++      bool* blocked) override {
++    handler_.AddNewContents(web_contents()->GetBrowserContext(), source,
++                            std::move(contents), target, disposition, features,
++                            gesture);
++    return nullptr;
++  }
++  void RunFileChooser(content::RenderFrameHost* frame,
++                      scoped_refptr<content::FileSelectListener> listener,
++                      const blink::mojom::FileChooserParams& params) override {
++    handler_.RunFileChooser(frame, std::move(listener), params);
++  }
++  void CloseContents(content::WebContents*) override { owner_->Close(); }
++  bool HandleKeyboardEvent(content::WebContents*,
++                           const input::NativeWebKeyboardEvent&) override {
++    return false;
++  }
++
++ private:
++  ChromeWebContentsHandler handler_;
++  const raw_ptr<EmberUtilityController> owner_;
++};
++
++BEGIN_METADATA(EmberUtilityController, SnapPage)
++END_METADATA
++
++EmberUtilityController::EmberUtilityController(BrowserView* browser_view)
++    : browser_view_(browser_view),
++      snap_transition_(
++          base::BindRepeating(&EmberUtilityController::ApplySnapFrame,
++                              base::Unretained(this))),
++      capture_transition_(base::BindRepeating(
++          [](EmberUtilityController* owner,
++             const EmberGlassTransition::Frame&) { owner->SchedulePaint(); },
++          base::Unretained(this))) {
++  // WebContents uses its own native compositor surface. Ordinary parent paint
++  // would sit behind it; this transparent layer owns only utility/feedback
++  // pixels.
++  SetPaintToLayer();
++  layer()->SetFillsBoundsOpaquely(false);
++  SetEventTargeter(std::make_unique<views::ViewTargeter>(this));
++  browser_view_->browser()->tab_strip_model()->AddObserver(this);
++  SyncSources();
++}
++EmberUtilityController::~EmberUtilityController() {
++  CancelPendingSnap();
++  browser_view_->browser()->tab_strip_model()->RemoveObserver(this);
++  if (GetWidget())
++    RemovedFromWidget();
++}
++void EmberUtilityController::AddedToWidget() {
++  if (!listening_) {
++    GetWidget()->AddObserver(this);
++    GetWidget()->GetNativeWindow()->AddPreTargetHandler(this);
++    listening_ = true;
++  }
++}
++void EmberUtilityController::RemovedFromWidget() {
++  if (listening_ && GetWidget()) {
++    GetWidget()->RemoveObserver(this);
++    GetWidget()->GetNativeWindow()->RemovePreTargetHandler(this);
++  }
++  listening_ = false;
++}
++void EmberUtilityController::OnWidgetActivationChanged(views::Widget*,
++                                                       bool active) {
++  if (active || active_ == Utility::kNone || active_ == Utility::kSnap)
++    return;
++  // Activation may be moving to an owned source-selector/extension widget.
++  // Inspect after that move; only leaving the whole browser tree dismisses.
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE,
++      base::BindOnce(
++          [](base::WeakPtr<EmberUtilityController> owner) {
++            if (!owner || !owner->GetWidget() ||
++                owner->GetWidget()->IsActive() ||
++                owner->active_ == Utility::kSnap)
++              return;
++            for (const auto& child : views::Widget::GetAllOwnedWidgets(
++                     owner->GetWidget()->GetNativeView()))
++              if (child->IsActive())
++                return;
++            owner->Close(false);
++          },
++          weak_factory_.GetWeakPtr()));
++}
++void EmberUtilityController::CreateFooter(views::View* footer) {
++  footer_ = footer;
++  const auto add = [&](Utility utility, std::u16string name,
++                       EmberUtilityButton::Glyph glyph,
++                       const gfx::VectorIcon* icon) {
++    auto button = std::make_unique<EmberUtilityButton>(
++        base::BindRepeating(
++            [](EmberUtilityController* owner, Utility utility) {
++              owner->Toggle(utility, owner->buttons_[utility]);
++            },
++            base::Unretained(this), utility),
++        name, glyph);
++    if (icon)
++      button->SetImageModel(
++          views::Button::STATE_NORMAL,
++          ui::ImageModel::FromVectorIcon(*icon, kForeground, 19));
++    buttons_[utility] = footer->AddChildView(std::move(button));
++  };
++  add(Utility::kMedia, u"Media", EmberUtilityButton::Glyph::kNative,
++      &vector_icons::kPlayArrowIcon);
++  add(Utility::kWorkspaces, u"Workspaces",
++      EmberUtilityButton::Glyph::kWorkspace, nullptr);
++  add(Utility::kSnap, u"ChatGPT Snap", EmberUtilityButton::Glyph::kSnap,
++      nullptr);
++  // Native Extensions is inserted here by ToolbarView, preserving its menu.
++  auto settings = std::make_unique<EmberUtilityButton>(
++      base::BindRepeating(
++          [](EmberUtilityController* owner) {
++            owner->Close(false, true);
++            owner->browser_view_->CloseEmberSearch(false);
++            chrome::ShowSettings(owner->browser_view_->browser());
++          },
++          base::Unretained(this)),
++      u"Settings");
++  settings->SetImageModel(views::Button::STATE_NORMAL,
++                          ui::ImageModel::FromVectorIcon(
++                              vector_icons::kSettingsIcon, kForeground, 19));
++  footer->AddChildView(std::move(settings));
++}
++void EmberUtilityController::UpdateButtons() {
++  for (auto& [utility, button] : buttons_)
++    button->SetOpen(active_ == utility);
++}
++void EmberUtilityController::BeforeExtensions() {
++  Close(false, true);
++  browser_view_->CloseEmberSearch(false);
++  active_ = Utility::kExtensions;
++  anchor_ =
++      browser_view_->toolbar()->extensions_container()->GetExtensionsButton();
++  UpdateButtons();
++}
++void EmberUtilityController::ExtensionsClosed() {
++  if (active_ == Utility::kExtensions) {
++    active_ = Utility::kNone;
++    anchor_ = nullptr;
++    UpdateButtons();
++  }
++}
++void EmberUtilityController::Toggle(Utility utility, views::View* anchor) {
++  if (active_ == utility) {
++    Close();
++    return;
++  }
++  if (utility == Utility::kSnap) {
++    if (snap_requested_) {
++      CancelPendingSnap();
++      return;
++    }
++    // Renderer capture excludes existing browser-owned popups. Request it
++    // while the focused source and its actual viewport still match the click.
++    CancelPendingSnap();
++    CaptureSnap();
++    return;
++  }
++  Close(false, true);
++  browser_view_->CloseEmberSearch(false);
++  if (auto* ext = browser_view_->toolbar()->extensions_container()) {
++    ext->HideEmberUtilitySurface();
++  }
++  ExtensionsMenuView::Hide();
++  active_ = utility;
++  anchor_ = anchor;
++  UpdateButtons();
++  ShowPopover(anchor, utility == Utility::kMedia ? 300 : 56);
++  if (utility == Utility::kWorkspaces) {
++    auto label = std::make_unique<views::Label>(u"Work in progress");
++    label->SetEnabledColor(kForeground);
++    label->SetBackgroundColor(SK_ColorTRANSPARENT);
++    popover_body_->AddChildView(std::move(label))->SetBounds(16, 14, 208, 28);
++  } else {
++    RefreshMedia();
++    position_timer_.Start(
++        FROM_HERE, base::Milliseconds(250),
++        base::BindRepeating(&EmberUtilityController::UpdatePosition,
++                            weak_factory_.GetWeakPtr()));
++  }
++}
++void EmberUtilityController::Close(bool restore_focus,
++                                   bool immediate,
++                                   bool keep_capture) {
++  const bool was_open = active_ != Utility::kNone;
++  if (immediate)
++    for (const auto& surface : closing_popovers_)
++      surface->SetVisible(false);
++  active_ = Utility::kNone;
++  position_timer_.Stop();
++  seeking_ = false;
++  if (auto* ext = browser_view_->toolbar()
++                      ? browser_view_->toolbar()->extensions_container()
++                      : nullptr) {
++    ext->HideEmberUtilitySurface();
++  }
++  ExtensionsMenuView::Hide();
++  if (popover_) {
++    auto* old = popover_.get();
++    popover_ = nullptr;
++    closing_popovers_.push_back(old);
++    old->SetCanProcessEventsWithinSubtree(false);
++    if (immediate)
++      old->SetVisible(false);
++    old->CloseAnimated(base::BindOnce(
++        [](base::WeakPtr<EmberUtilityController> owner,
++           EmberGlassView* surface) {
++          if (owner && surface->parent() == owner.get()) {
++            std::erase(owner->closing_popovers_, surface);
++            owner->RemoveChildViewT(surface);
++          }
++        },
++        weak_factory_.GetWeakPtr(), old));
++  }
++  popover_body_ = nullptr;
++  volume_slider_ = nullptr;
++  seek_slider_ = nullptr;
++  artwork_ = nullptr;
++  media_scroll_ = nullptr;
++  media_body_ = nullptr;
++  media_title_ = nullptr;
++  media_time_ = nullptr;
++  source_button_ = nullptr;
++  media_buttons_.clear();
++  volume_owner_.reset();
++  source_model_owners_.clear();
++  source_model_labels_.clear();
++  if (snap_visible_ ||
++      (immediate && snap_surface_ && snap_surface_->GetVisible())) {
++    snap_visible_ = false;
++    browser_view_->SetEmberSnapSidebarMode(false);
++    snap_surface_->SetCanProcessEventsWithinSubtree(false);
++    if (immediate) {
++      snap_transition_.Reset();
++      snap_surface_->SetVisible(false);
++      snap_reveal_width_ = 0;
++      browser_view_->InvalidateLayout();
++      if (browser_view_->GetWidget())
++        browser_view_->GetWidget()
++            ->GetRootView()
++            ->DeprecatedLayoutImmediately();
++    } else
++      snap_transition_.Close(base::BindOnce(
++          [](base::WeakPtr<EmberUtilityController> owner) {
++            if (!owner)
++              return;
++            owner->snap_surface_->SetVisible(false);
++            owner->snap_reveal_width_ = 0;
++            owner->browser_view_->InvalidateLayout();
++          },
++          weak_factory_.GetWeakPtr()));
++  }
++  if (!keep_capture)
++    CancelPendingSnap();
++  UpdateButtons();
++  if (restore_focus && was_open) {
++    if (anchor_ && anchor_->GetVisible())
++      anchor_->RequestFocus();
++    else if (auto* contents = browser_view_->GetActiveWebContents())
++      contents->Focus();
++  }
++  anchor_ = nullptr;
++}
++void EmberUtilityController::ShowPopover(views::View* anchor,
++                                         int height,
++                                         bool volume) {
++  Relayout();
++  popover_height_ = height;
++  const int panel_width =
++      std::max(1, std::min(volume                            ? 216
++                           : active_ == Utility::kWorkspaces ? 240
++                                                             : 300,
++                           width() - 12));
++  gfx::Rect at = anchor->GetBoundsInScreen();
++  gfx::Point origin = at.right_center();
++  views::View::ConvertPointFromScreen(this, &origin);
++  const gfx::Rect panel(
++      std::clamp(origin.x() + 8, 4, std::max(4, width() - panel_width - 4)),
++      std::clamp(origin.y() - height, 4,
++                 std::max(4, this->height() - height - 4)),
++      panel_width, std::min(height, this->height() - 8));
++  popover_ =
++      static_cast<EmberGlassView*>(AddChildView(std::unique_ptr<views::View>(
++          std::make_unique<EmberGlassView>(EmberGlassPreset::kPopover))));
++  // EmberGlassView has a shadow/capture gutter; contents occupy its panel box.
++  gfx::Rect bounds = panel;
++  bounds.Outset(EmberGlassView::kShadowMargin);
++  popover_->SetBoundsRect(bounds);
++  popover_body_ =
++      popover_->contents()->AddChildView(std::make_unique<views::View>());
++  popover_body_->SetBoundsRect(popover_->GetPanelBounds());
++  // Use EmberGlassView's existing material/mask, not the separate-widget bubble
++  // background helper. A second paint owner would lose the sampled pixels.
++  auto material = std::make_shared<EmberGlassMaterial>();
++  auto generation = std::make_shared<uint64_t>(0);
++  auto* surface = popover_.get();
++  auto* source = browser_view_->GetActiveWebContents();
++  StartEmberGlassBackdropCapture(
++      surface, source,
++      base::BindRepeating(
++          [](EmberGlassView* surface,
++             std::shared_ptr<EmberGlassMaterial> material,
++             std::shared_ptr<uint64_t> generation, const SkBitmap& bitmap,
++             const gfx::Rect& renderer_bounds) {
++            gfx::Rect sample = surface->GetPanelBounds();
++            sample.Offset(surface->GetBoundsInScreen().origin() -
++                          renderer_bounds.origin());
++            sample.Inset(-EmberGlassView::kBackdropMargin);
++            const auto* panel = material->RenderPanel(
++                bitmap, sample, ++*generation, EmberGlassPreset::kPopover);
++            if (panel)
++              surface->SetPanel(*panel);
++          },
++          base::Unretained(surface), material, generation));
++  popover_->OpenFrom(
++      gfx::Point(origin.x() - bounds.x(), origin.y() - bounds.y()));
++}
++void EmberUtilityController::ShowVolume(content::WebContents* contents,
++                                        views::View* anchor) {
++  if (!contents || contents->IsBeingDestroyed())
++    return;
++  Close(false, true);
++  browser_view_->CloseEmberSearch(false);
++  active_ = Utility::kVolume;
++  anchor_ = anchor;
++  volume_owner_ = contents->GetWeakPtr();
++  ShowPopover(anchor, 44, true);
++  auto icon = std::make_unique<views::ImageView>();
++  icon->SetImage(ui::ImageModel::FromVectorIcon(vector_icons::kVolumeUpIcon,
++                                                kForeground, 19));
++  popover_body_->AddChildView(std::move(icon))->SetBounds(12, 12, 20, 20);
++  volume_slider_ =
++      popover_body_->AddChildView(std::make_unique<WhiteSlider>(this));
++  volume_slider_->SetBounds(42, 7, 160, 30);
++  volume_slider_->SetValue(contents->GetAudioVolume() / 2.f);
++  volume_slider_->GetViewAccessibility().SetName(
++      u"Tab volume, 0 to 200 percent");
++  volume_slider_->GetViewAccessibility().SetValue(
++      base::NumberToString16(std::lround(contents->GetAudioVolume() * 100)) +
++      u" percent");
++  volume_slider_->SetTooltipText(
++      base::NumberToString16(std::lround(contents->GetAudioVolume() * 100)) +
++      u"%");
++  volume_slider_->RequestFocus();
++}
++void EmberUtilityController::SyncSources() {
++  auto* model = browser_view_->browser()->tab_strip_model();
++  std::set<content::WebContents*> retained;
++  for (int i = 0; i < model->count(); ++i) {
++    auto* contents = model->GetWebContentsAt(i);
++    if (contents->IsBeingDestroyed())
++      continue;
++    retained.insert(contents);
++    if (!sources_.contains(contents))
++      sources_[contents] = std::make_unique<Source>(this, contents);
++  }
++  std::erase_if(sources_, [&](const auto& entry) {
++    return !retained.contains(entry.first);
++  });
++  if (active_ == Utility::kVolume &&
++      (!volume_owner_ || !retained.contains(volume_owner_.get())))
++    Close(false);
++  if (paste_phase_ != PastePhase::kIdle &&
++      (!capture_source_ || !retained.contains(capture_source_.get()))) {
++    CancelPendingSnap();
++    SnapStatus(u"Source closed. Close Snap and capture again.");
++  }
++  if (media_ && !retained.contains(media_.get()))
++    media_.reset();
++}
++void EmberUtilityController::OnTabStripModelChanged(
++    TabStripModel*,
++    const TabStripModelChange& change,
++    const TabStripSelectionChange&) {
++  if (change.type() == TabStripModelChange::kReplaced) {
++    const auto* replacement = change.GetReplace();
++    if (media_.get() == replacement->old_contents)
++      media_ = replacement->new_contents->GetWeakPtr();
++  }
++  SyncSources();
++  SourceChanged(nullptr);
++}
++void EmberUtilityController::ScheduleSourceRefresh() {
++  if (refresh_pending_)
++    return;
++  refresh_pending_ = true;
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE, base::BindOnce(
++                     [](base::WeakPtr<EmberUtilityController> owner) {
++                       if (!owner)
++                         return;
++                       owner->refresh_pending_ = false;
++                       owner->SyncSources();
++                       if (owner->active_ == Utility::kMedia)
++                         owner->RefreshMedia();
++                     },
++                     weak_factory_.GetWeakPtr()));
++}
++void EmberUtilityController::SourceChanged(content::WebContents* contents) {
++  if (capture_source_.get() == contents && !SourceStillValid() &&
++      paste_phase_ != PastePhase::kIdle) {
++    CancelPendingSnap();
++    SnapStatus(u"Source changed. Close and capture again.");
++  }
++  if (volume_owner_.get() == contents && volume_slider_ && !updating_) {
++    if (!contents || contents->IsBeingDestroyed()) {
++      Close(false);
++      return;
++    }
++    updating_ = true;
++    volume_slider_->SetValue(contents->GetAudioVolume() / 2.f);
++    updating_ = false;
++  }
++  if (active_ == Utility::kMedia)
++    ScheduleSourceRefresh();
++}
++void EmberUtilityController::RefreshMedia() {
++  if (active_ != Utility::kMedia || !popover_)
++    return;
++  available_sources_.clear();
++  auto* model = browser_view_->browser()->tab_strip_model();
++  for (int i = 0; i < model->count(); ++i) {
++    auto* contents = model->GetWebContentsAt(i);
++    auto it = sources_.find(contents);
++    if (it != sources_.end() &&
++        (it->second->Available() || contents == media_.get()))
++      available_sources_.push_back(contents->GetWeakPtr());
++  }
++  if (!std::ranges::any_of(available_sources_, [&](const auto& item) {
++        return item.get() == media_.get();
++      })) {
++    auto* focused = browser_view_->GetActiveWebContents();
++    auto candidate = std::ranges::find_if(
++        available_sources_,
++        [&](const auto& item) { return item.get() == focused; });
++    media_ = candidate != available_sources_.end() ? *candidate
++             : available_sources_.empty()
++                 ? base::WeakPtr<content::WebContents>()
++                 : available_sources_.front();
++  }
++  // Keep controls during dragging. Updates never rebuild a pressed slider.
++  if (!media_scroll_) {
++    auto scroll = std::make_unique<views::ScrollView>();
++    scroll->SetHorizontalScrollBarMode(
++        views::ScrollView::ScrollBarMode::kDisabled);
++    scroll->SetDrawOverflowIndicator(false);
++    scroll->SetBackground(nullptr);
++    media_body_ = scroll->SetContents(std::make_unique<views::View>());
++    media_body_->SetPreferredSize(gfx::Size(300, 300));
++    media_scroll_ = popover_body_->AddChildView(std::move(scroll));
++    media_scroll_->SetBoundsRect(popover_body_->GetLocalBounds());
++  }
++  auto* area = media_body_.get();
++  if (!media_title_) {
++    auto label = std::make_unique<views::Label>(u"Media");
++    label->SetEnabledColor(kForeground);
++    label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++    area->AddChildView(std::move(label))->SetBounds(16, 12, 260, 24);
++    artwork_ = area->AddChildView(std::make_unique<views::ImageView>());
++    artwork_->SetBounds(16, 48, 72, 72);
++    artwork_->SetImageSize(gfx::Size(72, 72));
++    media_title_ = area->AddChildView(std::make_unique<views::Label>());
++    media_title_->SetEnabledColor(kForeground);
++    media_title_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++    media_title_->SetBounds(104, 48, 176, 36);
++    media_title_->SetMultiLine(true);
++    source_button_ = area->AddChildView(std::make_unique<views::Combobox>());
++    source_button_->SetBounds(104, 88, 176, 28);
++    source_button_->SetTooltipTextAndAccessibleName(u"Media source");
++    source_button_->SetCallback(base::BindRepeating(
++        [](EmberUtilityController* owner) {
++          if (owner->updating_ || !owner->source_button_)
++            return;
++          const auto selected = owner->source_button_->GetSelectedIndex();
++          if (selected && *selected < owner->available_sources_.size()) {
++            owner->media_ = owner->available_sources_[*selected];
++            owner->RefreshMedia();
++          }
++        },
++        base::Unretained(this)));
++    const auto button = [&](int action, const gfx::VectorIcon& icon,
++                            std::u16string name, int x, int y) {
++      auto control = std::make_unique<EmberUtilityButton>(
++          base::BindRepeating(&EmberUtilityController::MediaAction,
++                              weak_factory_.GetWeakPtr(), action),
++          name);
++      control->SetImageModel(
++          views::Button::STATE_NORMAL,
++          ui::ImageModel::FromVectorIcon(icon, kForeground, 19));
++      media_buttons_[action] = area->AddChildView(std::move(control));
++      media_buttons_[action]->SetBounds(x, y, 36, 36);
++    };
++    button(int(Action::kPreviousTrack), vector_icons::kSkipPreviousIcon,
++           u"Previous track", 66, 128);
++    button(int(Action::kPlay), vector_icons::kPlayArrowIcon, u"Play or pause",
++           132, 128);
++    button(int(Action::kNextTrack), vector_icons::kSkipNextIcon, u"Next track",
++           198, 128);
++    seek_slider_ = area->AddChildView(std::make_unique<WhiteSlider>(this));
++    seek_slider_->SetBounds(16, 174, 268, 26);
++    seek_slider_->GetViewAccessibility().SetName(u"Seek");
++    media_time_ = area->AddChildView(std::make_unique<views::Label>());
++    media_time_->SetEnabledColor(kForeground);
++    media_time_->SetBounds(16, 200, 268, 20);
++    button(kMute, vector_icons::kVolumeUpIcon, u"Mute or unmute source tab", 12,
++           225);
++    volume_slider_ = area->AddChildView(std::make_unique<WhiteSlider>(this));
++    volume_slider_->SetBounds(54, 228, 230, 28);
++    volume_slider_->GetViewAccessibility().SetName(
++        u"Media volume, 0 to 100 percent");
++    button(int(Action::kEnterPictureInPicture),
++           vector_icons::kPictureInPictureIcon, u"Picture in picture", 48, 263);
++    button(kGoToTab, kOpenInNewIcon, u"Go to tab", 214, 263);
++  }
++  auto it = sources_.find(media_.get());
++  Source* source = it == sources_.end() ? nullptr : it->second.get();
++  const bool available = source && source->Available();
++  media_title_->SetText(available ? source->metadata &&
++                                            !source->metadata->title.empty()
++                                        ? source->metadata->title
++                                        : media_->GetTitle()
++                                  : u"No media available");
++  if (available && !source->artwork.isNull())
++    artwork_->SetImage(ui::ImageModel::FromImageSkia(source->artwork));
++  else
++    artwork_->SetImage(ui::ImageModel::FromVectorIcon(
++        vector_icons::kPlayArrowIcon, SkColorSetARGB(90, 255, 255, 255), 48));
++  std::vector<ui::SimpleComboboxModel::Item> choices;
++  std::vector<std::u16string> labels;
++  size_t selected = 0;
++  for (size_t i = 0; i < available_sources_.size(); ++i) {
++    auto* contents = available_sources_[i].get();
++    if (!contents)
++      continue;
++    if (contents == media_.get())
++      selected = i;
++    labels.push_back(base::UTF8ToUTF16(contents->GetLastCommittedURL().host()) +
++                     u"\n" + contents->GetTitle());
++    choices.emplace_back(
++        base::UTF8ToUTF16(contents->GetLastCommittedURL().host()),
++        contents->GetTitle(), ui::ImageModel());
++  }
++  if (choices.empty()) {
++    choices.emplace_back(u"No media available");
++    labels.push_back(u"No media available");
++  }
++  updating_ = true;
++  // Position/volume notifications must not tear down an open source menu.
++  const bool owners_changed =
++      source_model_owners_.size() != available_sources_.size() ||
++      !std::equal(source_model_owners_.begin(), source_model_owners_.end(),
++                  available_sources_.begin(),
++                  [](const auto& left, const auto& right) {
++                    return left.get() == right.get();
++                  });
++  if (owners_changed || labels != source_model_labels_ ||
++      !source_button_->GetModel()) {
++    source_button_->SetOwnedModel(
++        std::make_unique<ui::SimpleComboboxModel>(std::move(choices)));
++    source_model_owners_ = available_sources_;
++    source_model_labels_ = std::move(labels);
++  }
++  source_button_->SetSelectedIndex(selected);
++  updating_ = false;
++  source_button_->SetEnabled(available_sources_.size() > 1);
++  for (const auto& [action, button] : media_buttons_) {
++    bool enabled = available;
++    if (action >= 0)
++      enabled = available && source->Has(Action(action));
++    if (action == int(Action::kPlay)) {
++      const bool playing =
++          available && source->info->playback_state ==
++                           media_session::mojom::MediaPlaybackState::kPlaying;
++      enabled =
++          available && source->Has(playing ? Action::kPause : Action::kPlay);
++      button->SetImageModel(
++          views::Button::STATE_NORMAL,
++          ui::ImageModel::FromVectorIcon(
++              playing ? vector_icons::kPauseIcon : vector_icons::kPlayArrowIcon,
++              kForeground, 19));
++      button->SetAccessibleName(playing ? u"Pause" : u"Play");
++    }
++    if (action == kMute && available)
++      button->SetImageModel(
++          views::Button::STATE_NORMAL,
++          ui::ImageModel::FromVectorIcon(media_->IsAudioMuted()
++                                             ? vector_icons::kVolumeOffIcon
++                                             : vector_icons::kVolumeUpIcon,
++                                         kForeground, 19));
++    button->SetEnabled(enabled);
++  }
++  volume_slider_->SetEnabled(available);
++  updating_ = true;
++  volume_slider_->SetValue(available ? std::min(1.0, media_->GetAudioVolume())
++                                     : 1.0);
++  volume_slider_->GetViewAccessibility().SetValue(
++      available ? base::NumberToString16(std::lround(
++                      std::min(1.0, media_->GetAudioVolume()) * 100)) +
++                      u" percent"
++                : u"No media");
++  volume_slider_->SetTooltipText(
++      available ? base::NumberToString16(
++                      std::lround(media_->GetAudioVolume() * 100)) +
++                      u"%" + (media_->IsAudioMuted() ? u" (muted)" : u"")
++                : u"No media");
++  updating_ = false;
++  UpdatePosition();
++}
++void EmberUtilityController::SelectNextSource() {
++  if (available_sources_.size() < 2)
++    return;
++  auto it = std::ranges::find_if(available_sources_, [&](const auto& source) {
++    return source.get() == media_.get();
++  });
++  const size_t index =
++      it == available_sources_.end()
++          ? 0
++          : (it - available_sources_.begin() + 1) % available_sources_.size();
++  media_ = available_sources_[index];
++  RefreshMedia();
++}
++void EmberUtilityController::UpdatePosition() {
++  if (!seek_slider_ || !media_time_ || seeking_)
++    return;
++  auto it = sources_.find(media_.get());
++  Source* source = it == sources_.end() ? nullptr : it->second.get();
++  const bool seek = source && source->Available() &&
++                    source->Has(Action::kSeekTo) && source->position &&
++                    !source->position->duration().is_max() &&
++                    source->position->duration().is_positive();
++  seek_slider_->SetEnabled(seek);
++  updating_ = true;
++  if (seek) {
++    const auto position = source->position->GetPosition();
++    seek_slider_->SetValue(position / source->position->duration());
++    media_time_->SetText(TimeText(position) + u" / " +
++                         TimeText(source->position->duration()));
++    seek_slider_->GetViewAccessibility().SetValue(TimeText(position));
++  } else {
++    seek_slider_->SetValue(0);
++    media_time_->SetText(u"--:-- / --:--");
++  }
++  updating_ = false;
++}
++void EmberUtilityController::MediaAction(int action) {
++  auto* contents = media_.get();
++  auto it = sources_.find(contents);
++  if (!contents || contents->IsBeingDestroyed() || it == sources_.end() ||
++      !it->second->Available())
++    return;
++  if (action == kMute) {
++    contents->SetAudioMuted(!contents->IsAudioMuted());
++    RefreshMedia();
++    return;
++  }
++  if (action == kGoToTab) {
++    auto* model = browser_view_->browser()->tab_strip_model();
++    const auto target = contents->GetWeakPtr();
++    Close(false);
++    if (!target)
++      return;
++    const int index = model->GetIndexOfWebContents(target.get());
++    if (index != TabStripModel::kNoTab) {
++      model->ActivateTabAt(index);
++      target->Focus();
++    }
++    return;
++  }
++  auto* session = content::MediaSession::GetIfExists(contents);
++  Action actual = Action(action);
++  if (actual == Action::kPlay &&
++      it->second->info->playback_state ==
++          media_session::mojom::MediaPlaybackState::kPlaying)
++    actual = Action::kPause;
++  if (session && it->second->Has(actual))
++    session->DidReceiveAction(actual);
++}
++void EmberUtilityController::SliderDragStarted(views::Slider* slider) {
++  if (slider == seek_slider_)
++    seeking_ = true;
++}
++void EmberUtilityController::SliderDragEnded(views::Slider* slider) {
++  if (slider == seek_slider_) {
++    seeking_ = false;
++    UpdatePosition();
++  }
++}
++void EmberUtilityController::SliderValueChanged(
++    views::Slider* slider,
++    float value,
++    float old_value,
++    views::SliderChangeReason reason) {
++  if (updating_ || reason != views::SliderChangeReason::kByUser)
++    return;
++  auto* contents =
++      active_ == Utility::kVolume ? volume_owner_.get() : media_.get();
++  if (!contents || contents->IsBeingDestroyed() ||
++      browser_view_->browser()->tab_strip_model()->GetIndexOfWebContents(
++          contents) == TabStripModel::kNoTab)
++    return;
++  if (slider == volume_slider_) {
++    const double gain = value * (active_ == Utility::kVolume ? 2.0 : 1.0);
++    contents->SetAudioVolume(gain);
++    slider->SetTooltipText(base::NumberToString16(std::lround(gain * 100)) +
++                           u"%");
++    slider->GetViewAccessibility().SetValue(
++        base::NumberToString16(std::lround(gain * 100)) + u" percent");
++  } else if (slider == seek_slider_) {
++    auto it = sources_.find(contents);
++    auto* session = content::MediaSession::GetIfExists(contents);
++    if (session && it != sources_.end() && it->second->Has(Action::kSeekTo) &&
++        it->second->position)
++      session->SeekTo(it->second->position->duration() * double(value));
++  }
++}
++
++bool EmberUtilityController::SourceStillValid() const {
++  return capture_source_ && !capture_source_->IsBeingDestroyed() &&
++         capture_document_.AsRenderFrameHostIfValid() ==
++             capture_source_->GetPrimaryMainFrame() &&
++         capture_source_->GetLastCommittedURL() == capture_url_;
++}
++void EmberUtilityController::CaptureSnap() {
++  paste_dispatched_ = false;
++  buttons_[Utility::kSnap]->SetTooltipText(u"ChatGPT Snap");
++  snap_requested_ = true;
++  const uint64_t generation = ++snap_generation_;
++  // Stop a closing side page at its currently displayed width until this
++  // renderer snapshot completes. Close's immediate path will settle it later.
++  if (snap_surface_ && snap_surface_->GetVisible() && !snap_visible_)
++    snap_transition_.Reset();
++  auto* source = browser_view_->GetActiveWebContents();
++  auto failure = [&](std::u16string message) {
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE, base::BindOnce(&EmberUtilityController::FinishSnapCapture,
++                                  weak_factory_.GetWeakPtr(), generation,
++                                  SkBitmap(), std::move(message)));
++  };
++  if (!source || source->IsBeingDestroyed() ||
++      !(source->GetLastCommittedURL().SchemeIsHTTPOrHTTPS() ||
++        source->GetLastCommittedURL().SchemeIsFile()) ||
++      !source->GetRenderWidgetHostView()) {
++    failure(u"Capture unavailable. Retry from a webpage.");
++    return;
++  }
++  capture_source_ = source->GetWeakPtr();
++  capture_document_ = source->GetPrimaryMainFrame()->GetWeakDocumentPtr();
++  capture_url_ = source->GetLastCommittedURL();
++  auto* view = source->GetRenderWidgetHostView();
++  capture_bounds_ = view->GetViewBounds();
++  const gfx::Size size = capture_bounds_.size();
++  if (size.IsEmpty() ||
++      int64_t(size.width()) * size.height() > 16 * 1024 * 1024) {
++    failure(u"Capture surface too large. Resize and Retry.");
++    return;
++  }
++  paste_phase_ = PastePhase::kWaiting;
++  snap_started_ = base::TimeTicks::Now();
++  view->CopyFromSurface(
++      gfx::Rect(size), size, base::Seconds(3),
++      base::BindPostTaskToCurrentDefault(base::BindOnce(
++          [](base::WeakPtr<EmberUtilityController> owner, uint64_t generation,
++             const content::CopyFromSurfaceResult& result) {
++            if (!owner || generation != owner->snap_generation_ ||
++                !owner->snap_requested_)
++              return;
++            if (!owner->SourceStillValid() || !result.has_value() ||
++                result->bitmap.drawsNothing() ||
++                result->bitmap.computeByteSize() > 64 * 1024 * 1024) {
++              owner->FinishSnapCapture(
++                  generation, SkBitmap(),
++                  u"Capture failed. Retry from your webpage.");
++              return;
++            }
++            owner->FinishSnapCapture(generation, result->bitmap,
++                                     std::u16string());
++          },
++          weak_factory_.GetWeakPtr(), generation)));
++}
++void EmberUtilityController::FinishSnapCapture(uint64_t generation,
++                                               SkBitmap image,
++                                               std::u16string error) {
++  if (generation != snap_generation_ || !snap_requested_)
++    return;
++  // The image is now frozen. Dismiss every older surface before introducing
++  // feedback or resizing; keep the just-captured source/document ownership.
++  Close(false, true, true);
++  browser_view_->CloseEmberSearch(false);
++  if (generation != snap_generation_)
++    return;
++  snap_requested_ = false;
++  active_ = Utility::kSnap;
++  anchor_ = buttons_[Utility::kSnap];
++  UpdateButtons();
++  if (!error.empty() || !SourceStillValid()) {
++    CancelPendingSnap();
++    EnsureSnapPage();
++    SnapStatus(error.empty() ? u"Source changed. Retry from your webpage."
++                             : std::move(error));
++    return;
++  }
++  pending_capture_ = image;
++  if (auto* view = capture_source_->GetRenderWidgetHostView())
++    capture_bounds_ = view->GetViewBounds();
++  capture_transition_.Open(gfx::RectF(0, 0, 1, 1), gfx::PointF(), 0);
++  feedback_timer_.Start(
++      FROM_HERE,
++      gfx::Animation::PrefersReducedMotion() ? base::TimeDelta()
++                                             : base::Milliseconds(120),
++      base::BindOnce(
++          [](base::WeakPtr<EmberUtilityController> owner, uint64_t generation) {
++            if (!owner || generation != owner->snap_generation_)
++              return;
++            owner->capture_transition_.Close(base::BindOnce(
++                [](base::WeakPtr<EmberUtilityController> owner,
++                   uint64_t generation) {
++                  if (!owner || generation != owner->snap_generation_)
++                    return;
++                  owner->capture_bounds_ = gfx::Rect();
++                  owner->SchedulePaint();
++                  owner->EnsureSnapPage();
++                  owner->SnapStatus(
++                      u"Preparing image. Log in to ChatGPT if needed.");
++                  owner->PollSnap();
++                  owner->snap_timer_.Start(
++                      FROM_HERE, base::Milliseconds(250),
++                      base::BindRepeating(&EmberUtilityController::PollSnap,
++                                          owner));
++                },
++                owner, generation));
++          },
++          weak_factory_.GetWeakPtr(), generation));
++}
++void EmberUtilityController::EnsureSnapPage() {
++  if (!snap_surface_) {
++    snap_surface_ = AddChildView(std::make_unique<views::View>());
++    snap_surface_->SetPaintToLayer();
++    snap_surface_->layer()->SetFillsBoundsOpaquely(false);
++    auto close = std::make_unique<EmberUtilityButton>(
++        base::BindRepeating(&EmberUtilityController::Close,
++                            weak_factory_.GetWeakPtr(), true, false, false),
++        u"Close Snap");
++    close->SetImageModel(views::Button::STATE_NORMAL,
++                         ui::ImageModel::FromVectorIcon(
++                             vector_icons::kCloseIcon, kForeground, 19));
++    snap_surface_->AddChildView(std::move(close));
++    snap_status_ =
++        snap_surface_->AddChildView(std::make_unique<views::Label>());
++    snap_status_->SetEnabledColor(kForeground);
++    snap_status_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++    snap_page_ = snap_surface_->AddChildView(
++        std::make_unique<SnapPage>(browser_view_->GetProfile(), this));
++    auto retry = std::make_unique<views::LabelButton>(
++        base::BindRepeating(
++            [](EmberUtilityController* owner) {
++              if (owner->paste_phase_ == PastePhase::kWaiting &&
++                  owner->SourceStillValid() &&
++                  !owner->pending_capture_.drawsNothing()) {
++                owner->feedback_timer_.Stop();
++                owner->snap_started_ = base::TimeTicks::Now();
++                owner->snap_timer_.Start(
++                    FROM_HERE, base::Milliseconds(250),
++                    base::BindRepeating(&EmberUtilityController::PollSnap,
++                                        owner->weak_factory_.GetWeakPtr()));
++                owner->PollSnap();
++              } else if (owner->paste_phase_ == PastePhase::kIdle &&
++                         !owner->paste_dispatched_) {
++                owner->CancelPendingSnap();
++                owner->CaptureSnap();
++              } else {
++                owner->SnapStatus(u"Check your draft before capturing again.");
++              }
++            },
++            base::Unretained(this)),
++        u"Retry");
++    retry->SetEnabledTextColors(kForeground);
++    snap_surface_->AddChildView(std::move(retry));
++    snap_surface_->AddChildView(std::make_unique<views::ResizeArea>(this));
++  }
++  snap_visible_ = true;
++  browser_view_->SetEmberSnapSidebarMode(true);
++  snap_surface_->SetVisible(true);
++  snap_surface_->SetCanProcessEventsWithinSubtree(true);
++  snap_transition_.Open(gfx::RectF(0, 0, snap_width_, 1), gfx::PointF(0, 0),
++                        10);
++  browser_view_->InvalidateLayout();
++  Relayout();
++  capture_bounds_ = gfx::Rect();
++  SchedulePaint();
++}
++void EmberUtilityController::ApplySnapFrame(
++    const EmberGlassTransition::Frame& frame) {
++  snap_reveal_width_ =
++      std::max(0, int(std::lround(frame.bounds.width() * frame.opacity)));
++  browser_view_->InvalidateLayout();
++  if (browser_view_->GetWidget())
++    browser_view_->GetWidget()->GetRootView()->DeprecatedLayoutImmediately();
++}
++int EmberUtilityController::SnapWidth(int available_width) const {
++  return std::clamp(snap_reveal_width_, 0, std::max(0, available_width - 160));
++}
++void EmberUtilityController::OnResize(int amount, bool done) {
++  if (!resize_start_width_)
++    resize_start_width_ = snap_width_;
++  snap_width_ = std::clamp(resize_start_width_ + amount, 260, 560);
++  snap_transition_.Open(gfx::RectF(0, 0, snap_width_, 1), gfx::PointF(0, 0),
++                        10);
++  if (done)
++    resize_start_width_ = 0;
++}
++void EmberUtilityController::Relayout() {
++  SetBoundsRect(browser_view_->GetLocalBounds());
++  if (popover_ && anchor_) {
++    gfx::Point origin = anchor_->GetBoundsInScreen().right_center();
++    views::View::ConvertPointFromScreen(this, &origin);
++    const int w = std::max(1, std::min(active_ == Utility::kVolume       ? 216
++                                       : active_ == Utility::kWorkspaces ? 240
++                                                                         : 300,
++                                       width() - 12));
++    const int h = std::max(1, std::min(popover_height_, height() - 8));
++    gfx::Rect panel(
++        std::clamp(origin.x() + 8, 4, std::max(4, width() - w - 4)),
++        std::clamp(origin.y() - h, 4, std::max(4, height() - h - 4)), w, h);
++    panel.Outset(EmberGlassView::kShadowMargin);
++    popover_->SetBoundsRect(panel);
++    popover_body_->SetBoundsRect(popover_->GetPanelBounds());
++    if (media_scroll_)
++      media_scroll_->SetBoundsRect(popover_body_->GetLocalBounds());
++  }
++  if (snap_surface_ && snap_surface_->GetVisible()) {
++    gfx::Rect bounds = browser_view_->contents_container()->bounds();
++    const int width =
++        SnapWidth(browser_view_->width() - bounds.x() + snap_reveal_width_);
++    bounds.set_x(bounds.x() - width);
++    bounds.set_width(width);
++    snap_surface_->SetBoundsRect(bounds);
++    snap_surface_->children()[0]->SetBounds(std::max(0, width - 38), 0, 36, 32);
++    snap_status_->SetBounds(8, 0, std::max(0, width - 48), 32);
++    snap_status_->SetTooltipText(std::u16string(snap_status_->GetText()));
++    snap_page_->SetBounds(4, 32, std::max(0, width - 12),
++                          std::max(0, bounds.height() - 58));
++    snap_surface_->children()[3]->SetBounds(
++        8, std::max(0, bounds.height() - 26), 58, 24);
++    snap_surface_->children()[4]->SetBounds(std::max(0, width - 7), 32, 7,
++                                            std::max(0, bounds.height() - 32));
++  }
++}
++void EmberUtilityController::SnapStatus(std::u16string message) {
++  if (!snap_status_ && buttons_.contains(Utility::kSnap))
++    buttons_[Utility::kSnap]->SetTooltipText(message);
++  if (snap_status_) {
++    snap_status_->SetText(message);
++    snap_status_->SetTooltipText(message);
++  }
++}
++void EmberUtilityController::CancelPendingSnap() {
++  ++snap_generation_;
++  snap_requested_ = false;
++  snap_timer_.Stop();
++  script_pending_ = false;
++  feedback_timer_.Stop();
++  capture_transition_.Reset();
++  capture_bounds_ = gfx::Rect();
++  SchedulePaint();
++  pending_capture_.reset();
++  paste_digest_.clear();
++  paste_phase_ = PastePhase::kIdle;
++  capture_source_.reset();
++  capture_document_ = content::WeakDocumentPtr();
++  if (snap_page_ && snap_page_->web_contents() &&
++      snap_page_->web_contents()
++              ->GetLastCommittedURL()
++              .DeprecatedGetOriginAsURL() == GURL("https://chatgpt.com/")) {
++    const std::string js =
++        ui::ResourceBundle::GetSharedInstance().LoadDataResourceString(
++            IDR_EMBER_SNAP_COMPOSER);
++    snap_page_->web_contents()
++        ->GetPrimaryMainFrame()
++        ->ExecuteJavaScriptInIsolatedWorld(
++            base::UTF8ToUTF16(js + "({phase:'cancel'})"), base::NullCallback(),
++            ISOLATED_WORLD_ID_CHROME_INTERNAL);
++  }
++}
++void EmberUtilityController::PollSnap() {
++  if (paste_phase_ == PastePhase::kIdle || script_pending_ || !snap_visible_)
++    return;
++  if (!SourceStillValid()) {
++    CancelPendingSnap();
++    SnapStatus(u"Source closed or changed. Capture again.");
++    return;
++  }
++  if (base::TimeTicks::Now() - snap_started_ > base::Seconds(120)) {
++    snap_timer_.Stop();
++    if (paste_phase_ == PastePhase::kWaiting)
++      SnapStatus(u"Log in, then Retry. Image kept temporarily.");
++    else {
++      CancelPendingSnap();
++      SnapStatus(
++          u"Attachment unconfirmed. Check draft before capturing again.");
++    }
++    // Waiting capture has an absolute, bounded lifetime even without a retry.
++    feedback_timer_.Start(
++        FROM_HERE, base::Seconds(60),
++        base::BindOnce(&EmberUtilityController::CancelPendingSnap,
++                       weak_factory_.GetWeakPtr()));
++    return;
++  }
++  auto* contents = snap_page_->web_contents();
++  if (contents->GetBrowserContext() != browser_view_->GetProfile() ||
++      contents->GetLastCommittedURL().DeprecatedGetOriginAsURL() !=
++          GURL("https://chatgpt.com/")) {
++    SnapStatus(u"Log in to ChatGPT. Paste waits for its composer.");
++    return;
++  }
++  auto* frame = contents->GetPrimaryMainFrame();
++  if (paste_phase_ != PastePhase::kWaiting &&
++      (paste_document_.AsRenderFrameHostIfValid() != frame ||
++       paste_url_ != contents->GetLastCommittedURL())) {
++    CancelPendingSnap();
++    SnapStatus(u"Chat changed. Check draft before capturing again.");
++    return;
++  }
++  base::DictValue request;
++  request.Set("id", base::NumberToString(snap_generation_));
++  request.Set("digest", paste_digest_);
++  request.Set("phase", paste_phase_ == PastePhase::kWaiting    ? "prepare"
++                       : paste_phase_ == PastePhase::kPrepared ? "validate"
++                                                               : "check");
++  const auto json = base::WriteJson(request);
++  const std::string js =
++      ui::ResourceBundle::GetSharedInstance().LoadDataResourceString(
++          IDR_EMBER_SNAP_COMPOSER);
++  script_pending_ = true;
++  frame->ExecuteJavaScriptInIsolatedWorld(
++      base::UTF8ToUTF16(js + "(" + *json + ")"),
++      base::BindOnce(&EmberUtilityController::OnSnapScript,
++                     weak_factory_.GetWeakPtr(), snap_generation_,
++                     frame->GetWeakDocumentPtr(),
++                     contents->GetLastCommittedURL()),
++      ISOLATED_WORLD_ID_CHROME_INTERNAL);
++}
++void EmberUtilityController::OnSnapScript(uint64_t generation,
++                                          content::WeakDocumentPtr document,
++                                          GURL url,
++                                          base::Value result) {
++  if (generation != snap_generation_ || !snap_visible_ || !SourceStillValid())
++    return;
++  script_pending_ = false;
++  auto* dict = result.GetIfDict();
++  const std::string* state = dict ? dict->FindString("state") : nullptr;
++  if (!state) {
++    CancelPendingSnap();
++    SnapStatus(u"Composer unavailable. Close and try again.");
++    return;
++  }
++  auto* contents = snap_page_->web_contents();
++  if (document.AsRenderFrameHostIfValid() != contents->GetPrimaryMainFrame() ||
++      url != contents->GetLastCommittedURL()) {
++    CancelPendingSnap();
++    SnapStatus(u"Chat changed. Check draft before capturing again.");
++    return;
++  }
++  if (contents->GetBrowserContext() != browser_view_->GetProfile() ||
++      contents->GetLastCommittedURL().DeprecatedGetOriginAsURL() !=
++          GURL("https://chatgpt.com/")) {
++    CancelPendingSnap();
++    SnapStatus(u"Destination changed. Capture again.");
++    return;
++  }
++  if (*state == "prepared" && paste_phase_ == PastePhase::kWaiting) {
++    paste_phase_ = PastePhase::kPrepared;
++    paste_url_ = contents->GetLastCommittedURL();
++    paste_document_ = contents->GetPrimaryMainFrame()->GetWeakDocumentPtr();
++    contents->Focus();
++    PollSnap();
++    return;
++  }
++  if (*state == "prepared" && paste_phase_ == PastePhase::kPrepared) {
++    if (!paste_document_.AsRenderFrameHostIfValid() ||
++        contents->GetLastCommittedURL() != paste_url_)
++      return;
++    paste_phase_ =
++        PastePhase::kPasted;  // Commit before native asynchronous dispatch.
++    if (!contents->PasteImage(pending_capture_,
++                              paste_document_.AsRenderFrameHostIfValid(),
++                              &paste_digest_)) {
++      CancelPendingSnap();
++      SnapStatus(u"Image paste unavailable. Close and try again.");
++      return;
++    }
++    paste_dispatched_ = true;
++    pending_capture_.reset();
++    SnapStatus(u"Waiting for image attachment…");
++    return;
++  }
++  if (*state == "attached" && paste_phase_ == PastePhase::kPasted) {
++    CancelPendingSnap();
++    SnapStatus(u"Image attached. Type your message.");
++    contents->Focus();
++    return;
++  }
++  if (*state == "changed" || *state == "rejected") {
++    CancelPendingSnap();
++    SnapStatus(*state == "rejected"
++                   ? u"Attachment rejected. Check your draft."
++                   : u"Composer changed. Check your draft before retrying.");
++  } else if (*state == "login")
++    SnapStatus(u"Log in to ChatGPT; image will wait briefly.");
++}
++content::WebContents* EmberUtilityController::snap_contents_for_testing()
++    const {
++  return snap_page_ ? snap_page_->web_contents() : nullptr;
++}
++void EmberUtilityController::OnPaint(gfx::Canvas* canvas) {
++  if (capture_bounds_.IsEmpty() || pending_capture_.drawsNothing())
++    return;
++  gfx::Rect feedback = capture_bounds_;
++  feedback.Offset(-GetBoundsInScreen().x(), -GetBoundsInScreen().y());
++  cc::PaintFlags flags;
++  flags.setColor(
++      SkColorSetARGB(35 * capture_transition_.frame().opacity, 0, 0, 0));
++  canvas->DrawRect(feedback, flags);
++}
++bool EmberUtilityController::DoesIntersectRect(const views::View*,
++                                               const gfx::Rect& rect) const {
++  gfx::Rect panel;
++  if (popover_ && popover_body_) {
++    panel = popover_body_->bounds();
++    panel.Offset(popover_->bounds().origin().OffsetFromOrigin());
++  }
++  return panel.Intersects(rect) || (snap_surface_ && snap_visible_ &&
++                                    snap_surface_->bounds().Intersects(rect));
++}
++void EmberUtilityController::OnMouseEvent(ui::MouseEvent* event) {
++  if (event->type() != ui::EventType::kMousePressed ||
++      active_ == Utility::kNone || active_ == Utility::kSnap)
++    return;
++  gfx::Point point = event->root_location();
++  auto* target = static_cast<aura::Window*>(event->target());
++  if (!target)
++    return;
++  aura::Window::ConvertPointToTarget(target->GetRootWindow(),
++                                     GetWidget()->GetNativeWindow(), &point);
++  views::View::ConvertPointFromWidget(this, &point);
++  const gfx::Point screen =
++      GetBoundsInScreen().origin() + point.OffsetFromOrigin();
++  if (popover_body_ && popover_body_->GetBoundsInScreen().Contains(screen))
++    return;
++  if (footer_)
++    for (const auto& child : footer_->children())
++      if (child->GetVisible() && child->GetBoundsInScreen().Contains(screen))
++        return;
++  Close(false);
++}
++void EmberUtilityController::OnKeyEvent(ui::KeyEvent* event) {
++  if (event->type() == ui::EventType::kKeyPressed &&
++      event->key_code() == ui::VKEY_ESCAPE && active_ != Utility::kNone) {
++    Close();
++    event->SetHandled();
++  }
++}
++BEGIN_METADATA(EmberUtilityController)
++END_METADATA
++}  // namespace ember
+diff --git a/chrome/browser/ui/views/ember/ember_utility_controller.h b/chrome/browser/ui/views/ember/ember_utility_controller.h
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/ui/views/ember/ember_utility_controller.h
+@@ -0,0 +1,191 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license in LICENSE.
++#ifndef CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_UTILITY_CONTROLLER_H_
++#define CHROME_BROWSER_UI_VIEWS_EMBER_EMBER_UTILITY_CONTROLLER_H_
++
++#include <map>
++#include <memory>
++#include <vector>
++#include "base/memory/weak_ptr.h"
++#include "base/timer/timer.h"
++#include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
++#include "chrome/browser/ui/views/ember/ember_glass_transition.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/browser/weak_document_ptr.h"
++#include "ui/events/event_handler.h"
++#include "ui/base/metadata/metadata_header_macros.h"
++#include "ui/views/controls/resize_area_delegate.h"
++#include "ui/views/controls/slider.h"
++#include "ui/views/view.h"
++#include "ui/views/view_targeter_delegate.h"
++#include "ui/views/widget/widget_observer.h"
++#include "third_party/skia/include/core/SkBitmap.h"
++
++class BrowserView;
++namespace views {
++class Combobox;
++class Label;
++class ImageView;
++class LabelButton;
++class WebView;
++class ScrollView;
++}  // namespace views
++namespace ember {
++class EmberGlassView;
++class EmberUtilityButton;
++
++// One owner per browser. Transient menus and the reusable Snap page share
++// logical dismissal with search and native extension popups.
++class EmberUtilityController : public views::View,
++                               public views::ViewTargeterDelegate,
++                               public TabStripModelObserver,
++                               public views::SliderListener,
++                               public views::ResizeAreaDelegate,
++                               public views::WidgetObserver {
++ public:
++  METADATA_HEADER(EmberUtilityController, views::View)
++ public:
++  enum class Utility {
++    kNone,
++    kMedia,
++    kWorkspaces,
++    kSnap,
++    kExtensions,
++    kVolume
++  };
++  explicit EmberUtilityController(BrowserView* browser_view);
++  ~EmberUtilityController() override;
++  void CreateFooter(views::View* footer);
++  void Toggle(Utility utility, views::View* anchor);
++  void Close(bool restore_focus = true,
++             bool immediate = false,
++             bool keep_capture = false);
++  void BeforeExtensions();
++  void ExtensionsClosed();
++  void ShowVolume(content::WebContents* contents, views::View* anchor);
++  int SnapWidth(int available_width) const;
++  void Relayout();
++  Utility active() const { return active_; }
++  views::View* footer_for_testing() const { return footer_; }
++  views::View* popover_content_for_testing() const { return popover_body_; }
++  views::Slider* volume_for_testing() const { return volume_slider_; }
++  views::Slider* seek_for_testing() const { return seek_slider_; }
++  views::Combobox* sources_for_testing() const { return source_button_; }
++  views::LabelButton* media_action_for_testing(int action) const {
++    auto it = media_buttons_.find(action);
++    return it == media_buttons_.end() ? nullptr : it->second.get();
++  }
++  bool snap_requested_for_testing() const { return snap_requested_; }
++  content::WebContents* capture_source_for_testing() const {
++    return capture_source_.get();
++  }
++  content::WebContents* snap_contents_for_testing() const;
++  content::WebContents* media_contents_for_testing() const {
++    return media_.get();
++  }
++
++  bool DoesIntersectRect(const views::View*, const gfx::Rect&) const override;
++  void AddedToWidget() override;
++  void RemovedFromWidget() override;
++  void OnWidgetActivationChanged(views::Widget* widget, bool active) override;
++  void OnPaint(gfx::Canvas* canvas) override;
++  void OnMouseEvent(ui::MouseEvent* event) override;
++  void OnKeyEvent(ui::KeyEvent* event) override;
++  void OnTabStripModelChanged(TabStripModel*,
++                              const TabStripModelChange&,
++                              const TabStripSelectionChange&) override;
++  void SliderValueChanged(views::Slider*,
++                          float,
++                          float,
++                          views::SliderChangeReason) override;
++  void OnResize(int resize_amount, bool done_resizing) override;
++  void SliderDragStarted(views::Slider* slider) override;
++  void SliderDragEnded(views::Slider* slider) override;
++
++ private:
++  class Source;
++  class SnapPage;
++  void SyncSources();
++  void SourceChanged(content::WebContents* contents);
++  void ShowPopover(views::View* anchor, int height, bool volume = false);
++  void RefreshMedia();
++  void UpdatePosition();
++  void SelectNextSource();
++  void MediaAction(int action);
++  void UpdateButtons();
++  void CaptureSnap();
++  void FinishSnapCapture(uint64_t generation,
++                         SkBitmap image,
++                         std::u16string error);
++  void EnsureSnapPage();
++  void PollSnap();
++  void OnSnapScript(uint64_t generation,
++                    content::WeakDocumentPtr document,
++                    GURL url,
++                    base::Value result);
++  void CancelPendingSnap();
++  void SnapStatus(std::u16string message);
++  void ApplySnapFrame(const EmberGlassTransition::Frame& frame);
++  bool SourceStillValid() const;
++  void ScheduleSourceRefresh();
++
++  const raw_ptr<BrowserView> browser_view_;
++  Utility active_ = Utility::kNone;
++  raw_ptr<views::View> anchor_ = nullptr;
++  raw_ptr<views::View> footer_ = nullptr;
++  std::map<Utility, raw_ptr<EmberUtilityButton>> buttons_;
++  raw_ptr<EmberGlassView> popover_ = nullptr;
++  std::vector<raw_ptr<EmberGlassView>> closing_popovers_;
++  raw_ptr<views::View> popover_body_ = nullptr;
++  int popover_height_ = 0;
++  bool listening_ = false;
++  raw_ptr<views::Slider> volume_slider_ = nullptr;
++  raw_ptr<views::Slider> seek_slider_ = nullptr;
++  raw_ptr<views::ImageView> artwork_ = nullptr;
++  raw_ptr<views::Label> media_title_ = nullptr;
++  raw_ptr<views::ScrollView> media_scroll_ = nullptr;
++  raw_ptr<views::View> media_body_ = nullptr;
++  raw_ptr<views::Label> media_time_ = nullptr;
++  raw_ptr<views::Combobox> source_button_ = nullptr;
++  std::map<int, raw_ptr<views::LabelButton>> media_buttons_;
++  std::map<content::WebContents*, std::unique_ptr<Source>> sources_;
++  std::vector<base::WeakPtr<content::WebContents>> available_sources_;
++  std::vector<base::WeakPtr<content::WebContents>> source_model_owners_;
++  std::vector<std::u16string> source_model_labels_;
++  base::WeakPtr<content::WebContents> media_;
++  base::WeakPtr<content::WebContents> volume_owner_;
++  base::RepeatingTimer position_timer_;
++  bool updating_ = false;
++  bool seeking_ = false;
++  bool refresh_pending_ = false;
++
++  raw_ptr<views::View> snap_surface_ = nullptr;
++  raw_ptr<SnapPage> snap_page_ = nullptr;
++  raw_ptr<views::Label> snap_status_ = nullptr;
++  EmberGlassTransition snap_transition_;
++  EmberGlassTransition capture_transition_;
++  int snap_width_ = 340;
++  int snap_reveal_width_ = 0;
++  int resize_start_width_ = 0;
++  bool snap_visible_ = false;
++  uint64_t snap_generation_ = 0;
++  SkBitmap pending_capture_;
++  base::WeakPtr<content::WebContents> capture_source_;
++  content::WeakDocumentPtr capture_document_;
++  GURL capture_url_;
++  GURL paste_url_;
++  content::WeakDocumentPtr paste_document_;
++  enum class PastePhase { kIdle, kWaiting, kPrepared, kPasted };
++  PastePhase paste_phase_ = PastePhase::kIdle;
++  bool script_pending_ = false;
++  std::string paste_digest_;
++  bool paste_dispatched_ = false;
++  bool snap_requested_ = false;
++  base::TimeTicks snap_started_;
++  base::RepeatingTimer snap_timer_;
++  gfx::Rect capture_bounds_;
++  base::OneShotTimer feedback_timer_;
++  base::WeakPtrFactory<EmberUtilityController> weak_factory_{this};
++};
++}  // namespace ember
++#endif
+diff --git a/chrome/browser/ui/views/extensions/extensions_toolbar_button.cc b/chrome/browser/ui/views/extensions/extensions_toolbar_button.cc
+--- a/chrome/browser/ui/views/extensions/extensions_toolbar_button.cc
++++ b/chrome/browser/ui/views/extensions/extensions_toolbar_button.cc
+@@ -14,6 +14,11 @@
+ #include "chrome/browser/ui/view_ids.h"
+ #include "chrome/browser/ui/views/extensions/extensions_menu_coordinator.h"
+ #include "chrome/browser/ui/views/extensions/extensions_menu_view.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/browser/ui/views/ember/ember_utility_controller.h"
++#include "ui/views/animation/ink_drop.h"
++#include "ui/views/animation/ink_drop_host.h"
++#include "ui/views/controls/highlight_path_generator.h"
+ #include "chrome/browser/ui/views/extensions/extensions_request_access_button.h"
+ #include "chrome/browser/ui/views/extensions/extensions_toolbar_desktop.h"
+ #include "chrome/browser/ui/web_applications/app_browser_controller.h"
+@@ -143,6 +148,13 @@
+ void ExtensionsToolbarButton::OnWidgetDestroying(views::Widget* widget) {
+   extension_menu_observation_.Reset();
+   pressed_lock_.reset();
++  if (ember_footer_) {
++    ember_feedback_.Set(GetState() == STATE_HOVERED, GetState() == STATE_PRESSED, false);
++    SchedulePaint();
++    if (auto* view = BrowserView::GetBrowserViewForBrowser(browser_)) {
++      if (auto* owner = view->ember_utilities()) owner->ExtensionsClosed();
++    }
++  }
+   extensions_toolbar_->OnMenuClosed();
+ }
+ 
+@@ -150,6 +162,33 @@
+   return false;
+ }
+ 
++void ExtensionsToolbarButton::SetEmberFooter(bool footer) {
++  ember_footer_ = footer;
++  if (footer) {
++    // Reparented toolbar InkDrop keeps toolbar insets/radii and an independently
++    // animated layer. At 36px its old pill extends below the masked rail, which
++    // explains the detached arc. Reset that paint owner and use bounded square
++    // feedback. Focus remains a deliberate, separate Views FocusRing.
++    views::InkDrop::Get(this)->SetMode(views::InkDropHost::InkDropMode::OFF);
++    views::InstallRoundRectHighlightPathGenerator(this, gfx::Insets(4), 6);
++    SetBackground(nullptr);
++    ember_feedback_.Set(GetState() == STATE_HOVERED, GetState() == STATE_PRESSED,
++                        GetExtensionsMenuShowing());
++  }
++  SchedulePaint();
++}
++void ExtensionsToolbarButton::OnPaintBackground(gfx::Canvas* canvas) {
++  if (!ember_footer_) { ToolbarChipButton::OnPaintBackground(canvas); return; }
++  ember_feedback_.Paint(canvas);
++}
++void ExtensionsToolbarButton::StateChanged(ButtonState old_state) {
++  ToolbarChipButton::StateChanged(old_state);
++  if (!ember_footer_) return;
++  views::InkDrop::Get(this)->SetMode(views::InkDropHost::InkDropMode::OFF);
++  ember_feedback_.Set(GetState() == STATE_HOVERED, GetState() == STATE_PRESSED,
++                      GetExtensionsMenuShowing());
++  SchedulePaint();
++}
+ void ExtensionsToolbarButton::ToggleExtensionsMenu() {
+   if (extensions_menu_coordinator_ &&
+       extensions_menu_coordinator_->IsShowing()) {
+@@ -160,6 +199,10 @@
+     return;
+   }
+ 
++  if (ember_footer_) {
++    if (auto* view = BrowserView::GetBrowserViewForBrowser(browser_))
++      view->PrepareEmberExtensions();
++  }
+   pressed_lock_ = menu_button_controller_->TakeLock();
+   extensions_toolbar_->OnMenuOpening();
+   base::RecordAction(base::UserMetricsAction("Extensions.Toolbar.MenuOpened"));
+@@ -190,6 +233,8 @@
+ }
+ 
+ int ExtensionsToolbarButton::GetIconSize() const {
++  if (ember_footer_)
++    return 19;
+   const bool touch_ui = ui::TouchUiController::Get()->touch_ui();
+   if (touch_ui && !web_app::AppBrowserController::IsWebApp(browser_)) {
+     return kDefaultTouchableIconSize;
+diff --git a/chrome/browser/ui/views/extensions/extensions_toolbar_button.h b/chrome/browser/ui/views/extensions/extensions_toolbar_button.h
+--- a/chrome/browser/ui/views/extensions/extensions_toolbar_button.h
++++ b/chrome/browser/ui/views/extensions/extensions_toolbar_button.h
+@@ -6,6 +6,7 @@
+ #define CHROME_BROWSER_UI_VIEWS_EXTENSIONS_EXTENSIONS_TOOLBAR_BUTTON_H_
+ 
+ #include <memory>
++#include "chrome/browser/ui/views/ember/ember_utility_button.h"
+ 
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
+@@ -34,9 +35,14 @@
+   ExtensionsToolbarButton(const ExtensionsToolbarButton&) = delete;
+   ExtensionsToolbarButton& operator=(const ExtensionsToolbarButton&) = delete;
+   ~ExtensionsToolbarButton() override;
++  void SetEmberFooter(bool footer);
++  void OnPaintBackground(gfx::Canvas* canvas) override;
++  void StateChanged(ButtonState old_state) override;
+ 
+   // Toggle the Extensions menu. If the ExtensionsToolbarDesktop is in
+   // kAutoHide mode and hidden this will cause it to show.
++  bool ember_footer_ = false;
++  ember::EmberSquareFeedback ember_feedback_{this};
+   void ToggleExtensionsMenu();
+ 
+   bool GetExtensionsMenuShowing() const;
+diff --git a/chrome/browser/ui/views/extensions/extensions_toolbar_desktop.cc b/chrome/browser/ui/views/extensions/extensions_toolbar_desktop.cc
+--- a/chrome/browser/ui/views/extensions/extensions_toolbar_desktop.cc
++++ b/chrome/browser/ui/views/extensions/extensions_toolbar_desktop.cc
+@@ -278,8 +278,24 @@
+   extensions_button_->UpdateState(state);
+ }
+ 
++void ExtensionsToolbarDesktop::SetEmberFooter() {
++  ember_footer_ = true;
++  GetTargetLayoutManager()->SetDefault(views::kMarginsKey, gfx::Insets());
++  extensions_button_->SetPreferredSize(gfx::Size(36, 36));
++  extensions_button_->SetEmberFooter(true);
++  if (request_access_button_)
++    request_access_button_->SetVisible(false);
++  InvalidateLayout();
++}
++
+ void ExtensionsToolbarDesktop::UpdateRequestAccessButton(
+     content::WebContents& web_contents) {
++  if (ember_footer_) {
++    if (request_access_button_)
++      request_access_button_->SetVisible(false);
++    extensions_button_->SetFlatEdge(std::nullopt);
++    return;
++  }
+   // Extensions request access button can only be updated when feature is
+   // enabled.
+   if (!base::FeatureList::IsEnabled(
+@@ -589,6 +605,8 @@
+ }
+ 
+ gfx::Size ExtensionsToolbarDesktop::GetToolbarActionSize() {
++  if (ember_footer_)
++    return gfx::Size(36, 36);
+   constexpr gfx::Size kDefaultSize(28, 28);
+   BrowserView* const browser_view =
+       BrowserView::GetBrowserViewForBrowser(browser_);
+diff --git a/chrome/browser/ui/views/extensions/extensions_toolbar_desktop.h b/chrome/browser/ui/views/extensions/extensions_toolbar_desktop.h
+--- a/chrome/browser/ui/views/extensions/extensions_toolbar_desktop.h
++++ b/chrome/browser/ui/views/extensions/extensions_toolbar_desktop.h
+@@ -127,6 +127,9 @@
+   }
+ 
+   // Gets the extension menu button for the toolbar.
++  void SetEmberFooter();
++  void HideEmberUtilitySurface() { HideExtensionsMenu(); HideActivePopup(); }
++
+   ExtensionsToolbarButton* GetExtensionsButton() const {
+     return extensions_button_;
+   }
+@@ -349,6 +352,7 @@
+   const raw_ptr<ToolbarActionsModel> model_;
+ 
+   DisplayMode display_mode_;
++  bool ember_footer_ = false;
+ 
+   // Controller for showing the toolbar action hover card.
+   std::unique_ptr<ToolbarActionHoverCardController>
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/ember/ember_glass_view.h"
++#include "chrome/browser/ui/views/ember/ember_utility_controller.h"
+ #include "chrome/browser/ui/omnibox/omnibox_popup_view.h"
+ 
+ #include <stdint.h>
+@@ -1991,8 +1992,20 @@
+     ember_sidebar_copy_link_->SetAccessibleName(u"Copy current link");
+     ember_sidebar_copy_link_->SetTooltipText(u"Copy current link");
+ 
++    auto favorite_scroll = std::make_unique<views::ScrollView>();
++    favorite_scroll->SetHorizontalScrollBarMode(
++        views::ScrollView::ScrollBarMode::kDisabled);
++    favorite_scroll->SetDrawOverflowIndicator(false);
++    favorite_scroll->ClipHeightTo(0, 320);
++    favorite_scroll->SetBackground(nullptr);
+     ember_sidebar_favorites_ =
+-        ember_sidebar_->AddChildView(std::make_unique<views::View>());
++        favorite_scroll->SetContents(std::make_unique<views::View>());
++    auto* favorite_scroll_ptr =
++        ember_sidebar_->AddChildView(std::move(favorite_scroll));
++    // Favorites retain their original tile/favicon sizes; only their viewport
++    // shrinks when a short window needs the fixed, bottom-anchored utilities.
++    static_cast<views::BoxLayout*>(ember_sidebar_->GetLayoutManager())
++        ->SetFlexForView(favorite_scroll_ptr, 1, true);
+     ember_sidebar_favorites_->SetProperty(views::kElementIdentifierKey,
+                                           kEmberSidebarFavoritesElementId);
+     ember_sidebar_favorites_->SetPreferredSize(gfx::Size(
+@@ -2028,14 +2041,14 @@
+         ->SetFlexForView(sidebar_spacer, 1);
+     ember_sidebar_footer_ =
+         ember_sidebar_->AddChildView(std::make_unique<views::View>());
+-    ember_sidebar_footer_->SetPreferredSize(gfx::Size(0, 32));
++    ember_sidebar_footer_->SetPreferredSize(gfx::Size(0, 196));
+     auto* footer_layout = ember_sidebar_footer_->SetLayoutManager(
+         std::make_unique<views::BoxLayout>(
+-            views::BoxLayout::Orientation::kHorizontal));
+-    footer_layout->set_main_axis_alignment(
++            views::BoxLayout::Orientation::kVertical, gfx::Insets(), 4));
++    footer_layout->set_cross_axis_alignment(
+         GetProfile()->GetPrefs()->GetBoolean(prefs::kEmberSidebarWide)
+-            ? views::BoxLayout::MainAxisAlignment::kEnd
+-            : views::BoxLayout::MainAxisAlignment::kCenter);
++            ? views::BoxLayout::CrossAxisAlignment::kEnd
++            : views::BoxLayout::CrossAxisAlignment::kCenter);
+     ember_sidebar_footer_->SetVisible(ember_sidebar_open_);
+     UpdateEmberSidebar();
+   }
+@@ -2259,6 +2272,10 @@
+ }
+ 
+ BrowserView::~BrowserView() {
++  if (ember_utilities_) {
++    RemoveChildViewT(ember_utilities_.get());
++    ember_utilities_ = nullptr;
++  }
+   ember_selection_popup_.reset();
+   // Return the native location bar to its delegate before teardown destroys
+   // the ToolbarView. Its controller and popup hold delegate pointers.
+@@ -2896,6 +2913,8 @@
+ }
+ 
+ void BrowserView::Close() {
++  if (ember_utilities_)
++    ember_utilities_->Close(false, true);
+   browser_widget_->Close();
+ }
+ 
+@@ -3485,6 +3504,8 @@
+ }
+ 
+ void BrowserView::FullscreenStateChanged() {
++  if (ember_utilities_)
++    ember_utilities_->Close(false, true);
+ #if BUILDFLAG(IS_CHROMEOS)
+   const auto* frame_view =
+       views::AsViewClass<BrowserFrameViewChromeOS>(GetFrameView());
+@@ -4333,7 +4354,35 @@
+        url.host() == chrome::kChromeUINewTabHost);
+ }
+ 
++void BrowserView::CloseEmberUtilities(bool restore_focus) {
++  if (ember_utilities_)
++    ember_utilities_->Close(restore_focus);
++}
++void BrowserView::SetEmberSnapSidebarMode(bool snap) {
++  if (!ember_sidebar_)
++    return;
++  const bool wide =
++      GetProfile()->GetPrefs()->GetBoolean(prefs::kEmberSidebarWide);
++  if (ember_search_button_)
++    ember_search_button_->SetVisible(snap || !wide);
++  SetEmberSidebarWidth(ember_sidebar_open_ ? (snap ? 52 : wide ? 96 : 52) : 8);
++}
++void BrowserView::PrepareEmberExtensions() {
++  if (ember_utilities_)
++    ember_utilities_->BeforeExtensions();
++}
++void BrowserView::ShowEmberTabVolume(content::WebContents* contents,
++                                     views::View* anchor) {
++  if (ember_utilities_)
++    ember_utilities_->ShowVolume(contents, anchor);
++}
++int BrowserView::GetEmberSnapWidth(int available_width) const {
++  return ember_utilities_ && !IsFullscreen()
++             ? ember_utilities_->SnapWidth(available_width)
++             : 0;
++}
+ void BrowserView::ShowEmberSearch() {
++  CloseEmberUtilities(false);
+   auto* location = GetLocationBarView();
+   if (!location || !GetWidget()) {
+     return;
+@@ -4677,6 +4726,7 @@
+ }
+ 
+ void BrowserView::OnEmberSidebarPreferenceChanged() {
++  CloseEmberUtilities(false);
+   CloseEmberSearch(false);
+   const bool open =
+       GetProfile()->GetPrefs()->GetBoolean(prefs::kEmberSidebarOpen);
+@@ -4690,9 +4740,9 @@
+   }
+   if (ember_sidebar_footer_) {
+     static_cast<views::BoxLayout*>(ember_sidebar_footer_->GetLayoutManager())
+-        ->set_main_axis_alignment(wide
+-            ? views::BoxLayout::MainAxisAlignment::kEnd
+-            : views::BoxLayout::MainAxisAlignment::kCenter);
++        ->set_cross_axis_alignment(
++            wide ? views::BoxLayout::CrossAxisAlignment::kEnd
++                 : views::BoxLayout::CrossAxisAlignment::kCenter);
+   }
+   ember_sidebar_open_ = open;
+   ember_sidebar_motion_from_ = ember_sidebar_width_;
+@@ -7165,6 +7215,8 @@
+ 
+   LayoutSuperclass<views::View>(this);
+   LayoutEmberSearch();
++  if (ember_utilities_)
++    ember_utilities_->Relayout();
+   if (ember_selection_popup_) {
+     ember_selection_popup_->Relayout();
+   }
+@@ -7302,6 +7354,9 @@
+   toolbar_->Init();
+   toolbar_->SetEmberSidebarExpanded(false);
+   if (ember_sidebar_footer_) {
++    ember_utilities_ =
++        AddChildView(std::make_unique<ember::EmberUtilityController>(this));
++    ember_utilities_->CreateFooter(ember_sidebar_footer_);
+     toolbar_->MoveExtensionsToSidebar(ember_sidebar_footer_);
+   }
+ 
+diff --git a/chrome/browser/ui/views/frame/browser_view.h b/chrome/browser/ui/views/frame/browser_view.h
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -121,6 +121,7 @@
+ 
+ namespace ember {
+ class EmberGlassOverlayController;
++class EmberUtilityController;
+ class EmberUploadRequest;
+ class EmberSelectionPopup;
+ }  // namespace ember
+@@ -181,6 +182,12 @@
+   // Shared shell control; the toolbar button remains reachable while the
+   // sidebar content itself is fully collapsed.
+   void ToggleEmberSidebar();
++  void CloseEmberUtilities(bool restore_focus = true);
++  void PrepareEmberExtensions();
++  void SetEmberSnapSidebarMode(bool snap);
++  void ShowEmberTabVolume(content::WebContents* contents, views::View* anchor);
++  int GetEmberSnapWidth(int available_width) const;
++  ember::EmberUtilityController* ember_utilities() const { return ember_utilities_; }
+   views::View* ember_sidebar() const { return ember_sidebar_; }
+   void ShowEmberSearch();
+   void ScheduleEmberSearchBang();
+@@ -1240,6 +1247,7 @@
+   raw_ptr<views::View> ember_sidebar_ = nullptr;
+   raw_ptr<views::View> ember_sidebar_header_ = nullptr;
+   raw_ptr<views::View> ember_sidebar_footer_ = nullptr;
++  raw_ptr<ember::EmberUtilityController> ember_utilities_ = nullptr;
+   bool ember_sidebar_open_ = true;
+   bool ember_search_open_ = false;
+   unsigned int ember_search_generation_ = 0;
+diff --git a/chrome/browser/ui/views/frame/browser_view_browsertest.cc b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+--- a/chrome/browser/ui/views/frame/browser_view_browsertest.cc
++++ b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+@@ -19,6 +19,14 @@
+ #include "ui/gfx/animation/animation.h"
+ #include "chrome/browser/ui/views/ember/ember_glass_transition.h"
+ #include "chrome/browser/ui/views/ember/ember_glass_view.h"
++#include "chrome/browser/ui/views/ember/ember_utility_controller.h"
++#include "chrome/browser/ui/views/ember/ember_utility_button.h"
++#include "base/test/run_until.h"
++#include "ui/views/controls/combobox/combobox.h"
++#include "ui/views/test/combobox_test_api.h"
++#include "ui/base/clipboard/clipboard.h"
++#include "ui/base/clipboard/scoped_clipboard_writer.h"
++#include "services/media_session/public/mojom/media_session.mojom.h"
+ #include "chrome/browser/ui/views/location_bar/selected_keyword_view.h"
+ #include "chrome/browser/ui/views/omnibox/omnibox_match_cell_view.h"
+ #include "chrome/browser/ui/views/omnibox/omnibox_text_view.h"
+@@ -956,6 +964,299 @@
+   }
+ }
+ 
++IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++                       EmberUtilitiesKeepFiveFooterTargetsAndExclusiveState) {
++  using Utility = ember::EmberUtilityController::Utility;
++  auto* owner = browser_view()->ember_utilities();
++  ASSERT_TRUE(owner);
++  auto* footer = owner->footer_for_testing();
++  ASSERT_EQ(5u, footer->children().size());
++  auto* media = static_cast<ember::EmberUtilityButton*>(footer->children()[0]);
++  auto* workspace =
++      static_cast<ember::EmberUtilityButton*>(footer->children()[1]);
++  auto* snap = static_cast<ember::EmberUtilityButton*>(footer->children()[2]);
++  EXPECT_EQ(u"Media", media->GetTooltipText());
++  EXPECT_EQ(u"Workspaces", workspace->GetTooltipText());
++  EXPECT_EQ(u"ChatGPT Snap", snap->GetTooltipText());
++  EXPECT_EQ(u"Settings", footer->children()[4]->GetTooltipText());
++  for (const bool wide : {false, true}) {
++    browser()->profile()->GetPrefs()->SetBoolean(prefs::kEmberSidebarWide,
++                                                 wide);
++    browser_view()->GetWidget()->SetSize(gfx::Size(640, 360));
++    browser_view()->GetWidget()->GetRootView()->DeprecatedLayoutImmediately();
++    for (const auto& child : footer->children()) {
++      EXPECT_EQ(gfx::Size(36, 36), child->size());
++      EXPECT_TRUE(footer->GetLocalBounds().Contains(child->bounds()));
++      EXPECT_EQ(media->bounds().right(), child->bounds().right());
++    }
++    for (size_t i = 1; i < footer->children().size(); ++i)
++      EXPECT_EQ(4, footer->children()[i]->y() -
++                       footer->children()[i - 1]->bounds().bottom());
++  }
++  gfx::Animation::SetPrefersReducedMotionForTesting(true);
++  owner->Toggle(Utility::kWorkspaces, workspace);
++  EXPECT_EQ(Utility::kWorkspaces, owner->active());
++  ASSERT_TRUE(owner->layer());
++  EXPECT_FALSE(owner->layer()->fills_bounds_opaquely());
++  ASSERT_EQ(1u, owner->popover_content_for_testing()->children().size());
++  gfx::Point rail_edge = workspace->GetBoundsInScreen().right_center();
++  rail_edge.Offset(-1, 0);
++  views::View::ConvertPointFromScreen(owner, &rail_edge);
++  EXPECT_FALSE(
++      owner->DoesIntersectRect(owner, gfx::Rect(rail_edge, gfx::Size(1, 1))));
++  owner->Toggle(Utility::kMedia, media);
++  EXPECT_EQ(Utility::kMedia, owner->active());
++  EXPECT_FALSE(owner->volume_for_testing()->GetEnabled());
++  EXPECT_FALSE(owner->seek_for_testing()->GetEnabled());
++  owner->Toggle(Utility::kMedia, media);
++  EXPECT_EQ(Utility::kNone, owner->active());
++  owner->Toggle(Utility::kWorkspaces, workspace);
++  owner->BeforeExtensions();
++  EXPECT_EQ(Utility::kExtensions, owner->active());
++  browser_view()->ShowEmberSearch();
++  EXPECT_EQ(Utility::kNone, owner->active());
++  owner->Toggle(Utility::kWorkspaces, workspace);
++  EXPECT_FALSE(browser_view()->IsEmberSearchOpen());
++  ui::KeyEvent escape(ui::EventType::kKeyPressed, ui::VKEY_ESCAPE, ui::EF_NONE);
++  owner->OnKeyEvent(&escape);
++  EXPECT_EQ(Utility::kNone, owner->active());
++  EXPECT_TRUE(escape.handled());
++  gfx::Animation::SetPrefersReducedMotionForTesting(false);
++}
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++                       EmberTabGainOwnsContentsAndRemembersMute) {
++  using Utility = ember::EmberUtilityController::Utility;
++  auto* owner = browser_view()->ember_utilities();
++  auto* first = active_web_contents();
++  EXPECT_DOUBLE_EQ(1.0, first->GetAudioVolume());
++  first->SetAudioVolume(1.75);
++  first->SetAudioMuted(true);
++  first->SetAudioMuted(false);
++  EXPECT_DOUBLE_EQ(1.75, first->GetAudioVolume());
++  chrome::AddTabAt(browser(), GURL(url::kAboutBlankURL), -1, true);
++  auto* second = active_web_contents();
++  EXPECT_DOUBLE_EQ(1.0, second->GetAudioVolume());
++  auto* anchor = owner->footer_for_testing()->children()[0].get();
++  owner->ShowVolume(first, anchor);
++  auto* slider = owner->volume_for_testing();
++  ASSERT_TRUE(slider);
++  EXPECT_NE(first, active_web_contents());
++  owner->SliderValueChanged(slider, .25f, .875f,
++                            views::SliderChangeReason::kByUser);
++  EXPECT_DOUBLE_EQ(.5, first->GetAudioVolume());
++  EXPECT_DOUBLE_EQ(1.0, second->GetAudioVolume());
++  owner->SliderValueChanged(slider, 1.f, .25f,
++                            views::SliderChangeReason::kByUser);
++  EXPECT_DOUBLE_EQ(2.0, first->GetAudioVolume());
++  // Opening Media never normalizes a boosted background tab.
++  owner->Toggle(Utility::kMedia, anchor);
++  EXPECT_DOUBLE_EQ(2.0, first->GetAudioVolume());
++  owner->ShowVolume(first, anchor);
++  browser()->tab_strip_model()->CloseWebContentsAt(0,
++                                                   TabCloseTypes::CLOSE_NONE);
++  EXPECT_EQ(Utility::kNone, owner->active());
++  chrome::AddTabAt(browser(), GURL(url::kAboutBlankURL), -1, true);
++  EXPECT_DOUBLE_EQ(1.0, active_web_contents()->GetAudioVolume());
++}
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++                       EmberMediaActionsKeepSourceAcrossFocus) {
++  using Action = media_session::mojom::MediaSessionAction;
++  using Utility = ember::EmberUtilityController::Utility;
++  const char script[] = R"JS(
++    (async () => {
++      const rate = 8000, samples = rate * 2;
++      const bytes = new Uint8Array(44 + samples * 2), data = new DataView(bytes.buffer);
++      const text = (at, word) => [...word].forEach((c, i) => bytes[at+i] = c.charCodeAt(0));
++      text(0,'RIFF'); data.setUint32(4,36+samples*2,true); text(8,'WAVE'); text(12,'fmt ');
++      data.setUint32(16,16,true); data.setUint16(20,1,true); data.setUint16(22,1,true);
++      data.setUint32(24,rate,true); data.setUint32(28,rate*2,true);
++      data.setUint16(32,2,true); data.setUint16(34,16,true); text(36,'data');
++      data.setUint32(40,samples*2,true);
++      for(let i=0;i<samples;i++) data.setInt16(44+i*2,1000*Math.sin(i*.2),true);
++      window.audio = new Audio(URL.createObjectURL(new Blob([bytes], {type:'audio/wav'})));
++      audio.loop = true; await audio.play(); window.previous = 0; window.next = 0;
++      navigator.mediaSession.metadata = new MediaMetadata({title:'Native source test'});
++      navigator.mediaSession.setActionHandler('previoustrack', () => ++window.previous);
++      navigator.mediaSession.setActionHandler('nexttrack', () => ++window.next);
++      navigator.mediaSession.setActionHandler('pause', () => audio.pause());
++      navigator.mediaSession.setActionHandler('play', () => audio.play());
++      navigator.mediaSession.setActionHandler('seekto', e => audio.currentTime = e.seekTime);
++      navigator.mediaSession.setPositionState({duration:2, position:0, playbackRate:1});
++      return true;
++    })()
++  )JS";
++  auto* first = active_web_contents();
++  ASSERT_EQ(true, content::EvalJs(first, script));
++  auto* owner = browser_view()->ember_utilities();
++  auto* anchor = owner->footer_for_testing()->children()[0].get();
++  owner->Toggle(Utility::kMedia, anchor);
++  ASSERT_TRUE(base::test::RunUntil(
++      [&] { return owner->media_contents_for_testing() == first; }));
++  auto* previous = owner->media_action_for_testing(int(Action::kPreviousTrack));
++  ASSERT_TRUE(previous);
++  ASSERT_TRUE(base::test::RunUntil([&] { return previous->GetEnabled(); }));
++  views::test::ButtonTestApi(previous).NotifyDefaultMouseClick();
++  ASSERT_EQ(1, content::EvalJs(first, "window.previous"));
++  first->SetAudioVolume(1.8);
++  chrome::AddTabAt(browser(), GURL(url::kAboutBlankURL), -1, true);
++  auto* second = active_web_contents();
++  EXPECT_EQ(first, owner->media_contents_for_testing());
++  EXPECT_DOUBLE_EQ(1.8, first->GetAudioVolume());
++  ASSERT_EQ(true, content::EvalJs(second, script));
++  ASSERT_TRUE(base::test::RunUntil(
++      [&] { return owner->sources_for_testing()->GetEnabled(); }));
++  views::test::ComboboxTestApi(owner->sources_for_testing()).PerformActionAt(1);
++  EXPECT_EQ(second, owner->media_contents_for_testing());
++  views::test::ButtonTestApi(
++      owner->media_action_for_testing(int(Action::kNextTrack)))
++      .NotifyDefaultMouseClick();
++  EXPECT_EQ(1, content::EvalJs(second, "window.next"));
++  EXPECT_EQ(0, content::EvalJs(first, "window.next"));
++  owner->Close(false);
++}
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++                       EmberNativeImagePastePreservesClipboardAndDraft) {
++  auto* contents = active_web_contents();
++  contents->Focus();
++  ASSERT_TRUE(content::ExecJs(contents, R"JS(
++    document.body.innerHTML = '<div id="composer" contenteditable>Keep my draft</div>';
++    document.getElementById('composer').focus();
++    window.received = new Promise(resolve => document.addEventListener('paste', event => {
++      const file = event.clipboardData.files[0];
++      event.preventDefault();
++      resolve({trusted:event.isTrusted, type:file?.type, size:file?.size,
++        text:document.getElementById('composer').textContent});
++    }, {once:true}));
++  )JS"));
++  {
++    ui::ScopedClipboardWriter writer(ui::ClipboardBuffer::kCopyPaste);
++    writer.WriteText(u"Retain clipboard contents");
++  }
++  const auto clipboard_sequence =
++      ui::Clipboard::GetForCurrentThread()->GetSequenceNumber(
++          ui::ClipboardBuffer::kCopyPaste);
++  SkBitmap image;
++  image.allocN32Pixels(2, 2);
++  image.eraseColor(SK_ColorWHITE);
++  EXPECT_TRUE(contents->PasteImage(image, contents->GetPrimaryMainFrame()));
++  EXPECT_EQ(true, content::EvalJs(
++                      contents,
++                      "received.then(e => e.trusted && e.type === 'image/png' "
++                      "&& e.size > 0 && e.text === 'Keep my draft')"));
++  EXPECT_EQ(clipboard_sequence,
++            ui::Clipboard::GetForCurrentThread()->GetSequenceNumber(
++                ui::ClipboardBuffer::kCopyPaste));
++  chrome::AddTabAt(browser(), GURL(url::kAboutBlankURL), -1, true);
++  EXPECT_FALSE(active_web_contents()->PasteImage(
++      image, contents->GetPrimaryMainFrame()));
++}
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++                       EmberSnapCapturesFocusedSplitAndCancelsBeforeResize) {
++  using Utility = ember::EmberUtilityController::Utility;
++  ASSERT_TRUE(embedded_test_server()->Start());
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), embedded_test_server()->GetURL("/title1.html")));
++  auto* first = active_web_contents();
++  chrome::AddTabAt(browser(), embedded_test_server()->GetURL("/title2.html"),
++                   -1, true);
++  auto* second = active_web_contents();
++  ASSERT_TRUE(content::WaitForLoadStop(second));
++  browser()->tab_strip_model()->AddToNewSplit(
++      {0}, split_tabs::SplitTabVisualData(),
++      split_tabs::SplitTabCreatedSource::kToolbarButton);
++  auto* focused = browser_view()->GetActiveWebContents();
++  ASSERT_TRUE(focused == first || focused == second);
++  const auto original = focused->GetRenderWidgetHostView()->GetViewBounds();
++  auto* owner = browser_view()->ember_utilities();
++  auto* anchor = owner->footer_for_testing()->children()[2].get();
++  owner->Toggle(Utility::kSnap, anchor);
++  EXPECT_EQ(focused, owner->capture_source_for_testing());
++  EXPECT_EQ(original, focused->GetRenderWidgetHostView()->GetViewBounds());
++  EXPECT_EQ(0, browser_view()->GetEmberSnapWidth(640));
++  // Source clicks do not dismiss Snap, unlike transient popovers.
++  ui::MouseEvent click(ui::EventType::kMousePressed, gfx::Point(), gfx::Point(),
++                       base::TimeTicks::Now(), ui::EF_LEFT_MOUSE_BUTTON,
++                       ui::EF_LEFT_MOUSE_BUTTON);
++  owner->OnMouseEvent(&click);
++  EXPECT_TRUE(owner->snap_requested_for_testing());
++  // Cancellation invalidates the native capture callback before it can create
++  // another page, resize the source or paste into a future destination.
++  owner->Close(false, true);
++  base::RunLoop().RunUntilIdle();
++  EXPECT_EQ(nullptr, owner->capture_source_for_testing());
++  EXPECT_EQ(nullptr, owner->snap_contents_for_testing());
++  EXPECT_EQ(0, browser_view()->GetEmberSnapWidth(640));
++}
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++                       EmberSnapReusesProfilePageAndDraftAfterClose) {
++  using Utility = ember::EmberUtilityController::Utility;
++  auto* owner = browser_view()->ember_utilities();
++  auto* anchor = owner->footer_for_testing()->children()[2].get();
++  // about:blank exercises unavailable-capture feedback without providing an
++  // image. Stop the real side page's network load before setting a local draft.
++  owner->Toggle(Utility::kSnap, anchor);
++  ASSERT_TRUE(
++      base::test::RunUntil([&] { return owner->snap_contents_for_testing(); }));
++  auto* snap = owner->snap_contents_for_testing();
++  ASSERT_TRUE(snap);
++  EXPECT_EQ(browser()->profile(), snap->GetBrowserContext());
++  snap->Stop();
++  ASSERT_TRUE(content::NavigateToURL(snap, GURL(url::kAboutBlankURL)));
++  ASSERT_TRUE(content::ExecJs(snap,
++                              "document.body.innerHTML = '<textarea "
++                              "id=draft>Keep my draft</textarea>';"));
++  owner->Close(false, true);
++  EXPECT_EQ(snap, owner->snap_contents_for_testing());
++  owner->Toggle(Utility::kSnap, anchor);
++  ASSERT_TRUE(
++      base::test::RunUntil([&] { return owner->active() == Utility::kSnap; }));
++  EXPECT_EQ(snap, owner->snap_contents_for_testing());
++  EXPECT_EQ("Keep my draft",
++            content::EvalJs(snap, "document.getElementById('draft').value"));
++  owner->Close(false, true);
++}
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++                       EmberFooterFeedbackStaysBoundedAfterInterruptions) {
++  auto* owner = browser_view()->ember_utilities();
++  auto* button = static_cast<ember::EmberUtilityButton*>(
++      owner->footer_for_testing()->children()[1]);
++  gfx::Animation::SetPrefersReducedMotionForTesting(true);
++  for (int i = 0; i < 20; ++i) {
++    button->SetState(views::Button::STATE_HOVERED);
++    button->SetState(views::Button::STATE_PRESSED);
++    button->SetOpen(true);
++    button->SetOpen(false);
++    button->SetState(views::Button::STATE_NORMAL);
++  }
++  ember::EmberSquareFeedback feedback(button);
++  feedback.Set(true, false, false);
++  gfx::Canvas canvas(gfx::Size(48, 48), 1.f, false);
++  canvas.Save();
++  canvas.Translate(gfx::Vector2d(6, 6));
++  feedback.Paint(&canvas);
++  canvas.Restore();
++  const SkBitmap bitmap = canvas.GetBitmap();
++  EXPECT_EQ(SK_ColorTRANSPARENT, bitmap.getColor(0, 0));
++  EXPECT_EQ(SK_ColorTRANSPARENT, bitmap.getColor(47, 47));
++  EXPECT_GT(SkColorGetA(bitmap.getColor(24, 24)), 0);
++  feedback.Set(false, false, false);
++  gfx::Canvas quiet(gfx::Size(36, 36), 1.f, false);
++  feedback.Paint(&quiet);
++  EXPECT_EQ(SK_ColorTRANSPARENT, quiet.GetBitmap().getColor(18, 18));
++  EXPECT_EQ(views::View::FocusBehavior::ALWAYS, button->GetFocusBehavior());
++  gfx::Animation::SetPrefersReducedMotionForTesting(false);
++  feedback.Set(true, false, false);
++  feedback.Set(false, false, false);
++  feedback.Set(true, true, false);
++  feedback.Set(false, false, false);
++}
++
+ // Verifies don't crash when CloseNow() is invoked with two tabs in a browser.
+ // Additionally when one of the tabs is destroyed NotifyNavigationStateChanged()
+ // is invoked on the other.
+diff --git a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+--- a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
++++ b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+@@ -23,6 +23,7 @@
+ #include "chrome/browser/ui/views/animations/tab_strip_animations.h"
+ #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
+ #include "chrome/browser/ui/views/frame/custom_corners.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/frame/custom_corners_background.h"
+ #include "chrome/browser/ui/views/frame/custom_floating_corner.h"
+ #include "chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.h"
+@@ -667,6 +668,9 @@
+                             side_panel_size.width() + main_area_size.width(),
+                             kMainBrowserContentsMinimumWidth});
+   if (views().ember_sidebar) {
++    // Five 36-DIP utilities, four 4-DIP gaps and the existing search/caption
++    // remain usable. Favorites scroll before these fixed targets can clip.
++    min_height = std::max(min_height, 284);
+     min_width += views().ember_sidebar->GetPreferredSize().width() +
+                  (2 * kEmberPageInset);
+   }
+@@ -1177,6 +1181,12 @@
+     content_right =
+         std::min(content_right, browser_params.visual_client_area.right());
+   }
++  // Snap reserves a left side page beside the whole split workspace. Capture
++  // finishes before this reservation is opened; native split ownership stays.
++  if (ember_shell_visible) {
++    content_left += static_cast<BrowserView*>(views().browser_view.get())
++                        ->GetEmberSnapWidth(content_right - content_left);
++  }
+   auto& contents_layout =
+       layout.AddChild(views().contents_container,
+                       gfx::Rect(content_left, params.visual_client_area.y(),
+diff --git a/chrome/browser/ui/views/tabs/tab.cc b/chrome/browser/ui/views/tabs/tab.cc
+--- a/chrome/browser/ui/views/tabs/tab.cc
++++ b/chrome/browser/ui/views/tabs/tab.cc
+@@ -3,6 +3,10 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/views/tabs/tab.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/browser/ui/views/tabs/tab_strip.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/browser/ui/browser.h"
+ 
+ #include <stddef.h>
+ 
+@@ -653,7 +657,22 @@
+ }
+ }  // namespace
+ 
++bool Tab::HitTestAudioIndicator(const gfx::Point& point) const {
++  return alert_indicator_button_->GetVisible() &&
++         alert_indicator_button_->bounds().Contains(point) &&
++         (alert_indicator_button_->showing_alert_state() ==
++              tabs::TabAlert::kAudioPlaying ||
++          alert_indicator_button_->showing_alert_state() ==
++              tabs::TabAlert::kAudioMuting);
++}
++
+ bool Tab::OnMousePressed(const ui::MouseEvent& event) {
++  if (event.IsOnlyRightMouseButton() &&
++      HitTestAudioIndicator(event.location()) &&
++      controller_->ShowEmberAudioVolume(this, alert_indicator_button_)) {
++    ember_volume_press_ = true;
++    return true;
++  }
+   shift_pressed_on_mouse_down_ = event.IsShiftDown();
+   controller_->UpdateHoverCard(nullptr,
+                                TabSlotController::HoverCardUpdateType::kEvent);
+@@ -703,6 +722,10 @@
+ }
+ 
+ void Tab::OnMouseReleased(const ui::MouseEvent& event) {
++  if (ember_volume_press_) {
++    ember_volume_press_ = false;
++    return;
++  }
+   base::WeakPtr<Tab> self = weak_ptr_factory_.GetWeakPtr();
+   controller_->OnMouseEventInTab(this, event);
+ 
+diff --git a/chrome/browser/ui/views/tabs/tab.h b/chrome/browser/ui/views/tabs/tab.h
+--- a/chrome/browser/ui/views/tabs/tab.h
++++ b/chrome/browser/ui/views/tabs/tab.h
+@@ -210,6 +210,8 @@
+ 
+   TabIcon* GetTabIconForTesting() const { return icon_; }
+ 
++  bool HitTestAudioIndicator(const gfx::Point& point) const;
++
+   AlertIndicatorButton* alert_indicator_button_for_testing() {
+     return alert_indicator_button_;
+   }
+@@ -334,6 +336,7 @@
+ 
+   // Whether the shift key was pressed at the start of the click. Used on mouse
+   // up.
++  bool ember_volume_press_ = false;
+   bool shift_pressed_on_mouse_down_ = false;
+ 
+   std::unique_ptr<TabCloseButtonObserver> tab_close_button_observer_;
+diff --git a/chrome/browser/ui/views/tabs/tab_slot_controller.h b/chrome/browser/ui/views/tabs/tab_slot_controller.h
+--- a/chrome/browser/ui/views/tabs/tab_slot_controller.h
++++ b/chrome/browser/ui/views/tabs/tab_slot_controller.h
+@@ -244,6 +244,10 @@
+   // Attempts to move the specified group to the right.
+   virtual void ShiftGroupRight(const tab_groups::TabGroupId& group) = 0;
+ 
++  // Native owning controller resolves the WebContents before popup focus.
++  virtual bool ShowEmberAudioVolume(Tab* tab, views::View* anchor) {
++    return false;
++  }
+   virtual Browser* GetBrowser() = 0;
+ 
+   virtual BrowserWindowInterface* GetBrowserWindowInterface() = 0;
+diff --git a/chrome/browser/ui/views/tabs/tab_strip.cc b/chrome/browser/ui/views/tabs/tab_strip.cc
+--- a/chrome/browser/ui/views/tabs/tab_strip.cc
++++ b/chrome/browser/ui/views/tabs/tab_strip.cc
+@@ -2113,6 +2113,18 @@
+   ShiftGroupRelative(group, 1);
+ }
+ 
++bool TabStrip::ShowEmberAudioVolume(Tab* tab, views::View* anchor) {
++  const auto index = GetModelIndexOf(tab);
++  auto* browser = GetBrowser();
++  auto* view =
++      browser ? BrowserView::GetBrowserViewForBrowser(browser) : nullptr;
++  if (!view || !index)
++    return false;
++  view->ShowEmberTabVolume(browser->tab_strip_model()->GetWebContentsAt(*index),
++                           anchor);
++  return true;
++}
++
+ Browser* TabStrip::GetBrowser() {
+   return controller_->GetBrowserWindowInterface()->GetBrowserForMigrationOnly();
+ }
+@@ -2220,6 +2232,12 @@
+   CHECK(tab) << "The source must be a Tab class.";
+   if (tab->closing()) {
+     return;
++  }
++  if (source_type == ui::mojom::MenuSourceType::kMouse) {
++    gfx::Point local = point;
++    views::View::ConvertPointFromScreen(tab, &local);
++    if (tab->HitTestAudioIndicator(local))
++      return;
+   }
+   parent_->ShowContextMenuForTab(tab, point, source_type);
+ }
+diff --git a/chrome/browser/ui/views/tabs/tab_strip.h b/chrome/browser/ui/views/tabs/tab_strip.h
+--- a/chrome/browser/ui/views/tabs/tab_strip.h
++++ b/chrome/browser/ui/views/tabs/tab_strip.h
+@@ -310,6 +310,7 @@
+       const tab_groups::TabGroupColorId& color_id) const override;
+   void ShiftGroupLeft(const tab_groups::TabGroupId& group) override;
+   void ShiftGroupRight(const tab_groups::TabGroupId& group) override;
++  bool ShowEmberAudioVolume(Tab* tab, views::View* anchor) override;
+   Browser* GetBrowser() override;
+   BrowserWindowInterface* GetBrowserWindowInterface() override;
+ 
+diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.cc b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+--- a/chrome/browser/ui/views/toolbar/toolbar_view.cc
++++ b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+@@ -1814,10 +1814,13 @@
+     return;
+   }
+   extensions_container_->ClearProperty(views::kFlexBehaviorKey);
+-  sidebar_footer->AddChildView(RemoveChildViewT(extensions_container_.get()));
++  sidebar_footer->AddChildViewAt(RemoveChildViewT(extensions_container_.get()),
++                                 3);
++  extensions_container_->SetPreferredSize(gfx::Size(36, 36));
++  extensions_container_->SetEmberFooter();
+   // Give native pinned-action overflow the actual one-column rail width.
+   static_cast<views::BoxLayout*>(sidebar_footer->GetLayoutManager())
+-      ->SetFlexForView(extensions_container_, 1);
++      ->SetFlexForView(extensions_container_, 0);
+   SetEmberSidebarExpanded(false);
+   InvalidateLayout();
+ }
+diff --git a/content/browser/media/forwarding_audio_stream_factory.cc b/content/browser/media/forwarding_audio_stream_factory.cc
+--- a/content/browser/media/forwarding_audio_stream_factory.cc
++++ b/content/browser/media/forwarding_audio_stream_factory.cc
+@@ -62,6 +62,7 @@
+ }
+ 
+ ForwardingAudioStreamFactory::Core::~Core() {
++  if (remote_factory_) remote_factory_->SetGroupVolume(group_id_, 1.0);
+   DCHECK_CURRENTLY_ON(BrowserThread::IO);
+   for (AudioStreamBroker::LoopbackSink* sink : loopback_sinks_)
+     sink->OnSourceGone();
+@@ -158,6 +159,12 @@
+                    loopback_source->GetGroupID().GetLowForSerialization());
+ }
+ 
++void ForwardingAudioStreamFactory::Core::SetVolume(double gain) {
++  DCHECK_CURRENTLY_ON(BrowserThread::IO);
++  volume_ = gain;
++  if (remote_factory_) remote_factory_->SetGroupVolume(group_id_, volume_);
++}
++
+ void ForwardingAudioStreamFactory::Core::SetMuted(bool muted) {
+   DCHECK_CURRENTLY_ON(BrowserThread::IO);
+   DCHECK_NE(muted, !!muter_);
+@@ -273,6 +280,14 @@
+         FROM_HERE,
+         base::BindOnce(&Core::SetMuted, base::Unretained(core_.get()), muted));
+   }
++}
++
++void ForwardingAudioStreamFactory::SetVolume(double gain) {
++  DCHECK_CURRENTLY_ON(BrowserThread::UI);
++  volume_ = gain;
++  GetIOThreadTaskRunner({})->PostTask(
++      FROM_HERE,
++      base::BindOnce(&Core::SetVolume, base::Unretained(core_.get()), gain));
+ }
+ 
+ bool ForwardingAudioStreamFactory::IsMuted() const {
+@@ -359,6 +374,7 @@
+         &ForwardingAudioStreamFactory::Core::ResetRemoteFactoryPtr,
+         base::Unretained(this)));
+ 
++    remote_factory_->SetGroupVolume(group_id_, volume_);
+     // Restore the muting session on reconnect.
+     if (muter_)
+       muter_->Connect(remote_factory_.get());
+@@ -380,6 +396,8 @@
+                         "ForwardingAudioStreamFactory: Resetting factory",
+                         "group", group_id_.GetLowForSerialization());
+   }
++  if (remote_factory_)
++    remote_factory_->SetGroupVolume(group_id_, 1.0);
+   remote_factory_.reset();
+   // The stream brokers will call a callback to be deleted soon, give them a
+   // chance to signal an error to the client first.
+diff --git a/content/browser/media/forwarding_audio_stream_factory.h b/content/browser/media/forwarding_audio_stream_factory.h
+--- a/content/browser/media/forwarding_audio_stream_factory.h
++++ b/content/browser/media/forwarding_audio_stream_factory.h
+@@ -107,6 +107,7 @@
+     // Sets the muting state for all output streams created through this
+     // factory.
+     void SetMuted(bool muted);
++    void SetVolume(double gain);
+ 
+     // AudioStreamLoopback::Source implementation
+     void AddLoopbackSink(AudioStreamBroker::LoopbackSink* sink) final;
+@@ -152,6 +153,7 @@
+     // TODO(crbug.com/40570752): Refactor to make this unnecessary and
+     // remove it.
+     int stream_id_counter_ = 0;
++    double volume_ = 1.0;
+ 
+     // Instantiated when |outputs_| should be muted, empty otherwise.
+     std::optional<AudioMutingSession> muter_;
+@@ -202,6 +204,8 @@
+ 
+   // Returns the current muting state.
+   bool IsMuted() const;
++  void SetVolume(double gain);
++  double GetVolume() const { return volume_; }
+ 
+   // WebContentsObserver implementation. We observe these events so that we can
+   // clean up streams belonging to a frame when that frame is destroyed.
+@@ -219,6 +223,7 @@
+  private:
+   std::unique_ptr<Core> core_;
+   bool is_muted_ = false;
++  double volume_ = 1.0;
+ 
+   base::ScopedClosureRunner capture_handle_;
+ 
+diff --git a/content/browser/media/forwarding_audio_stream_factory_unittest.cc b/content/browser/media/forwarding_audio_stream_factory_unittest.cc
+--- a/content/browser/media/forwarding_audio_stream_factory_unittest.cc
++++ b/content/browser/media/forwarding_audio_stream_factory_unittest.cc
+@@ -52,6 +52,11 @@
+ 
+   ~MockStreamFactory() override = default;
+ 
++  void SetGroupVolume(const base::UnguessableToken& group_id, double gain) override {
++    volume_group = group_id; volume_gain = gain;
++  }
++  base::UnguessableToken volume_group;
++  double volume_gain = 1.0;
+   bool IsConnected() const { return receiver_.is_bound(); }
+   bool IsMuterConnected() const { return muter_receiver_.is_bound(); }
+ 
+@@ -747,6 +752,38 @@
+   EXPECT_FALSE(stream_factory_.IsMuterConnected());
+ }
+ 
++TEST_F(ForwardingAudioStreamFactoryTest, EmberGainSurvivesIdleAndNewStreams) {
++  auto first = ExpectOutputBrokerConstruction(main_rfh());
++  auto second = ExpectOutputBrokerConstruction(other_rfh());
++  ForwardingAudioStreamFactory factory(web_contents(),
++                                       std::move(broker_factory_));
++  EXPECT_EQ(1.0, factory.GetVolume());
++  factory.SetVolume(1.75);
++  base::RunLoop().RunUntilIdle();
++  EXPECT_FALSE(stream_factory_.IsConnected());
++  base::UnguessableToken first_group;
++  for (auto broker : {first, second}) {
++    auto* frame = broker.get() == first.get() ? main_rfh() : other_rfh();
++    EXPECT_CALL(*broker, CreateStream(NotNull()));
++    mojo::PendingRemote<media::mojom::AudioOutputStreamProviderClient> client;
++    std::ignore = client.InitWithNewPipeAndPassReceiver();
++    factory.core()->CreateOutputStream(
++        frame->GetProcess()->GetDeprecatedID(), frame->GetRoutingID(),
++        frame->GetGlobalFrameToken(), kOutputDeviceId, kParams,
++        std::move(client));
++    base::RunLoop().RunUntilIdle();
++    EXPECT_DOUBLE_EQ(1.75, stream_factory_.volume_gain);
++    if (first_group.is_empty())
++      first_group = stream_factory_.volume_group;
++    EXPECT_EQ(first_group, stream_factory_.volume_group);
++    testing::Mock::VerifyAndClear(&*broker);
++    std::move(broker->deleter).Run(&*broker);
++    base::RunLoop().RunUntilIdle();
++    EXPECT_FALSE(stream_factory_.IsConnected());
++    EXPECT_DOUBLE_EQ(1.75, factory.GetVolume());
++  }
++}
++
+ TEST_F(ForwardingAudioStreamFactoryTest,
+        WhenMuting_ConnectedWhenOutputStreamExists) {
+   mojo::PendingRemote<media::mojom::AudioOutputStreamProviderClient> client;
+diff --git a/content/browser/web_contents/web_contents_impl.cc b/content/browser/web_contents/web_contents_impl.cc
+--- a/content/browser/web_contents/web_contents_impl.cc
++++ b/content/browser/web_contents/web_contents_impl.cc
+@@ -3,7 +3,9 @@
+ // found in the LICENSE file.
+ 
+ #include "content/browser/web_contents/web_contents_impl.h"
+-
++#include "ui/gfx/codec/png_codec.h"
++
++#include <cmath>
+ #include <stddef.h>
+ 
+ #include <algorithm>
+@@ -43,6 +45,8 @@
+ #include "base/strings/strcat.h"
+ #include "base/strings/string_split.h"
+ #include "base/strings/string_util.h"
++#include "base/strings/string_number_conversions.h"
++#include "crypto/hash.h"
+ #include "base/strings/stringprintf.h"
+ #include "base/strings/to_string.h"
+ #include "base/strings/utf_string_conversions.h"
+@@ -2772,6 +2776,20 @@
+ }
+ #endif  // BUILDFLAG(IS_MAC) && BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
+ 
++void WebContentsImpl::SetAudioVolume(double gain) {
++  if (!std::isfinite(gain))
++    return;
++  gain = std::clamp(gain, 0.0, 2.0);
++  if (gain == GetAudioVolume())
++    return;
++  audio_stream_factory_->SetVolume(gain);
++  observers_.NotifyObservers(&WebContentsObserver::DidUpdateAudioVolume, gain);
++}
++
++double WebContentsImpl::GetAudioVolume() const {
++  return audio_stream_factory_->GetVolume();
++}
++
+ bool WebContentsImpl::IsAudioMuted() {
+   return audio_stream_factory_ && audio_stream_factory_->IsMuted();
+ }
+@@ -6804,6 +6822,32 @@
+   input_handler->Paste();
+   observers_.NotifyObservers(&WebContentsObserver::OnPaste);
+   RecordAction(base::UserMetricsAction("Paste"));
++}
++
++bool WebContentsImpl::PasteImage(const SkBitmap& image,
++                                 RenderFrameHost* destination,
++                                 std::string* png_digest) {
++  if (IsBeingDestroyed() || !destination ||
++      destination != GetPrimaryMainFrame() ||
++      destination != GetFocusedFrame() ||
++      !GetContentClient()->browser()->IsClipboardPasteAllowed(destination) ||
++      image.drawsNothing() || image.computeByteSize() > 64 * 1024 * 1024)
++    return false;
++  auto* input_handler = GetFocusedFrameWidgetInputHandler();
++  if (!input_handler)
++    return false;
++  auto png = gfx::PNGCodec::EncodeBGRASkBitmap(image, false);
++  if (!png || png->empty() || png->size() > 64 * 1024 * 1024)
++    return false;
++  last_interaction_time_ = ui::EventTimeForNow();
++  // The same native API used by Chromium's IME insertion dispatches a genuine
++  // image-file paste event. It leaves the OS clipboard and page text untouched.
++  if (png_digest)
++    *png_digest = base::HexEncodeLower(crypto::hash::Sha256(*png));
++  input_handler->PasteFromImageBytes(mojo_base::BigBuffer(std::move(*png)),
++                                     "png");
++  observers_.NotifyObservers(&WebContentsObserver::OnPaste);
++  return true;  // Dispatch only: the destination must confirm its attachment.
+ }
+ 
+ void WebContentsImpl::PasteAndMatchStyle() {
+diff --git a/content/browser/web_contents/web_contents_impl.h b/content/browser/web_contents/web_contents_impl.h
+--- a/content/browser/web_contents/web_contents_impl.h
++++ b/content/browser/web_contents/web_contents_impl.h
+@@ -481,6 +481,8 @@
+ #endif  // BUILDFLAG(IS_MAC) && BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
+   bool IsAudioMuted() override;
+   void SetAudioMuted(bool mute) override;
++  void SetAudioVolume(double gain) override;
++  double GetAudioVolume() const override;
+   bool IsCurrentlyAudible() override;
+   bool IsCapabilityActive(WebContentsCapabilityType capability_type) override;
+   bool HasFileSystemAccessHandles() override;
+@@ -531,6 +533,9 @@
+   void CopyToFindPboard() override;
+   void CenterSelection() override;
+   void Paste() override;
++  bool PasteImage(const SkBitmap& image,
++                  RenderFrameHost* destination,
++                  std::string* png_digest = nullptr) override;
+   void PasteAndMatchStyle() override;
+   void Delete() override;
+   void SelectAll() override;
+diff --git a/content/public/browser/web_contents.h b/content/public/browser/web_contents.h
+--- a/content/public/browser/web_contents.h
++++ b/content/public/browser/web_contents.h
+@@ -70,6 +70,8 @@
+ #include "third_party/jni_zero/jni_zero.h"
+ #endif
+ 
++class SkBitmap;
++
+ namespace base {
+ class FilePath;
+ }  // namespace base
+@@ -913,6 +915,10 @@
+   // This does not affect audio capture, just local/system output.
+   virtual bool IsAudioMuted() = 0;
+   virtual void SetAudioMuted(bool mute) = 0;
++  // Browser-owned PCM gain, independent of muting and page/player volume.
++  // All output streams in this WebContents group inherit it, including OOPIFs.
++  virtual void SetAudioVolume(double gain) = 0;
++  virtual double GetAudioVolume() const = 0;
+ 
+   // Returns true if the audio is currently audible.
+   virtual bool IsCurrentlyAudible() = 0;
+@@ -1131,6 +1137,12 @@
+   virtual void CopyToFindPboard() = 0;
+   virtual void CenterSelection() = 0;
+   virtual void Paste() = 0;
++  // Browser-owned PNG paste via Chromium's existing image-byte input route.
++  // Does not touch the system clipboard; requires this exact focused frame.
++  // Optional SHA-256 identifies the encoded bytes for attachment confirmation.
++  virtual bool PasteImage(const SkBitmap& image,
++                          RenderFrameHost* destination,
++                          std::string* png_digest = nullptr) = 0;
+   virtual void PasteAndMatchStyle() = 0;
+   virtual void Delete() = 0;
+   virtual void SelectAll() = 0;
+diff --git a/content/public/browser/web_contents_observer.h b/content/public/browser/web_contents_observer.h
+--- a/content/public/browser/web_contents_observer.h
++++ b/content/public/browser/web_contents_observer.h
+@@ -922,6 +922,7 @@
+   // Invoked when a MediaSession associated with this WebContents has been
+   // created and initialized.
+   virtual void MediaSessionCreated(MediaSession* media_session) {}
++  virtual void DidUpdateAudioVolume(double gain) {}
+ 
+   // Invoked when the renderer process changes the page scale factor.
+   virtual void OnPageScaleFactorChanged(float page_scale_factor) {}
+diff --git a/media/mojo/mojom/audio_stream_factory.mojom b/media/mojo/mojom/audio_stream_factory.mojom
+--- a/media/mojo/mojom/audio_stream_factory.mojom
++++ b/media/mojo/mojom/audio_stream_factory.mojom
+@@ -29,6 +29,8 @@
+ // recognition service & libassistant call these directly.
+ [RequireContext=sandbox.mojom.Context.kPrivilegedUtility]
+ interface AudioStreamFactory {
++  // Browser-only group gain. Renderer factories never expose this endpoint.
++  SetGroupVolume(mojo_base.mojom.UnguessableToken group_id, double gain);
+   // Creates an AudioInputStream and returns the AudioDataPipe it writes data to
+   // and a bool indicating whether the stream is initially muted. |data_pipe| is
+   // null, |initially_muted| is false and |stream_id| is empty in case stream
+diff --git a/services/audio/output_controller.cc b/services/audio/output_controller.cc
+--- a/services/audio/output_controller.cc
++++ b/services/audio/output_controller.cc
+@@ -495,6 +495,11 @@
+   }
+ 
+   const bool received_data = sync_reader_->Read(dest, is_mixing);
++  // Software gain before device mixing covers HTML media, WebAudio and WebRTC
++  // in every frame, and follows new streams and output device changes.
++  // Encoded passthrough has no PCM samples to amplify.
++  if (!dest->is_bitstream_format())
++    dest->Scale(ember_gain_.load(std::memory_order_relaxed));
+ 
+   const base::TimeTicks reference_time = delay_timestamp + delay;
+ 
+diff --git a/services/audio/output_controller.h b/services/audio/output_controller.h
+--- a/services/audio/output_controller.h
++++ b/services/audio/output_controller.h
+@@ -7,6 +7,7 @@
+ 
+ #include <stdint.h>
+ 
++#include <atomic>
+ #include <memory>
+ #include <optional>
+ #include <string>
+@@ -167,6 +168,7 @@
+ 
+   // Sets the volume of the audio output stream.
+   void SetVolume(double volume);
++  void SetEmberGain(double gain) { ember_gain_.store(gain, std::memory_order_relaxed); }
+ 
+   // AudioSourceCallback implementation.
+   int OnMoreData(base::TimeDelta delay,
+@@ -356,6 +358,7 @@
+   State state_;
+ 
+   // SyncReader is used only in low latency mode for synchronous reading.
++  std::atomic<double> ember_gain_{1.0};
+   const raw_ptr<SyncReader> sync_reader_;
+ 
+   // Scans audio samples from OnMoreData() as input to compute power levels.
+diff --git a/services/audio/output_controller_unittest.cc b/services/audio/output_controller_unittest.cc
+--- a/services/audio/output_controller_unittest.cc
++++ b/services/audio/output_controller_unittest.cc
+@@ -127,6 +127,7 @@
+   MockAudioOutputStream& operator=(const MockAudioOutputStream&) = delete;
+ 
+   AudioParameters::Format format() const { return format_; }
++  void SetExpectedSample(float sample) { expected_sample_ = sample; }
+ 
+   void set_close_callback(base::OnceClosure callback) {
+     close_callback_ = std::move(callback);
+@@ -221,7 +222,7 @@
+                  const media::AudioGlitchInfo& glitch_info,
+                  AudioBus* dest) override {
+     int res = callback_->OnMoreData(delay, delay_timestamp, glitch_info, dest);
+-    EXPECT_EQ(dest->channel(0)[0], kBufferNonZeroData);
++    EXPECT_FLOAT_EQ(dest->channel(0)[0], expected_sample_);
+     return res;
+   }
+ 
+@@ -235,6 +236,7 @@
+   base::OnceClosure close_callback_;
+   raw_ptr<AudioOutputStream::AudioSourceCallback> callback_ = nullptr;
+   double volume_ = 1.0;
++  float expected_sample_ = kBufferNonZeroData;
+   std::unique_ptr<base::Thread> data_thread_;
+ };
+ 
+@@ -392,6 +394,11 @@
+     loop.Run();
+   }
+ 
++  void SetTestGain(double gain) {
++    controller_->SetEmberGain(gain);
++    last_created_stream()->SetExpectedSample(kBufferNonZeroData * gain);
++  }
++
+   void PlayWhilePlaying() { controller_->Play(); }
+ 
+   void Pause() {
+@@ -506,6 +513,18 @@
+ 
+ TEST_F(OutputControllerTest, CreateAndClose) {
+   Create();
++  Close();
++}
++
++TEST_F(OutputControllerTest, EmberGainAttenuatesAndBoostsActualPcm) {
++  Create();
++  // Pause joins the fake stream's audio callback thread before changing each
++  // expectation. Assertions inspect samples returned by the real OnMoreData.
++  for (const double gain : {0.0, 0.5, 1.0, 2.0}) {
++    SetTestGain(gain);
++    Play();
++    Pause();
++  }
+   Close();
+ }
+ 
+diff --git a/services/audio/output_stream.h b/services/audio/output_stream.h
+--- a/services/audio/output_stream.h
++++ b/services/audio/output_stream.h
+@@ -79,6 +79,8 @@
+   void Pause() final;
+   void Flush() final;
+   void SetVolume(double volume) final;
++  const base::UnguessableToken& group_id() const { return loopback_group_id_; }
++  void SetEmberGain(double gain) { controller_.SetEmberGain(gain); }
+ 
+   // media::mojom::DeviceSwitchInterface implementation.
+   void SwitchAudioOutputDeviceId(const std::string& output_device_id) final;
+diff --git a/services/audio/public/cpp/fake_stream_factory.h b/services/audio/public/cpp/fake_stream_factory.h
+--- a/services/audio/public/cpp/fake_stream_factory.h
++++ b/services/audio/public/cpp/fake_stream_factory.h
+@@ -82,6 +82,7 @@
+       const media::AudioParameters& params,
+       const base::UnguessableToken& group_id,
+       CreateOutputStreamCallback created_callback) override {}
++  void SetGroupVolume(const base::UnguessableToken& group_id, double gain) override {}
+   void BindMuter(
+       mojo::PendingAssociatedReceiver<media::mojom::LocalMuter> receiver,
+       const base::UnguessableToken& group_id) override {}
+diff --git a/services/audio/stream_factory.cc b/services/audio/stream_factory.cc
+--- a/services/audio/stream_factory.cc
++++ b/services/audio/stream_factory.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "services/audio/stream_factory.h"
+ 
++#include <cmath>
+ #include <algorithm>
+ #include <utility>
+ 
+@@ -202,6 +203,23 @@
+       std::move(stream_receiver), std::move(device_switch_receiver),
+       std::move(observer), std::move(log), output_device_id, params, group_id,
+       std::move(created_callback));
++}
++
++void StreamFactory::SetGroupVolume(const base::UnguessableToken& group_id,
++                                   double gain) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(owning_sequence_);
++  if (!std::isfinite(gain) || gain < 0 || gain > 2) {
++    receivers_.ReportBadMessage("Invalid browser audio gain");
++    return;
++  }
++  if (gain == 1.0)
++    group_volumes_.erase(group_id);
++  else
++    group_volumes_[group_id] = gain;
++  for (const auto& stream : output_streams_) {
++    if (stream->group_id() == group_id)
++      stream->SetEmberGain(gain);
++  }
+ }
+ 
+ void StreamFactory::BindMuter(
+@@ -395,12 +413,16 @@
+   }
+ #endif
+ 
+-  output_streams_.insert(std::make_unique<OutputStream>(
++  auto stream = std::make_unique<OutputStream>(
+       std::move(created_callback), std::move(deleter_callback),
+       std::move(managed_device_output_stream_create_callback),
+       std::move(stream_receiver), std::move(device_switch_receiver),
+       std::move(observer), std::move(log), audio_manager_,
+-      device_id_or_group_id, params, &coordinator_, group_id));
++      device_id_or_group_id, params, &coordinator_, group_id);
++  auto gain = group_volumes_.find(group_id);
++  if (gain != group_volumes_.end())
++    stream->SetEmberGain(gain->second);
++  output_streams_.insert(std::move(stream));
+ }
+ 
+ #if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
+diff --git a/services/audio/stream_factory.h b/services/audio/stream_factory.h
+--- a/services/audio/stream_factory.h
++++ b/services/audio/stream_factory.h
+@@ -5,6 +5,7 @@
+ #ifndef SERVICES_AUDIO_STREAM_FACTORY_H_
+ #define SERVICES_AUDIO_STREAM_FACTORY_H_
+ 
++#include <map>
+ #include <memory>
+ #include <optional>
+ #include <string>
+@@ -107,6 +108,7 @@
+       const media::AudioParameters& params,
+       const base::UnguessableToken& group_id,
+       CreateOutputStreamCallback created_callback) final;
++  void SetGroupVolume(const base::UnguessableToken& group_id, double gain) final;
+   void BindMuter(
+       mojo::PendingAssociatedReceiver<media::mojom::LocalMuter> receiver,
+       const base::UnguessableToken& group_id) final;
+@@ -166,6 +168,7 @@
+   const std::unique_ptr<OutputDeviceMixerManager> output_device_mixer_manager_;
+   const std::unique_ptr<LoopbackReferenceManager> loopback_reference_manager_;
+ #endif
++  std::map<base::UnguessableToken, double> group_volumes_;
+   LoopbackCoordinator coordinator_;
+   std::vector<std::unique_ptr<LocalMuter>> muters_;
+   std::optional<RealtimeAudioThread> loopback_worker_thread_;

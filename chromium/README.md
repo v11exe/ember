@@ -9,7 +9,7 @@ Ember does not vendor Chromium. [`baseline.json`](baseline.json) pins the Chromi
 | `patches/series` | Ordered Ember patches applied to pinned Chromium. |
 | `patches/ember/` | Ember-owned C++/Views, WebUI and build integration. |
 | `resources/manifest.json` | Path-safe resource overlay destinations. |
-| `resources/branding/`, `resources/glass/`, `resources/newtab/`, `resources/typography/` | Product assets and WebUI sources. |
+| `resources/branding/`, `resources/glass/`, `resources/newtab/`, `resources/typography/`, `resources/snap/` | Product assets and WebUI sources. |
 | `resources/conversions.js` | Pure local detection and conversion rules, embedded as a native resource. |
 | `tools/port.js` | Doctor, preparation, validation, build, run and package workflow. |
 | `tools/check-patch-hunks.js` | Static patch integrity check. |

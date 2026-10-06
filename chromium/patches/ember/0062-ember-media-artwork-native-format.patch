@@ -1,0 +1,114 @@
+diff --git a/chrome/browser/ui/views/ember/ember_utility_controller.cc b/chrome/browser/ui/views/ember/ember_utility_controller.cc
+--- a/chrome/browser/ui/views/ember/ember_utility_controller.cc
++++ b/chrome/browser/ui/views/ember/ember_utility_controller.cc
+@@ -98,6 +98,20 @@
+ }
+ }  // namespace
+ 
++gfx::ImageSkia ConvertMediaArtwork(const SkBitmap& image) {
++  if (image.drawsNothing())
++    return {};
++  // MediaSession delivers RGBA pixels. ImageSkiaRep requires native N32
++  // (BGRA on Windows), even in release builds. Never reinterpret those bytes.
++  SkBitmap native;
++  const SkImageInfo info = image.info().makeColorType(kN32_SkColorType);
++  if (!native.tryAllocPixels(info) ||
++      !image.readPixels(info, native.getPixels(), native.rowBytes(), 0, 0))
++    return {};
++  native.setImmutable();
++  return gfx::ImageSkia::CreateFrom1xBitmap(native);
++}
++
+ class EmberUtilityController::Source
+     : public content::WebContentsObserver,
+       public media_session::mojom::MediaSessionObserver {
+@@ -150,8 +164,7 @@
+                  const SkBitmap& image) {
+                 if (!source || generation != source->art_generation_)
+                   return;
+-                if (!image.drawsNothing())
+-                  source->artwork = gfx::ImageSkia::CreateFrom1xBitmap(image);
++                source->artwork = ConvertMediaArtwork(image);
+                 source->Changed();
+               },
+               weak_.GetWeakPtr(), generation));
+@@ -1325,7 +1338,7 @@
+     }
+     paste_dispatched_ = true;
+     pending_capture_.reset();
+-    SnapStatus(u"Waiting for image attachment…");
++    SnapStatus(u"Waiting for image attachmentâ€¦");
+     return;
+   }
+   if (*state == "attached" && paste_phase_ == PastePhase::kPasted) {
+diff --git a/chrome/browser/ui/views/ember/ember_utility_controller.h b/chrome/browser/ui/views/ember/ember_utility_controller.h
+--- a/chrome/browser/ui/views/ember/ember_utility_controller.h
++++ b/chrome/browser/ui/views/ember/ember_utility_controller.h
+@@ -17,6 +17,7 @@
+ #include "ui/views/controls/resize_area_delegate.h"
+ #include "ui/views/controls/slider.h"
+ #include "ui/views/view.h"
++#include "ui/gfx/image/image_skia.h"
+ #include "ui/views/view_targeter_delegate.h"
+ #include "ui/views/widget/widget_observer.h"
+ #include "third_party/skia/include/core/SkBitmap.h"
+@@ -33,6 +34,9 @@
+ namespace ember {
+ class EmberGlassView;
+ class EmberUtilityButton;
++
++// Normalize decoded MediaSession artwork for native Views, or return empty.
++gfx::ImageSkia ConvertMediaArtwork(const SkBitmap& image);
+ 
+ // One owner per browser. Transient menus and the reusable Snap page share
+ // logical dismissal with search and native extension popups.
+diff --git a/chrome/browser/ui/views/frame/browser_view_browsertest.cc b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+--- a/chrome/browser/ui/views/frame/browser_view_browsertest.cc
++++ b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+@@ -20,6 +20,7 @@
+ #include "chrome/browser/ui/views/ember/ember_glass_transition.h"
+ #include "chrome/browser/ui/views/ember/ember_glass_view.h"
+ #include "chrome/browser/ui/views/ember/ember_utility_controller.h"
++#include "ui/gfx/image/image_skia_rep.h"
+ #include "chrome/browser/ui/views/ember/ember_utility_button.h"
+ #include "base/test/run_until.h"
+ #include "ui/views/controls/combobox/combobox.h"
+@@ -1061,6 +1062,38 @@
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++                       EmberMediaArtworkNormalizesDecodedPixels) {
++  // MediaSessionImpl converts downloaded artwork to RGBA. On Windows, passing
++  // that directly to ImageSkia used to hit a release CHECK asynchronously, even
++  // when the Media panel was closed and a background page supplied the image.
++  SkBitmap rgba;
++  ASSERT_TRUE(rgba.tryAllocPixels(
++      SkImageInfo::Make(2, 1, kRGBA_8888_SkColorType, kPremul_SkAlphaType)));
++  rgba.eraseColor(SkColorSetARGB(128, 220, 30, 10));
++  const auto artwork = ember::ConvertMediaArtwork(rgba);
++  ASSERT_FALSE(artwork.isNull());
++  const SkBitmap& native = artwork.GetRepresentation(1.f).GetBitmap();
++  EXPECT_EQ(kN32_SkColorType, native.colorType());
++  EXPECT_EQ(rgba.getColor(0, 0), native.getColor(0, 0));
++  EXPECT_EQ(gfx::Size(2, 1), artwork.size());
++  EXPECT_TRUE(native.isImmutable());
++  EXPECT_EQ(kRGBA_8888_SkColorType, rgba.colorType());
++
++  SkBitmap already_native;
++  already_native.allocN32Pixels(1, 1);
++  already_native.eraseColor(SK_ColorBLUE);
++  const auto retained = ember::ConvertMediaArtwork(already_native);
++  ASSERT_FALSE(retained.isNull());
++  EXPECT_EQ(SK_ColorBLUE,
++            retained.GetRepresentation(1.f).GetBitmap().getColor(0, 0));
++  EXPECT_TRUE(ember::ConvertMediaArtwork(SkBitmap()).isNull());
++  SkBitmap without_pixels;
++  ASSERT_TRUE(without_pixels.setInfo(
++      SkImageInfo::Make(2, 2, kRGBA_8888_SkColorType, kPremul_SkAlphaType)));
++  EXPECT_TRUE(ember::ConvertMediaArtwork(without_pixels).isNull());
++}
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest,
+                        EmberMediaActionsKeepSourceAcrossFocus) {
+   using Action = media_session::mojom::MediaSessionAction;
+   using Utility = ember::EmberUtilityController::Utility;

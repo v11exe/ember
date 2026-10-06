@@ -30,6 +30,18 @@ Repository: `v11exe/ember`, branch `chromium-port`. Windows x64, native Chromium
 
 ## Native shell invariants
 
+- Run 6 acceptance correction 0071 uses sibling native settings-section cards with outside titles, single toggle labels and unchanged preferences/routes. Ember's real OmniboxController must enable unscoped_open_tab_suggestions; the upstream false default otherwise prevents ordinary sidebar title/content matching before OpenTabProvider starts. Exact tab/document/URL/profile metadata owns both acceptance and live favicon; retain the query while traversing rows, show Open in Different Tab, preserve bangs and never wake renderers for a query. Native regression sources enter mouse/keys through Aura; final linked acceptance remains user-run.
+- Run 6 build correction 0070 dereferences the CreateNewWindow Mojo-contract non-null referrer before constructing content::Referrer. The late 0069 popup-route edit escaped the earlier compile claim; the actual focused Ninja browser object now passes. Preserve URL/policy and compile the final source after late edits; user performs full linking/runtime acceptance.
+- Run 6 / patch 0069 adds native settings groups, SplitTabData-owned following, fullscreen-within-tab/F11 ownership, tab-local reading return, bounded content suggestions and Downloads. Footer order is Downloads, Media, Workspaces, Snap, Extensions, Settings (236 DIP). Keep native download models/security subpages and final-address copy; preserve warning colors with the Downloads-only dark/native foreground glass option. Reused rows and popup generations protect live updates. Runtime acceptance remains user-run.
+- Follower routing must validate split ID AND epoch, exact source/destination and live source document before dispatch; swap/orientation preserve page identities. Native same-tab link attribution and popup/security paths remain authoritative; never replay POST or infer arbitrary SPA navigation. Reading toast capture uses EmberGlassView::SetPanel through the existing capture stream, never a second background paint owner. Content indexing is local/limited and exact-profile; queries cannot wake discarded tabs.
+
+- Recent work (2026-10-04, Codex): B66 / patch 0068 corrects the live-proven zero-sized Media ScrollView content and the browser image-paste command's inappropriate renderer clipboard-read gate. Touches utility controller, native WebContents paste and focused browser regressions; 99 runnable tests and three native object compilations pass. Prior uncommitted work is preserved; runtime acceptance follows the user's final link.
+- Media's manually positioned ScrollView contents need real 300x300 bounds as well as preferred size: Windows uses bounds-based scrolling and otherwise layered controls paint over a zero-sized input container. Native utility surfaces belong under GetClientContentsView(). Test both scrolling feature states.
+- Browser-owned image paste follows native Paste command semantics; do not apply renderer clipboard-read IPC/recent-page-interaction checks to an explicit sidebar capture action. Keep exact focused-frame and caller profile/origin/document/generation validation, attachment proof and no submission; never grant website clipboard permissions to make Snap work.
+
+- Utility popup controls use a decoration-free native bubble frame with explicit client hit testing. Escape is a Views accelerator; never register the glass View itself as an Aura pre-target handler or dereference a native window during post-native Views teardown. Native input regressions must enter through Aura, not only RootView.
+- Snap recapture retains its visible WebView and chat/draft, freezes the current destination document/URL, and takes the focused source page at its current size before focus changes. Initialize native Blink frame focus before revalidating/focusing the genuine composer.
+
 - Keep the hidden `TabStripComboButton`: BrowserView's tab-search bubble host depends on it. Reserve its margin only when visible.
 - The horizontal `TabStrip` is direct content of a layered `ScrollView` with `SetUseContentsPreferredSize(true)`. The New Tab button stays at the viewport edge; wheel easing lives in `TabStripScrollContainer`, and reduced motion scrolls immediately.
 - The compact Forward button stays outside Chromium's responsive overflow. `IDC_FORWARD` owns enabled state and navigation.
@@ -49,7 +61,67 @@ Repository: `v11exe/ember`, branch `chromium-port`. Windows x64, native Chromium
 - Use the official Ember logo assets already in `chromium/resources`. Extension controls belong to the sidebar footer and collapse with it.
 - Chromium Settings Appearance owns the Favorite grid/list and the selection-conversion preferences. Do not reintroduce Electron preference stores or a second Settings UI.
 
+- Run 5 utilities have one BrowserView-owned controller. Native Extensions, transient media/workspace/volume popovers and floating search dismiss one another; Snap source-page input leaves its dedicated side page open. Closing Snap retains its WebContents/draft; teardown releases it. Capture freezes the focused split source before dismissing other surfaces or resizing.
+- Transient Media/Workspaces/tab-volume surfaces use native browser-owned popup Widgets (0066), explicitly activatable for native controls/keyboard focus. Keep their EmberGlassView material/motion; immediate switches hide the old native window and teardown closes pending widgets. Snap alone remains in the layerless browser utility view.
+- Keep the full-window utility controller layerless. Widget native-child targeting tests layer rectangles before Views custom hit tests; transparent full-window interactive layers still block renderer input. Bound interactive layers to their actual surfaces and mark capture-feedback layers event-transparent. Clear ScrollView configuration with SetBackgroundColor(std::nullopt), including its viewport; SetBackground(nullptr) alone is restored by theme/attachment changes.
+- Footer feedback paints a clipped 28 DIP rounded square inside each 36 DIP button. Footer Extensions disables the old toolbar InkDrop and inherited child margins; keep native FocusRing. Favorites scroll before the bottom-anchored six-button footer shrinks.
+- Media artwork shrinks proportionally into its 72 DIP slot without background bars; small images retain their size.
+- MediaSession artwork is decoded as RGBA; ImageSkiaRep requires native N32 (BGRA on Windows) and enforces it with a release CHECK. Convert pixels before creating native artwork; failed/empty conversions use the existing fallback.
+- Tab gain is browser-owned WebContents state, separate from mute: 1.0 default, 0.0–2.0 native audio-group PCM gain, carried through discard replacement. Media opening never writes it; its slider intentionally writes only 0.0–1.0. Encoded passthrough cannot receive PCM gain.
+- Native image-byte paste creates a named image.png File with PNG MIME, matching ordinary clipboard file naming without using the clipboard. Retry retains undispatched captures and rechecks dispatched attachments without repasting; same-surface editor recreation waits for matching capture proof.
+- Snap uses normal Profile cookies, native image-byte paste and isolated-world composer checks; it never invokes the bang helper or Send. Match SHA-256 of the captured PNG, new attachment evidence and the site's enabled Send readiness before claiming attachment. Source/destination document, URL and generation guard async callbacks. Do not restore a system-clipboard implementation or infer upload success from native dispatch.
+
+- Preserve the exact cached GN Python launcher when regenerating: this checkout uses `C:/src/ember-chromium/tool-shims/python3.exe`, not the real interpreter path. Even equivalent launchers change Ninja generator fingerprints. Check the pending plan before handoff.
+- Never run another Ninja process, including `-n`, against an output directory with an active build. Ninja 1.12.1 dry runs still create/remove response files and may remove dependency files. For stopped-build planning use `-d keeprsp -d keepdepfile`; compilation and planning remain sequential.
+
 ## Verification and QA
+
+### Active work - 2026-10-04 - Codex - Media crash and Snap recapture
+
+- Status: source corrections captured in 0067; 99 runnable tests and patch checks pass. Current user binary reproduced under CDB; linked fixed-binary acceptance remains pending.
+- Touches: next ordered patch 0067, native utility event hosting/teardown, Snap composer focus and same-chat Capture, regression tests and records.
+- Preserve: all existing uncommitted work, approved material/geometry, normal profile, successful image upload, drafts, native media/gain and incremental outputs.
+
+
+### Active work - 2026-10-04 - Codex - Native utility popup and image paste corrections
+
+- Status: source corrections implemented in 0066; four native objects compile, 98 runnable tests pass and 66-patch/42-resource prepared checks pass. Linked acceptance remains user-run.
+- Touches: native popup ownership/focus/teardown, Media artwork fitting, Blink paste File naming, Snap readiness/retry proof, composer tests and records.
+- Preserve: all prior local edits, glass/motion/geometry, native sessions/tab gain and clipboard-free/no-send Snap.
+
+
+### Active work - 2026-10-04 - Codex - Utility targets and responsive composer
+
+- Status: corrections implemented in 0065; two production objects/native regressions compile and 94 runnable tests pass. Linked runtime verification remains user-run.
+- Touches: ordered patch 0065, direct utility descendant targeting/regressions, usable Snap editable normalization and isolated tests.
+- Preserve: all previous uncommitted work, accepted geometry, source ownership, drafts and incremental outputs. Native computer inspection was blocked because review could not verify Ember’s current URL; no bypass.
+
+### Active work - 2026-10-04 - Codex - Utility interaction corrections
+
+- Status: source corrections in 0064; current-binary isolated CDB reproduction identifies the Views event target miscast in outside-click handling. Final browser link and acceptance remain user-run.
+- Touches: utility root coordinates, bounded Media control paint/scroll sizing, unconditional native speaker mute with shared interrupted/reduced-motion feedback, balanced footer vectors, Snap session/composer readiness and regression coverage.
+- Preserve: existing uncommitted Run 5 work, approved glass/search, original favorite icons, cached GN commands, profiles and incremental outputs.
+- Contract: utility event targets can be Views or Aura windows; use known widget/root coordinates. Responsive Snap account DOM can be absent: same-origin session proof is bounded/cancellable, contains only a boolean, and never authorizes guest paste or message submission.
+
+
+### Active work - 2026-10-04 - Codex - Native page input and Favorites paint
+
+- Status: source fixed in 0063; traced the full-window utility layer native-targeting veto and ScrollView’s restored default dialog background. Affected objects/native regressions compile; runtime checks remain user-run.
+- Touches: patch 0063, bounded utility/capture layers, configured transparent scrolling and native event-routing/theme regressions.
+- Preserve: accepted glass, five-button footer, all existing uncommitted work, outputs and profiles; user performs final linking.
+
+### Active work - 2026-10-04 - Codex - Media artwork crash
+
+- Status: source fixed in 0062; reproduced with the desktop shortcut launch configuration and matched the original crash dump. Affected objects/regression compile, 89 runnable tests pass; user relinking is pending.
+- Touches: patch 0062, artwork conversion and native regression coverage, bug/status records.
+- Preserve: all Run 5 work, cached GN commands, profiles and outputs; no full browser build by Codex.
+
+### Active work - 2026-10-03 - Codex - Run 5 utilities
+
+- Status: source/checks complete on `chromium-port`; full browser linking and runtime acceptance remain user-run.
+- Touches: ordered patch 0061, native footer/utility ownership, media-session UI, tab audio gain, reusable ChatGPT side page, focused tests and records.
+- Checklist: source/reference inspection, implementation, affected-object compilation, runnable tests, patch/resource postimages and final diff reviewed. Native tests compile only; linked browser acceptance is pending.
+- Preserve: accepted 0060 glass/search geometry, all existing patches, resources, profiles and incremental outputs. Workspaces is a placeholder; #12/#13 stay planned.
 
 ### Active work - 2026-10-03 - Codex - Accepted glass polish
 

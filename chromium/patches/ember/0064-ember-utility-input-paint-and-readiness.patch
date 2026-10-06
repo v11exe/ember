@@ -1,0 +1,409 @@
+diff --git a/chrome/browser/ui/views/ember/ember_utility_button.cc b/chrome/browser/ui/views/ember/ember_utility_button.cc
+--- a/chrome/browser/ui/views/ember/ember_utility_button.cc
++++ b/chrome/browser/ui/views/ember/ember_utility_button.cc
+@@ -1,11 +1,14 @@
+ // Copyright 2026 The Chromium Authors
+ // Use of this source code is governed by a BSD-style license in LICENSE.
+ #include "chrome/browser/ui/views/ember/ember_utility_button.h"
++
+ #include <algorithm>
++#include <cmath>
++
++#include "chrome/grit/browser_resources.h"
+ #include "third_party/skia/include/core/SkPathBuilder.h"
++#include "third_party/skia/include/utils/SkParsePath.h"
+ #include "ui/base/metadata/metadata_impl_macros.h"
+-#include "chrome/grit/browser_resources.h"
+-#include "third_party/skia/include/utils/SkParsePath.h"
+ #include "ui/base/resource/resource_bundle.h"
+ #include "ui/gfx/canvas.h"
+ #include "ui/views/animation/ink_drop.h"
+@@ -91,11 +94,40 @@
+   flags.setColor(SkColorSetRGB(235, 237, 240));
+   flags.setStyle(cc::PaintFlags::kStroke_Style);
+   flags.setStrokeWidth(1.35);
++  if (glyph_ == Glyph::kMedia) {
++    SkPathBuilder triangle;
++    triangle.moveTo(x - 5, y - 7);
++    triangle.lineTo(x + 7, y);
++    triangle.lineTo(x - 5, y + 7);
++    triangle.close();
++    canvas->DrawPath(triangle.detach(), flags);
++    return;
++  }
++  if (glyph_ == Glyph::kSettings) {
++    SkPathBuilder cog;
++    constexpr float pi = 3.14159265358979323846f;
++    for (int i = 0; i < 24; ++i) {
++      const float angle = i * pi / 12 - pi / 2;
++      const float radius = i % 4 < 2 ? 8.f : 6.4f;
++      const gfx::PointF point(x + radius * std::cos(angle),
++                              y + radius * std::sin(angle));
++      if (i == 0) {
++        cog.moveTo(point.x(), point.y());
++      } else {
++        cog.lineTo(point.x(), point.y());
++      }
++    }
++    cog.close();
++    canvas->DrawPath(cog.detach(), flags);
++    canvas->DrawCircle(gfx::PointF(x, y), 2.5f, flags);
++    return;
++  }
+   if (glyph_ == Glyph::kWorkspace) {
+     for (int row = 0; row < 2; ++row)
+       for (int col = 0; col < 2; ++col)
+-        canvas->DrawRoundRect(
+-            gfx::RectF(x - 8 + col * 9, y - 8 + row * 9, 7, 7), 1.3, flags);
++        canvas->DrawRoundRect(gfx::RectF(x - 7.5f + col * 8.5f,
++                                         y - 7.5f + row * 8.5f, 6.5f, 6.5f),
++                              1.3, flags);
+     return;
+   }
+   // Capture frame plus the real knot as vector paths, legible at rail scale.
+@@ -110,8 +142,8 @@
+                                &mark);
+   }
+   canvas->Save();
+-  canvas->Translate(gfx::Vector2d(x - 6, y - 6));
+-  canvas->Scale(.5f, .5f);
++  canvas->Translate(gfx::Vector2d(x - 5.5f, y - 5.5f));
++  canvas->Scale(11.f / 24, 11.f / 24);
+   flags.setStyle(cc::PaintFlags::kFill_Style);
+   canvas->DrawPath(mark, flags);
+   canvas->Restore();
+@@ -119,10 +151,10 @@
+   for (int corner = 0; corner < 4; ++corner) {
+     const float dx = corner & 1 ? 1 : -1, dy = corner & 2 ? 1 : -1;
+     SkPathBuilder frame;
+-    frame.moveTo(x + dx * 5, y + dy * 10);
+-    frame.lineTo(x + dx * 9, y + dy * 10);
+-    frame.quadTo(x + dx * 10, y + dy * 10, x + dx * 10, y + dy * 9);
+-    frame.lineTo(x + dx * 10, y + dy * 5);
++    frame.moveTo(x + dx * 4, y + dy * 8);
++    frame.lineTo(x + dx * 7, y + dy * 8);
++    frame.quadTo(x + dx * 8, y + dy * 8, x + dx * 8, y + dy * 7);
++    frame.lineTo(x + dx * 8, y + dy * 4);
+     canvas->DrawPath(frame.detach(), flags);
+   }
+ }
+diff --git a/chrome/browser/ui/views/ember/ember_utility_button.h b/chrome/browser/ui/views/ember/ember_utility_button.h
+--- a/chrome/browser/ui/views/ember/ember_utility_button.h
++++ b/chrome/browser/ui/views/ember/ember_utility_button.h
+@@ -27,7 +27,7 @@
+  public:
+   METADATA_HEADER(EmberUtilityButton, views::LabelButton)
+  public:
+-  enum class Glyph { kNative, kWorkspace, kSnap };
++  enum class Glyph { kNative, kMedia, kWorkspace, kSnap, kSettings };
+   EmberUtilityButton(PressedCallback callback,
+                      std::u16string name,
+                      Glyph glyph = Glyph::kNative);
+diff --git a/chrome/browser/ui/views/ember/ember_utility_controller.cc b/chrome/browser/ui/views/ember/ember_utility_controller.cc
+--- a/chrome/browser/ui/views/ember/ember_utility_controller.cc
++++ b/chrome/browser/ui/views/ember/ember_utility_controller.cc
+@@ -71,7 +71,10 @@
+  public:
+   METADATA_HEADER(WhiteSlider, views::Slider)
+  public:
+-  explicit WhiteSlider(views::SliderListener* listener) : Slider(listener) {}
++  explicit WhiteSlider(views::SliderListener* listener) : Slider(listener) {
++    SetPaintToLayer();
++    layer()->SetFillsBoundsOpaquely(false);
++  }
+   void OnPaint(gfx::Canvas* canvas) override {
+     const float left = 5, right = std::max(5, width() - 5), y = height() / 2.f;
+     const float point = left + (right - left) * GetValue();
+@@ -357,8 +360,7 @@
+           ui::ImageModel::FromVectorIcon(*icon, kForeground, 19));
+     buttons_[utility] = footer->AddChildView(std::move(button));
+   };
+-  add(Utility::kMedia, u"Media", EmberUtilityButton::Glyph::kNative,
+-      &vector_icons::kPlayArrowIcon);
++  add(Utility::kMedia, u"Media", EmberUtilityButton::Glyph::kMedia, nullptr);
+   add(Utility::kWorkspaces, u"Workspaces",
+       EmberUtilityButton::Glyph::kWorkspace, nullptr);
+   add(Utility::kSnap, u"ChatGPT Snap", EmberUtilityButton::Glyph::kSnap,
+@@ -372,10 +374,7 @@
+             chrome::ShowSettings(owner->browser_view_->browser());
+           },
+           base::Unretained(this)),
+-      u"Settings");
+-  settings->SetImageModel(views::Button::STATE_NORMAL,
+-                          ui::ImageModel::FromVectorIcon(
+-                              vector_icons::kSettingsIcon, kForeground, 19));
++      u"Settings", EmberUtilityButton::Glyph::kSettings);
+   footer->AddChildView(std::move(settings));
+ }
+ void EmberUtilityController::UpdateButtons() {
+@@ -704,6 +703,7 @@
+     scroll->SetBackgroundColor(std::nullopt);
+     media_body_ = scroll->SetContents(std::make_unique<views::View>());
+     media_body_->SetPreferredSize(gfx::Size(300, 300));
++    scroll->SetUseContentsPreferredSize(true);
+     media_scroll_ = popover_body_->AddChildView(std::move(scroll));
+     media_scroll_->SetBoundsRect(popover_body_->GetLocalBounds());
+   }
+@@ -711,13 +711,23 @@
+   if (!media_title_) {
+     auto label = std::make_unique<views::Label>(u"Media");
+     label->SetEnabledColor(kForeground);
++    label->SetAutoColorReadabilityEnabled(false);
++    label->SetBackgroundColor(SK_ColorTRANSPARENT);
++    label->SetPaintToLayer();
++    label->layer()->SetFillsBoundsOpaquely(false);
+     label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+     area->AddChildView(std::move(label))->SetBounds(16, 12, 260, 24);
+     artwork_ = area->AddChildView(std::make_unique<views::ImageView>());
+     artwork_->SetBounds(16, 48, 72, 72);
+     artwork_->SetImageSize(gfx::Size(72, 72));
++    artwork_->SetPaintToLayer();
++    artwork_->layer()->SetFillsBoundsOpaquely(false);
+     media_title_ = area->AddChildView(std::make_unique<views::Label>());
+     media_title_->SetEnabledColor(kForeground);
++    media_title_->SetAutoColorReadabilityEnabled(false);
++    media_title_->SetBackgroundColor(SK_ColorTRANSPARENT);
++    media_title_->SetPaintToLayer();
++    media_title_->layer()->SetFillsBoundsOpaquely(false);
+     media_title_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+     media_title_->SetBounds(104, 48, 176, 36);
+     media_title_->SetMultiLine(true);
+@@ -758,6 +768,10 @@
+     seek_slider_->GetViewAccessibility().SetName(u"Seek");
+     media_time_ = area->AddChildView(std::make_unique<views::Label>());
+     media_time_->SetEnabledColor(kForeground);
++    media_time_->SetAutoColorReadabilityEnabled(false);
++    media_time_->SetBackgroundColor(SK_ColorTRANSPARENT);
++    media_time_->SetPaintToLayer();
++    media_time_->layer()->SetFillsBoundsOpaquely(false);
+     media_time_->SetBounds(16, 200, 268, 20);
+     button(kMute, vector_icons::kVolumeUpIcon, u"Mute or unmute source tab", 12,
+            225);
+@@ -1119,6 +1133,7 @@
+                     FROM_HERE, base::Milliseconds(250),
+                     base::BindRepeating(&EmberUtilityController::PollSnap,
+                                         owner->weak_factory_.GetWeakPtr()));
++                owner->SnapStatus(u"Checking ChatGPT sign-in and composer...");
+                 owner->PollSnap();
+               } else if (owner->paste_phase_ == PastePhase::kIdle &&
+                          !owner->paste_dispatched_) {
+@@ -1250,7 +1265,7 @@
+   if (base::TimeTicks::Now() - snap_started_ > base::Seconds(120)) {
+     snap_timer_.Stop();
+     if (paste_phase_ == PastePhase::kWaiting)
+-      SnapStatus(u"Log in, then Retry. Image kept temporarily.");
++      SnapStatus(u"ChatGPT not ready. Retry; image kept briefly.");
+     else {
+       CancelPendingSnap();
+       SnapStatus(
+@@ -1362,8 +1377,15 @@
+     SnapStatus(*state == "rejected"
+                    ? u"Attachment rejected. Check your draft."
+                    : u"Composer changed. Check your draft before retrying.");
+-  } else if (*state == "login")
++  } else if (*state == "login") {
+     SnapStatus(u"Log in to ChatGPT; image will wait briefly.");
++  } else if (*state == "auth-wait") {
++    SnapStatus(u"Checking ChatGPT sign-in and composer...");
++  } else if (*state == "auth-error") {
++    SnapStatus(u"Sign-in check unavailable. Retry when ChatGPT is ready.");
++  } else if (*state == "waiting" && paste_phase_ == PastePhase::kWaiting) {
++    SnapStatus(u"Waiting for ChatGPT composer...");
++  }
+ }
+ content::WebContents* EmberUtilityController::snap_contents_for_testing()
+     const {
+@@ -1397,11 +1419,13 @@
+       active_ == Utility::kNone || active_ == Utility::kSnap)
+     return;
+   gfx::Point point = event->root_location();
+-  auto* target = static_cast<aura::Window*>(event->target());
+-  if (!target)
+-    return;
+-  aura::Window::ConvertPointToTarget(target->GetRootWindow(),
+-                                     GetWidget()->GetNativeWindow(), &point);
++  if (!GetWidget() || !GetWidget()->GetNativeWindow()) {
++    return;
++  }
++  // This handler sees both Aura pre-target and Views-dispatched events. The
++  // event target may be a View; root_location stays in the Aura root space.
++  auto* window = GetWidget()->GetNativeWindow();
++  aura::Window::ConvertPointToTarget(window->GetRootWindow(), window, &point);
+   views::View::ConvertPointFromWidget(this, &point);
+   const gfx::Point screen =
+       GetBoundsInScreen().origin() + point.OffsetFromOrigin();
+diff --git a/chrome/browser/ui/views/frame/browser_view_browsertest.cc b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+--- a/chrome/browser/ui/views/frame/browser_view_browsertest.cc
++++ b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+@@ -6,6 +6,7 @@
+ 
+ #include <memory>
+ #include <optional>
++#include "media/base/media_switches.h"
+ 
+ #include "ui/compositor/layer.h"
+ 
+@@ -101,6 +102,7 @@
+ #include "chrome/browser/ui/views/side_panel/side_panel_coordinator.h"
+ #include "chrome/browser/ui/views/tabs/tab/tab_accessibility.h"
+ #include "chrome/browser/ui/views/tabs/tab_strip.h"
++#include "chrome/browser/ui/views/tabs/tab.h"
+ #include "chrome/browser/ui/window_metadata/window_metadata_controller.h"
+ #include "chrome/common/pref_names.h"
+ #include "chrome/common/url_constants.h"
+@@ -1077,6 +1079,38 @@
+ #endif
+ 
+ IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++                       EmberUtilityClicksHandleViewsAndAuraTargets) {
++  using Utility = ember::EmberUtilityController::Utility;
++  auto* owner = browser_view()->ember_utilities();
++  auto* widget = browser_view()->GetWidget();
++  gfx::Animation::SetPrefersReducedMotionForTesting(true);
++  for (Utility utility : {Utility::kMedia, Utility::kWorkspaces}) {
++    owner->Toggle(utility, owner->footer_for_testing()->children()[0].get());
++    widget->GetRootView()->DeprecatedLayoutImmediately();
++    auto* body = owner->popover_content_for_testing();
++    gfx::Point point = body->GetBoundsInScreen().CenterPoint();
++    views::View::ConvertPointFromScreen(widget->GetRootView(), &point);
++    aura::Window::ConvertPointToTarget(
++        widget->GetNativeWindow(), widget->GetNativeWindow()->GetRootWindow(),
++        &point);
++    ui::MouseEvent press(ui::EventType::kMousePressed, point, point,
++                         base::TimeTicks::Now(), ui::EF_LEFT_MOUSE_BUTTON,
++                         ui::EF_LEFT_MOUSE_BUTTON);
++    // The real crash required a Views target, not an Aura target or null.
++    ui::Event::DispatcherApi(&press).set_target(body);
++    owner->OnMouseEvent(&press);
++    EXPECT_EQ(utility, owner->active());
++    ui::Event::DispatcherApi(&press).set_target(widget->GetNativeWindow());
++    owner->OnMouseEvent(&press);
++    EXPECT_EQ(utility, owner->active());
++    press.set_root_location(gfx::Point(-100, -100));
++    owner->OnMouseEvent(&press);
++    EXPECT_EQ(Utility::kNone, owner->active());
++  }
++  gfx::Animation::SetPrefersReducedMotionForTesting(false);
++}
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest,
+                        EmberFavoritesViewportStaysTransparent) {
+   auto* sidebar =
+       browser_view()->ember_utilities()->footer_for_testing()->parent();
+@@ -1098,6 +1132,28 @@
+     if (scroll->contents()->layer())
+       EXPECT_FALSE(scroll->contents()->layer()->fills_bounds_opaquely());
+   }
++}
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++                       EmberSpeakerMuteIgnoresExperimentalFlagAndKeepsGain) {
++  base::test::ScopedFeatureList features;
++  features.InitAndDisableFeature(media::kEnableTabMuting);
++  auto* contents = active_web_contents();
++  contents->SetAudioVolume(1.6);
++  auto* indicator = browser_view()
++                        ->horizontal_tab_strip_for_testing()
++                        ->tab_at(0)
++                        ->alert_indicator_button_for_testing();
++  indicator->TransitionToAlertState(tabs::TabAlert::kAudioPlaying);
++  EXPECT_TRUE(indicator->GetEnabled());
++  views::test::ButtonTestApi(indicator).NotifyDefaultMouseClick();
++  EXPECT_TRUE(contents->IsAudioMuted());
++  EXPECT_DOUBLE_EQ(1.6, contents->GetAudioVolume());
++  views::test::ButtonTestApi(indicator).NotifyDefaultMouseClick();
++  EXPECT_FALSE(contents->IsAudioMuted());
++  EXPECT_DOUBLE_EQ(1.6, contents->GetAudioVolume());
++  indicator->TransitionToAlertState(tabs::TabAlert::kMediaRecording);
++  EXPECT_FALSE(indicator->GetEnabled());
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(BrowserViewTest,
+diff --git a/chrome/browser/ui/views/tabs/tab/alert_indicator_button.cc b/chrome/browser/ui/views/tabs/tab/alert_indicator_button.cc
+--- a/chrome/browser/ui/views/tabs/tab/alert_indicator_button.cc
++++ b/chrome/browser/ui/views/tabs/tab/alert_indicator_button.cc
+@@ -83,7 +83,6 @@
+ // the click-to-mute functionality to be enabled.  These values are in terms of
+ // some percentage of the AlertIndicatorButton's width.  See comments in
+ // UpdateEnabledForMuteToggle().
+-const int kMinMouseSelectableAreaPercent = 250;
+ const int kMinGestureSelectableAreaPercent = 400;
+ 
+ // Returns true if either Shift or Control are being held down.  In this case,
+@@ -98,9 +97,9 @@
+     ui::ColorId button_color) {
+   tabs::TabAlert pressed_alert_state = alert_state;
+   if (alert_state == tabs::TabAlert::kAudioPlaying) {
+-    alert_state = tabs::TabAlert::kAudioMuting;
++    pressed_alert_state = tabs::TabAlert::kAudioMuting;
+   } else if (alert_state == tabs::TabAlert::kAudioMuting) {
+-    alert_state = tabs::TabAlert::kAudioPlaying;
++    pressed_alert_state = tabs::TabAlert::kAudioPlaying;
+   }
+ 
+   return tabs::GetAlertImageModel(pressed_alert_state, button_color);
+@@ -268,17 +267,10 @@
+ void AlertIndicatorButton::UpdateEnabledForMuteToggle() {
+   const bool was_enabled = GetEnabled();
+ 
+-  bool enable = base::FeatureList::IsEnabled(media::kEnableTabMuting) &&
+-                (alert_state_ == tabs::TabAlert::kAudioPlaying ||
+-                 alert_state_ == tabs::TabAlert::kAudioMuting);
+-
+-  // If the tab is not the currently-active tab, make sure it is wide enough
+-  // before enabling click-to-mute.  This ensures that there is enough click
+-  // area for the user to activate a tab rather than unintentionally muting it.
+-  // Note that IsTriggerableEvent() is also overridden to provide an even wider
+-  // requirement for tap gestures.
+-  const int required_width = width() * kMinMouseSelectableAreaPercent / 100;
+-  enable = enable && delegate_->ShouldEnableMuteToggle(required_width);
++  // Ember's speaker is always a native mute button, independently of Chrome's
++  // experimental tab-muting flag. Right-click remains owned by the tab.
++  const bool enable = alert_state_ == tabs::TabAlert::kAudioPlaying ||
++                      alert_state_ == tabs::TabAlert::kAudioMuting;
+ 
+   if (enable == was_enabled) {
+     return;
+@@ -423,7 +415,15 @@
+   return views::ImageButton::IsTriggerableEvent(event);
+ }
+ 
++void AlertIndicatorButton::StateChanged(ButtonState old_state) {
++  ImageButton::StateChanged(old_state);
++  feedback_.Set(GetEnabled() && GetState() == STATE_HOVERED,
++                GetEnabled() && GetState() == STATE_PRESSED, false);
++}
++
+ void AlertIndicatorButton::PaintButtonContents(gfx::Canvas* canvas) {
++  feedback_.Paint(canvas);
++
+   double opaqueness = 1.0;
+   if (fade_animation_) {
+     opaqueness = fade_animation_->GetCurrentValue();
+diff --git a/chrome/browser/ui/views/tabs/tab/alert_indicator_button.h b/chrome/browser/ui/views/tabs/tab/alert_indicator_button.h
+--- a/chrome/browser/ui/views/tabs/tab/alert_indicator_button.h
++++ b/chrome/browser/ui/views/tabs/tab/alert_indicator_button.h
+@@ -9,6 +9,7 @@
+ #include <optional>
+ 
+ #include "base/memory/raw_ptr.h"
++#include "chrome/browser/ui/views/ember/ember_utility_button.h"
+ #include "ui/base/metadata/metadata_header_macros.h"
+ #include "ui/base/models/image_model.h"
+ #include "ui/color/color_id.h"
+@@ -114,6 +115,7 @@
+ 
+   // views::Button:
+   void NotifyClick(const ui::Event& event) override;
++  void StateChanged(ButtonState old_state) override;
+ 
+   // views::Button:
+   bool IsTriggerableEvent(const ui::Event& event) override;
+@@ -123,6 +125,7 @@
+   gfx::ImageSkia GetImageToPaint() override;
+ 
+  private:
++  ember::EmberSquareFeedback feedback_{this};
+   friend class TabContentsTest;
+   friend class TabTest;
+   class FadeAnimationDelegate;

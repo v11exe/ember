@@ -24,3 +24,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## ChatGPT Snap vector mark
+
+`chromium/resources/snap/chatgpt-mark.svg` is the OpenAI mark from [Simple Icons v11](https://github.com/simple-icons/simple-icons/blob/11.0.0/icons/openai.svg), distributed under [CC0-1.0](https://github.com/simple-icons/simple-icons/blob/11.0.0/LICENSE.md). The native Snap glyph draws that SVG path inside Ember's own capture-frame outline. The mark identifies the real ChatGPT destination; OpenAI/ChatGPT names and marks remain their respective owners' trademarks.

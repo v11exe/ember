@@ -1,0 +1,186 @@
+diff --git a/chrome/browser/ui/views/ember/ember_utility_controller.cc b/chrome/browser/ui/views/ember/ember_utility_controller.cc
+--- a/chrome/browser/ui/views/ember/ember_utility_controller.cc
++++ b/chrome/browser/ui/views/ember/ember_utility_controller.cc
+@@ -47,6 +47,7 @@
+ #include "ui/views/controls/combobox/combobox.h"
+ #include "ui/events/keycodes/keyboard_codes.h"
+ #include "ui/gfx/canvas.h"
++#include "ui/gfx/geometry/rect_conversions.h"
+ #include "ui/gfx/paint_vector_icon.h"
+ #include "ui/views/accessibility/view_accessibility.h"
+ #include "ui/views/background.h"
+@@ -1381,6 +1382,8 @@
+     SnapStatus(u"Log in to ChatGPT; image will wait briefly.");
+   } else if (*state == "auth-wait") {
+     SnapStatus(u"Checking ChatGPT sign-in and composer...");
++  } else if (*state == "ambiguous") {
++    SnapStatus(u"Multiple ChatGPT editors. Select one chat, then Retry.");
+   } else if (*state == "auth-error") {
+     SnapStatus(u"Sign-in check unavailable. Retry when ChatGPT is ready.");
+   } else if (*state == "waiting" && paste_phase_ == PastePhase::kWaiting) {
+@@ -1404,15 +1407,42 @@
+   capture_feedback_->SetBoundsRect(feedback);
+   capture_feedback_->layer()->SetOpacity(capture_transition_.frame().opacity);
+ }
++views::View* EmberUtilityController::TargetForRect(views::View* root,
++                                                   const gfx::Rect& rect) {
++  if (root != this) {
++    return views::ViewTargeterDelegate::TargetForRect(root, rect);
++  }
++  // Route through the actual content, not the glass/shadow/capture wrapper.
++  // This also leaves native Slider pointer capture and Button hover dispatch
++  // with the selected descendant, rather than the full-window utility owner.
++  for (views::View* surface : {popover_body_.get(), snap_surface_.get()}) {
++    if (!surface || !surface->IsDrawn() ||
++        !surface->GetCanProcessEventsWithinSubtree()) {
++      continue;
++    }
++    gfx::RectF local(rect);
++    views::View::ConvertRectToTarget(this, surface, &local);
++    const gfx::Rect hit = gfx::ToEnclosingRect(local);
++    if (surface->HitTestRect(hit)) {
++      return surface->GetEventHandlerForRect(hit);
++    }
++  }
++  return this;
++}
+ bool EmberUtilityController::DoesIntersectRect(const views::View*,
+                                                const gfx::Rect& rect) const {
+-  gfx::Rect panel;
+-  if (popover_ && popover_body_) {
+-    panel = popover_body_->bounds();
+-    panel.Offset(popover_->bounds().origin().OffsetFromOrigin());
+-  }
+-  return panel.Intersects(rect) || (snap_surface_ && snap_visible_ &&
+-                                    snap_surface_->bounds().Intersects(rect));
++  for (views::View* surface : {popover_body_.get(), snap_surface_.get()}) {
++    if (!surface || !surface->IsDrawn() ||
++        !surface->GetCanProcessEventsWithinSubtree()) {
++      continue;
++    }
++    gfx::RectF bounds(surface->GetLocalBounds());
++    views::View::ConvertRectToTarget(surface, this, &bounds);
++    if (bounds.Intersects(gfx::RectF(rect))) {
++      return true;
++    }
++  }
++  return false;
+ }
+ void EmberUtilityController::OnMouseEvent(ui::MouseEvent* event) {
+   if (event->type() != ui::EventType::kMousePressed ||
+diff --git a/chrome/browser/ui/views/ember/ember_utility_controller.h b/chrome/browser/ui/views/ember/ember_utility_controller.h
+--- a/chrome/browser/ui/views/ember/ember_utility_controller.h
++++ b/chrome/browser/ui/views/ember/ember_utility_controller.h
+@@ -82,6 +82,9 @@
+     auto it = media_buttons_.find(action);
+     return it == media_buttons_.end() ? nullptr : it->second.get();
+   }
++  views::View* snap_retry_for_testing() const {
++    return snap_surface_ ? snap_surface_->children()[3].get() : nullptr;
++  }
+   bool snap_requested_for_testing() const { return snap_requested_; }
+   content::WebContents* capture_source_for_testing() const {
+     return capture_source_.get();
+@@ -91,6 +94,7 @@
+     return media_.get();
+   }
+ 
++  views::View* TargetForRect(views::View* root, const gfx::Rect& rect) override;
+   bool DoesIntersectRect(const views::View*, const gfx::Rect&) const override;
+   void AddedToWidget() override;
+   void RemovedFromWidget() override;
+diff --git a/chrome/browser/ui/views/frame/browser_view_browsertest.cc b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+--- a/chrome/browser/ui/views/frame/browser_view_browsertest.cc
++++ b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+@@ -1111,6 +1111,39 @@
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++                       EmberUtilityRootRoutesToControlsAfterRepeatedLayout) {
++  using Utility = ember::EmberUtilityController::Utility;
++  auto* owner = browser_view()->ember_utilities();
++  auto* widget = browser_view()->GetWidget();
++  auto* anchor = owner->footer_for_testing()->children()[0].get();
++  gfx::Animation::SetPrefersReducedMotionForTesting(true);
++  for (int pass = 0; pass < 3; ++pass) {
++    owner->ShowVolume(active_web_contents(), anchor);
++    widget->GetRootView()->DeprecatedLayoutImmediately();
++    auto* slider = owner->volume_for_testing();
++    ASSERT_TRUE(slider);
++    gfx::Point point = slider->GetBoundsInScreen().CenterPoint();
++    views::View::ConvertPointFromScreen(widget->GetRootView(), &point);
++    EXPECT_EQ(slider, widget->GetRootView()->GetEventHandlerForPoint(point));
++    owner->Toggle(Utility::kMedia, anchor);
++    widget->GetRootView()->DeprecatedLayoutImmediately();
++    slider = owner->volume_for_testing();
++    ASSERT_TRUE(slider);
++    point = slider->GetBoundsInScreen().CenterPoint();
++    views::View::ConvertPointFromScreen(widget->GetRootView(), &point);
++    EXPECT_EQ(slider, widget->GetRootView()->GetEventHandlerForPoint(point));
++    auto* play = owner->media_action_for_testing(
++        int(media_session::mojom::MediaSessionAction::kPlay));
++    ASSERT_TRUE(play);
++    point = play->GetBoundsInScreen().CenterPoint();
++    views::View::ConvertPointFromScreen(widget->GetRootView(), &point);
++    EXPECT_EQ(play, widget->GetRootView()->GetEventHandlerForPoint(point));
++    owner->Close(false, true);
++  }
++  gfx::Animation::SetPrefersReducedMotionForTesting(false);
++}
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest,
+                        EmberFavoritesViewportStaysTransparent) {
+   auto* sidebar =
+       browser_view()->ember_utilities()->footer_for_testing()->parent();
+@@ -1261,7 +1294,25 @@
+   auto* previous = owner->media_action_for_testing(int(Action::kPreviousTrack));
+   ASSERT_TRUE(previous);
+   ASSERT_TRUE(base::test::RunUntil([&] { return previous->GetEnabled(); }));
+-  views::test::ButtonTestApi(previous).NotifyDefaultMouseClick();
++  const auto click_control = [&](views::View* control) {
++    auto* root = browser_view()->GetWidget()->GetRootView();
++    root->DeprecatedLayoutImmediately();
++    gfx::Point point = control->GetBoundsInScreen().CenterPoint();
++    views::View::ConvertPointFromScreen(root, &point);
++    EXPECT_EQ(control, root->GetEventHandlerForPoint(point));
++    ui::MouseEvent move(ui::EventType::kMouseMoved, point, point,
++                        base::TimeTicks::Now(), ui::EF_NONE, ui::EF_NONE);
++    root->OnMouseEvent(&move);
++    ui::MouseEvent press(ui::EventType::kMousePressed, point, point,
++                         base::TimeTicks::Now(), ui::EF_LEFT_MOUSE_BUTTON,
++                         ui::EF_LEFT_MOUSE_BUTTON);
++    root->OnMouseEvent(&press);
++    ui::MouseEvent release(ui::EventType::kMouseReleased, point, point,
++                           base::TimeTicks::Now(), ui::EF_NONE,
++                           ui::EF_LEFT_MOUSE_BUTTON);
++    root->OnMouseEvent(&release);
++  };
++  click_control(previous);
+   ASSERT_EQ(1, content::EvalJs(first, "window.previous"));
+   first->SetAudioVolume(1.8);
+   chrome::AddTabAt(browser(), GURL(url::kAboutBlankURL), -1, true);
+@@ -1273,9 +1324,7 @@
+       [&] { return owner->sources_for_testing()->GetEnabled(); }));
+   views::test::ComboboxTestApi(owner->sources_for_testing()).PerformActionAt(1);
+   EXPECT_EQ(second, owner->media_contents_for_testing());
+-  views::test::ButtonTestApi(
+-      owner->media_action_for_testing(int(Action::kNextTrack)))
+-      .NotifyDefaultMouseClick();
++  click_control(owner->media_action_for_testing(int(Action::kNextTrack)));
+   EXPECT_EQ(1, content::EvalJs(second, "window.next"));
+   EXPECT_EQ(0, content::EvalJs(first, "window.next"));
+   owner->Close(false);
+@@ -1380,6 +1429,13 @@
+   ASSERT_TRUE(
+       base::test::RunUntil([&] { return owner->active() == Utility::kSnap; }));
+   EXPECT_EQ(snap, owner->snap_contents_for_testing());
++  auto* root = browser_view()->GetWidget()->GetRootView();
++  root->DeprecatedLayoutImmediately();
++  auto* retry = owner->snap_retry_for_testing();
++  ASSERT_TRUE(retry);
++  gfx::Point retry_point = retry->GetBoundsInScreen().CenterPoint();
++  views::View::ConvertPointFromScreen(root, &retry_point);
++  EXPECT_EQ(retry, root->GetEventHandlerForPoint(retry_point));
+   EXPECT_EQ("Keep my draft",
+             content::EvalJs(snap, "document.getElementById('draft').value"));
+   owner->Close(false, true);

@@ -103,6 +103,17 @@ test('the Ember patch series is ordered, local, and complete', () => {
     'ember/0058-ember-search-construction-and-smoked-shell.patch',
     'ember/0059-ember-transparent-host-and-compact-search.patch',
     'ember/0060-ember-shell-and-search-polish.patch',
+    'ember/0061-ember-run-five-utilities.patch',
+    'ember/0062-ember-media-artwork-native-format.patch',
+    'ember/0063-ember-native-input-and-scroll-transparency.patch',
+    'ember/0064-ember-utility-input-paint-and-readiness.patch',
+    'ember/0065-ember-utility-control-targets-and-composer.patch',
+    'ember/0066-ember-native-utility-popups-and-image-files.patch',
+    'ember/0067-ember-utility-native-client-focus-and-recapture.patch',
+    'ember/0068-ember-media-input-bounds-and-browser-paste.patch',
+    'ember/0069-ember-run-six-navigation-and-downloads.patch',
+    'ember/0070-ember-follower-window-referrer.patch',
+    'ember/0071-ember-settings-cards-and-unscoped-tab-search.patch',
   ]);
   for (const entry of entries) {
     assert.equal(fs.existsSync(path.join(port.PATCHES_ROOT, ...entry.split('/'))), true);
@@ -294,8 +305,8 @@ test('the visible product patch brands window, About, accessibility, and default
 
 test('the native resource overlay is path-safe and carries valid Ember raster and ICO assets', () => {
   const manifest = port.readResourceManifest();
-  assert.equal(manifest.files.length, 40);
-  assert.equal(new Set(manifest.files.map((item) => item.destination)).size, 40);
+  assert.equal(manifest.files.length, 43);
+  assert.equal(new Set(manifest.files.map((item) => item.destination)).size, 43);
   assert.match(port.resourceOverlayHash(manifest), /^[0-9a-f]{64}$/);
   assert.equal(
     manifest.files.some((item) => item.destination.endsWith('/chromium/win/chromium.ico')),

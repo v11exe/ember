@@ -1,0 +1,395 @@
+diff --git a/chrome/browser/ui/views/ember/ember_utility_controller.cc b/chrome/browser/ui/views/ember/ember_utility_controller.cc
+--- a/chrome/browser/ui/views/ember/ember_utility_controller.cc
++++ b/chrome/browser/ui/views/ember/ember_utility_controller.cc
+@@ -59,6 +59,10 @@
+ #include "ui/views/layout/box_layout.h"
+ #include "ui/views/view_targeter.h"
+ #include "ui/views/widget/widget.h"
++#include "ui/views/layout/fill_layout.h"
++#include "ui/views/window/frame_view.h"
++#include "ui/base/accelerators/accelerator.h"
++#include "ui/base/hit_test.h"
+ 
+ namespace ember {
+ namespace {
+@@ -66,28 +70,37 @@
+ constexpr SkColor kForeground = SkColorSetRGB(235, 237, 240);
+ constexpr int kMute = -1, kGoToTab = -2;
+ 
+-// A native owned widget gives utility controls their own input/focus root.
+-// Retain EmberGlassView material and motion, including interrupted closes.
++// A popup must expose an explicit client hit area to both Windows and Aura.
++// TYPE_POPUP has no NonClientView, so Views reports HTNOWHERE despite correct
++// descendant hit tests. Keep a decoration-free native bubble frame instead.
++class UtilityPopupFrame : public views::FrameView {
++ public:
++  gfx::Rect GetBoundsForClientView() const override { return GetLocalBounds(); }
++  int NonClientHitTest(const gfx::Point& point) override {
++    gfx::Rect panel = GetLocalBounds();
++    panel.Inset(EmberGlassView::kShadowMargin);
++    return panel.Contains(point) ? HTCLIENT : HTTRANSPARENT;
++  }
++};
++class UtilityPopupWidget : public views::Widget {
++ public:
++  std::unique_ptr<views::FrameView> CreateFrameView() override {
++    return std::make_unique<UtilityPopupFrame>();
++  }
++};
++
++// Escape belongs to Views' focus manager, not an Aura pre-target View handler.
++// Accelerator registration is removed before native-window destruction. Mouse
++// events now reach the normal native widget/root/control dispatch path once.
+ class UtilityPopupSurface : public EmberGlassView {
+  public:
+   explicit UtilityPopupSurface(base::RepeatingClosure close)
+-      : EmberGlassView(EmberGlassPreset::kPopover), close_(std::move(close)) {}
+-  void AddedToWidget() override {
+-    GetWidget()->GetNativeWindow()->AddPreTargetHandler(this);
+-  }
+-  void RemovedFromWidget() override {
+-    if (GetWidget()) {
+-      GetWidget()->GetNativeWindow()->RemovePreTargetHandler(this);
+-    }
+-  }
+-  void OnKeyEvent(ui::KeyEvent* event) override {
+-    if (event->type() == ui::EventType::kKeyPressed &&
+-        event->key_code() == ui::VKEY_ESCAPE) {
+-      event->SetHandled();
+-      close_.Run();
+-    } else {
+-      EmberGlassView::OnKeyEvent(event);
+-    }
++      : EmberGlassView(EmberGlassPreset::kPopover), close_(std::move(close)) {
++    AddAccelerator(ui::Accelerator(ui::VKEY_ESCAPE, ui::EF_NONE));
++  }
++  bool AcceleratorPressed(const ui::Accelerator& accelerator) override {
++    close_.Run();
++    return true;
+   }
+ 
+  private:
+@@ -362,7 +375,9 @@
+ void EmberUtilityController::RemovedFromWidget() {
+   if (listening_ && GetWidget()) {
+     GetWidget()->RemoveObserver(this);
+-    GetWidget()->GetNativeWindow()->RemovePreTargetHandler(this);
++    if (GetWidget()->GetNativeWindow()) {
++      GetWidget()->GetNativeWindow()->RemovePreTargetHandler(this);
++    }
+   }
+   listening_ = false;
+ }
+@@ -599,10 +614,10 @@
+   bounds.Outset(EmberGlassView::kShadowMargin);
+   gfx::Rect screen_bounds = bounds;
+   screen_bounds.Offset(GetBoundsInScreen().origin().OffsetFromOrigin());
+-  auto* widget = new views::Widget;
++  auto* widget = new UtilityPopupWidget;
+   views::Widget::InitParams params(
+       views::Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET,
+-      views::Widget::InitParams::TYPE_POPUP);
++      views::Widget::InitParams::TYPE_BUBBLE);
+   params.parent = GetWidget()->GetNativeView();
+   params.context = GetWidget()->GetNativeView();
+   params.opacity = views::Widget::InitParams::WindowOpacity::kTranslucent;
+@@ -612,9 +627,14 @@
+   params.name = "EmberUtilityPopup";
+   widget->Init(std::move(params));
+   popover_widget_ = widget;
+-  popover_ = widget->SetContentsView(std::make_unique<UtilityPopupSurface>(
+-      base::BindRepeating(&EmberUtilityController::Close,
+-                          weak_factory_.GetWeakPtr(), true, false, false)));
++  widget->GetContentsView()->SetLayoutManager(
++      std::make_unique<views::FillLayout>());
++  std::unique_ptr<views::View> popup_view =
++      std::make_unique<UtilityPopupSurface>(
++          base::BindRepeating(&EmberUtilityController::Close,
++                              weak_factory_.GetWeakPtr(), true, false, false));
++  popover_ = static_cast<EmberGlassView*>(
++      widget->GetContentsView()->AddChildView(std::move(popup_view)));
+   popover_->SetBoundsRect(gfx::Rect(bounds.size()));
+   widget->AddObserver(this);
+   widget->Show();
+@@ -1071,6 +1091,12 @@
+          capture_source_->GetLastCommittedURL() == capture_url_;
+ }
+ void EmberUtilityController::CaptureSnap() {
++  recapture_existing_chat_ = snap_visible_ && snap_page_;
++  if (recapture_existing_chat_) {
++    auto* destination = snap_page_->web_contents();
++    paste_document_ = destination->GetPrimaryMainFrame()->GetWeakDocumentPtr();
++    paste_url_ = destination->GetLastCommittedURL();
++  }
+   paste_dispatched_ = false;
+   buttons_[Utility::kSnap]->SetTooltipText(u"ChatGPT Snap");
+   snap_requested_ = true;
+@@ -1134,7 +1160,9 @@
+     return;
+   // The image is now frozen. Dismiss every older surface before introducing
+   // feedback or resizing; keep the just-captured source/document ownership.
+-  Close(false, true, true);
++  if (!recapture_existing_chat_) {
++    Close(false, true, true);
++  }
+   browser_view_->CloseEmberSearch(false);
+   if (generation != snap_generation_)
+     return;
+@@ -1239,13 +1267,27 @@
+     retry->SetEnabledTextColors(kForeground);
+     snap_surface_->AddChildView(std::move(retry));
+     snap_surface_->AddChildView(std::make_unique<views::ResizeArea>(this));
+-  }
++    auto capture = std::make_unique<views::LabelButton>(
++        base::BindRepeating(
++            [](EmberUtilityController* owner) {
++              owner->CancelPendingSnap();
++              owner->CaptureSnap();
++            },
++            base::Unretained(this)),
++        u"Capture");
++    capture->SetEnabledTextColors(kForeground);
++    capture->SetTooltipText(u"Capture the current webpage into this chat");
++    snap_surface_->AddChildView(std::move(capture));
++  }
++  const bool opening = !snap_visible_;
+   snap_visible_ = true;
+   browser_view_->SetEmberSnapSidebarMode(true);
+   snap_surface_->SetVisible(true);
+   snap_surface_->SetCanProcessEventsWithinSubtree(true);
+-  snap_transition_.Open(gfx::RectF(0, 0, snap_width_, 1), gfx::PointF(0, 0),
+-                        10);
++  if (opening) {
++    snap_transition_.Open(gfx::RectF(0, 0, snap_width_, 1), gfx::PointF(0, 0),
++                          10);
++  }
+   browser_view_->InvalidateLayout();
+   Relayout();
+   capture_bounds_ = gfx::Rect();
+@@ -1308,6 +1350,8 @@
+                           std::max(0, bounds.height() - 58));
+     snap_surface_->children()[3]->SetBounds(
+         8, std::max(0, bounds.height() - 26), 58, 24);
++    snap_surface_->children()[5]->SetBounds(
++        std::max(74, width - 90), std::max(0, bounds.height() - 26), 78, 24);
+     snap_surface_->children()[4]->SetBounds(std::max(0, width - 7), 32, 7,
+                                             std::max(0, bounds.height() - 32));
+   }
+@@ -1323,6 +1367,7 @@
+ void EmberUtilityController::CancelPendingSnap() {
+   ++snap_generation_;
+   snap_requested_ = false;
++  recapture_existing_chat_ = false;
+   snap_timer_.Stop();
+   script_pending_ = false;
+   feedback_timer_.Stop();
+@@ -1380,7 +1425,7 @@
+     return;
+   }
+   auto* frame = contents->GetPrimaryMainFrame();
+-  if (paste_phase_ != PastePhase::kWaiting &&
++  if ((recapture_existing_chat_ || paste_phase_ != PastePhase::kWaiting) &&
+       (paste_document_.AsRenderFrameHostIfValid() != frame ||
+        paste_url_ != contents->GetLastCommittedURL())) {
+     CancelPendingSnap();
+@@ -1438,6 +1483,10 @@
+     paste_phase_ = PastePhase::kPrepared;
+     paste_url_ = contents->GetLastCommittedURL();
+     paste_document_ = contents->GetPrimaryMainFrame()->GetWeakDocumentPtr();
++    // Initialize Blink's frame focus before the next isolated-world validation
++    // focuses the exact composer. Native window focus alone does not establish
++    // a focused frame in a newly loaded embedded WebContents.
++    contents->FocusThroughTabTraversal(false);
+     snap_page_->RequestFocus();
+     contents->Focus();
+     PollSnap();
+@@ -1468,6 +1517,7 @@
+   if (*state == "attached" && paste_phase_ == PastePhase::kPasted) {
+     CancelPendingSnap();
+     SnapStatus(u"Image attached. Type your message.");
++    snap_page_->RequestFocus();
+     contents->Focus();
+     return;
+   }
+diff --git a/chrome/browser/ui/views/ember/ember_utility_controller.h b/chrome/browser/ui/views/ember/ember_utility_controller.h
+--- a/chrome/browser/ui/views/ember/ember_utility_controller.h
++++ b/chrome/browser/ui/views/ember/ember_utility_controller.h
+@@ -87,6 +87,9 @@
+   views::View* snap_retry_for_testing() const {
+     return snap_surface_ ? snap_surface_->children()[3].get() : nullptr;
+   }
++  views::View* snap_capture_for_testing() const {
++    return snap_surface_ ? snap_surface_->children()[5].get() : nullptr;
++  }
+   bool snap_requested_for_testing() const { return snap_requested_; }
+   content::WebContents* capture_source_for_testing() const {
+     return capture_source_.get();
+@@ -197,6 +200,7 @@
+   std::string paste_digest_;
+   bool paste_dispatched_ = false;
+   bool snap_requested_ = false;
++  bool recapture_existing_chat_ = false;
+   base::TimeTicks snap_started_;
+   base::RepeatingTimer snap_timer_;
+   gfx::Rect capture_bounds_;
+diff --git a/chrome/browser/ui/views/frame/browser_view_browsertest.cc b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+--- a/chrome/browser/ui/views/frame/browser_view_browsertest.cc
++++ b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+@@ -47,7 +47,10 @@
+ #include "build/build_config.h"
+ #if BUILDFLAG(IS_WIN)
+ #include "ui/aura/window.h"
++#include "ui/aura/window_tree_host.h"
++#include "ui/aura/window_event_dispatcher.h"
+ #endif
++#include "ui/base/hit_test.h"
+ #include "chrome/browser/devtools/devtools_ui_controller.h"
+ #include "chrome/browser/devtools/devtools_window_testing.h"
+ #include "chrome/browser/policy/dm_token_utils.h"
+@@ -1127,6 +1130,12 @@
+     auto* popup_root = slider->GetWidget()->GetRootView();
+     EXPECT_NE(widget, slider->GetWidget());
+     EXPECT_TRUE(slider->GetWidget()->CanActivate());
++    ASSERT_TRUE(slider->GetWidget()->non_client_view());
++    gfx::Point client_point = point;
++    views::View::ConvertPointFromScreen(slider->GetWidget()->GetRootView(),
++                                        &client_point);
++    EXPECT_EQ(HTCLIENT,
++              slider->GetWidget()->GetNonClientComponent(client_point));
+     slider->RequestFocus();
+     EXPECT_TRUE(slider->HasFocus());
+     views::View::ConvertPointFromScreen(popup_root, &point);
+@@ -1146,6 +1155,27 @@
+     views::View::ConvertPointFromScreen(popup_root, &point);
+     EXPECT_EQ(play, popup_root->GetEventHandlerForPoint(point));
+     owner->Close(false, true);
++  }
++  gfx::Animation::SetPrefersReducedMotionForTesting(false);
++}
++
++IN_PROC_BROWSER_TEST_F(BrowserViewTest,
++                       EmberUtilityNativeDestructionAndEscapeAreSafe) {
++  auto* owner = browser_view()->ember_utilities();
++  auto* anchor = owner->footer_for_testing()->children()[0].get();
++  gfx::Animation::SetPrefersReducedMotionForTesting(true);
++  for (int pass = 0; pass < 3; ++pass) {
++    owner->ShowVolume(active_web_contents(), anchor);
++    auto* popup = owner->volume_for_testing()->GetWidget();
++    popup->CloseNow();
++    EXPECT_EQ(ember::EmberUtilityController::Utility::kNone, owner->active());
++    EXPECT_EQ(nullptr, owner->volume_for_testing());
++    owner->ShowVolume(active_web_contents(), anchor);
++    popup = owner->volume_for_testing()->GetWidget();
++    popup->GetFocusManager()->ProcessAccelerator(
++        ui::Accelerator(ui::VKEY_ESCAPE, ui::EF_NONE));
++    EXPECT_EQ(ember::EmberUtilityController::Utility::kNone, owner->active());
++    base::RunLoop().RunUntilIdle();
+   }
+   gfx::Animation::SetPrefersReducedMotionForTesting(false);
+ }
+@@ -1293,7 +1323,10 @@
+       navigator.mediaSession.setActionHandler('nexttrack', () => ++window.next);
+       navigator.mediaSession.setActionHandler('pause', () => audio.pause());
+       navigator.mediaSession.setActionHandler('play', () => audio.play());
+-      navigator.mediaSession.setActionHandler('seekto', e => audio.currentTime = e.seekTime);
++      window.seekRequested = 0;
++      navigator.mediaSession.setActionHandler('seekto', e => {
++        window.seekRequested = e.seekTime; audio.currentTime = e.seekTime;
++      });
+       navigator.mediaSession.setPositionState({duration:2, position:0, playbackRate:1});
+       return true;
+     })()
+@@ -1316,19 +1349,71 @@
+     EXPECT_EQ(control, root->GetEventHandlerForPoint(point));
+     ui::MouseEvent move(ui::EventType::kMouseMoved, point, point,
+                         base::TimeTicks::Now(), ui::EF_NONE, ui::EF_NONE);
+-    root->OnMouseEvent(&move);
++#if BUILDFLAG(IS_WIN)
++    // Enter through Aura, including every pre-target handler. Calling only
++    // RootView bypasses the native input boundary that regressed in 0066.
++    auto* native = control->GetWidget()->GetNativeWindow();
++    auto* dispatcher = native->GetHost()->dispatcher();
++    gfx::Point root_point = point;
++    aura::Window::ConvertPointToTarget(native, native->GetRootWindow(),
++                                       &root_point);
++    move.set_location(root_point);
++    move.set_root_location(root_point);
++    dispatcher->OnEventFromSource(&move);
++#else
++    control->GetWidget()->OnMouseEvent(&move);
++#endif
+     EXPECT_TRUE(control->IsMouseHovered());
+     ui::MouseEvent press(ui::EventType::kMousePressed, point, point,
+                          base::TimeTicks::Now(), ui::EF_LEFT_MOUSE_BUTTON,
+                          ui::EF_LEFT_MOUSE_BUTTON);
+-    root->OnMouseEvent(&press);
++#if BUILDFLAG(IS_WIN)
++    press.set_location(root_point);
++    press.set_root_location(root_point);
++    dispatcher->OnEventFromSource(&press);
++#else
++    control->GetWidget()->OnMouseEvent(&press);
++#endif
+     ui::MouseEvent release(ui::EventType::kMouseReleased, point, point,
+                            base::TimeTicks::Now(), ui::EF_NONE,
+                            ui::EF_LEFT_MOUSE_BUTTON);
+-    root->OnMouseEvent(&release);
++#if BUILDFLAG(IS_WIN)
++    release.set_location(root_point);
++    release.set_root_location(root_point);
++    dispatcher->OnEventFromSource(&release);
++#else
++    control->GetWidget()->OnMouseEvent(&release);
++#endif
+   };
+   click_control(previous);
+   ASSERT_EQ(1, content::EvalJs(first, "window.previous"));
++  click_control(owner->volume_for_testing());
++  EXPECT_NEAR(0.5, first->GetAudioVolume(), 0.04);
++  const double remembered_gain = first->GetAudioVolume();
++  click_control(owner->media_action_for_testing(-1));
++  EXPECT_TRUE(first->IsAudioMuted());
++  EXPECT_DOUBLE_EQ(remembered_gain, first->GetAudioVolume());
++  click_control(owner->media_action_for_testing(-1));
++  EXPECT_FALSE(first->IsAudioMuted());
++  EXPECT_DOUBLE_EQ(remembered_gain, first->GetAudioVolume());
++  auto* play = owner->media_action_for_testing(int(Action::kPlay));
++  ASSERT_TRUE(play->GetEnabled());
++  click_control(play);
++  ASSERT_TRUE(base::test::RunUntil(
++      [&] { return content::EvalJs(first, "audio.paused").ExtractBool(); }));
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return play->GetEnabled() &&
++           play->GetViewAccessibility().GetCachedName() == u"Play";
++  }));
++  click_control(play);
++  ASSERT_TRUE(base::test::RunUntil(
++      [&] { return !content::EvalJs(first, "audio.paused").ExtractBool(); }));
++  ASSERT_TRUE(base::test::RunUntil(
++      [&] { return owner->seek_for_testing()->GetEnabled(); }));
++  click_control(owner->seek_for_testing());
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return content::EvalJs(first, "window.seekRequested").ExtractDouble() > 0.7;
++  }));
+   first->SetAudioVolume(1.8);
+   chrome::AddTabAt(browser(), GURL(url::kAboutBlankURL), -1, true);
+   auto* second = active_web_contents();
+@@ -1452,6 +1537,18 @@
+   gfx::Point retry_point = retry->GetBoundsInScreen().CenterPoint();
+   views::View::ConvertPointFromScreen(root, &retry_point);
+   EXPECT_EQ(retry, root->GetEventHandlerForPoint(retry_point));
++  auto* capture = owner->snap_capture_for_testing();
++  ASSERT_TRUE(capture);
++  EXPECT_GT(capture->GetBoundsInScreen().x(),
++            retry->GetBoundsInScreen().right());
++  gfx::Point capture_point = capture->GetBoundsInScreen().CenterPoint();
++  views::View::ConvertPointFromScreen(root, &capture_point);
++  EXPECT_EQ(capture, root->GetEventHandlerForPoint(capture_point));
++  views::test::ButtonTestApi(static_cast<views::LabelButton*>(capture))
++      .NotifyDefaultMouseClick();
++  ASSERT_TRUE(base::test::RunUntil(
++      [&] { return !owner->snap_requested_for_testing(); }));
++  EXPECT_EQ(snap, owner->snap_contents_for_testing());
+   EXPECT_EQ("Keep my draft",
+             content::EvalJs(snap, "document.getElementById('draft').value"));
+   owner->Close(false, true);
