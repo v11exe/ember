@@ -1513,6 +1513,15 @@ Unsplash controls, deep links and back navigation. Native security and other
 Chromium settings remain visible. Do not add empty speculative groups or a
 second preference store. Internal caches/migration flags are not user settings.
 
+Patch 0073 adds a sibling Wallpaper card below Ember New Tab. Its Unsplash controls
+are followed by Default Wallpapers (Smoked Glass, Ember Glow and Frosted Landscape),
+then Translucent wallpaper (OFF by default). Choosing a default turns Unsplash off;
+translucency disables both image choices without deleting selections or credentials.
+The explicit profile preference owns both NTP and split transparency. Bundled images
+use the existing centred cover crop and blurred search lens; disabled/overridden
+Unsplash makes no photo request and pending results cannot replace a newer mode.
+Source and runnable lifecycle checks pass; native linked acceptance remains pending.
+
 ---
 
 ## 40. Webpage fullscreen within the window

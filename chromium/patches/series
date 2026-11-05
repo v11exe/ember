@@ -70,3 +70,4 @@ ember/0069-ember-run-six-navigation-and-downloads.patch
 ember/0070-ember-follower-window-referrer.patch
 ember/0071-ember-settings-cards-and-unscoped-tab-search.patch
 ember/0072-ember-automatic-crash-recovery-and-lazy-audio.patch
+ember/0073-ember-default-wallpapers-and-translucency.patch

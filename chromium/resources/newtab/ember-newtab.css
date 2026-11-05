@@ -20,8 +20,9 @@
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; background: transparent; }
-body.unsplash-mode { background: #20252c; }
-#ember-unsplash-background {
+body { background: #20252c; }
+body.translucent-mode { background: transparent; }
+#ember-wallpaper-background {
   position: fixed;
   inset: 0;
   background-position: center center;
@@ -29,7 +30,7 @@ body.unsplash-mode { background: #20252c; }
   background-repeat: no-repeat;
   pointer-events: none;
 }
-body.unsplash-mode #ember-unsplash-background::after {
+body.wallpaper-mode #ember-wallpaper-background::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -111,21 +112,21 @@ body.hide-ember-wordmark .ember-wordmark { display: none; }
 /* CSS backdrop-filter computes but leaves the composited photo sharp in this
    WebUI. Paint the same viewport-anchored image inside the clipped lens and
    blur that layer; its colors remain while its details dissolve. */
-body.unsplash-mode .glass__warp {
+body.wallpaper-mode .glass__warp {
   background: none;
 }
-body.unsplash-mode .glass__warp::before {
+body.wallpaper-mode .glass__warp::before {
   content: '';
   position: absolute;
   inset: -80px;
-  background-image: var(--unsplash-photo);
+  background-image: var(--wallpaper-image);
   background-position: center;
   background-size: cover;
   background-attachment: fixed;
   filter: blur(55px);
   pointer-events: none;
 }
-body.unsplash-mode .glass__warp::after {
+body.wallpaper-mode .glass__warp::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -205,7 +206,7 @@ body.unsplash-mode .glass__warp::after {
 }
 .ember-recommendation-list { position: relative; z-index: 1; padding: 5px; }
 .ember-recommendations .glass__warp { background: rgba(18,20,25,.3); }
-body.unsplash-mode .ember-recommendations .glass__warp::after { background: rgba(18,20,25,.3); }
+body.wallpaper-mode .ember-recommendations .glass__warp::after { background: rgba(18,20,25,.3); }
 .ember-recommendations[hidden] { display: none; }
 .ember-recommendations.open { opacity: 1; transform: none; }
 .ember-recommendation {

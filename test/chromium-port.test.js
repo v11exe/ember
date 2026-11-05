@@ -115,6 +115,7 @@ test('the Ember patch series is ordered, local, and complete', () => {
     'ember/0070-ember-follower-window-referrer.patch',
     'ember/0071-ember-settings-cards-and-unscoped-tab-search.patch',
     'ember/0072-ember-automatic-crash-recovery-and-lazy-audio.patch',
+    'ember/0073-ember-default-wallpapers-and-translucency.patch',
   ]);
   for (const entry of entries) {
     assert.equal(fs.existsSync(path.join(port.PATCHES_ROOT, ...entry.split('/'))), true);
@@ -306,8 +307,8 @@ test('the visible product patch brands window, About, accessibility, and default
 
 test('the native resource overlay is path-safe and carries valid Ember raster and ICO assets', () => {
   const manifest = port.readResourceManifest();
-  assert.equal(manifest.files.length, 43);
-  assert.equal(new Set(manifest.files.map((item) => item.destination)).size, 43);
+  assert.equal(manifest.files.length, 46);
+  assert.equal(new Set(manifest.files.map((item) => item.destination)).size, 46);
   assert.match(port.resourceOverlayHash(manifest), /^[0-9a-f]{64}$/);
   assert.equal(
     manifest.files.some((item) => item.destination.endsWith('/chromium/win/chromium.ico')),
@@ -970,8 +971,8 @@ test('Batch 1 keeps native transparency, Store branding, search, and extension m
   assert.doesNotMatch(ntpCss, /\.ember-meteor\s*\{[^}]*filter:/s);
   assert.doesNotMatch(ntpSearch, /feTurbulence|feDisplacementMap|backdropFilter/);
   assert.match(ntpSearch, /transparent DWM mode cannot supply a stable renderer backdrop/);
-  assert.match(ntpCss, /body\.unsplash-mode \.glass__warp::before\s*\{[^}]*background-image: var\(--unsplash-photo\);[^}]*filter: blur\(55px\)/s);
-  assert.match(ntpCss, /body\.unsplash-mode \.glass__warp::after\s*\{[^}]*background: rgba\(20, 25, 30, \.35\)/s);
+  assert.match(ntpCss, /body\.wallpaper-mode \.glass__warp::before\s*\{[^}]*background-image: var\(--wallpaper-image\);[^}]*filter: blur\(55px\)/s);
+  assert.match(ntpCss, /body\.wallpaper-mode \.glass__warp::after\s*\{[^}]*background: rgba\(20, 25, 30, \.35\)/s);
 });
 
 test('Batch 1 corrective pass keeps glass, menus, focus, and tab lifecycle coherent', () => {

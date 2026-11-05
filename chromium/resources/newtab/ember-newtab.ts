@@ -43,22 +43,38 @@ async function updateBrand() {
 addWebUiListener('ember-brand-changed', updateBrand);
 void updateBrand();
 
-let unsplashRequest = 0;
-async function updateUnsplashBackground() {
-  const request = ++unsplashRequest;
-  const background = document.getElementById('ember-unsplash-background');
+// Only bundled paths can enter CSS; preferences never supply an arbitrary URL.
+const emberWallpapers = new Map([
+  ['smoked-glass', 'ember-wallpaper-smoked-glass.png'],
+  ['ember-glow', 'ember-wallpaper-ember-glow.png'],
+  ['frosted-landscape', 'ember-wallpaper-frosted-landscape.png'],
+]);
+let wallpaperRequest = 0;
+async function updateWallpaperBackground() {
+  const request = ++wallpaperRequest;
+  const background = document.getElementById('ember-wallpaper-background');
   const credit = document.getElementById('ember-unsplash-credit');
-  const config = await sendWithPromise('emberUnsplashConfig');
-  if (request !== unsplashRequest) return;
-  const enabled = !!config.enabled;
-  document.body.classList.toggle('unsplash-mode', enabled);
+  const config = await sendWithPromise('emberWallpaperConfig');
+  if (request !== wallpaperRequest) return;
+  const translucent = !!config.translucent;
+  document.body.classList.toggle('translucent-mode', translucent);
+  document.body.classList.toggle('wallpaper-mode', !translucent);
   background.style.backgroundImage = '';
-  document.body.style.removeProperty('--unsplash-photo');
+  document.body.style.removeProperty('--wallpaper-image');
   credit.hidden = true;
-  if (!enabled) return;
+  credit.removeAttribute('href');
+  if (translucent) return;
+
+  // Local art also provides an immediate, useful fallback during network/key
+  // failures. Both sources share the same centered cover crop and search lens.
+  const wallpaper = emberWallpapers.get(config.wallpaper) ||
+      emberWallpapers.get('ember-glow');
+  const localBackground = `url("${wallpaper}")`;
+  background.style.backgroundImage = localBackground;
+  document.body.style.setProperty('--wallpaper-image', localBackground);
+  if (!config.enabled) return;
   if (!config.hasAccessKey) {
     credit.textContent = 'Add an Unsplash Access Key in Appearance settings';
-    credit.removeAttribute('href');
     credit.hidden = false;
     return;
   }
@@ -70,7 +86,7 @@ async function updateUnsplashBackground() {
         !photo.photographer) {
       throw new Error(`Unsplash HTTP ${status}`);
     }
-    if (request !== unsplashRequest) return;
+    if (request !== wallpaperRequest) return;
     const profile = new URL(photo.profileUrl);
     if (!/^data:image\/(jpeg|png|webp|avif);base64,/.test(photo.imageDataUrl) ||
         profile.protocol !== 'https:' || profile.hostname !== 'unsplash.com') {
@@ -79,27 +95,27 @@ async function updateUnsplashBackground() {
     const image = new Image();
     image.src = photo.imageDataUrl;
     await image.decode();
-    if (request !== unsplashRequest) return;
+    if (request !== wallpaperRequest) return;
     const photoBackground = `url("${photo.imageDataUrl}")`;
     background.style.backgroundImage = photoBackground;
-    document.body.style.setProperty('--unsplash-photo', photoBackground);
+    document.body.style.setProperty('--wallpaper-image', photoBackground);
     profile.searchParams.set('utm_source', 'ember');
     profile.searchParams.set('utm_medium', 'referral');
     credit.href = profile.href;
-    credit.textContent = `Photo: ${photo.photographer} Â· Unsplash`;
+    credit.textContent = `Photo: ${photo.photographer} · Unsplash`;
     credit.hidden = false;
   } catch {
-    if (request !== unsplashRequest) return;
+    if (request !== wallpaperRequest) return;
     credit.textContent = status === 401 || status === 403 ?
-        'Unsplash photo unavailable â€” check the Access Key' :
+        'Unsplash photo unavailable — check the Access Key' :
         status === 429 ? 'Unsplash hourly photo limit reached' :
-                         'Unsplash photo unavailable â€” try again later';
+                         'Unsplash photo unavailable — try again later';
     credit.removeAttribute('href');
     credit.hidden = false;
   }
 }
-addWebUiListener('ember-unsplash-changed', updateUnsplashBackground);
-void updateUnsplashBackground();
+addWebUiListener('ember-wallpaper-changed', updateWallpaperBackground);
+void updateWallpaperBackground();
 
 function bindSearch() {
   const form = document.getElementById('search-form');

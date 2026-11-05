@@ -1,0 +1,496 @@
+diff --git a/chrome/browser/extensions/api/settings_private/prefs_util.cc b/chrome/browser/extensions/api/settings_private/prefs_util.cc
+--- a/chrome/browser/extensions/api/settings_private/prefs_util.cc
++++ b/chrome/browser/extensions/api/settings_private/prefs_util.cc
+@@ -276,6 +276,10 @@
+       settings_api::PrefType::kNumber;
+   (*s_allowlist)[::prefs::kEmberNewTabShowWordmark] =
+       settings_api::PrefType::kBoolean;
++  (*s_allowlist)[::prefs::kEmberNewTabTranslucent] =
++      settings_api::PrefType::kBoolean;
++  (*s_allowlist)[::prefs::kEmberNewTabWallpaper] =
++      settings_api::PrefType::kString;
+   (*s_allowlist)[::prefs::kEmberUnsplashEnabled] =
+       settings_api::PrefType::kBoolean;
+   (*s_allowlist)[::prefs::kEmberUnsplashAccessKey] =
+diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -1733,6 +1733,8 @@
+   registry->RegisterBooleanPref(prefs::kEmberSidebarWide, false);
+   registry->RegisterBooleanPref(prefs::kEmberContentFullscreen, false);
+   registry->RegisterBooleanPref(prefs::kEmberNewTabShowWordmark, true);
++  registry->RegisterBooleanPref(prefs::kEmberNewTabTranslucent, false);
++  registry->RegisterStringPref(prefs::kEmberNewTabWallpaper, "ember-glow");
+   registry->RegisterBooleanPref(prefs::kEmberUnsplashEnabled, false);
+   registry->RegisterStringPref(prefs::kEmberUnsplashAccessKey, "");
+   registry->RegisterStringPref(prefs::kEmberUnsplashTopic, "");
+diff --git a/chrome/browser/resources/new_tab_page_third_party/BUILD.gn b/chrome/browser/resources/new_tab_page_third_party/BUILD.gn
+--- a/chrome/browser/resources/new_tab_page_third_party/BUILD.gn
++++ b/chrome/browser/resources/new_tab_page_third_party/BUILD.gn
+@@ -13,6 +13,9 @@
+     "new_tab_page_third_party.html",
+     "ember-newtab.css",
+     "ember-icon.png",
++    "ember-wallpaper-smoked-glass.png",
++    "ember-wallpaper-ember-glow.png",
++    "ember-wallpaper-frosted-landscape.png",
+     "Necosmic-PersonalUse.otf",
+   ]
+   ts_files = [
+diff --git a/chrome/browser/resources/settings/appearance_page/appearance_page.html b/chrome/browser/resources/settings/appearance_page/appearance_page.html
+--- a/chrome/browser/resources/settings/appearance_page/appearance_page.html
++++ b/chrome/browser/resources/settings/appearance_page/appearance_page.html
+@@ -43,6 +43,9 @@
+         border-radius: 8px;
+         background: transparent;
+         color: var(--cr-primary-text-color);
++      }
++      #emberWallpaperSection .cr-row[aria-disabled="true"] {
++        opacity: var(--cr-disabled-opacity);
+       }
+       #emberUnsplashAccessKey {
+         width: 220px;
+@@ -455,7 +458,7 @@
+     <settings-section id="emberNewTabSection" route-path="default"
+         page-title="Ember New Tab">
+       <div class="cr-row first">
+-        <div class="secondary">Choose the wordmark and optional photo background.</div>
++        <div class="secondary">Choose whether to show the Ember name below the logo.</div>
+       </div>
+       <settings-toggle-button id="emberShowWordmark" class="hr"
+           pref="{{prefs.ember.new_tab.show_wordmark}}"
+@@ -463,34 +466,60 @@
+           sub-label="Show the wordmark below the logo">
+       </settings-toggle-button>
+ 
++    </settings-section>
++    <settings-section id="emberWallpaperSection" route-path="default"
++        page-title="Wallpaper">
++      <div class="cr-row first">
++        <div class="secondary">Choose an Unsplash photo, a default wallpaper or translucent glass.</div>
++      </div>
+       <settings-toggle-button id="emberUnsplashEnabled" class="hr"
+           pref="{{prefs.ember.new_tab.unsplash.enabled}}"
++          disabled="[[prefs.ember.new_tab.translucent.value]]"
+           label="Unsplash New Tab background"
+-          sub-label="Show a centered photo instead of Windows translucent glass">
++          sub-label="Show a centered photo from Unsplash">
+       </settings-toggle-button>
+-        <template is="dom-if" if="[[prefs.ember.new_tab.unsplash.enabled.value]]">
+-          <div class="cr-row">
+-            <div class="flex cr-padded-text" aria-hidden="true">
+-              Photo section
+-            </div>
+-            <settings-dropdown-menu id="emberUnsplashTopic"
+-                label="Unsplash photo section"
+-                pref-key="ember.new_tab.unsplash.topic"
+-                menu-options="[[emberUnsplashTopicOptions_]]">
+-            </settings-dropdown-menu>
+-          </div>
+-          <div class="cr-row">
+-            <div class="flex cr-padded-text">
+-              Unsplash Access Key
+-              <div class="secondary">Create an app at unsplash.com/developers and paste its Access Key. A Secret Key is not needed.</div>
+-            </div>
+-            <input id="emberUnsplashAccessKey" type="password"
+-                aria-label="Unsplash Access Key" autocomplete="off"
+-                value="[[prefs.ember.new_tab.unsplash.access_key.value]]"
+-                on-change="onEmberUnsplashAccessKeyChanged_">
+-          </div>
+-        </template>
+-
++      <template is="dom-if" if="[[prefs.ember.new_tab.unsplash.enabled.value]]">
++        <div class="cr-row"
++            aria-disabled$="[[prefs.ember.new_tab.translucent.value]]">
++          <div class="flex cr-padded-text" aria-hidden="true">Photo section</div>
++          <settings-dropdown-menu id="emberUnsplashTopic"
++              label="Unsplash photo section"
++              pref-key="ember.new_tab.unsplash.topic"
++              disabled="[[prefs.ember.new_tab.translucent.value]]"
++              menu-options="[[emberUnsplashTopicOptions_]]">
++          </settings-dropdown-menu>
++        </div>
++        <div class="cr-row"
++            aria-disabled$="[[prefs.ember.new_tab.translucent.value]]">
++          <div class="flex cr-padded-text">
++            Unsplash Access Key
++            <div class="secondary">Create an app at unsplash.com/developers and paste its Access Key. A Secret Key is not needed.</div>
++          </div>
++          <input id="emberUnsplashAccessKey" type="password"
++              aria-label="Unsplash Access Key" autocomplete="off"
++              disabled$="[[prefs.ember.new_tab.translucent.value]]"
++              value="[[prefs.ember.new_tab.unsplash.access_key.value]]"
++              on-change="onEmberUnsplashAccessKeyChanged_">
++        </div>
++      </template>
++      <div class="cr-row hr"
++          aria-disabled$="[[prefs.ember.new_tab.translucent.value]]">
++        <div class="flex cr-padded-text" aria-hidden="true">
++          Default Wallpapers
++          <div class="secondary">Choosing a default wallpaper turns off Unsplash.</div>
++        </div>
++        <settings-dropdown-menu id="emberDefaultWallpaper"
++            label="Default Wallpapers" pref-key="ember.new_tab.wallpaper"
++            disabled="[[prefs.ember.new_tab.translucent.value]]"
++            menu-options="[[emberWallpaperOptions_]]"
++            on-settings-control-change="onEmberWallpaperChanged_">
++        </settings-dropdown-menu>
++      </div>
++      <settings-toggle-button id="emberTranslucentWallpaper" class="hr"
++          pref="{{prefs.ember.new_tab.translucent}}"
++          label="Translucent wallpaper"
++          sub-label="Show the Windows backdrop instead of a wallpaper. Turn off to restore your wallpaper choices.">
++      </settings-toggle-button>
+     </settings-section>
+     <settings-section id="emberConversionsSection" route-path="default"
+         page-title="Ember selection conversions">
+diff --git a/chrome/browser/resources/settings/appearance_page/appearance_page.ts b/chrome/browser/resources/settings/appearance_page/appearance_page.ts
+--- a/chrome/browser/resources/settings/appearance_page/appearance_page.ts
++++ b/chrome/browser/resources/settings/appearance_page/appearance_page.ts
+@@ -172,6 +172,14 @@
+       },
+ 
+       emberFavorites_: {type: Array, value: () => []},
++      emberWallpaperOptions_: {
++        readOnly: true, type: Array,
++        value: () => [
++          {value: 'smoked-glass', name: 'Smoked Glass'},
++          {value: 'ember-glow', name: 'Ember Glow'},
++          {value: 'frosted-landscape', name: 'Frosted Landscape'},
++        ],
++      },
+       emberUnsplashTopicOptions_: {
+         readOnly: true, type: Array,
+         // Photo topic IDs from Unsplash's /topics endpoint. The empty value leaves the
+@@ -409,6 +417,7 @@
+   declare private fontSizeOptions_: DropdownMenuOptionList;
+   declare private emberFavoritesColumnOptions_: DropdownMenuOptionList;
+   declare private emberFavoritesRowOptions_: DropdownMenuOptionList;
++  declare private emberWallpaperOptions_: DropdownMenuOptionList;
+   declare private emberUnsplashTopicOptions_: DropdownMenuOptionList;
+   declare private emberConversionCurrencyOptions_: DropdownMenuOptionList;
+   declare private emberConversionTemperatureOptions_: DropdownMenuOptionList;
+@@ -505,6 +514,12 @@
+     } catch (error) {
+       this.emberFavoritesError_ = String(error);
+       return false;
++    }
++  }
++
++  private onEmberWallpaperChanged_() {
++    if (!this.getPref('ember.new_tab.translucent').value) {
++      this.setPrefValue('ember.new_tab.unsplash.enabled', false);
+     }
+   }
+ 
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -2223,10 +2223,9 @@
+                             base::Unretained(this)));
+   }
+ #if BUILDFLAG(IS_WIN)
+-  registrar_.Add(
+-      prefs::kEmberUnsplashEnabled,
+-      base::BindRepeating(&BrowserView::UpdateEmberNativeBackdrop,
+-                          base::Unretained(this), nullptr));
++  registrar_.Add(prefs::kEmberNewTabTranslucent,
++                 base::BindRepeating(&BrowserView::UpdateEmberNativeBackdrop,
++                                     base::Unretained(this), nullptr));
+ #endif
+   UpdateFullscreenAllowedFromPolicy(CanFullscreen());
+ 
+@@ -4347,7 +4346,7 @@
+ bool BrowserView::IsEmberTranslucentNewTab(
+     const content::WebContents* contents) const {
+   if (!GetIsNormalType() || !contents ||
+-      GetProfile()->GetPrefs()->GetBoolean(prefs::kEmberUnsplashEnabled)) {
++      !GetProfile()->GetPrefs()->GetBoolean(prefs::kEmberNewTabTranslucent)) {
+     return false;
+   }
+   const GURL url = contents->GetLastCommittedURL();
+diff --git a/chrome/browser/ui/views/frame/browser_view_browsertest.cc b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+--- a/chrome/browser/ui/views/frame/browser_view_browsertest.cc
++++ b/chrome/browser/ui/views/frame/browser_view_browsertest.cc
+@@ -950,8 +950,8 @@
+   const int tab_count = browser()->tab_strip_model()->count();
+   // These preference changes execute the actual native backdrop update, which
+   // must inspect spare split views without implicitly creating WebContents.
+-  prefs->SetBoolean(prefs::kEmberUnsplashEnabled, true);
+-  prefs->SetBoolean(prefs::kEmberUnsplashEnabled, false);
++  prefs->SetBoolean(prefs::kEmberNewTabTranslucent, true);
++  prefs->SetBoolean(prefs::kEmberNewTabTranslucent, false);
+   EXPECT_EQ(tab_count, browser()->tab_strip_model()->count());
+   for (auto* slot : empty_slots) {
+     EXPECT_EQ(nullptr, slot->web_contents());
+@@ -961,19 +961,28 @@
+ 
+ IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberNewTabBackdropIgnoresPaneFocus) {
+   auto* prefs = browser()->profile()->GetPrefs();
+-  prefs->SetBoolean(prefs::kEmberUnsplashEnabled, false);
++  EXPECT_FALSE(prefs->GetBoolean(prefs::kEmberNewTabTranslucent));
++  EXPECT_EQ("ember-glow", prefs->GetString(prefs::kEmberNewTabWallpaper));
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUINewTabURL)));
+   auto* ntp = active_web_contents();
+   chrome::AddTabAt(browser(), GURL(url::kAboutBlankURL), -1, true);
+   auto* website = active_web_contents();
+   ASSERT_NE(ntp, website);
+-  // A background/focus-independent NTP still reveals the native backdrop, but
+-  // an ordinary page never loses its own opaque backing beside that NTP.
++  EXPECT_FALSE(browser_view()->IsEmberTranslucentNewTab(ntp));
++  EXPECT_FALSE(browser_view()->IsEmberTranslucentNewTab(website));
++  // The explicit override owns the NTP backing, independent of pane focus or
++  // preserved photo choices. Ordinary websites always retain their backing.
++  prefs->SetBoolean(prefs::kEmberNewTabTranslucent, true);
++  EXPECT_TRUE(browser_view()->IsEmberTranslucentNewTab(ntp));
++  prefs->SetBoolean(prefs::kEmberUnsplashEnabled, true);
++  prefs->SetString(prefs::kEmberNewTabWallpaper, "frosted-landscape");
+   EXPECT_TRUE(browser_view()->IsEmberTranslucentNewTab(ntp));
+   EXPECT_FALSE(browser_view()->IsEmberTranslucentNewTab(website));
+-  prefs->SetBoolean(prefs::kEmberUnsplashEnabled, true);
++  prefs->SetBoolean(prefs::kEmberNewTabTranslucent, false);
+   EXPECT_FALSE(browser_view()->IsEmberTranslucentNewTab(ntp));
+-  prefs->SetBoolean(prefs::kEmberUnsplashEnabled, false);
++  EXPECT_TRUE(prefs->GetBoolean(prefs::kEmberUnsplashEnabled));
++  EXPECT_EQ("frosted-landscape",
++            prefs->GetString(prefs::kEmberNewTabWallpaper));
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(BrowserViewTest, EmberRailKeepsOneColumnInBothWidths) {
+diff --git a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
+--- a/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
++++ b/chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.cc
+@@ -156,17 +156,30 @@
+         base::BindRepeating(&EmberNewTabNavigationHandler::NotifyBrandChanged,
+                             base::Unretained(this)));
+     pref_change_registrar_.Add(
++        prefs::kEmberNewTabTranslucent,
++        base::BindRepeating(
++            &EmberNewTabNavigationHandler::NotifyWallpaperChanged,
++            base::Unretained(this)));
++    pref_change_registrar_.Add(
++        prefs::kEmberNewTabWallpaper,
++        base::BindRepeating(
++            &EmberNewTabNavigationHandler::NotifyWallpaperChanged,
++            base::Unretained(this)));
++    pref_change_registrar_.Add(
+         prefs::kEmberUnsplashEnabled,
+-        base::BindRepeating(&EmberNewTabNavigationHandler::NotifyUnsplashChanged,
+-                            base::Unretained(this)));
++        base::BindRepeating(
++            &EmberNewTabNavigationHandler::NotifyWallpaperChanged,
++            base::Unretained(this)));
+     pref_change_registrar_.Add(
+         prefs::kEmberUnsplashAccessKey,
+-        base::BindRepeating(&EmberNewTabNavigationHandler::NotifyUnsplashChanged,
+-                            base::Unretained(this)));
++        base::BindRepeating(
++            &EmberNewTabNavigationHandler::NotifyWallpaperChanged,
++            base::Unretained(this)));
+     pref_change_registrar_.Add(
+         prefs::kEmberUnsplashTopic,
+-        base::BindRepeating(&EmberNewTabNavigationHandler::NotifyUnsplashChanged,
+-                            base::Unretained(this)));
++        base::BindRepeating(
++            &EmberNewTabNavigationHandler::NotifyWallpaperChanged,
++            base::Unretained(this)));
+   }
+   ~EmberNewTabNavigationHandler() override = default;
+ 
+@@ -192,8 +205,8 @@
+         base::BindRepeating(&EmberNewTabNavigationHandler::GetBrandConfig,
+                             base::Unretained(this)));
+     web_ui()->RegisterMessageCallback(
+-        "emberUnsplashConfig",
+-        base::BindRepeating(&EmberNewTabNavigationHandler::GetUnsplashConfig,
++        "emberWallpaperConfig",
++        base::BindRepeating(&EmberNewTabNavigationHandler::GetWallpaperConfig,
+                             base::Unretained(this)));
+     web_ui()->RegisterMessageCallback(
+         "emberUnsplashPhoto",
+@@ -255,12 +268,16 @@
+     }
+   }
+ 
+-  void GetUnsplashConfig(const base::ListValue& args) {
++  void GetWallpaperConfig(const base::ListValue& args) {
+     if (args.empty()) return;
+     AllowJavascript();
+     base::DictValue config;
+-    config.Set("enabled", profile_->GetPrefs()->GetBoolean(
+-                              prefs::kEmberUnsplashEnabled));
++    const PrefService* prefs = profile_->GetPrefs();
++    const bool translucent = prefs->GetBoolean(prefs::kEmberNewTabTranslucent);
++    config.Set("translucent", translucent);
++    config.Set("wallpaper", prefs->GetString(prefs::kEmberNewTabWallpaper));
++    config.Set("enabled",
++               !translucent && prefs->GetBoolean(prefs::kEmberUnsplashEnabled));
+     config.Set("hasAccessKey", !profile_->GetPrefs()->GetString(
+                                     prefs::kEmberUnsplashAccessKey).empty());
+     ResolveJavascriptCallback(args[0], base::Value(std::move(config)));
+@@ -284,7 +301,8 @@
+     base::DictValue result;
+     const PrefService* prefs = profile_->GetPrefs();
+     const std::string& key = prefs->GetString(prefs::kEmberUnsplashAccessKey);
+-    if (!prefs->GetBoolean(prefs::kEmberUnsplashEnabled) || key.empty()) {
++    if (prefs->GetBoolean(prefs::kEmberNewTabTranslucent) ||
++        !prefs->GetBoolean(prefs::kEmberUnsplashEnabled) || key.empty()) {
+       result.Set("status", 0);
+       ResolveJavascriptCallback(args[0], base::Value(std::move(result)));
+       return;
+@@ -392,16 +410,16 @@
+     unsplash_callback_id_.reset();
+   }
+ 
+-  void NotifyUnsplashChanged() {
++  void NotifyWallpaperChanged() {
+     CancelUnsplashRequest();
+-    const bool enabled = profile_->GetPrefs()->GetBoolean(
+-        prefs::kEmberUnsplashEnabled);
++    const bool translucent =
++        profile_->GetPrefs()->GetBoolean(prefs::kEmberNewTabTranslucent);
+     if (web_ui() && web_ui()->GetWebContents()) {
+       web_ui()->GetWebContents()->SetPageBaseBackgroundColor(
+-          enabled ? SkColorSetRGB(0x20, 0x25, 0x2C) : SK_ColorTRANSPARENT);
++          translucent ? SK_ColorTRANSPARENT : SkColorSetRGB(0x20, 0x25, 0x2C));
+     }
+     if (IsJavascriptAllowed()) {
+-      FireWebUIListener("ember-unsplash-changed");
++      FireWebUIListener("ember-wallpaper-changed");
+     }
+   }
+ 
+@@ -744,9 +762,9 @@
+   web_ui->AddMessageHandler(
+       std::make_unique<EmberNewTabNavigationHandler>(profile_));
+   web_contents_->SetPageBaseBackgroundColor(
+-      profile_->GetPrefs()->GetBoolean(prefs::kEmberUnsplashEnabled)
+-          ? SkColorSetRGB(0x20, 0x25, 0x2C)
+-          : SK_ColorTRANSPARENT);
++      profile_->GetPrefs()->GetBoolean(prefs::kEmberNewTabTranslucent)
++          ? SK_ColorTRANSPARENT
++          : SkColorSetRGB(0x20, 0x25, 0x2C));
+   CreateAndAddNewTabPageThirdPartyUiHtmlSource(profile_, web_contents_);
+   content::URLDataSource::Add(
+       profile_, std::make_unique<FaviconSource>(
+diff --git a/chrome/common/pref_names.h b/chrome/common/pref_names.h
+--- a/chrome/common/pref_names.h
++++ b/chrome/common/pref_names.h
+@@ -39,6 +39,9 @@
+     "ember.fullscreen.within_window";
+ inline constexpr char kEmberSidebarWide[] = "ember.sidebar.wide";
+ inline constexpr char kEmberNewTabShowWordmark[] = "ember.new_tab.show_wordmark";
++// Wallpaper choices are profile-local. Translucency overrides both image modes.
++inline constexpr char kEmberNewTabTranslucent[] = "ember.new_tab.translucent";
++inline constexpr char kEmberNewTabWallpaper[] = "ember.new_tab.wallpaper";
+ inline constexpr char kEmberUnsplashEnabled[] = "ember.new_tab.unsplash.enabled";
+ inline constexpr char kEmberUnsplashAccessKey[] = "ember.new_tab.unsplash.access_key";
+ inline constexpr char kEmberUnsplashTopic[] = "ember.new_tab.unsplash.topic";
+diff --git a/chrome/test/data/webui/settings/appearance_page_test.ts b/chrome/test/data/webui/settings/appearance_page_test.ts
+--- a/chrome/test/data/webui/settings/appearance_page_test.ts
++++ b/chrome/test/data/webui/settings/appearance_page_test.ts
+@@ -46,6 +46,10 @@
+      value: 3},
+     {key: 'ember.new_tab.show_wordmark',
+      type: chrome.settingsPrivate.PrefType.BOOLEAN, value: false},
++    {key: 'ember.new_tab.translucent',
++     type: chrome.settingsPrivate.PrefType.BOOLEAN, value: false},
++    {key: 'ember.new_tab.wallpaper',
++     type: chrome.settingsPrivate.PrefType.STRING, value: 'ember-glow'},
+     {key: 'ember.new_tab.unsplash.enabled',
+      type: chrome.settingsPrivate.PrefType.BOOLEAN, value: false},
+     {key: 'ember.new_tab.unsplash.topic',
+@@ -258,6 +262,7 @@
+     for (const [id, title] of [
+       ['emberSidebarSection', 'Ember sidebar and Favorites'],
+       ['emberNewTabSection', 'Ember New Tab'],
++      ['emberWallpaperSection', 'Wallpaper'],
+       ['emberConversionsSection', 'Ember selection conversions'],
+       ['emberFullscreenSection', 'Ember webpage fullscreen'],
+       ['emberSearchSection', 'Ember Search and Quick Searches'],
+@@ -273,7 +278,8 @@
+       assertFalse(!!section.querySelector('settings-section'));
+     }
+     for (const id of ['emberWideSidebar', 'emberShowWordmark',
+-                     'emberUnsplashEnabled', 'emberConversionsEnabled']) {
++                     'emberUnsplashEnabled', 'emberTranslucentWallpaper',
++                     'emberConversionsEnabled']) {
+       const toggle = root.querySelector<HTMLElement>(`#${id}`)!;
+       assertEquals('SETTINGS-SECTION', toggle.parentElement!.tagName);
+       assertTrue(!!toggle.getAttribute('label'));
+@@ -286,6 +292,63 @@
+     assertEquals('f',
+         appearancePage.get('prefs.ember.conversions.temperature.value'));
+     assertEquals('12', appearancePage.get('prefs.ember.conversions.clock.value'));
++  });
++
++  test('emberTranslucencyDisablesWallpaperControlsAndPreservesChoices', async () => {
++    appearancePage.setPrefValue('ember.new_tab.unsplash.enabled', true);
++    appearancePage.setPrefValue('ember.new_tab.unsplash.topic', '6sMVjTLSkeQ');
++    appearancePage.setPrefValue('ember.new_tab.unsplash.access_key', 'test-key');
++    appearancePage.setPrefValue('ember.new_tab.wallpaper', 'smoked-glass');
++    await flushTasks();
++    const root = appearancePage.shadowRoot!;
++    const toggle = root.querySelector<SettingsToggleButtonElement>(
++        '#emberTranslucentWallpaper')!;
++    assertFalse(toggle.checked);
++    const unsplash = root.querySelector<SettingsToggleButtonElement>(
++        '#emberUnsplashEnabled')!;
++    const dropdown = root.querySelector<SettingsDropdownMenuElement>(
++        '#emberDefaultWallpaper')!;
++    const topic = root.querySelector<SettingsDropdownMenuElement>(
++        '#emberUnsplashTopic')!;
++    const key = root.querySelector<HTMLInputElement>('#emberUnsplashAccessKey')!;
++    assertEquals('Smoked Glass,Ember Glow,Frosted Landscape',
++        dropdown.menuOptions.map(option => option.name).join(','));
++    toggle.click();
++    await flushTasks();
++    assertTrue(toggle.checked);
++    assertTrue(unsplash.disabled);
++    assertTrue(unsplash.$.control.disabled);
++    assertTrue(dropdown.disabled);
++    assertTrue(dropdown.$.dropdownMenu.disabled);
++    assertTrue(topic.disabled);
++    assertTrue(key.disabled);
++    assertEquals('true', dropdown.parentElement!.getAttribute('aria-disabled'));
++    assertEquals('smoked-glass', appearancePage.getPref('ember.new_tab.wallpaper').value);
++    assertEquals(true, appearancePage.getPref('ember.new_tab.unsplash.enabled').value);
++    assertEquals('6sMVjTLSkeQ', appearancePage.getPref('ember.new_tab.unsplash.topic').value);
++    assertEquals('test-key', key.value);
++    toggle.click();
++    await flushTasks();
++    assertFalse(toggle.checked);
++    assertFalse(unsplash.disabled);
++    assertFalse(dropdown.disabled);
++    assertFalse(topic.disabled);
++    assertFalse(key.disabled);
++    assertEquals(true, appearancePage.getPref('ember.new_tab.unsplash.enabled').value);
++    assertEquals('smoked-glass', dropdown.getSelectedValue());
++  });
++
++  test('emberDefaultWallpaperSelectionTurnsOffUnsplash', async () => {
++    appearancePage.setPrefValue('ember.new_tab.unsplash.enabled', true);
++    await flushTasks();
++    const dropdown = appearancePage.shadowRoot!.querySelector<SettingsDropdownMenuElement>(
++        '#emberDefaultWallpaper')!;
++    dropdown.$.dropdownMenu.value = 'frosted-landscape';
++    dropdown.$.dropdownMenu.dispatchEvent(new Event('change'));
++    await flushTasks();
++    assertEquals('frosted-landscape', appearancePage.getPref('ember.new_tab.wallpaper').value);
++    assertEquals(false, appearancePage.getPref('ember.new_tab.unsplash.enabled').value);
++    assertEquals(false, appearancePage.getPref('ember.new_tab.translucent').value);
+   });
+ 
+   const THEME_ID_PREF = 'prefs.extensions.theme.id.value';
+diff --git a/tools/gritsettings/resource_ids.spec b/tools/gritsettings/resource_ids.spec
+--- a/tools/gritsettings/resource_ids.spec
++++ b/tools/gritsettings/resource_ids.spec
+@@ -634,7 +634,7 @@
+     "includes": [4420],
+   },
+   "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/new_tab_page_third_party/resources.grd": {
+-    "META": {"sizes": {"includes": [10]}},
++    "META": {"sizes": {"includes": [20]}},
+     "includes": [4440],
+   },
+   "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/new_tab_shared/resources.grd": {

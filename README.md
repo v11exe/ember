@@ -9,6 +9,7 @@ The native browser is maintained as a pinned Chromium patch stack plus a small r
 - Compact horizontal tabs, native window controls, collapsible sidebar, Favorite sites and address field.
 - Tab sleep/wake, recent uploads, New Tab search, Quick Searches, Copy Link, Ctrl+Tab switcher, and native split-tab drag targets.
 - EmberGlass menus, dialogs and overlays with the official Ember branding.
+- Three bundled New Tab wallpapers: Smoked Glass, Ember Glow (the default) and Frosted Landscape. Choose one under Settings → Appearance → Wallpaper → Default Wallpapers; each stays centred and crops to cover the page on resize. The off-by-default Translucent wallpaper toggle restores the Windows glass backdrop, disables image controls and keeps their selections for later.
 - Optional Unsplash photo backgrounds for New Tab. Turn them on in Settings → Appearance, enter your own Unsplash Access Key and choose All photos or a specific Unsplash topic. No Secret Key is needed. Photos stay centered and crop to cover the page as its size changes; the search bar blurs the photo behind it.
 - Selection conversions for currency, temperature, distance, weight, volume and time. Currency rates are fetched only for a recognized foreign-currency selection.
 
