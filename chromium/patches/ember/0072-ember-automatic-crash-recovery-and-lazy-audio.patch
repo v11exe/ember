@@ -1,0 +1,333 @@
+diff --git a/chrome/browser/sessions/exit_type_service_browsertest.cc b/chrome/browser/sessions/exit_type_service_browsertest.cc
+--- a/chrome/browser/sessions/exit_type_service_browsertest.cc
++++ b/chrome/browser/sessions/exit_type_service_browsertest.cc
+@@ -21,6 +21,7 @@
+ #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/browser/ui/views/session_crashed_bubble_view.h"
++#include "chrome/browser/ui/session_crashed_bubble.h"
+ #include "chrome/common/chrome_constants.h"
+ #include "chrome/common/chrome_paths.h"
+ #include "chrome/common/pref_names.h"
+@@ -44,8 +45,9 @@
+ 
+ // Generates events that result in the button triggering the appropriate click
+ // action.
+-void ClickButton(views::BubbleDialogDelegate* crash_bubble_delegate,
+-                 views::Button* button) {
++[[maybe_unused]] void ClickButton(
++    views::BubbleDialogDelegate* crash_bubble_delegate,
++    views::Button* button) {
+   crash_bubble_delegate->ResetViewShownTimeStampForTesting();
+   gfx::Point center(button->width() / 2, button->height() / 2);
+   const ui::MouseEvent event(ui::EventType::kMousePressed, center, center,
+@@ -92,8 +94,82 @@
+ 
+ }  // namespace
+ 
++#if BUILDFLAG(IS_WIN)
++class EmberAutoRecoveryTest : public InProcessBrowserTest {};
++
++IN_PROC_BROWSER_TEST_F(EmberAutoRecoveryTest, PRE_RestoresWithoutBubble) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GetUrl1()));
++  Browser* second = CreateBrowser(browser()->profile());
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(second, GetUrl2()));
++  chrome::NewTab(second, NewTabTypes::kNoUserAction);
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(second, GetUrl3()));
++  // Recovery must work even with the default New Tab startup preference.
++  SessionStartupPref::SetStartupPref(
++      browser()->profile(), SessionStartupPref(SessionStartupPref::DEFAULT));
++  ExitTypeService::GetInstanceForProfile(browser()->profile())
++      ->SetWaitingForUserToAckCrashForTest(true);
++}
++
++IN_PROC_BROWSER_TEST_F(EmberAutoRecoveryTest, RestoresWithoutBubble) {
++  auto* service = ExitTypeService::GetInstanceForProfile(browser()->profile());
++  ASSERT_EQ(ExitType::kCrashed, service->last_session_exit_type());
++  if (service->waiting_for_user_to_ack_crash()) {
++    base::RunLoop loop;
++    service->AddCrashAckCallback(loop.QuitClosure());
++    loop.Run();
++  }
++  EXPECT_EQ(nullptr, SessionCrashedBubbleView::GetInstanceForTest());
++  EXPECT_FALSE(service->waiting_for_user_to_ack_crash());
++  EXPECT_TRUE(SessionServiceFactory::GetForProfile(browser()->profile())
++                  ->is_saving_enabled());
++  ASSERT_TRUE(FindBrowserWithUrl(GetUrl1()));
++  auto* second = FindBrowserWithUrl(GetUrl2());
++  ASSERT_TRUE(second);
++  EXPECT_EQ(second, FindBrowserWithUrl(GetUrl3()));
++  EXPECT_EQ(2, second->GetTabStripModel()->count());
++  const size_t windows = GlobalBrowserCollection::GetInstance()->GetSize();
++  const int tabs = browser()->tab_strip_model()->count();
++  SessionCrashedBubble::ShowIfNotOffTheRecordProfile(browser(), true);
++  SessionCrashedBubble::ShowIfNotOffTheRecordProfile(browser(), true);
++  base::RunLoop().RunUntilIdle();
++  EXPECT_EQ(windows, GlobalBrowserCollection::GetInstance()->GetSize());
++  EXPECT_EQ(tabs, browser()->tab_strip_model()->count());
++  EXPECT_FALSE(SessionRestore::IsRestoring(browser()->profile()));
++}
++
++IN_PROC_BROWSER_TEST_F(EmberAutoRecoveryTest,
++                       RecoveryRequestDuringWindowClosure) {
++  Browser* temporary = CreateBrowser(browser()->profile());
++  SessionCrashedBubble::ShowIfNotOffTheRecordProfile(temporary, true);
++  CloseBrowserSynchronously(temporary);
++  base::RunLoop().RunUntilIdle();
++  EXPECT_EQ(nullptr, SessionCrashedBubbleView::GetInstanceForTest());
++}
++
++IN_PROC_BROWSER_TEST_F(EmberAutoRecoveryTest, PrivateWindowDoesNotRecover) {
++  Browser* private_browser = CreateIncognitoBrowser(browser()->profile());
++  const int count = private_browser->tab_strip_model()->count();
++  SessionCrashedBubble::ShowIfNotOffTheRecordProfile(private_browser, true);
++  base::RunLoop().RunUntilIdle();
++  EXPECT_EQ(count, private_browser->tab_strip_model()->count());
++  EXPECT_FALSE(SessionRestore::IsRestoring(private_browser->profile()));
++  EXPECT_EQ(nullptr, SessionCrashedBubbleView::GetInstanceForTest());
++}
++#endif
++
+ class ExitTypeServiceTest : public InProcessBrowserTest {
+  protected:
++#if BUILDFLAG(IS_WIN)
++  void WaitForAutoRecovery() {
++    if (GetExitTypeService()->waiting_for_user_to_ack_crash()) {
++      base::RunLoop loop;
++      GetExitTypeService()->AddCrashAckCallback(loop.QuitClosure());
++      loop.Run();
++    }
++    EXPECT_EQ(nullptr, SessionCrashedBubbleView::GetInstanceForTest());
++    EXPECT_TRUE(IsSessionServiceSavingEnabled());
++  }
++#endif
+   ExitType GetLastSessionExitType() {
+     return GetExitTypeService()->last_session_exit_type();
+   }
+@@ -118,18 +194,28 @@
+ 
+ IN_PROC_BROWSER_TEST_F(ExitTypeServiceTest, PRE_PRE_CrashCrashNewBrowser) {
+   ASSERT_EQ(ExitType::kCrashed, GetLastSessionExitType());
+-  EXPECT_FALSE(IsSessionServiceSavingEnabled());
++#if BUILDFLAG(IS_WIN)
++  WaitForAutoRecovery();
++#else
++  EXPECT_FALSE(IsSessionServiceSavingEnabled());
++#endif
+ }
+ 
+ // As the user didn't ack the crash, last session exit type should still be
+ // crashed.
+ IN_PROC_BROWSER_TEST_F(ExitTypeServiceTest, PRE_CrashCrashNewBrowser) {
+   EXPECT_EQ(1u, GlobalBrowserCollection::GetInstance()->GetSize());
++#if BUILDFLAG(IS_WIN)
++  ASSERT_EQ(ExitType::kClean, GetLastSessionExitType());
++  EXPECT_TRUE(IsSessionServiceSavingEnabled());
++  chrome::NewTab(browser(), NewTabTypes::kNoUserAction);
++#else
+   ASSERT_EQ(ExitType::kCrashed, GetLastSessionExitType());
+   EXPECT_FALSE(IsSessionServiceSavingEnabled());
+   // As the crashed bubble is still open, creating a tab in the existing
+   // browser should not enable saving.
+   chrome::NewTab(browser(), NewTabTypes::kNoUserAction);
++#endif
+   // Creating a new browser should enable saving.
+   CreateBrowser(browser()->profile());
+   EXPECT_TRUE(IsSessionServiceSavingEnabled());
+@@ -159,11 +245,21 @@
+ // Verify saving is not enabled, because the crash bubble is still visible.
+ IN_PROC_BROWSER_TEST_F(ExitTypeServiceTest, PRE_RestoreFromCrashBubble) {
+   ASSERT_EQ(ExitType::kCrashed, GetLastSessionExitType());
+-  EXPECT_FALSE(IsSessionServiceSavingEnabled());
++#if BUILDFLAG(IS_WIN)
++  WaitForAutoRecovery();
++  SessionStartupPref::SetStartupPref(
++      browser()->profile(), SessionStartupPref(SessionStartupPref::LAST));
++#else
++  EXPECT_FALSE(IsSessionServiceSavingEnabled());
++#endif
+ }
+ 
+ // Trigger restore, which should enable saving.
+ IN_PROC_BROWSER_TEST_F(ExitTypeServiceTest, RestoreFromCrashBubble) {
++#if BUILDFLAG(IS_WIN)
++  ASSERT_EQ(ExitType::kClean, GetLastSessionExitType());
++  WaitForAutoRecovery();
++#else
+   ASSERT_EQ(ExitType::kCrashed, GetLastSessionExitType());
+   EXPECT_FALSE(IsSessionServiceSavingEnabled());
+ 
+@@ -177,6 +273,7 @@
+   GetExitTypeService()->AddCrashAckCallback(run_loop.QuitClosure());
+   run_loop.Run();
+   EXPECT_TRUE(IsSessionServiceSavingEnabled());
++#endif
+ #if BUILDFLAG(IS_CHROMEOS)
+   const bool restores_to_initial_browser = false;
+ #else
+@@ -187,6 +284,21 @@
+   BrowserWindowInterface* const browser1 = FindBrowserWithUrl(GetUrl1());
+   BrowserWindowInterface* const browser2 = FindBrowserWithUrl(GetUrl2());
+ 
++  ASSERT_TRUE(browser1);
++  ASSERT_TRUE(browser2);
++#if BUILDFLAG(IS_WIN)
++  // The preceding PRE_ run already recovered and saved its startup tab.
++  // A clean LAST launch may append another explicit harness startup tab;
++  // each recovered page must still appear exactly once.
++  int restored_page_count = 0;
++  for (int i = 0; i < browser1->GetTabStripModel()->count(); ++i) {
++    if (browser1->GetTabStripModel()->GetWebContentsAt(i)->GetVisibleURL() ==
++        GetUrl1()) {
++      ++restored_page_count;
++    }
++  }
++  EXPECT_EQ(1, restored_page_count);
++#else
+   ASSERT_EQ((restores_to_initial_browser ? 2 : 1),
+             browser1->GetTabStripModel()->count());
+   // The first tab is created during startup.
+@@ -199,6 +311,7 @@
+             browser1->GetTabStripModel()
+                 ->GetWebContentsAt(restores_to_initial_browser ? 1 : 0)
+                 ->GetVisibleURL());
++#endif
+   ASSERT_EQ(2, browser2->GetTabStripModel()->count());
+   EXPECT_EQ(GetUrl2(),
+             browser2->GetTabStripModel()->GetWebContentsAt(0)->GetVisibleURL());
+@@ -223,6 +336,9 @@
+ IN_PROC_BROWSER_TEST_F(ExitTypeServiceTest,
+                        MAYBE_CloseCrashBubbleEnablesSaving) {
+   ASSERT_EQ(ExitType::kCrashed, GetLastSessionExitType());
++#if BUILDFLAG(IS_WIN)
++  WaitForAutoRecovery();
++#else
+   EXPECT_FALSE(IsSessionServiceSavingEnabled());
+ 
+   views::BubbleDialogDelegate* crash_bubble_delegate =
+@@ -233,6 +349,7 @@
+   crash_bubble_delegate->GetBubbleFrameView()->GetWidget()->Close();
+   EXPECT_FALSE(SessionRestore::IsRestoring(browser()->profile()));
+   run_loop.Run();
++#endif
+   EXPECT_FALSE(GetExitTypeService()->waiting_for_user_to_ack_crash());
+   EXPECT_TRUE(IsSessionServiceSavingEnabled());
+ }
+diff --git a/chrome/browser/ui/startup/infobar_utils.cc b/chrome/browser/ui/startup/infobar_utils.cc
+--- a/chrome/browser/ui/startup/infobar_utils.cc
++++ b/chrome/browser/ui/startup/infobar_utils.cc
+@@ -149,7 +149,13 @@
+   const bool should_display_bubble =
+       !startup_command_line.HasSwitch("hide-crashed-bubble") &&
+       !is_web_app && HasPendingUncleanExit(browser->GetProfile());
++#if BUILDFLAG(IS_WIN)
++  base::UmaHistogramBoolean("Startup.CrashBubbleShown", false);
++  base::UmaHistogramBoolean("Startup.CrashAutoRestoreRequested",
++                            should_display_bubble);
++#else
+   base::UmaHistogramBoolean("Startup.CrashBubbleShown", should_display_bubble);
++#endif
+   if (should_display_bubble) {
+     SessionCrashedBubble::ShowIfNotOffTheRecordProfile(
+         browser,
+diff --git a/chrome/browser/ui/views/session_crashed_bubble_view.cc b/chrome/browser/ui/views/session_crashed_bubble_view.cc
+--- a/chrome/browser/ui/views/session_crashed_bubble_view.cc
++++ b/chrome/browser/ui/views/session_crashed_bubble_view.cc
+@@ -15,6 +15,7 @@
+ #include "base/memory/raw_ptr.h"
+ #include "base/metrics/histogram_macros.h"
+ #include "base/scoped_observation.h"
++#include "base/task/single_thread_task_runner.h"
+ #include "build/branding_buildflags.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/metrics/metrics_reporting_state.h"
+@@ -213,6 +214,36 @@
+       std::make_unique<SessionCrashedBubbleView::BrowserRemovalObserver>(
+           browser);
+ 
++#if BUILDFLAG(IS_WIN)
++  // Ember recovers through the same native action as the Restore button.
++  // Startup can call us from a TabStripModel observer: defer until that
++  // mutation finishes, and retain the browser-removal guard across the task.
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE,
++      base::BindOnce(
++          [](std::unique_ptr<SessionCrashedBubbleView::BrowserRemovalObserver>
++                 observer,
++             bool skip_tab_checking) {
++            auto* browser = observer->browser();
++            if (!browser || browser->GetProfile()->IsOffTheRecord() ||
++                (!skip_tab_checking &&
++                 !browser->GetTabStripModel()->GetActiveWebContents()) ||
++                SessionRestore::IsRestoring(browser->GetProfile())) {
++              return;
++            }
++            // Preserve the crashed session until native restore completes,
++            // including if the process exits before completion.
++            auto* service =
++                ExitTypeService::GetInstanceForProfile(browser->GetProfile());
++            if (!service || !service->waiting_for_user_to_ack_crash()) {
++              return;
++            }
++            auto lock = service->CreateCrashedLock();
++            SessionRestore::RestoreSessionAfterCrash(
++                browser->GetBrowserForMigrationOnly());
++          },
++          std::move(browser_observer), skip_tab_checking));
++#else
+   if (DoesSupportConsentCheck()) {
+     GoogleUpdateSettings::CollectStatsConsentTaskRunner()
+         ->PostTaskAndReplyWithResult(
+@@ -224,6 +255,7 @@
+     SessionCrashedBubbleView::Show(std::move(browser_observer),
+                                    skip_tab_checking, false);
+   }
++#endif
+ }
+ 
+ // static
+diff --git a/content/browser/web_contents/web_contents_impl.cc b/content/browser/web_contents/web_contents_impl.cc
+--- a/content/browser/web_contents/web_contents_impl.cc
++++ b/content/browser/web_contents/web_contents_impl.cc
+@@ -2782,12 +2782,13 @@
+   gain = std::clamp(gain, 0.0, 2.0);
+   if (gain == GetAudioVolume())
+     return;
+-  audio_stream_factory_->SetVolume(gain);
++  GetAudioStreamFactory()->SetVolume(gain);
+   observers_.NotifyObservers(&WebContentsObserver::DidUpdateAudioVolume, gain);
+ }
+ 
+ double WebContentsImpl::GetAudioVolume() const {
+-  return audio_stream_factory_->GetVolume();
++  // A new/discarded page may never have created its lazy audio factory.
++  return audio_stream_factory_ ? audio_stream_factory_->GetVolume() : 1.0;
+ }
+ 
+ bool WebContentsImpl::IsAudioMuted() {
+diff --git a/content/browser/web_contents/web_contents_impl_unittest.cc b/content/browser/web_contents/web_contents_impl_unittest.cc
+--- a/content/browser/web_contents/web_contents_impl_unittest.cc
++++ b/content/browser/web_contents/web_contents_impl_unittest.cc
+@@ -451,6 +451,22 @@
+ 
+ }  // namespace
+ 
++// Fresh WebContents, including discard replacements, have no audio factory.
++TEST_F(WebContentsImplTest, EmberGainBeforeAnyAudioStream) {
++  EXPECT_DOUBLE_EQ(1.0, contents()->GetAudioVolume());
++  contents()->SetAudioVolume(1.0);
++  EXPECT_DOUBLE_EQ(1.0, contents()->GetAudioVolume());
++  contents()->SetAudioVolume(1.75);
++  EXPECT_DOUBLE_EQ(1.75, contents()->GetAudioVolume());
++  contents()->SetAudioVolume(-1.0);
++  EXPECT_DOUBLE_EQ(0.0, contents()->GetAudioVolume());
++  contents()->SetAudioVolume(3.0);
++  EXPECT_DOUBLE_EQ(2.0, contents()->GetAudioVolume());
++  contents()->SetAudioMuted(true);
++  contents()->SetAudioMuted(false);
++  EXPECT_DOUBLE_EQ(2.0, contents()->GetAudioVolume());
++}
++
+ TEST_F(WebContentsImplTest, SetMainFrameMimeType) {
+   ASSERT_TRUE(controller().IsInitialNavigation());
+   std::string mime = "text/html";

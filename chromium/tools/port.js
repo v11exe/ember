@@ -1298,6 +1298,7 @@ function build(workRootValue, jobs, passthrough, resume = false) {
   );
   verifyResourceOverlay(manifest, builtPaths.sourceRoot);
   normalizePackageArtifacts(builtPaths);
+  require('./crash-diagnostics').archiveSymbols(builtPaths.outputRoot, builtPaths.workRoot);
   console.log(`Native build completed from pinned Chromium source ${head}.`);
 }
 
@@ -1311,6 +1312,7 @@ function packageBuild(workRootValue, passthrough) {
     },
   });
   normalizePackageArtifacts(packagedPaths);
+  require('./crash-diagnostics').archiveSymbols(paths.outputRoot, paths.workRoot);
 }
 
 function runNative(workRootValue, url) {

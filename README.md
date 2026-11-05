@@ -34,3 +34,11 @@ npm test
 `--resume` keeps the prepared Chromium checkout and incremental build products. Omit it only when preparing a new work root. The package command places the managed Ember installer and portable ZIP in the external work root. `npm run chromium:check-patches` validates patch hunk counts; `npm run chromium:verify-patches` checks the stack against a pristine pinned source checkout.
 
 See [chromium/README.md](chromium/README.md) for the patch/resource layout and [AGENTS.md](AGENTS.md) for development rules. [ROADMAP.md](ROADMAP.md) holds numbered feature specifications. Third-party material is credited in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Crash recovery and diagnostics
+
+Patch 0072 automatically invokes Chromium's native session recovery after an unclean exit on Windows, without the Restore pages popup. The normal On startup setting still controls clean launches. Recovery restores the saved session; private windows do not recover. Linking and runtime acceptance are tracked in the native status record.
+
+Windows already saves crash dumps on this machine in `%LOCALAPPDATA%\CrashDumps`. After another crash, run `npm run chromium:crashes` and tell Codex when it happened. The command copies the five newest `chrome.exe` dumps and writes debugger reports under `C:\src\ember-chromium\crash-reports`; it leaves the original dumps intact and sends nothing online. Other Chrome installations may use the same dump filenames, so diagnosis checks each dump's image path. Use `-- --installed-dir PATH` for another Ember version directory, or `-- --work-root PATH` for another build root.
+
+Successful build/package commands preserve matching DLLs and PDBs under the external work root's `crash-symbols` directory, keyed by DLL hash (about 820 MiB per distinct build with the current files). Existing archives remain available after subsequent links. The collector uses matching symbols when present and explicitly reports when they are unavailable; it never forces a mismatched PDB.

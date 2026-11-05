@@ -114,6 +114,7 @@ test('the Ember patch series is ordered, local, and complete', () => {
     'ember/0069-ember-run-six-navigation-and-downloads.patch',
     'ember/0070-ember-follower-window-referrer.patch',
     'ember/0071-ember-settings-cards-and-unscoped-tab-search.patch',
+    'ember/0072-ember-automatic-crash-recovery-and-lazy-audio.patch',
   ]);
   for (const entry of entries) {
     assert.equal(fs.existsSync(path.join(port.PATCHES_ROOT, ...entry.split('/'))), true);
